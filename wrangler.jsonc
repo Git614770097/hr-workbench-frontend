@@ -1,0 +1,21 @@
+{
+  "name": "hr-talent-pool",
+  "compatibility_date": "2026-09-18",
+  "main": "./src/worker/index.ts",
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hr-talent-pool-db"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "SESSIONS"
+    }
+  ]
+}
