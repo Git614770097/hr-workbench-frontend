@@ -434,7 +434,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         </>
       )}
 
-      {parsing && <Alert message="正在解析简历…" type="info" showIcon style={{ marginTop: 16, marginBottom: 16 }} />}
+      {parsing && <Alert message="AI 识别中…" type="info" showIcon style={{ marginTop: 16, marginBottom: 16 }} />}
       {error && <Alert message={error} type="error" showIcon style={{ marginTop: 16, marginBottom: 16 }} />}
 
       {records.length > 0 && (

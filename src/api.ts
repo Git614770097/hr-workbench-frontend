@@ -136,6 +136,9 @@ export const api = {
   getResumeUrl: (talentId: string) =>
     `${BASE}/talents/${talentId}/resume?token=${getToken() || ""}`,
 
+  getResumeDownloadUrl: (talentId: string) =>
+    `${BASE}/talents/${talentId}/resume?token=${getToken() || ""}&download=1`,
+
   deleteResume: (talentId: string) =>
     request(`/talents/${talentId}/resume`, { method: "DELETE" }),
 

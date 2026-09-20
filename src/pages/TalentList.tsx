@@ -36,8 +36,8 @@ const EMPTY_FILTERS: Filters = {
   years: null, city: "", title: "", status: "", owner_id: "",
 };
 
-// 收起时展示的字段数（默认展开一行 3 个）
-const COLLAPSED_COUNT = 3;
+// 收起时展示的字段数（默认展开一行 4 个）
+const COLLAPSED_COUNT = 4;
 
 function escapeHtml(s: string): string {
   return s
@@ -264,6 +264,23 @@ export default function TalentList() {
     else if (key === "pdf") handleExportPdf();
   };
 
+  // 导出单份简历：根据 resume_url 扩展名判断原文件格式，PDF 导出 PDF、Word 导出 Word
+  const handleExportResume = (record: Talent) => {
+    if (!record.resume_url) { message.warning("该人才暂无简历文件"); return; }
+    const ext = (record.resume_url.match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
+    const isWord = ext === "docx" || ext === "doc";
+    const isPdf = ext === "pdf";
+    const typeLabel = isWord ? "Word" : isPdf ? "PDF" : "简历";
+    // 触发浏览器下载（后端 Content-Disposition: attachment）
+    const a = document.createElement("a");
+    a.href = api.getResumeDownloadUrl(record.id);
+    a.download = `${record.name}_${typeLabel}.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    message.success(`正在导出 ${record.name} 的${typeLabel}简历`);
+  };
+
   // ---- 搜索字段定义（label 左 + 控件右，一行 3 个）----
   const controlStyle: React.CSSProperties = { width: "100%" };
   const fieldDefs: { key: string; label: string; control: React.ReactNode }[] = [
@@ -321,22 +338,29 @@ export default function TalentList() {
       title: "创建人",
       dataIndex: "owner_name",
       key: "owner_name",
-      width: 110,
+      width: 120,
       render: (v: string) => v || "—",
     }] : []),
     {
       title: "操作",
       key: "action",
-      width: 110,
+      width: 150,
       fixed: "right" as const,
       render: (_: any, record: Talent) => (
         <Space size="small">
           {record.resume_url && (
-            <Button
-              type="link" size="small" icon={<FilePdfOutlined />}
-              title="预览简历"
-              onClick={() => setPreviewTalent(record)}
-            />
+            <>
+              <Button
+                type="link" size="small" icon={<FilePdfOutlined />}
+                title="预览简历"
+                onClick={() => setPreviewTalent(record)}
+              />
+              <Button
+                type="link" size="small" icon={<ExportOutlined />}
+                title="导出简历"
+                onClick={() => handleExportResume(record)}
+              />
+            </>
           )}
           <Popconfirm title="确认删除？所有关联数据将被清除。" onConfirm={() => handleDelete(record.id, record.name)}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />} title="删除" />
@@ -350,7 +374,7 @@ export default function TalentList() {
     <div>
       {/* 顶部搜索区域：label 左 + 控件右，一行 3 个，超过一行可展开/收起 */}
       <Card style={{ marginBottom: 16 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px 24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px 24px" }}>
           {visibleDefs.map((d) => (
             <div key={d.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ width: 44, flexShrink: 0, textAlign: "right", fontSize: 13, color: "#666" }}>
@@ -386,7 +410,7 @@ export default function TalentList() {
           dataSource={talents}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1440 }}
+          scroll={{ x: 1500 }}
           pagination={{
             current: page,
             total,

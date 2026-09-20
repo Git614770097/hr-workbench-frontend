@@ -246,7 +246,7 @@ talents.post("/resume", async (c) => {
   return c.json({ resume_url: key });
 });
 
-// ---- 获取简历文件（用于预览）----
+// ---- 获取简历文件（用于预览/下载）----
 talents.get("/:id/resume", async (c) => {
   // 支持 query param token（用于 iframe 预览）
   const token = c.req.query("token") || getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
@@ -269,9 +269,11 @@ talents.get("/:id/resume", async (c) => {
   const meta = JSON.parse(stored);
   const bytes = base64ToArrayBuffer(meta.data);
 
+  const isDownload = c.req.query("download") === "1";
+  const filename = meta.name || "resume";
   const headers = new Headers();
   headers.set("Content-Type", meta.type || "application/octet-stream");
-  headers.set("Content-Disposition", `inline; filename="${encodeURIComponent(meta.name || "resume")}"`);
+  headers.set("Content-Disposition", `${isDownload ? "attachment" : "inline"}; filename="${encodeURIComponent(filename)}"`);
   return new Response(bytes, { headers });
 });
 
