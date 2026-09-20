@@ -11,7 +11,7 @@ export interface User {
 export type MenuKey = "talents" | "risks" | "templates" | "tags" | "users";
 
 export const MENU_PERMISSIONS: { key: MenuKey; label: string }[] = [
-  { key: "talents", label: "人才库" },
+  { key: "talents", label: "人才库管理" },
   { key: "risks", label: "风险预警" },
   { key: "templates", label: "文件模板库" },
   { key: "tags", label: "标签管理" },

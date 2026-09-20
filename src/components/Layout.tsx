@@ -63,7 +63,7 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
   };
 
   const navItems: { to: string; label: string; icon: React.ReactNode; color: string; badge?: number; perm: string }[] = [
-    { to: "/talents", label: "人才库", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
+    { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
     { to: "/risks", label: "风险预警", icon: <AlertOutlined />, color: "#f43f5e", badge: urgentCount, perm: "risks" },
     { to: "/templates", label: "文件模板库", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
     { to: "/tags", label: "标签管理", icon: <TagsOutlined />, color: "#10b981", perm: "tags" },

@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
-  Card, Table, Input, InputNumber, Select, Button, Space, Tag, Typography,
-  Popconfirm, message,
+  Card, Table, Input, InputNumber, Select, Button, Space, Tag,
+  Popconfirm, message, Dropdown,
 } from "antd";
 import {
-  DeleteOutlined, ImportOutlined, FilePdfOutlined,
+  DeleteOutlined, ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
+  FileWordOutlined,
 } from "@ant-design/icons";
+import type { MenuProps } from "antd";
 import { api } from "../api";
 import type { Talent, User } from "../types";
 import { STATUS_LABELS, STATUS_COLORS, EDUCATION_OPTIONS } from "../types";
@@ -37,6 +39,31 @@ const EMPTY_FILTERS: Filters = {
 // 收起时展示的字段数（默认展开一行 3 个）
 const COLLAPSED_COUNT = 3;
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function dateStamp(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
 export default function TalentList() {
   const [talents, setTalents] = useState<Talent[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
@@ -50,6 +77,10 @@ export default function TalentList() {
   // 弹窗状态
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [previewTalent, setPreviewTalent] = useState<Talent | null>(null);
+
+  // 导出状态
+  const [exporting, setExporting] = useState(false);
+  const [printData, setPrintData] = useState<Talent[] | null>(null);
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -119,6 +150,120 @@ export default function TalentList() {
     }
   };
 
+  // ---- 导出：构建当前筛选参数（复用列表查询条件）----
+  const buildFilterParams = (): Record<string, string | number> => {
+    const params: Record<string, string | number> = {};
+    if (applied.name) params.name = applied.name;
+    if (applied.phone) params.phone = applied.phone;
+    if (applied.email) params.email = applied.email;
+    if (applied.age != null) params.age = applied.age;
+    if (applied.education) params.education = applied.education;
+    if (applied.school) params.school = applied.school;
+    if (applied.years != null) params.years = applied.years;
+    if (applied.city) params.city = applied.city;
+    if (applied.title) params.title = applied.title;
+    if (applied.status) params.status = applied.status;
+    if (applied.owner_id) params.owner_id = applied.owner_id;
+    return params;
+  };
+
+  // 拉取当前筛选条件下的全量数据（用于导出）
+  const fetchAllForExport = async (): Promise<Talent[]> => {
+    const params = { ...buildFilterParams(), page: 1, limit: 10000 };
+    const res = await api.getTalents(params);
+    return res.items;
+  };
+
+  // 导出字段顺序与列表一致
+  const exportColumns: { key: string; title: string; get: (t: Talent) => string }[] = [
+    { key: "name", title: "姓名", get: (t) => t.name || "" },
+    { key: "current_title", title: "职位", get: (t) => t.current_title || "" },
+    { key: "years_experience", title: "年限", get: (t) => (t.years_experience != null ? `${t.years_experience}年` : "") },
+    { key: "age", title: "年龄", get: (t) => (t.age != null ? String(t.age) : "") },
+    { key: "education", title: "学历", get: (t) => t.education || "" },
+    { key: "school", title: "院校", get: (t) => t.school || "" },
+    { key: "city", title: "城市", get: (t) => t.city || "" },
+    { key: "phone", title: "手机号", get: (t) => t.phone || "" },
+    { key: "email", title: "邮箱", get: (t) => t.email || "" },
+    { key: "current_company", title: "当前公司", get: (t) => t.current_company || "" },
+    { key: "industry", title: "行业", get: (t) => t.industry || "" },
+    { key: "expected_salary", title: "期望薪资", get: (t) => t.expected_salary || "" },
+    { key: "skills", title: "技能", get: (t) => (t.skills || []).join("、") },
+    { key: "status", title: "状态", get: (t) => STATUS_LABELS[t.status] || t.status || "" },
+    { key: "owner_name", title: "创建人", get: (t) => t.owner_name || "" },
+    { key: "created_at", title: "创建时间", get: (t) => t.created_at || "" },
+  ];
+
+  // 生成导出表格 HTML（Word 与 PDF 打印共用）
+  const buildExportHtml = (rows: Talent[]): string => {
+    const thead = exportColumns.map((c) => `<th>${c.title}</th>`).join("");
+    const tbody = rows.map((t) => {
+      const tds = exportColumns.map((c) => `<td>${escapeHtml(c.get(t))}</td>`).join("");
+      return `<tr>${tds}</tr>`;
+    }).join("");
+    return `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>人才库导出</title>
+<style>
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; margin: 24px; color: #333; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #999; font-size: 12px; margin-bottom: 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+  th { background: #f5f5f5; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafafa; }
+</style></head><body>
+<h1>人才库导出</h1>
+<div class="sub">共 ${rows.length} 人 · 导出时间 ${new Date().toLocaleString("zh-CN")}</div>
+<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
+</body></html>`;
+  };
+
+  // 导出 Word（.doc 格式，Word 可直接打开 HTML）
+  const handleExportWord = async () => {
+    try {
+      setExporting(true);
+      const rows = await fetchAllForExport();
+      if (rows.length === 0) { message.warning("暂无数据可导出"); return; }
+      const html = buildExportHtml(rows);
+      const blob = new Blob(["\ufeff" + html], { type: "application/msword;charset=utf-8" });
+      downloadBlob(blob, `人才库导出_${dateStamp()}.doc`);
+      message.success(`已导出 ${rows.length} 条人才（Word）`);
+    } catch (err) {
+      message.error((err as Error).message || "导出失败");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // 导出 PDF（打印视图 → 浏览器"另存为 PDF"）
+  const handleExportPdf = async () => {
+    try {
+      setExporting(true);
+      const rows = await fetchAllForExport();
+      if (rows.length === 0) { message.warning("暂无数据可导出"); return; }
+      setPrintData(rows);
+      // 等待打印容器渲染后触发打印
+      setTimeout(() => {
+        window.print();
+        setPrintData(null);
+      }, 300);
+    } catch (err) {
+      message.error((err as Error).message || "导出失败");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportMenuItems: MenuProps["items"] = [
+    { key: "word", label: "导出 Word", icon: <FileWordOutlined /> },
+    { key: "pdf", label: "导出 PDF", icon: <FilePdfOutlined /> },
+  ];
+
+  const onExportMenuClick: MenuProps["onClick"] = ({ key }) => {
+    if (key === "word") handleExportWord();
+    else if (key === "pdf") handleExportPdf();
+  };
+
   // ---- 搜索字段定义（label 左 + 控件右，一行 3 个）----
   const controlStyle: React.CSSProperties = { width: "100%" };
   const fieldDefs: { key: string; label: string; control: React.ReactNode }[] = [
@@ -176,7 +321,7 @@ export default function TalentList() {
       title: "创建人",
       dataIndex: "owner_name",
       key: "owner_name",
-      width: 90,
+      width: 110,
       render: (v: string) => v || "—",
     }] : []),
     {
@@ -203,7 +348,7 @@ export default function TalentList() {
 
   return (
     <div>
-      {/* 顶部搜索区域：label 左 + 控件右，一行 3 个，超过两行可展开/收起 */}
+      {/* 顶部搜索区域：label 左 + 控件右，一行 3 个，超过一行可展开/收起 */}
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px 24px" }}>
           {visibleDefs.map((d) => (
@@ -215,24 +360,26 @@ export default function TalentList() {
             </div>
           ))}
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginTop: 12 }}>
-          <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
-          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
-          {fieldDefs.length > COLLAPSED_COUNT && (
-            <Button type="link" size="small" onClick={() => setExpanded(!expanded)}>
-              {expanded ? <>收起 <UpOutlined /></> : <>展开 <DownOutlined /></>}
-            </Button>
-          )}
-        </div>
       </Card>
 
       <Card>
-        {/* 列表左上角：导入按钮 */}
+        {/* 列表顶部工具行：左侧导入+导出，右侧重置/搜索/展开收起 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            共 {total} 位人才
-          </Typography.Text>
+          <Space>
+            <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
+            <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
+              <Button icon={<ExportOutlined />} loading={exporting}>导出</Button>
+            </Dropdown>
+          </Space>
+          <Space>
+            {fieldDefs.length > COLLAPSED_COUNT && (
+              <Button type="link" size="small" onClick={() => setExpanded(!expanded)}>
+                {expanded ? <>收起 <UpOutlined /></> : <>展开 <DownOutlined /></>}
+              </Button>
+            )}
+            <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
+            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
+          </Space>
         </div>
         <Table
           columns={columns}
@@ -249,6 +396,11 @@ export default function TalentList() {
           }}
         />
       </Card>
+
+      {/* 打印导出容器：仅在打印时显示 */}
+      {printData && (
+        <div className="export-print-area" dangerouslySetInnerHTML={{ __html: buildExportHtml(printData) }} />
+      )}
 
       {/* 批量导入弹窗 */}
       <ImportModal
