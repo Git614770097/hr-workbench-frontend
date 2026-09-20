@@ -1,7 +1,14 @@
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { Avatar, Button, Tag } from "antd";
-import { LogoutOutlined } from "@ant-design/icons";
+import {
+  LogoutOutlined,
+  TeamOutlined,
+  AlertOutlined,
+  FileTextOutlined,
+  TagsOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import type { User } from "../types";
 import { ROLE_LABELS } from "../types";
 import { api } from "../api";
@@ -23,12 +30,12 @@ export default function Layout({ user, onLogout, children }: Props) {
       .catch(() => setUrgentCount(0));
   }, []);
 
-  const navItems: { to: string; label: string; icon: string; badge?: number }[] = [
-    { to: "/talents", label: "人才库", icon: "👥" },
-    { to: "/risks", label: "风险预警", icon: "⚠️", badge: urgentCount },
-    { to: "/templates", label: "文件模板库", icon: "📄" },
-    { to: "/tags", label: "标签管理", icon: "🏷️" },
-    ...(user.role === "admin" ? [{ to: "/users", label: "用户管理", icon: "👤" }] : []),
+  const navItems: { to: string; label: string; icon: React.ReactNode; color: string; badge?: number }[] = [
+    { to: "/talents", label: "人才库", icon: <TeamOutlined />, color: "#3b82f6" },
+    { to: "/risks", label: "风险预警", icon: <AlertOutlined />, color: "#f43f5e", badge: urgentCount },
+    { to: "/templates", label: "文件模板库", icon: <FileTextOutlined />, color: "#8b5cf6" },
+    { to: "/tags", label: "标签管理", icon: <TagsOutlined />, color: "#10b981" },
+    ...(user.role === "admin" ? [{ to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b" }] : []),
   ];
 
   const handleLogout = () => {
@@ -41,9 +48,10 @@ export default function Layout({ user, onLogout, children }: Props) {
       <aside className="sidebar">
         <div className="sidebar-logo">
           <span className="logo-icon">🎯</span>
-          <span>HR 人才库</span>
+          <span className="logo-text">HR 工作台</span>
         </div>
 
+        <div className="sidebar-group-label">工作区</div>
         <nav className="sidebar-nav">
           {navItems.map((item) => (
             <NavLink
@@ -51,8 +59,10 @@ export default function Layout({ user, onLogout, children }: Props) {
               to={item.to}
               className={({ isActive }) => (isActive ? "active" : "")}
             >
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
+              <span className="nav-icon" style={{ background: item.color + "1a", color: item.color }}>
+                {item.icon}
+              </span>
+              <span className="nav-label">{item.label}</span>
               {item.badge ? <span className="nav-badge">{item.badge}</span> : null}
             </NavLink>
           ))}
@@ -63,11 +73,11 @@ export default function Layout({ user, onLogout, children }: Props) {
             <Avatar style={{ backgroundColor: user.role === "admin" ? "#f59e0b" : "#3b82f6" }}>
               {user.name.charAt(0).toUpperCase()}
             </Avatar>
-            <div>
-              <div style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+            <div className="sidebar-user">
+              <div className="sidebar-user-name">
                 {user.name} <Tag color={user.role === "admin" ? "gold" : "blue"} style={{ marginLeft: 4, fontSize: 10 }}>{ROLE_LABELS[user.role] || user.role}</Tag>
               </div>
-              <div style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.45)" }}>{user.phone}</div>
+              <div className="sidebar-user-phone">{user.phone}</div>
             </div>
           </div>
           <Button
@@ -76,7 +86,7 @@ export default function Layout({ user, onLogout, children }: Props) {
             type="text"
             icon={<LogoutOutlined />}
             onClick={handleLogout}
-            style={{ color: "rgba(255,255,255,0.65)" }}
+            className="sidebar-logout"
           >
             退出登录
           </Button>

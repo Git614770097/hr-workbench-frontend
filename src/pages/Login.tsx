@@ -28,7 +28,7 @@ export default function Login({ onLogin }: Props) {
       <div className="auth-card">
         <div className="auth-header">
           <span className="auth-logo">🎯</span>
-          <Typography.Title level={3}>HR 人才库管理系统</Typography.Title>
+          <Typography.Title level={3}>HR 工作台</Typography.Title>
           <Typography.Text type="secondary">手机号登录</Typography.Text>
         </div>
         {error && <Alert message={error} type="error" showIcon style={{ marginBottom: 16 }} />}
