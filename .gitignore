@@ -2,3 +2,5 @@ node_modules
 dist
 .wrangler/
  
+# 代理工作区数据（记忆/备份），不入库
+.workbuddy/
