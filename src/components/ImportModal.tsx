@@ -104,8 +104,8 @@ async function parseFile(file: File): Promise<string> {
   throw new Error(`不支持的文件格式：${file.name}，请上传 PDF 或 Word（.docx）文件`);
 }
 
-// 从纯文本提取人才字段（全部委托给 resumeParser 模块）
-function extractTalent(text: string, key: string, fileName: string, file: File | null): ParsedTalent {
+// 从纯文本提取人才字段（本地规则引擎，作为兜底）
+function extractTalentLocal(text: string, key: string, fileName: string, file: File | null): ParsedTalent {
   return {
     key,
     name: extractName(text),
@@ -122,6 +122,42 @@ function extractTalent(text: string, key: string, fileName: string, file: File |
     status: "active",
     notes: "",
     birth_date: extractBirthDate(text),
+    contract_end: "",
+    probation_end: "",
+    resignation_date: "",
+    fileName,
+    file,
+  };
+}
+
+// AI 解析结果 → ParsedTalent（AI 优先，缺失字段用本地规则兜底）
+function extractTalentWithAI(
+  text: string,
+  ai: Awaited<ReturnType<typeof api.parseResume>>,
+  local: ParsedTalent,
+  key: string,
+  fileName: string,
+  file: File | null
+): ParsedTalent {
+  const skills = ai.skills?.length
+    ? ai.skills.join(", ")
+    : local.skills;
+  return {
+    key,
+    name: ai.name || local.name,
+    phone: ai.phone || local.phone,
+    email: ai.email || local.email,
+    age: ai.age ?? local.age,
+    education: ai.education || local.education,
+    school: ai.school || local.school,
+    current_company: ai.current_company || local.current_company,
+    current_title: ai.current_title || local.current_title,
+    years_experience: ai.years_experience ?? local.years_experience,
+    city: ai.city || local.city,
+    skills,
+    status: "active",
+    notes: "",
+    birth_date: ai.birth_date || local.birth_date,
     contract_end: "",
     probation_end: "",
     resignation_date: "",
@@ -158,19 +194,39 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       const parsed: ParsedTalent[] = [];
       for (const file of files) {
         const text = await parseFile(file);
-        parsed.push(extractTalent(text, nextKey(), file.name, file));
+        const local = extractTalentLocal(text, nextKey(), file.name, file);
+        // AI 优先解析，失败或超时自动回退到本地规则
+        let result = local;
+        let aiUsed = false;
+        try {
+          const ai = await Promise.race([
+            api.parseResume(text),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("AI 解析超时")), 20000)
+            ),
+          ]);
+          result = extractTalentWithAI(text, ai, local, local.key, file.name, file);
+          aiUsed = true;
+        } catch (err) {
+          // AI 失败（无 key/超时/网络/解析异常）静默回退本地规则
+          console.warn(`AI 解析失败，回退本地规则：${file.name}`, err);
+        }
+        // 标记是否用 AI 解析（用于提示）
+        (result as ParsedTalent & { _ai?: boolean })._ai = aiUsed;
+        parsed.push(result);
       }
       setRecords((prev) => [...prev, ...parsed]);
       // 兜底提示：关键字段（姓名/手机号）未识别出来时提醒用户手动确认
       const missingName = parsed.filter((r) => !r.name).length;
       const missingPhone = parsed.filter((r) => !r.phone).length;
+      const aiCount = parsed.filter((r) => (r as any)._ai).length;
       const missing: string[] = [];
       if (missingName > 0) missing.push(`${missingName} 条缺少姓名`);
       if (missingPhone > 0) missing.push(`${missingPhone} 条缺少手机号`);
       if (missing.length > 0) {
-        message.warning(`已解析 ${parsed.length} 份简历，其中 ${missing.join("、")}（已置空并标黄），请手动补充后再导入`, 6);
+        message.warning(`已解析 ${parsed.length} 份简历（AI 解析 ${aiCount} 份），其中 ${missing.join("、")}（已置空并标黄），请手动补充后再导入`, 6);
       } else {
-        message.success(`已解析 ${parsed.length} 份简历，请核对信息后导入`);
+        message.success(`已解析 ${parsed.length} 份简历（AI 解析 ${aiCount} 份），请核对信息后导入`);
       }
     } catch (err) {
       setError((err as Error).message);

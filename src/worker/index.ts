@@ -9,6 +9,7 @@ import { communicationRoutes } from "./routes/communications";
 import { riskRoutes } from "./routes/risks";
 import { templateRoutes } from "./routes/templates";
 import { roleRoutes } from "./routes/roles";
+import aiParseRoutes from "./routes/aiParse";
 import { parsePermissions } from "./permissions";
 
 export interface Env {
@@ -16,6 +17,7 @@ export interface Env {
   SESSIONS: KVNamespace;
   ASSETS: Fetcher;
   RESUMES: KVNamespace;
+  DEEPSEEK_API_KEY?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -90,6 +92,12 @@ app.use("/api/auth/users", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
+// AI 简历解析：与人才库同权限（导入简历属于人才库功能）
+app.use("/api/parse-resume/*", async (c, next) => {
+  const blocked = await menuGuard(c, "talents");
+  if (blocked) return blocked;
+  return next();
+});
 // 角色管理仅 admin（roles 路由内部已校验 admin，这里也拦一层双保险）
 app.use("/api/roles/*", async (c, next) => {
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
@@ -109,6 +117,7 @@ app.route("/api/communications", communicationRoutes);
 app.route("/api/risks", riskRoutes);
 app.route("/api/templates", templateRoutes);
 app.route("/api/roles", roleRoutes);
+app.route("/api/parse-resume", aiParseRoutes);
 
 // ---- Health check ----
 app.get("/api/health", (c) =>

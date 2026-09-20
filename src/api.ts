@@ -94,6 +94,27 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // AI 简历解析（后端代理，调用 DeepSeek）
+  parseResume: (text: string) =>
+    request<{
+      name: string;
+      phone: string;
+      email: string;
+      age: number | null;
+      gender: string;
+      education: string;
+      school: string;
+      current_company: string;
+      current_title: string;
+      years_experience: number | null;
+      city: string;
+      skills: string[];
+      birth_date: string;
+    }>("/parse-resume", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+
   // Resume file upload and preview
   uploadResume: (talentId: string, file: File) => {
     const formData = new FormData();
