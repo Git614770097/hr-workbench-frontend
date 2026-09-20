@@ -39,6 +39,9 @@ const EMPTY_FILTERS: Filters = {
 // 收起时展示的字段数（默认展开一行 4 个）
 const COLLAPSED_COUNT = 4;
 
+// 列表每页条数
+const PAGE_SIZE = 10;
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -90,7 +93,7 @@ export default function TalentList() {
   const fetchTalents = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, string | number> = { page, limit: 20 };
+      const params: Record<string, string | number> = { page, limit: PAGE_SIZE };
       if (applied.name) params.name = applied.name;
       if (applied.phone) params.phone = applied.phone;
       if (applied.email) params.email = applied.email;
@@ -414,7 +417,7 @@ export default function TalentList() {
           pagination={{
             current: page,
             total,
-            pageSize: 20,
+            pageSize: PAGE_SIZE,
             onChange: (p) => setPage(p),
             showTotal: (t) => `共 ${t} 位人才`,
           }}

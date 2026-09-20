@@ -75,7 +75,7 @@ body {
 .theme-menu-label { flex: 1; }
 .theme-menu-check { color: var(--color-primary, #3b82f6); }
 
-.main-content { flex: 1; overflow-y: auto; padding: 1.5rem 2rem; background: #f5f6f8; }
+.main-content { flex: 1; overflow-y: auto; padding: 1rem; background: #f5f6f8; }
 
 /* 登录注册页（左右分栏） */
 .auth-page {
