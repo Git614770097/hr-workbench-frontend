@@ -102,7 +102,7 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
     <div className="app-layout">
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="sidebar-logo">
-          <span className="logo-text">HR 工作台</span>
+          <span className="logo-text">人力资源管理系统</span>
         </div>
 
         <nav className="sidebar-nav">

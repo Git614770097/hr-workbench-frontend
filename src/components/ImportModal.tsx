@@ -1,14 +1,13 @@
 import { useState, useRef } from "react";
 import {
-  Modal, Upload, Button, Alert, message, Table, Input, InputNumber, Select, Typography, Segmented, DatePicker,
+  Modal, Upload, Button, Alert, message, Table, Input, InputNumber, Select, Typography, Segmented,
 } from "antd";
 import { InboxOutlined, DeleteOutlined, UploadOutlined } from "@ant-design/icons";
-import dayjs from "dayjs";
 import mammoth from "mammoth";
 import { api } from "../api";
 import { EDUCATION_OPTIONS, STATUS_LABELS } from "../types";
 import {
-  extractName, extractPhone, extractEmail, extractAge, extractBirthDate,
+  extractName, extractPhone, extractEmail, extractAge,
   extractTitle, extractCompany, extractSchool, extractCity, extractSkills,
   extractYearsExperience, extractPdfLines, normalizeEducation,
 } from "../utils/resumeParser";
@@ -48,10 +47,6 @@ interface ParsedTalent {
   skills: string;
   status: string;
   notes: string;
-  birth_date: string;
-  contract_end: string;
-  probation_end: string;
-  resignation_date: string;
   fileName: string;
   file: File | null;
 }
@@ -70,15 +65,13 @@ const JSON_SAMPLE = `[
     "years_experience": 6,
     "city": "杭州",
     "skills": ["Java", "Spring", "MySQL", "微服务"],
-    "status": "active",
-    "contract_end": "2026-12-31",
-    "birth_date": "1996-05-12"
+    "status": "active"
   }
 ]`;
 
 // JSON 支持字段说明（与下方提示文案共用，避免两处不一致）
 const JSON_FIELD_HINT =
-  "name（必填）、phone、email、age、education、school、current_company、current_title、years_experience、city、skills（数组或逗号分隔）、status、notes、birth_date / contract_end / probation_end / resignation_date（YYYY-MM-DD，用于风险预警）";
+  "name（必填）、phone、email、age、education、school、current_company、current_title、years_experience、city、skills（数组或逗号分隔）、status、notes";
 
 const STATUS_KEYS = Object.keys(STATUS_LABELS);
 
@@ -121,10 +114,6 @@ function extractTalentLocal(text: string, key: string, fileName: string, file: F
     skills: extractSkills(text),
     status: "active",
     notes: "",
-    birth_date: extractBirthDate(text),
-    contract_end: "",
-    probation_end: "",
-    resignation_date: "",
     fileName,
     file,
   };
@@ -157,10 +146,6 @@ function extractTalentWithAI(
     skills,
     status: "active",
     notes: "",
-    birth_date: ai.birth_date || local.birth_date,
-    contract_end: "",
-    probation_end: "",
-    resignation_date: "",
     fileName,
     file,
   };
@@ -257,12 +242,6 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       const n = typeof v === "number" ? v : parseInt(str(v), 10);
       return Number.isFinite(n) ? n : null;
     };
-    // 日期统一规整成 YYYY-MM-DD，非法的置空由用户重新选
-    const dateStr = (v: unknown) => {
-      const s = str(v);
-      const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
-      return m ? m[1] : "";
-    };
 
     return arr.map((raw) => {
       const o = (raw ?? {}) as Record<string, unknown>;
@@ -284,10 +263,6 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
           : str(skillsRaw),
         status: STATUS_KEYS.includes(str(o.status)) ? str(o.status) : "active",
         notes: str(o.notes),
-        birth_date: dateStr(o.birth_date),
-        contract_end: dateStr(o.contract_end),
-        probation_end: dateStr(o.probation_end),
-        resignation_date: dateStr(o.resignation_date),
         fileName: "",
         file: null,
       };
@@ -350,10 +325,6 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         skills: r.skills ? r.skills.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
         status: r.status || "active",
         notes: r.notes || undefined,
-        birth_date: r.birth_date || undefined,
-        contract_end: r.contract_end || undefined,
-        probation_end: r.probation_end || undefined,
-        resignation_date: r.resignation_date || undefined,
       }));
       const res = await api.importTalents(data);
       message.success(`成功导入 ${res.imported} 条人才记录`);
@@ -388,26 +359,6 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   // 关键字段（姓名/手机号）缺失时标黄提醒手动填写
   const missingStyle = (v: string) => (v ? {} : { status: "warning" as const });
 
-  // 只有记录里真的带了日期才显示这 4 列（简历导入路径不会显示，保持表格不过宽）
-  const hasDates = records.some(
-    (r) => r.birth_date || r.contract_end || r.probation_end || r.resignation_date
-  );
-
-  const dateColumn = (title: string, field: keyof ParsedTalent, width = 130) => ({
-    title,
-    dataIndex: field,
-    width,
-    render: (v: string, r: ParsedTalent) => (
-      <DatePicker
-        size="small"
-        value={v ? dayjs(v) : null}
-        placeholder="选择日期"
-        style={{ width: "100%" }}
-        onChange={(d) => updateRecord(r.key, field, d ? d.format("YYYY-MM-DD") : "")}
-      />
-    ),
-  });
-
   const baseWidth = 1520;
 
   const columns = [
@@ -423,16 +374,10 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     { title: "城市", dataIndex: "city", width: 90, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入城市" onChange={(e) => updateRecord(r.key, "city", e.target.value)} /> },
     { title: "技能", dataIndex: "skills", width: 180, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} onChange={(e) => updateRecord(r.key, "skills", e.target.value)} placeholder="技能，逗号分隔" /> },
     { title: "状态", dataIndex: "status", width: 130, render: (v: string, r: ParsedTalent) => <Select size="small" value={v} onChange={(val) => updateRecord(r.key, "status", val)} options={Object.entries(STATUS_LABELS).map(([k, label]) => ({ label, value: k }))} style={{ width: "100%" }} /> },
-    ...(hasDates ? [
-      dateColumn("合同到期", "contract_end"),
-      dateColumn("试用期结束", "probation_end"),
-      dateColumn("出生日期", "birth_date"),
-      dateColumn("预计离职", "resignation_date"),
-    ] : []),
     { title: "", key: "action", width: 50, fixed: "right" as const, render: (_: any, r: ParsedTalent) => <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => removeRecord(r.key)} /> },
   ];
 
-  const scrollX = baseWidth + (hasDates ? 520 : 0);
+  const scrollX = baseWidth;
 
   return (
     <Modal title="批量导入人才" open={open} onCancel={onClose} width={1100} destroyOnClose footer={null}>

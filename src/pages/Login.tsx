@@ -59,7 +59,7 @@ export default function Login({ onLogin }: Props) {
       <div className="auth-card">
         <div className="auth-brand">
           <Typography.Title level={3} className="auth-brand-title">
-            HR 工作台
+            人力资源管理系统
           </Typography.Title>
           <Typography.Text className="auth-brand-desc">
             人才库 · 文件模板 · 风险预警，一站式人事工作台
