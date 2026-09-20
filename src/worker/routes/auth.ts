@@ -14,11 +14,90 @@ async function hashPassword(password: string): Promise<string> {
 function genId(): string { return crypto.randomUUID(); }
 function genToken(): string { return crypto.randomUUID() + crypto.randomUUID(); }
 
+// ---- 图文验证码 ----
+// 生成 4 位随机字符验证码，渲染成带干扰线的 SVG 图片；
+// 明文存 KV（captcha:{id}，60 秒过期，一次性使用），登录时用 captcha_id 校验。
+
+const CAPTCHA_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 去掉易混淆的 0/O/1/I
+const CAPTCHA_LEN = 4;
+
+function randomCode(): string {
+  let s = "";
+  const arr = new Uint8Array(CAPTCHA_LEN);
+  crypto.getRandomValues(arr);
+  for (let i = 0; i < CAPTCHA_LEN; i++) {
+    s += CAPTCHA_CHARS[arr[i] % CAPTCHA_CHARS.length];
+  }
+  return s;
+}
+
+function renderCaptchaSvg(code: string): string {
+  const w = 120;
+  const h = 44;
+  const chars = code.split("");
+  // 每个字符一个分组：随机颜色 + 随机旋转
+  const glyphs = chars
+    .map((ch, i) => {
+      const x = 18 + i * 24;
+      const y = 30;
+      const rotate = (Math.random() * 40 - 20).toFixed(0);
+      const color = `hsl(${Math.floor(Math.random() * 360)}, 70%, 45%)`;
+      const fontSize = 26 + Math.floor(Math.random() * 6);
+      return `<text x="${x}" y="${y}" font-size="${fontSize}" font-weight="700" fill="${color}" transform="rotate(${rotate} ${x} ${y})" text-anchor="middle" font-family="Arial, sans-serif">${ch}</text>`;
+    })
+    .join("");
+
+  // 干扰线
+  let lines = "";
+  for (let i = 0; i < 4; i++) {
+    const x1 = Math.floor(Math.random() * w);
+    const y1 = Math.floor(Math.random() * h);
+    const x2 = Math.floor(Math.random() * w);
+    const y2 = Math.floor(Math.random() * h);
+    lines += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="hsl(${Math.floor(Math.random() * 360)}, 60%, 60%)" stroke-width="1" />`;
+  }
+
+  // 噪点
+  let dots = "";
+  for (let i = 0; i < 40; i++) {
+    const cx = Math.floor(Math.random() * w);
+    const cy = Math.floor(Math.random() * h);
+    dots += `<circle cx="${cx}" cy="${cy}" r="1" fill="hsl(0, 0%, ${30 + Math.floor(Math.random() * 40)}%)" />`;
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <rect width="100%" height="100%" fill="#f7f8fa" rx="6" />
+  ${lines}
+  ${glyphs}
+  ${dots}
+</svg>`;
+}
+
+// 下发验证码：返回 captcha_id + SVG，明文存 KV 一次性
+auth.get("/captcha", async (c) => {
+  const id = crypto.randomUUID();
+  const code = randomCode();
+  const svg = renderCaptchaSvg(code);
+  await c.env.SESSIONS.put(`captcha:${id}`, code, { expirationTtl: 60 });
+  c.header("Cache-Control", "no-store");
+  return c.json({ captcha_id: id, svg });
+});
+
 // ---- 登录（手机号）----
 // 说明：系统无注册功能，用户需由管理员在「用户管理」中创建后才能登录。
 auth.post("/login", async (c) => {
-  const { phone, password } = await c.req.json<{ phone: string; password: string }>();
+  const { phone, password, captcha_id, captcha } = await c.req.json<{ phone: string; password: string; captcha_id?: string; captcha?: string }>();
   if (!phone || !password) return c.json({ error: "手机号和密码为必填" }, 400);
+
+  // 校验图文验证码
+  if (!captcha_id || !captcha) return c.json({ error: "请输入验证码" }, 400);
+  const storedCode = await c.env.SESSIONS.get(`captcha:${captcha_id}`);
+  if (!storedCode) return c.json({ error: "验证码已过期，请刷新" }, 400);
+  // 一次性：无论对错都销毁，防止暴力重试
+  await c.env.SESSIONS.delete(`captcha:${captcha_id}`);
+  if (storedCode.toUpperCase() !== captcha.trim().toUpperCase()) {
+    return c.json({ error: "验证码错误" }, 400);
+  }
 
   const user = await c.env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first<{ id: string; phone: string; name: string; password_hash: string; role: string }>();
 

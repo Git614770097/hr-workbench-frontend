@@ -94,20 +94,82 @@ body {
 
 .main-content { flex: 1; overflow-y: auto; padding: 1.5rem 2rem; background: #f5f6f8; }
 
-/* 登录注册页 */
+/* 登录注册页（左右分栏） */
 .auth-page {
   display: flex; align-items: center; justify-content: center;
-  height: 100vh; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  height: 100vh; padding: 1.5rem;
+  background: linear-gradient(135deg, #eef2ff 0%, #fdf2f8 50%, #eff6ff 100%);
 }
 .auth-card {
-  background: #fff; border-radius: 12px; padding: 2.5rem;
-  width: 400px; max-width: 90vw; box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+  display: flex; width: 880px; max-width: 96vw; min-height: 520px;
+  border-radius: 20px; overflow: hidden;
+  background: #fff; box-shadow: 0 24px 60px rgba(30, 41, 59, 0.12);
 }
+/* 左侧品牌区 */
+.auth-brand {
+  flex: 0 0 46%; padding: 3rem 2.5rem; color: #fff;
+  background: linear-gradient(150deg, #3b82f6 0%, #8b5cf6 55%, #ec4899 100%);
+  display: flex; flex-direction: column; justify-content: center;
+  position: relative;
+}
+.auth-brand::after {
+  content: ""; position: absolute; right: -80px; bottom: -80px;
+  width: 220px; height: 220px; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+.auth-brand-logo {
+  font-size: 3rem; width: 72px; height: 72px; border-radius: 18px;
+  background: rgba(255, 255, 255, 0.18); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem;
+}
+.auth-brand-title { color: #fff !important; margin-bottom: 0.5rem !important; }
+.auth-brand-desc { color: rgba(255, 255, 255, 0.85) !important; font-size: 0.95rem; }
+.auth-brand-points {
+  display: flex; flex-direction: column; gap: 0.7rem; margin-top: 2rem;
+}
+.auth-brand-points span {
+  font-size: 0.9rem; color: rgba(255, 255, 255, 0.9);
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.auth-brand-points span::before {
+  content: "✓"; display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%; background: rgba(255, 255, 255, 0.25);
+  font-size: 0.7rem; flex-shrink: 0;
+}
+/* 右侧表单区 */
+.auth-form {
+  flex: 1; padding: 3rem 2.8rem; display: flex; flex-direction: column; justify-content: center;
+}
+.auth-form-header { margin-bottom: 1.8rem; }
+.auth-form-header h4 { margin-bottom: 0.3rem; }
 .auth-header { text-align: center; margin-bottom: 1.5rem; }
 .auth-logo { font-size: 2.5rem; display: block; margin-bottom: 0.5rem; }
 .auth-header h1 { font-size: 1.3rem; margin-bottom: 0.3rem; }
 .auth-header p { color: #888; font-size: 0.9rem; }
-.auth-switch { text-align: center; margin-top: 1.5rem; font-size: 0.85rem; color: #888; }
+.auth-switch {
+  text-align: center; margin-top: 1.2rem; font-size: 0.8rem; color: #aaa;
+}
+/* 验证码行 */
+.captcha-row { display: flex; align-items: center; gap: 0.6rem; }
+.captcha-input { flex: 1; }
+.captcha-img {
+  height: 40px; width: 120px; flex-shrink: 0; cursor: pointer;
+  border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;
+  background: #f7f8fa; display: flex; align-items: center; justify-content: center;
+}
+.captcha-img svg { display: block; }
+.captcha-refresh {
+  font-size: 1.1rem; color: #8c8c8c; cursor: pointer; transition: color 0.15s, transform 0.15s;
+}
+.captcha-refresh:hover { color: #3b82f6; }
+.captcha-refresh.spinning { animation: captcha-spin 0.6s linear infinite; }
+@keyframes captcha-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 768px) {
+  .auth-brand { display: none; }
+  .auth-card { width: 100%; min-height: auto; }
+  .auth-form { padding: 2rem 1.5rem; }
+}
 
 /* 人才卡片 */
 .talent-grid {

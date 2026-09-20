@@ -35,7 +35,10 @@ async function request<T>(
 
 export const api = {
   // Auth
-  login: (data: { phone: string; password: string }) =>
+  getCaptcha: () =>
+    request<{ captcha_id: string; svg: string }>("/auth/captcha"),
+
+  login: (data: { phone: string; password: string; captcha_id: string; captcha: string }) =>
     request<{ id: string; phone: string; name: string; role: string; token: string }>("/auth/login", {
       method: "POST",
       body: JSON.stringify(data),
