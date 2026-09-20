@@ -28,11 +28,6 @@ body {
 }
 .sidebar.collapsed .logo-text { opacity: 0; width: 0; overflow: hidden; }
 .sidebar.collapsed .sidebar-logo { padding-left: 14px; padding-right: 14px; }
-.sidebar-group-label {
-  padding: 0.5rem 1.5rem 0.4rem; font-size: 0.7rem; font-weight: 600;
-  color: #b0b6c0; text-transform: uppercase; letter-spacing: 0.06em;
-  white-space: nowrap;
-}
 .sidebar-nav { flex: 1; padding: 0 0.75rem; overflow-y: auto; overflow-x: hidden; }
 .sidebar-nav a {
   display: flex; align-items: center; gap: 0.7rem;
@@ -53,12 +48,6 @@ body {
 .sidebar.collapsed .nav-label { display: none; }
 .sidebar.collapsed .sidebar-nav { padding: 0 0.5rem; }
 .sidebar.collapsed .sidebar-nav a { justify-content: center; padding: 0.6rem 0; }
-.sidebar-toggle {
-  height: 44px; border-top: 1px solid #eef0f3; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  color: #5b6472; cursor: pointer; transition: all 0.15s; font-size: 1rem;
-}
-.sidebar-toggle:hover { color: #3b82f6; background: #f3f4f6; }
 
 /* 顶栏（右上角用户信息） */
 .topbar {
@@ -350,12 +339,9 @@ html[data-theme="dark"] body { background: #141414; }
 html[data-theme="dark"] .sidebar {
   background: #1f1f1f; color: #e5e7eb; border-right-color: #303030;
 }
-html[data-theme="dark"] .sidebar-group-label { color: #6b7280; }
 html[data-theme="dark"] .sidebar-nav a { color: #b0b6c0; }
 html[data-theme="dark"] .sidebar-nav a:hover { color: #fff; background: #2a2a2a; }
 html[data-theme="dark"] .sidebar-nav a.active { color: var(--color-primary, #3b82f6); background: #262626; }
-html[data-theme="dark"] .sidebar-toggle { border-top-color: #303030; color: #b0b6c0; }
-html[data-theme="dark"] .sidebar-toggle:hover { color: var(--color-primary, #3b82f6); background: #2a2a2a; }
 
 html[data-theme="dark"] .topbar { background: #1f1f1f; border-bottom-color: #303030; }
 html[data-theme="dark"] .topbar-user-trigger:hover { background: #2a2a2a; }

@@ -97,7 +97,6 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
           <span className="logo-text">HR 工作台</span>
         </div>
 
-        {!collapsed && <div className="sidebar-group-label">工作区</div>}
         <nav className="sidebar-nav">
           {navItems.map((item) => {
             const link = (
@@ -123,10 +122,6 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
             );
           })}
         </nav>
-
-        <div className="sidebar-toggle" onClick={toggleCollapsed}>
-          {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-        </div>
       </aside>
 
       <div className="main-area">
