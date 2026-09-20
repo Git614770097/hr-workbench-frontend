@@ -102,47 +102,49 @@ function isNameToken(s: string): boolean {
   return false;
 }
 
-// 从文件名兜底提取姓名
-function nameFromFileName(fileName: string): string {
-  const base = fileName.replace(/\.[^.]+$/, "");
-  for (const seg of base.split(/[-_—–\s（）()【】\[\].]+/)) {
-    const s = seg.trim();
-    if (isNameToken(s)) return s;
-  }
-  return "";
-}
-
-export function extractName(text: string, fileName: string): string {
+export function extractName(text: string): string {
   const t = normalizeText(text);
 
-  // 1. 标签式："姓名:张三" / "姓名 张三" / "姓名：张三 男"
-  const label = t.match(/(?:姓名|名字|Name)\s*[:：]?\s*([\u4e00-\u9fa5·]{2,4})/);
+  // 0. 少数民族/复姓带间隔号的姓名优先整体匹配（如"欧阳·娜娜"、"阿依古丽·买买提"）
+  //    必须在其他正则之前，避免贪婪匹配从"·"后截断成"阳·娜娜"。
+  const dotted = t.match(/([\u4e00-\u9fa5]{1,3}·[\u4e00-\u9fa5]{1,3})/);
+  if (dotted && isNameToken(dotted[1])) return dotted[1];
+
+  // 1. 标签式："姓名:张三" / "姓名 张三" / "姓名：张三 男" / "Name: Zhang San"
+  const label = t.match(/(?:姓名|名字)\s*[:：]?\s*([\u4e00-\u9fa5·]{2,4})/);
   if (label && isNameToken(label[1])) return label[1];
 
-  // 2. "张三(男)" / "张三 男" 式
-  const gender = t.match(/([\u4e00-\u9fa5·]{2,4})\s*[（(]\s*(?:男|女)\s*[）)]/) ||
-    t.match(/([\u4e00-\u9fa5·]{2,4})\s+(?:男|女)(?=[\s,，;；]|$)/m);
+  // 2. "张三(男)" / "张三 男" 式（姓名紧跟性别，是简历最典型的姓名位置）
+  //    用 [ \t] 而非 \s，避免跨行把"工程师\n男"误连成姓名。
+  const gender = t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]*[（(][ \t]*(?:男|女)[ \t]*[）)]/) ||
+    t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]+(?:男|女)(?=[\s,，;；]|$)/m);
   if (gender && isNameToken(gender[1])) return gender[1];
 
-  // 3. 简历开头几行的独立姓名行（常见姓名独占首行/次行）
-  const headLines = text.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 5);
+  // 3. 手机号前的中文姓名（"张三 13800138000" / "张三 男 138..."）
+  //    用 [ \t]* 限制在同一行，避免跨行误匹配（如"工程师\n13800004444"）。
+  const beforePhone = t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]*(?:[（(][男女][）)])?[ \t]*1[3-9][\d\s-]{9,12}/);
+  if (beforePhone && isNameToken(beforePhone[1])) return beforePhone[1];
+
+  // 4. 邮箱前的姓名（"张三 zhangsan@xx.com"）
+  const beforeEmail = t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]*[\w.+-]+@[\w-]+\.[\w.-]+/);
+  if (beforeEmail && isNameToken(beforeEmail[1])) return beforeEmail[1];
+
+  // 5. 简历开头几行的独立姓名行（姓名常独占首行或第二行）
+  //    遍历前 10 行（而非 5 行），过滤标题/标签/含数字标点的行，
+  //    且该行不能是常见章节词（如"教育经历"），取第一个合法的纯中文短行。
+  const headLines = text.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 10);
   for (const line of headLines) {
-    // 跳过明显的标题/标签/含数字或标点的行
-    if (/(简历|求职|应聘|姓名|电话|手机|邮箱|学历|年龄|性别|学校|院校|公司|职位|岗位)/.test(line)) continue;
-    if (/[\d：:、，,；;|｜]/.test(line)) continue;
+    // 跳过含标题词/标签词/数字/标点的行
+    if (/(简历|求职|应聘|姓名|名字|电话|手机|邮箱|学历|年龄|性别|学校|院校|公司|职位|岗位|民族|籍贯|住址|地址)/.test(line)) continue;
+    if (/[\d：:、，,；;|｜/\\（）()]/.test(line)) continue;
     if (isNameToken(line)) return line;
   }
 
-  // 4. 手机号前的中文姓名（"张三 13800138000" / "张三 男 138..."）
-  const beforePhone = t.match(/([\u4e00-\u9fa5·]{2,4})\s*(?:[（(][男女][）)])?\s*1[3-9][\d\s-]{9,12}/);
-  if (beforePhone && isNameToken(beforePhone[1])) return beforePhone[1];
+  // 6. 最后兜底：全文首个紧跟"男/女"或"年龄/岁"的中文短词（宽松匹配，同行走）
+  const fallback = t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]*(?=男|女|\d{1,2}[ \t]*岁)/);
+  if (fallback && isNameToken(fallback[1])) return fallback[1];
 
-  // 5. 邮箱前的姓名（"张三 zhangsan@xx.com"）
-  const beforeEmail = t.match(/([\u4e00-\u9fa5·]{2,4})\s*[\w.+-]+@[\w-]+\.[\w.-]+/);
-  if (beforeEmail && isNameToken(beforeEmail[1])) return beforeEmail[1];
-
-  // 6. 文件名兜底
-  return nameFromFileName(fileName);
+  return "";
 }
 
 // ---------------------------------------------------------------------------

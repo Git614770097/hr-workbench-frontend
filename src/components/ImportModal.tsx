@@ -108,7 +108,7 @@ async function parseFile(file: File): Promise<string> {
 function extractTalent(text: string, key: string, fileName: string, file: File | null): ParsedTalent {
   return {
     key,
-    name: extractName(text, fileName),
+    name: extractName(text),
     phone: extractPhone(text),
     email: extractEmail(text),
     age: extractAge(text),
