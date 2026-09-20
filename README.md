@@ -1,105 +1,49 @@
 # HR 人才库管理系统
 
-基于 Cloudflare Workers + React + D1 的 HR 人才库管理系统 MVP。
+基于 Cloudflare Workers + React + Ant Design + D1 + KV 的 HR 人才库管理系统。
 
 ## 功能
 
-- **用户认证**：注册 / 登录 / 会话管理（JWT + KV）
-- **人才档案**：增删改查，包含基本信息、技能、求职意向、备注
-- **关键词搜索**：按姓名、公司、职位、技能、行业、备注多字段搜索
-- **筛选**：按状态、城市、标签筛选人才
-- **标签管理**：自定义标签，支持颜色，关联人才
-- **沟通记录**：记录每次联系（电话/微信/面试/邮件），支持评分和跟进提醒
-- **批量导入**：JSON 格式批量导入人才数据
+- **手机号登录**（无注册，首个登录自动成为管理员）
+- **角色权限**：管理员可看所有数据，普通用户只看自己的
+- **用户管理**（管理员）：创建/删除普通用户，重置密码
+- 人才档案 CRUD（基本信息、年龄、学历、院校、技能、求职意向、备注）
+- **分字段搜索**：姓名、手机号、邮箱、年龄、学历、院校、年限、城市、职位、状态、创建人 + 标签筛选 + 分页
+- 标签管理（自定义颜色）
+- 沟通记录（电话/微信/面试/邮件，评分 + 跟进提醒）
+- **简历文件上传、预览与删除**：导入时自动保存原始 PDF/Word 文件到 KV，列表页/详情页可在线预览（PDF 原生渲染，保留原始格式），也可单独删除简历文件
+- 批量导入（上传 PDF / Word 简历，自动提取姓名、手机号、邮箱、年龄、学历、院校、年限、城市、职位等信息，核对后导入，同时保存原始文件）
+- **统一弹窗风格**：新增、编辑、导入等二级页面全部使用弹窗，按钮统一靠右
 
 ## 技术栈
 
 | 层 | 技术 |
 |---|---|
-| 前端 | React 19 + React Router 7 + Vite |
+| 前端 | React 19 + Ant Design 5 + Vite |
 | 后端 | Hono (Cloudflare Workers) |
-| 数据库 | Cloudflare D1 (SQLite) |
+| 数据库 | Cloudflare D1 |
 | 会话 | Cloudflare KV |
-| 部署 | Cloudflare Workers + Static Assets |
+| 文件存储 | Cloudflare KV（简历文件，单文件上限 25MB） |
+| 简历解析 | pdfjs-dist（本地打包，不依赖 CDN）+ mammoth (Word) |
 
 ## 快速开始
 
 ```bash
-# 1. 安装依赖
 npm install
 
-# 2. 初始化数据库（首次部署时执行）
-npx wrangler d1 create hr-talent-pool-db
-# 将返回的 database_id 填入 wrangler.jsonc
-npm run db:init
+# 创建 KV 命名空间（用于简历文件存储）
+npx wrangler kv namespace create RESUMES
+# 将输出的 id 填入 wrangler.jsonc 中 RESUMES 的 id 字段
 
-# 3. 本地开发
-npm run dev
+# ⚠️ users 表结构已变更（email → phone + role），需重建：
+npx wrangler d1 execute hr-workbench --remote --command "DROP TABLE IF EXISTS users;"
+npx wrangler d1 execute hr-workbench --remote --file=./schema.sql
 
-# 4. 部署到 Cloudflare
+# ⚠️ 2026-09-18 talents 表新增 年龄/学历/院校 字段，已有数据库需执行迁移：
+npx wrangler d1 execute hr-workbench --remote --file=./migration-20260918-add-edu-fields.sql
+
 npm run build
 npm run deploy
 ```
 
-## 项目结构
-
-```
-hr-talent-pool/
-├── src/
-│   ├── main.tsx              # React 入口
-│   ├── App.tsx               # 路由 & 认证
-│   ├── api.ts                # API 请求封装
-│   ├── types.ts              # TypeScript 类型
-│   ├── styles/global.css     # 全局样式
-│   ├── components/
-│   │   └── Layout.tsx        # 侧边栏布局
-│   ├── pages/
-│   │   ├── Login.tsx         # 登录
-│   │   ├── Register.tsx      # 注册
-│   │   ├── TalentList.tsx    # 人才列表（搜索/筛选/分页）
-│   │   ├── TalentDetail.tsx  # 人才详情 + 沟通记录
-│   │   ├── TalentForm.tsx    # 新增/编辑人才
-│   │   ├── Tags.tsx          # 标签管理
-│   │   └── Import.tsx        # 批量导入
-│   └── worker/
-│       ├── index.ts          # Hono 入口
-│       └── routes/
-│           ├── auth.ts       # 认证路由
-│           ├── talents.ts    # 人才 CRUD + 搜索
-│           ├── tags.ts       # 标签 CRUD
-│           └── communications.ts # 沟通记录
-├── schema.sql                # D1 数据库 Schema
-├── wrangler.jsonc            # Cloudflare 配置
-├── vite.config.ts            # Vite + Cloudflare 插件
-└── package.json
-```
-
-## API 路由
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | /api/auth/register | 注册 |
-| POST | /api/auth/login | 登录 |
-| GET | /api/auth/me | 获取当前用户 |
-| POST | /api/auth/logout | 退出登录 |
-| GET | /api/talents | 人才列表（搜索/筛选/分页） |
-| GET | /api/talents/:id | 人才详情 |
-| POST | /api/talents | 新增人才 |
-| PUT | /api/talents/:id | 编辑人才 |
-| DELETE | /api/talents/:id | 删除人才 |
-| POST | /api/talents/import | 批量导入 |
-| GET | /api/tags | 标签列表 |
-| POST | /api/tags | 新增标签 |
-| PUT | /api/tags/:id | 编辑标签 |
-| DELETE | /api/tags/:id | 删除标签 |
-| GET | /api/communications/talent/:talentId | 沟通记录列表 |
-| POST | /api/communications | 添加沟通记录 |
-| DELETE | /api/communications/:id | 删除沟通记录 |
-
-## 后续规划
-
-- [ ] 团队协作 & 共享人才库
-- [ ] 钉钉/飞书/企业微信数据导入
-- [ ] Workers AI 语义搜索
-- [ ] R2 简历附件上传
-- [ ] 跟进提醒仪表盘
+部署后访问 **https://hr-work.club**，用手机号登录（首个自动成为管理员）。

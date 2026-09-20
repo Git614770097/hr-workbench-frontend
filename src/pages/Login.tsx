@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { Form, Input, Button, Alert, Typography } from "antd";
+import { MobileOutlined, LockOutlined } from "@ant-design/icons";
 import { api } from "../api";
 
 interface Props {
@@ -6,17 +8,14 @@ interface Props {
 }
 
 export default function Login({ onLogin }: Props) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (values: { phone: string; password: string }) => {
     setError("");
     setLoading(true);
     try {
-      await api.login({ email, password });
+      await api.login(values);
       onLogin();
     } catch (err) {
       setError((err as Error).message);
@@ -29,37 +28,31 @@ export default function Login({ onLogin }: Props) {
       <div className="auth-card">
         <div className="auth-header">
           <span className="auth-logo">🎯</span>
-          <h1>HR 人才库管理系统</h1>
-          <p>登录你的账号</p>
+          <Typography.Title level={3}>HR 人才库管理系统</Typography.Title>
+          <Typography.Text type="secondary">手机号登录</Typography.Text>
         </div>
-        <form onSubmit={handleSubmit} className="auth-form">
-          <div className="form-group">
-            <label>邮箱</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your@email.com"
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label>密码</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-            />
-          </div>
-          {error && <div className="form-error">{error}</div>}
-          <button type="submit" className="btn-primary" disabled={loading}>
-            {loading ? "登录中…" : "登录"}
-          </button>
-        </form>
-        <p className="auth-switch">
-          还没有账号？ <a href="/register">立即注册</a>
+        {error && <Alert message={error} type="error" showIcon style={{ marginBottom: 16 }} />}
+        <Form onFinish={handleSubmit} layout="vertical" size="large">
+          <Form.Item
+            name="phone"
+            rules={[
+              { required: true, message: "请输入手机号" },
+              { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
+            ]}
+          >
+            <Input prefix={<MobileOutlined />} placeholder="手机号" maxLength={11} />
+          </Form.Item>
+          <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
+            <Input.Password prefix={<LockOutlined />} placeholder="密码" />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" block loading={loading}>
+              登录
+            </Button>
+          </Form.Item>
+        </Form>
+        <p className="auth-switch" style={{ fontSize: "0.8rem", color: "#aaa" }}>
+          首个登录的手机号自动成为管理员
         </p>
       </div>
     </div>

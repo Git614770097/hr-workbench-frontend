@@ -1,69 +1,124 @@
 import { useState, useEffect } from "react";
+import {
+  Card, Table, Tag as AntTag, Popconfirm, message, Typography, Button, Space,
+} from "antd";
+import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import type { Tag } from "../types";
-
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+import type { Tag, User } from "../types";
+import TagFormModal from "../components/TagFormModal";
 
 export default function Tags() {
-  const [tags, setTags] = useState<(Tag & { talent_count?: number })[]>([]);
-  const [name, setName] = useState("");
-  const [color, setColor] = useState(COLORS[0]);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editColor, setEditColor] = useState(COLORS[0]);
+  const [tags, setTags] = useState<(Tag & { talent_count?: number; owner_name?: string })[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingTag, setEditingTag] = useState<(Tag & { talent_count?: number }) | null>(null);
+
+  const currentUser: User | null = (() => {
+    try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
+  })();
+  const isAdmin = currentUser?.role === "admin";
 
   const fetchTags = async () => {
-    try { const res = await api.getTags(); setTags(res); } catch (err) { console.error(err); }
+    try {
+      const res = await api.getTags();
+      setTags(res);
+    } catch (err) {
+      console.error(err);
+    }
+    setLoading(false);
   };
+
   useEffect(() => { fetchTags(); }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault(); if (!name.trim()) return;
-    try { await api.createTag({ name: name.trim(), color }); setName(""); setColor(COLORS[0]); fetchTags(); }
-    catch (err) { alert((err as Error).message); }
-  };
-
   const handleDelete = async (id: string, tagName: string) => {
-    if (!confirm(`确认删除标签「${tagName}」？`)) return;
-    try { await api.deleteTag(id); fetchTags(); } catch (err) { alert((err as Error).message); }
+    try {
+      await api.deleteTag(id);
+      message.success(`已删除「${tagName}」`);
+      fetchTags();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
   };
 
-  const startEdit = (tag: Tag & { talent_count?: number }) => {
-    setEditingId(tag.id); setEditName(tag.name); setEditColor(tag.color);
+  const openCreate = () => {
+    setEditingTag(null);
+    setModalOpen(true);
   };
 
-  const handleSaveEdit = async (id: string) => {
-    try { await api.updateTag(id, { name: editName, color: editColor }); setEditingId(null); fetchTags(); }
-    catch (err) { alert((err as Error).message); }
+  const openEdit = (tag: Tag & { talent_count?: number }) => {
+    setEditingTag(tag);
+    setModalOpen(true);
   };
+
+  const columns = [
+    {
+      title: "标签",
+      dataIndex: "name",
+      key: "name",
+      render: (text: string, record: Tag) => (
+        <AntTag color={record.color} style={{ fontSize: 14, padding: "4px 12px" }}>{text}</AntTag>
+      ),
+    },
+    {
+      title: "颜色",
+      dataIndex: "color",
+      key: "color",
+      width: 200,
+      render: (c: string) => <div style={{ width: 24, height: 24, borderRadius: "50%", background: c }} />,
+    },
+    {
+      title: "关联人才数",
+      dataIndex: "talent_count",
+      key: "talent_count",
+      width: 100,
+      render: (v: number) => v || 0,
+    },
+    ...(isAdmin ? [{
+      title: "创建人",
+      dataIndex: "owner_name",
+      key: "owner_name",
+      width: 90,
+      render: (v: string) => v || "—",
+    }] : []),
+    {
+      title: "操作",
+      key: "action",
+      width: 150,
+      render: (_: any, record: Tag & { talent_count?: number }) => (
+        <Space>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>编辑</Button>
+          <Popconfirm title="确认删除？" onConfirm={() => handleDelete(record.id, record.name)}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
 
   return (
-    <div className="page">
-      <div className="page-header"><h1>标签管理</h1></div>
-      <form className="tag-create-form" onSubmit={handleCreate}>
-        <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="标签名称" className="tag-name-input" />
-        <div className="color-picker">{COLORS.map((c) => (<button key={c} type="button" className={`color-dot ${color === c ? "selected" : ""}`} style={{ background: c }} onClick={() => setColor(c)} />))}</div>
-        <button type="submit" className="btn-primary">+ 添加标签</button>
-      </form>
-      <div className="tag-list">
-        {tags.length === 0 ? (<p className="empty-text">暂无标签，创建第一个吧</p>) : (
-          tags.map((tag) => (
-            <div key={tag.id} className="tag-row">
-              {editingId === tag.id ? (<>
-                <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="tag-edit-input" />
-                <div className="color-picker sm">{COLORS.map((c) => (<button key={c} type="button" className={`color-dot ${editColor === c ? "selected" : ""}`} style={{ background: c }} onClick={() => setEditColor(c)} />))}</div>
-                <button className="btn-sm-primary" onClick={() => handleSaveEdit(tag.id)}>保存</button>
-                <button className="btn-sm-secondary" onClick={() => setEditingId(null)}>取消</button>
-              </>) : (<>
-                <span className="tag-chip lg" style={{ background: tag.color + "20", color: tag.color, borderColor: tag.color }}>{tag.name}</span>
-                <span className="tag-count">{tag.talent_count || 0} 人</span>
-                <button className="btn-link" onClick={() => startEdit(tag)}>编辑</button>
-                <button className="btn-link danger" onClick={() => handleDelete(tag.id, tag.name)}>删除</button>
-              </>)}
-            </div>
-          ))
-        )}
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>标签管理</Typography.Title>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增标签</Button>
       </div>
+
+      <Card>
+        <Table
+          columns={columns}
+          dataSource={tags}
+          rowKey="id"
+          loading={loading}
+          pagination={false}
+        />
+      </Card>
+
+      {/* 新增/编辑标签弹窗 */}
+      <TagFormModal
+        open={modalOpen}
+        tag={editingTag}
+        onClose={() => setModalOpen(false)}
+        onSuccess={fetchTags}
+      />
     </div>
   );
 }

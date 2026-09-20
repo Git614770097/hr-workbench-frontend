@@ -1,15 +1,27 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { Spin } from "antd";
 import type { User } from "./types";
 import { api } from "./api";
+// 登录页保持同步加载（未登录时的首屏，避免白屏闪烁）
 import Login from "./pages/Login";
-import Register from "./pages/Register";
 import Layout from "./components/Layout";
-import TalentList from "./pages/TalentList";
-import TalentDetail from "./pages/TalentDetail";
-import TalentForm from "./pages/TalentForm";
-import Tags from "./pages/Tags";
-import Import from "./pages/Import";
+
+// 其余页面按路由懒加载：把 Quill 富文本编辑器、pdfjs 等重依赖
+// 推迟到真正访问对应页面时才下载，降低首屏体积。
+const TalentList = lazy(() => import("./pages/TalentList"));
+const TalentDetail = lazy(() => import("./pages/TalentDetail"));
+const Risks = lazy(() => import("./pages/Risks"));
+const Tags = lazy(() => import("./pages/Tags"));
+const Users = lazy(() => import("./pages/Users"));
+const TemplateLibrary = lazy(() => import("./pages/TemplateLibrary"));
+
+// 页面切换时的加载占位
+const pageFallback = (
+  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 240 }}>
+    <Spin size="large" />
+  </div>
+);
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -22,7 +34,7 @@ export default function App() {
       return;
     }
     try {
-      const res = await api.get<User>("/auth/me");
+      const res = await api.me();
       setUser(res);
     } catch {
       localStorage.removeItem("token");
@@ -41,14 +53,17 @@ export default function App() {
   };
 
   if (loading) {
-    return <div style={{ textAlign: "center", padding: "3rem" }}>加载中…</div>;
+    return (
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
+        <Spin size="large" />
+      </div>
+    );
   }
 
   if (!user) {
     return (
       <Routes>
         <Route path="/login" element={<Login onLogin={fetchUser} />} />
-        <Route path="/register" element={<Register onLogin={fetchUser} />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -56,16 +71,18 @@ export default function App() {
 
   return (
     <Layout user={user} onLogout={logout}>
-      <Routes>
-        <Route path="/" element={<Navigate to="/talents" replace />} />
-        <Route path="/talents" element={<TalentList />} />
-        <Route path="/talents/new" element={<TalentForm />} />
-        <Route path="/talents/:id/edit" element={<TalentForm />} />
-        <Route path="/talents/:id" element={<TalentDetail />} />
-        <Route path="/tags" element={<Tags />} />
-        <Route path="/import" element={<Import />} />
-        <Route path="*" element={<Navigate to="/talents" replace />} />
-      </Routes>
+      <Suspense fallback={pageFallback}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/talents" replace />} />
+          <Route path="/talents" element={<TalentList />} />
+          <Route path="/talents/:id" element={<TalentDetail />} />
+          <Route path="/risks" element={<Risks />} />
+          <Route path="/templates" element={<TemplateLibrary />} />
+          <Route path="/tags" element={<Tags />} />
+          {user.role === "admin" && <Route path="/users" element={<Users />} />}
+          <Route path="*" element={<Navigate to="/talents" replace />} />
+        </Routes>
+      </Suspense>
     </Layout>
   );
 }

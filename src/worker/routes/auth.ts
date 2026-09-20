@@ -14,56 +14,132 @@ async function hashPassword(password: string): Promise<string> {
 function genId(): string { return crypto.randomUUID(); }
 function genToken(): string { return crypto.randomUUID() + crypto.randomUUID(); }
 
-auth.post("/register", async (c) => {
-  const { email, name, password } = await c.req.json<{ email: string; name: string; password: string }>();
-  if (!email || !name || !password) return c.json({ error: "邮箱、姓名、密码均为必填" }, 400);
-  const existing = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
-  if (existing) return c.json({ error: "该邮箱已注册" }, 409);
-  const id = genId();
-  const passwordHash = await hashPassword(password);
-  await c.env.DB.prepare("INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)").bind(id, email, name, passwordHash).run();
-  const token = genToken();
-  await c.env.SESSIONS.put(token, JSON.stringify({ userId: id, name }), { expirationTtl: 60 * 60 * 24 * 7 });
-  setCookie(c, "token", token, { httpOnly: true, path: "/", maxAge: 60 * 60 * 24 * 7, sameSite: "Lax" });
-  return c.json({ id, email, name, token });
-});
-
+// ---- 登录（手机号）----
+// 说明：系统无注册功能。第一个登录的手机号自动成为管理员，之后由管理员创建普通用户。
 auth.post("/login", async (c) => {
-  const { email, password } = await c.req.json<{ email: string; password: string }>();
-  if (!email || !password) return c.json({ error: "邮箱和密码为必填" }, 400);
-  const user = await c.env.DB.prepare("SELECT id, email, name, password_hash FROM users WHERE email = ?").bind(email).first<{ id: string; email: string; name: string; password_hash: string }>();
-  if (!user) return c.json({ error: "邮箱或密码错误" }, 401);
+  const { phone, password } = await c.req.json<{ phone: string; password: string }>();
+  if (!phone || !password) return c.json({ error: "手机号和密码为必填" }, 400);
+
+  const countResult = await c.env.DB.prepare("SELECT COUNT(*) as total FROM users").first<{ total: number }>();
+  let user = await c.env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first<{ id: string; phone: string; name: string; password_hash: string; role: string }>();
+
+  // 首个用户自动创建为管理员
+  if (!user) {
+    if ((countResult?.total || 0) === 0) {
+      const id = genId();
+      const passwordHash = await hashPassword(password);
+      await c.env.DB.prepare("INSERT INTO users (id, phone, name, password_hash, role) VALUES (?, ?, ?, ?, 'admin')")
+        .bind(id, phone, phone, passwordHash).run();
+      user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<{ id: string; phone: string; name: string; password_hash: string; role: string }>();
+    } else {
+      return c.json({ error: "手机号或密码错误" }, 401);
+    }
+  }
+
   const passwordHash = await hashPassword(password);
-  if (user.password_hash !== passwordHash) return c.json({ error: "邮箱或密码错误" }, 401);
+  if (user!.password_hash !== passwordHash) return c.json({ error: "手机号或密码错误" }, 401);
+
   const token = genToken();
-  await c.env.SESSIONS.put(token, JSON.stringify({ userId: user.id, name: user.name }), { expirationTtl: 60 * 60 * 24 * 7 });
+  await c.env.SESSIONS.put(token, JSON.stringify({ userId: user!.id, role: user!.role, name: user!.name }), { expirationTtl: 60 * 60 * 24 * 7 });
   setCookie(c, "token", token, { httpOnly: true, path: "/", maxAge: 60 * 60 * 24 * 7, sameSite: "Lax" });
-  return c.json({ id: user.id, email: user.email, name: user.name, token });
+
+  return c.json({ id: user!.id, phone: user!.phone, name: user!.name, role: user!.role, token });
 });
 
+// ---- 获取当前用户 ----
 auth.get("/me", async (c) => {
-  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
-  if (!token) return c.json({ error: "未登录" }, 401);
-  const session = await c.env.SESSIONS.get(token);
-  if (!session) return c.json({ error: "会话已过期" }, 401);
-  const { userId } = JSON.parse(session);
-  const user = await c.env.DB.prepare("SELECT id, email, name FROM users WHERE id = ?").bind(userId).first<{ id: string; email: string; name: string }>();
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const user = await c.env.DB.prepare("SELECT id, phone, name, role FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string }>();
   if (!user) return c.json({ error: "用户不存在" }, 401);
   return c.json(user);
 });
 
+// ---- 退出登录 ----
 auth.post("/logout", async (c) => {
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
   if (token) await c.env.SESSIONS.delete(token);
   return c.json({ ok: true });
 });
 
+// ---- 管理员：创建普通用户 ----
+auth.post("/users", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const { phone, name, password } = await c.req.json<{ phone: string; name: string; password: string }>();
+  if (!phone || !name || !password) return c.json({ error: "手机号、姓名、密码均为必填" }, 400);
+
+  const existing = await c.env.DB.prepare("SELECT id FROM users WHERE phone = ?").bind(phone).first();
+  if (existing) return c.json({ error: "该手机号已存在" }, 409);
+
+  const id = genId();
+  const passwordHash = await hashPassword(password);
+  await c.env.DB.prepare("INSERT INTO users (id, phone, name, password_hash, role) VALUES (?, ?, ?, ?, 'user')")
+    .bind(id, phone, name, passwordHash).run();
+
+  return c.json({ id, phone, name, role: "user" });
+});
+
+// ---- 管理员：用户列表 ----
+auth.get("/users", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const rows = await c.env.DB.prepare("SELECT id, phone, name, role, created_at FROM users ORDER BY created_at").all();
+  return c.json(rows.results);
+});
+
+// ---- 管理员：重置用户密码 ----
+auth.put("/users/:id/password", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const id = c.req.param("id");
+  const { password } = await c.req.json<{ password: string }>();
+  if (!password || password.length < 6) return c.json({ error: "密码至少6位" }, 400);
+
+  const passwordHash = await hashPassword(password);
+  await c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(passwordHash, id).run();
+  return c.json({ ok: true });
+});
+
+// ---- 管理员：删除用户 ----
+auth.delete("/users/:id", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const id = c.req.param("id");
+  if (id === session.userId) return c.json({ error: "不能删除自己" }, 400);
+
+  // 删除该用户的数据
+  await c.env.DB.prepare("DELETE FROM talent_tags WHERE talent_id IN (SELECT id FROM talents WHERE owner_id = ?)").bind(id).run();
+  await c.env.DB.prepare("DELETE FROM communications WHERE talent_id IN (SELECT id FROM talents WHERE owner_id = ?)").bind(id).run();
+  await c.env.DB.prepare("DELETE FROM communications WHERE user_id = ?").bind(id).run();
+  await c.env.DB.prepare("DELETE FROM talents WHERE owner_id = ?").bind(id).run();
+  await c.env.DB.prepare("DELETE FROM tags WHERE owner_id = ?").bind(id).run();
+  await c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
+
+  return c.json({ ok: true });
+});
+
 export { auth as authRoutes };
 
-export async function getUserId(c: Parameters<Parameters<typeof auth.get>[1]>[0]): Promise<string | null> {
+// ---- 会话工具 ----
+export interface SessionInfo {
+  userId: string;
+  role: string;
+  name: string;
+}
+
+export async function getSession(c: any): Promise<SessionInfo | null> {
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
   if (!token) return null;
   const session = await c.env.SESSIONS.get(token);
   if (!session) return null;
-  return JSON.parse(session).userId as string;
+  return JSON.parse(session) as SessionInfo;
 }

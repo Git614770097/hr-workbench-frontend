@@ -1,21 +1,27 @@
 export interface User {
   id: string;
-  email: string;
+  phone: string;
   name: string;
+  role: string;
 }
 
 export interface Tag {
   id: string;
   name: string;
   color: string;
+  owner_name?: string;
 }
 
 export interface Talent {
   id: string;
   owner_id: string;
+  owner_name?: string;
   name: string;
   phone: string | null;
   email: string | null;
+  age: number | null;
+  education: string | null;
+  school: string | null;
   current_company: string | null;
   current_title: string | null;
   years_experience: number | null;
@@ -27,10 +33,65 @@ export interface Talent {
   status: string;
   resume_url: string | null;
   notes: string | null;
+  birth_date: string | null;
+  contract_end: string | null;
+  probation_end: string | null;
+  resignation_date: string | null;
   created_at: string;
   updated_at: string;
   tags: Tag[];
 }
+
+// 风险预警
+export type RiskType = "contract_end" | "probation_end" | "birthday" | "resignation";
+export type RiskLevel = "red" | "yellow" | "green";
+
+export interface RiskItem {
+  talent_id: string;
+  name: string;
+  type: RiskType;
+  date: string;
+  days_left: number;
+  level: RiskLevel;
+}
+
+export interface RiskSummary {
+  red: number;
+  yellow: number;
+  green: number;
+}
+
+export const RISK_TYPE_LABELS: Record<string, string> = {
+  contract_end: "合同到期",
+  probation_end: "试用期结束",
+  birthday: "生日",
+  resignation: "离职倒计时",
+};
+
+export const RISK_LEVEL_LABELS: Record<string, string> = {
+  red: "紧急",
+  yellow: "关注",
+  green: "提醒",
+};
+
+// 风险级别视觉规范（红黄绿分色，全站统一）
+export const RISK_LEVEL_META: Record<RiskLevel, { label: string; color: string; tag: string; bg: string }> = {
+  red: { label: "紧急", color: "#ff4d4f", tag: "red", bg: "#fff1f0" },
+  yellow: { label: "关注", color: "#faad14", tag: "gold", bg: "#fffbe6" },
+  green: { label: "提醒", color: "#52c41a", tag: "green", bg: "#f6ffed" },
+};
+
+export const RISK_TYPE_ICONS: Record<RiskType, string> = {
+  contract_end: "📝",
+  probation_end: "⏳",
+  birthday: "🎂",
+  resignation: "🚪",
+};
+
+// 学历选项（筛选 / 表单 / 导入解析共用）
+export const EDUCATION_OPTIONS = [
+  "高中及以下", "中专", "大专", "本科", "硕士", "博士", "MBA/EMBA", "其他",
+];
 
 export interface Communication {
   id: string;
@@ -43,6 +104,36 @@ export interface Communication {
   follow_up_date: string | null;
   created_at: string;
 }
+
+export interface DocTemplate {
+  id: string;
+  owner_id: string;
+  owner_name?: string;
+  name: string;
+  category: string;
+  content: string;
+  scope: "official" | "shared" | "private";
+  created_at: string;
+  updated_at: string;
+}
+
+// 模板分类（新建/筛选共用，最后一个"其他"兜底）
+export const TEMPLATE_CATEGORIES = [
+  "劳动合同", "离职证明", "调薪通知", "警告信", "在职证明", "其他",
+];
+
+// 模板作用域：official 官方（管理员维护，全员只读）/ shared 共享 / private 个人
+export const SCOPE_LABELS: Record<string, string> = {
+  official: "官方",
+  shared: "共享",
+  private: "个人",
+};
+
+export const SCOPE_COLORS: Record<string, string> = {
+  official: "gold",
+  shared: "blue",
+  private: "default",
+};
 
 export interface PaginatedResponse<T> {
   items: T[];
@@ -72,4 +163,9 @@ export const COMM_TYPES: Record<string, string> = {
   interview: "面试",
   email: "邮件",
   other: "其他",
+};
+
+export const ROLE_LABELS: Record<string, string> = {
+  admin: "管理员",
+  user: "普通用户",
 };
