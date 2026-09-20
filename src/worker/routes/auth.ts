@@ -15,29 +15,17 @@ function genId(): string { return crypto.randomUUID(); }
 function genToken(): string { return crypto.randomUUID() + crypto.randomUUID(); }
 
 // ---- 登录（手机号）----
-// 说明：系统无注册功能。第一个登录的手机号自动成为管理员，之后由管理员创建普通用户。
+// 说明：系统无注册功能，用户需由管理员在「用户管理」中创建后才能登录。
 auth.post("/login", async (c) => {
   const { phone, password } = await c.req.json<{ phone: string; password: string }>();
   if (!phone || !password) return c.json({ error: "手机号和密码为必填" }, 400);
 
-  const countResult = await c.env.DB.prepare("SELECT COUNT(*) as total FROM users").first<{ total: number }>();
-  let user = await c.env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first<{ id: string; phone: string; name: string; password_hash: string; role: string }>();
+  const user = await c.env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first<{ id: string; phone: string; name: string; password_hash: string; role: string }>();
 
-  // 首个用户自动创建为管理员
-  if (!user) {
-    if ((countResult?.total || 0) === 0) {
-      const id = genId();
-      const passwordHash = await hashPassword(password);
-      await c.env.DB.prepare("INSERT INTO users (id, phone, name, password_hash, role) VALUES (?, ?, ?, ?, 'admin')")
-        .bind(id, phone, phone, passwordHash).run();
-      user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(id).first<{ id: string; phone: string; name: string; password_hash: string; role: string }>();
-    } else {
-      return c.json({ error: "手机号或密码错误" }, 401);
-    }
-  }
+  if (!user) return c.json({ error: "手机号或密码错误" }, 401);
 
   const passwordHash = await hashPassword(password);
-  if (user!.password_hash !== passwordHash) return c.json({ error: "手机号或密码错误" }, 401);
+  if (user.password_hash !== passwordHash) return c.json({ error: "手机号或密码错误" }, 401);
 
   const token = genToken();
   await c.env.SESSIONS.put(token, JSON.stringify({ userId: user!.id, role: user!.role, name: user!.name }), { expirationTtl: 60 * 60 * 24 * 7 });

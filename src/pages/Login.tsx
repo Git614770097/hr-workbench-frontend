@@ -52,7 +52,7 @@ export default function Login({ onLogin }: Props) {
           </Form.Item>
         </Form>
         <p className="auth-switch" style={{ fontSize: "0.8rem", color: "#aaa" }}>
-          首个登录的手机号自动成为管理员
+          账号由管理员创建，请联系管理员开通
         </p>
       </div>
     </div>
