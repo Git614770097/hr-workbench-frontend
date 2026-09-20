@@ -7,6 +7,11 @@ import dayjs from "dayjs";
 import mammoth from "mammoth";
 import { api } from "../api";
 import { EDUCATION_OPTIONS, STATUS_LABELS } from "../types";
+import {
+  extractName, extractPhone, extractEmail, extractAge, extractBirthDate,
+  extractTitle, extractCompany, extractSchool, extractCity, extractSkills,
+  extractYearsExperience, extractPdfLines, normalizeEducation,
+} from "../utils/resumeParser";
 
 const { Dragger } = Upload;
 
@@ -77,75 +82,7 @@ const JSON_FIELD_HINT =
 
 const STATUS_KEYS = Object.keys(STATUS_LABELS);
 
-// 学历关键词（按优先级从高到低匹配），值映射到 EDUCATION_OPTIONS
-const EDUCATION_KEYWORDS: [string, string][] = [
-  ["博士后", "博士"],
-  ["博士", "博士"],
-  ["MBA", "MBA/EMBA"],
-  ["EMBA", "MBA/EMBA"],
-  ["硕士", "硕士"],
-  ["研究生", "硕士"],
-  ["本科", "本科"],
-  ["大专", "大专"],
-  ["专科", "大专"],
-  ["中专", "中专"],
-  ["高中", "高中及以下"],
-];
-
-const SKILL_KEYWORDS = [
-  "Java", "Spring", "Spring Boot", "MySQL", "Redis", "Kafka", "RabbitMQ",
-  "微服务", "Docker", "Kubernetes", "K8s", "Linux", "Python", "Go", "Golang",
-  "React", "Vue", "Angular", "TypeScript", "JavaScript", "Node.js", "HTML",
-  "CSS", "Flutter", "iOS", "Android", "Swift", "Kotlin", "C++", "C#", ".NET",
-  "PHP", "Ruby", "Rust", "机器学习", "深度学习", "AI", "大数据", "Hadoop",
-  "Spark", "Flink", "Hive", "SQL", "Oracle", "PostgreSQL", "MongoDB",
-  "Elasticsearch", "Nginx", "Tomcat", "Git", "Jenkins", "CI/CD", "AWS",
-  "阿里云", "腾讯云", "项目管理", "数据分析", "自动化测试", "Selenium",
-  "JMeter", "Figma", "Photoshop", "Excel", "PPT", "Word",
-];
-
-const CITIES = [
-  "北京", "上海", "广州", "深圳", "杭州", "成都", "武汉", "南京", "西安", "苏州",
-  "天津", "重庆", "长沙", "青岛", "厦门", "郑州", "合肥", "福州", "济南", "大连",
-  "宁波", "无锡", "佛山", "东莞", "昆明", "沈阳", "哈尔滨", "长春", "石家庄",
-  "南昌", "贵阳", "南宁", "兰州", "太原", "乌鲁木齐", "呼和浩特", "银川", "西宁",
-  "海口", "三亚", "珠海", "惠州", "中山", "泉州", "温州", "嘉兴", "绍兴", "台州",
-  "金华", "常州", "南通", "徐州", "扬州", "烟台", "潍坊", "淄博",
-];
-
-// PDF 文本提取：pdfjs 按绘制顺序返回文字块，直接拼接会丢失换行，
-// 导致"姓名：张三 男 28岁"这类行被整体抓走。按 y 坐标把文字块聚合回真实文本行。
-function extractPdfLines(content: any): string[] {
-  const lines: { y: number; items: { x: number; w: number; str: string }[] }[] = [];
-  for (const it of content.items as any[]) {
-    if (!("str" in it) || !it.str.trim()) continue;
-    const y = Math.round(it.transform[5]);
-    const x = it.transform[4];
-    const w = it.width || 0;
-    let line = lines.find((l) => Math.abs(l.y - y) < 3);
-    if (!line) {
-      line = { y, items: [] };
-      lines.push(line);
-    }
-    line.items.push({ x, w, str: it.str });
-  }
-  // PDF 坐标系 y 向上，按 y 从大到小 = 页面从上到下
-  lines.sort((a, b) => b.y - a.y);
-  return lines.map((line) => {
-    line.items.sort((a, b) => a.x - b.x);
-    let s = "";
-    let prevEnd = 0;
-    for (const item of line.items) {
-      // 根据 x 间距判断是否需要补空格：间距大说明是不同栏目，间距小说明是同一词被拆分
-      const gap = item.x - prevEnd;
-      if (s && gap > 2) s += " ";
-      s += item.str;
-      prevEnd = item.x + item.w;
-    }
-    return s.trim();
-  }).filter(Boolean);
-}
-
+// 解析单个文件为文本（PDF 用 pdfjs 按坐标还原行，Word 用 mammoth 提取）
 async function parseFile(file: File): Promise<string> {
   const name = file.name.toLowerCase();
   if (name.endsWith(".pdf")) {
@@ -167,170 +104,30 @@ async function parseFile(file: File): Promise<string> {
   throw new Error(`不支持的文件格式：${file.name}，请上传 PDF 或 Word（.docx）文件`);
 }
 
-// 姓名校验：2-4 个中文字符，且排除常见非人名词汇（避免把"个人简历"等标题当成姓名）
-const NAME_BLACKLIST = new Set([
-  "简历", "个人简历", "求职简历", "应聘简历", "基本信息", "个人信息", "个人信息表",
-  "求职意向", "自我评价", "工作经历", "教育经历", "项目经验", "技能特长", "联系方式",
-  "先生", "女士", "姓名", "名字",
-]);
-
-function isValidName(s: string): boolean {
-  return /^[一-龥·]{2,4}$/.test(s) && !NAME_BLACKLIST.has(s) && !s.includes("简历");
-}
-
-// 从文件名兜底提取姓名，如"张三-简历.pdf"、"李四_2026.docx"
-function nameFromFileName(fileName: string): string {
-  const base = fileName.replace(/\.[^.]+$/, "");
-  for (const seg of base.split(/[-_—–\s（）()【】\[\]]+/)) {
-    if (isValidName(seg)) return seg;
-  }
-  return "";
-}
-
-function extractName(text: string, fileName: string): string {
-  // 1. "姓名：张三" 标签式（限定中文字符，避免抓到"张三 男 28岁"整行）
-  const label = text.match(/(?:姓名|名字)\s*[:：]\s*([一-龥·]{2,4})/);
-  if (label && isValidName(label[1])) return label[1];
-  // 2. "张三（男）"/"张三 男" 式
-  const gender = text.match(/([一-龥·]{2,4})\s*[（(]\s*(?:男|女)\s*[）)]/) ||
-    text.match(/([一-龥·]{2,4})\s+(?:男|女)(?=[\s，,；;]|$)/m);
-  if (gender && isValidName(gender[1])) return gender[1];
-  // 3. 简历前 3 行中的独立姓名行（简历通常以姓名开头）
-  const headLines = text.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 3);
-  for (const line of headLines) {
-    if (isValidName(line)) return line;
-  }
-  // 4. 手机号前的中文姓名
-  const beforePhone = text.match(/([一-龥·]{2,4})\s*(?:[（(][男女][）)])?\s*1[3-9][\d\s-]{9,12}/);
-  if (beforePhone && isValidName(beforePhone[1])) return beforePhone[1];
-  // 5. 文件名兜底
-  return nameFromFileName(fileName);
-}
-
-// 手机号：兼容"138 0000 0000"/"138-0000-0000"分隔写法；
-// 前后不能是数字，避免从 18 位身份证号中误截取 11 位
-function extractPhone(text: string): string {
-  const m = text.match(/(?<!\d)1[3-9][\d\s-]{8,11}\d(?!\d)/);
-  if (!m) return "";
-  const digits = m[0].replace(/\D/g, "");
-  return /^1[3-9]\d{9}$/.test(digits) ? digits : "";
-}
-
-// 职位关键词后缀（长的在前优先匹配）
-const TITLE_SUFFIXES = [
-  "架构师", "工程师", "设计师", "分析师", "总监", "经理", "主管", "专员",
-  "顾问", "负责人", "专家", "主任", "店长", "教师", "医生", "律师",
-  "会计", "出纳", "运营", "编辑", "翻译", "助理", "实习生", "销售代表",
-];
-
-// 清洗职位：截到定界符为止，去掉"全职/兼职"等修饰和尾部杂讯
-function cleanTitle(raw: string): string {
-  let s = raw.split(/[\n\r，,；;、|｜/]/)[0].trim();
-  s = s.replace(/^(?:全职|兼职|实习|期望)[:：]?\s*/, "");
-  // 优先截到职位后缀词结束（避免"Java工程师 北京 3年"抓全）
-  for (const suf of TITLE_SUFFIXES) {
-    const idx = s.indexOf(suf);
-    if (idx > 0) {
-      s = s.slice(0, idx + suf.length);
-      break;
-    }
-  }
-  if (s.length > 24) s = s.slice(0, 24);
-  return s;
-}
-
-function extractTitle(text: string): string {
-  // 1. 标签式："期望职位：高级Java工程师"
-  const label = text.match(/(?:期望职位|期望岗位|求职意向|意向岗位|意向职位|应聘职位|应聘岗位|现任职位|当前职位|职位|岗位|职务)\s*[:：]\s*([^\n\r]{2,30})/);
-  if (label) {
-    const cleaned = cleanTitle(label[1]);
-    if (cleaned.length >= 2) return cleaned;
-  }
-  // 2. 逐行扫描包含职位后缀的短行（通常是工作经历里的职位行），排除公司名
-  const suffixRe = new RegExp(`([一-龥A-Za-z0-9·+]{2,18}?(?:${TITLE_SUFFIXES.join("|")}))`);
-  for (const line of text.split("\n")) {
-    const l = line.trim();
-    if (l.length > 30) continue;
-    const m = l.match(suffixRe);
-    if (m && !/(?:公司|有限|集团|大学|学院)/.test(m[1])) return m[1];
-  }
-  return "";
-}
-
+// 从纯文本提取人才字段（全部委托给 resumeParser 模块）
 function extractTalent(text: string, key: string, fileName: string, file: File | null): ParsedTalent {
-  const t: ParsedTalent = {
+  return {
     key,
     name: extractName(text, fileName),
     phone: extractPhone(text),
-    email: "",
-    age: null,
-    education: "",
-    school: "",
-    current_company: "",
+    email: extractEmail(text),
+    age: extractAge(text),
+    education: normalizeEducation(text),
+    school: extractSchool(text),
+    current_company: extractCompany(text),
     current_title: extractTitle(text),
-    years_experience: null,
-    city: "",
-    skills: "",
+    years_experience: extractYearsExperience(text),
+    city: extractCity(text),
+    skills: extractSkills(text),
     status: "active",
     notes: "",
-    birth_date: "",
+    birth_date: extractBirthDate(text),
     contract_end: "",
     probation_end: "",
     resignation_date: "",
     fileName,
     file,
   };
-
-  const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
-  if (emailMatch) t.email = emailMatch[0];
-
-  // 年龄：优先"年龄：28"，其次"28岁"，最后由出生年份推算
-  const ageMatch = text.match(/年龄\s*[:：]?\s*(\d{1,2})/) || text.match(/(\d{1,2})\s*岁/);
-  if (ageMatch) {
-    const age = parseInt(ageMatch[1], 10);
-    if (age >= 16 && age <= 80) t.age = age;
-  }
-  if (t.age == null) {
-    const birthMatch = text.match(/(?:出生日期|出生年月|出生|生日)\s*[:：]?\s*(\d{4})/);
-    if (birthMatch) {
-      const age = new Date().getFullYear() - parseInt(birthMatch[1], 10);
-      if (age >= 16 && age <= 80) t.age = age;
-    }
-  }
-
-  // 学历：优先"学历：本科"式标注，其次全文关键词匹配
-  const eduLabelMatch = text.match(/学历\s*[:：]?\s*([^\n\r，,]{2,10})/);
-  const eduText = eduLabelMatch ? eduLabelMatch[1] : text;
-  for (const [kw, mapped] of EDUCATION_KEYWORDS) {
-    if (eduText.includes(kw)) { t.education = mapped; break; }
-  }
-
-  // 院校：优先"毕业院校：XX大学"，其次全文第一个"XX大学/学院"
-  const schoolMatch =
-    text.match(/(?:毕业院校|毕业学校|毕业大学|院校|学校)\s*[:：]\s*([^\n\r，,]{2,30})/) ||
-    text.match(/([一-龥]{2,20}(?:大学|学院|职业技术学院|高等专科学校))/);
-  if (schoolMatch) t.school = schoolMatch[1].trim();
-
-  const companyMatch =
-    text.match(/(?:所在公司|公司名称|公司)\s*[:：]\s*([^\n\r]{2,40})/) ||
-    text.match(/(?:工作经历|工作经验)[^\n]*?\n\s*([\u4e00-\u9fa5A-Za-z0-9（）()]{2,40})/);
-  if (companyMatch) t.current_company = companyMatch[1].trim();
-
-  const expMatch = text.match(/(\d{1,2})\s*年(?:工作经验|工作经历|经验)/);
-  if (expMatch) t.years_experience = parseInt(expMatch[1], 10);
-
-  const cityMatch =
-    text.match(/(?:现居|所在城市|城市|base)\s*[:：]?\s*([\u4e00-\u9fa5]{2,4})/) ||
-    (() => {
-      const found = CITIES.filter((c) => text.includes(c));
-      return found.length ? [null, found[0]] as (string | null)[] : null;
-    })();
-  if (cityMatch && cityMatch[1]) t.city = cityMatch[1].replace(/[市省]$/, "");
-
-  const found = SKILL_KEYWORDS.filter((s) => text.includes(s));
-  t.skills = [...new Set(found)].join(", ");
-
-  return t;
 }
 
 interface Props {
@@ -596,7 +393,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       {mode === "resume" ? (
         <>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            上传 PDF 或 Word（.docx）简历文件，系统会自动提取姓名、电话、邮箱、公司、职位等信息，核对无误后一键导入。原始简历文件会同时保存，可在人才详情页预览。
+            上传 PDF 或 Word（.docx）简历文件，系统会自动提取姓名、电话、邮箱、学历、院校、公司、职位、技能、出生日期等信息，核对无误后一键导入。原始简历文件会同时保存，可在人才详情页预览。
           </Typography.Paragraph>
 
           <Dragger accept=".pdf,.docx" multiple showUploadList={false} disabled={parsing} beforeUpload={handleBeforeUpload} style={{ marginBottom: 16 }}>
