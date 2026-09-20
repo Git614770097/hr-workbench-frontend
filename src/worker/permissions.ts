@@ -5,7 +5,7 @@ export const MENU_KEYS = ["talents", "risks", "templates", "tags", "users"] as c
 export type MenuKey = (typeof MENU_KEYS)[number];
 
 export const MENU_LABELS: Record<MenuKey, string> = {
-  talents: "人才库",
+  talents: "人才库管理",
   risks: "风险预警",
   templates: "文件模板库",
   tags: "标签管理",

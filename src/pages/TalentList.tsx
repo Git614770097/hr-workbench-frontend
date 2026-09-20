@@ -34,8 +34,8 @@ const EMPTY_FILTERS: Filters = {
   years: null, city: "", title: "", status: "", owner_id: "",
 };
 
-// 收起时展示的字段数（一行 3 个 × 2 行）
-const COLLAPSED_COUNT = 6;
+// 收起时展示的字段数（默认展开一行 3 个）
+const COLLAPSED_COUNT = 3;
 
 export default function TalentList() {
   const [talents, setTalents] = useState<Talent[]>([]);
@@ -123,14 +123,14 @@ export default function TalentList() {
   const controlStyle: React.CSSProperties = { width: "100%" };
   const fieldDefs: { key: string; label: string; control: React.ReactNode }[] = [
     { key: "name", label: "姓名", control: <Input style={controlStyle} placeholder="请输入姓名" value={draft.name} onChange={(e) => setField("name", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    { key: "email", label: "邮箱", control: <Input style={controlStyle} placeholder="请输入邮箱" value={draft.email} onChange={(e) => setField("email", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    { key: "title", label: "职位", control: <Input style={controlStyle} placeholder="请输入职位" value={draft.title} onChange={(e) => setField("title", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    { key: "years", label: "年限", control: <InputNumber style={controlStyle} value={draft.years} onChange={(v) => setField("years", v ?? null)} min={0} max={50} placeholder="请输入年限" /> },
     { key: "age", label: "年龄", control: <InputNumber style={controlStyle} value={draft.age} onChange={(v) => setField("age", v ?? null)} min={16} max={80} placeholder="请输入年龄" /> },
     { key: "education", label: "学历", control: <Select style={controlStyle} value={draft.education || undefined} onChange={(v) => setField("education", v || "")} allowClear placeholder="请选择学历" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} /> },
-    { key: "school", label: "院校", control: <Input style={controlStyle} placeholder="请输入院校" value={draft.school} onChange={(e) => setField("school", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    { key: "years", label: "年限", control: <InputNumber style={controlStyle} value={draft.years} onChange={(v) => setField("years", v ?? null)} min={0} max={50} placeholder="请输入年限" /> },
     { key: "city", label: "城市", control: <Input style={controlStyle} placeholder="请输入城市" value={draft.city} onChange={(e) => setField("city", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    { key: "title", label: "职位", control: <Input style={controlStyle} placeholder="请输入职位" value={draft.title} onChange={(e) => setField("title", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    { key: "school", label: "院校", control: <Input style={controlStyle} placeholder="请输入院校" value={draft.school} onChange={(e) => setField("school", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    { key: "email", label: "邮箱", control: <Input style={controlStyle} placeholder="请输入邮箱" value={draft.email} onChange={(e) => setField("email", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "status", label: "状态", control: <Select style={controlStyle} value={draft.status || undefined} onChange={(v) => setField("status", v || "")} allowClear placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} /> },
     ...(isAdmin && users.length > 0
       ? [{ key: "owner_id", label: "创建人", control: <Select style={controlStyle} value={draft.owner_id || undefined} onChange={(v) => setField("owner_id", v || "")} allowClear placeholder="请选择创建人" options={users.map((u) => ({ label: u.name, value: u.id }))} /> }]
@@ -144,28 +144,28 @@ export default function TalentList() {
       title: "姓名",
       dataIndex: "name",
       key: "name",
-      width: 100,
+      width: 120,
       fixed: "left" as const,
       render: (text: string, record: Talent) => (
         <Link to={`/talents/${record.id}`} style={{ fontWeight: 600 }}>{text}</Link>
       ),
     },
-    { title: "手机号", dataIndex: "phone", key: "phone", width: 120, render: (v: string) => v || "—" },
-    { title: "邮箱", dataIndex: "email", key: "email", width: 180, render: (v: string) => v || "—" },
-    { title: "年龄", dataIndex: "age", key: "age", width: 70, render: (v: number | null) => (v != null ? v : "—") },
-    { title: "学历", dataIndex: "education", key: "education", width: 90, render: (v: string) => v || "—" },
-    { title: "院校", dataIndex: "school", key: "school", width: 140, render: (v: string) => v || "—" },
+    { title: "职位", dataIndex: "current_title", key: "current_title", width: 150, render: (v: string) => v || "—" },
     {
-      title: "年限", dataIndex: "years_experience", key: "years_experience", width: 70,
+      title: "年限", dataIndex: "years_experience", key: "years_experience", width: 90,
       render: (v: number | null) => (v != null ? `${v}年` : "—"),
     },
-    { title: "城市", dataIndex: "city", key: "city", width: 80, render: (v: string) => v || "—" },
-    { title: "职位", dataIndex: "current_title", key: "current_title", width: 130, render: (v: string) => v || "—" },
+    { title: "年龄", dataIndex: "age", key: "age", width: 80, render: (v: number | null) => (v != null ? v : "—") },
+    { title: "学历", dataIndex: "education", key: "education", width: 110, render: (v: string) => v || "—" },
+    { title: "院校", dataIndex: "school", key: "school", width: 160, render: (v: string) => v || "—" },
+    { title: "城市", dataIndex: "city", key: "city", width: 90, render: (v: string) => v || "—" },
+    { title: "手机号", dataIndex: "phone", key: "phone", width: 130, render: (v: string) => v || "—" },
+    { title: "邮箱", dataIndex: "email", key: "email", width: 200, render: (v: string) => v || "—" },
     {
       title: "状态",
       dataIndex: "status",
       key: "status",
-      width: 100,
+      width: 110,
       render: (status: string) => (
         <Tag color={STATUS_COLORS[status] || "default"}>
           {STATUS_LABELS[status] || status}
@@ -239,7 +239,7 @@ export default function TalentList() {
           dataSource={talents}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1200 }}
+          scroll={{ x: 1440 }}
           pagination={{
             current: page,
             total,
