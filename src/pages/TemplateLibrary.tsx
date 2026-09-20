@@ -251,10 +251,6 @@ export default function TemplateLibrary() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>文件模板库</Typography.Title>
-      </div>
-
       {/* 搜索区：分类 + 关键词 */}
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>

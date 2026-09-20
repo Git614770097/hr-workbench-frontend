@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Card, Table, Button, Space, Tag, Popconfirm, message, Typography, Modal, Form, Input, Tooltip,
+  Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Tooltip,
 } from "antd";
 import { PlusOutlined, DeleteOutlined, KeyOutlined } from "@ant-design/icons";
 import { api } from "../api";
@@ -119,8 +119,7 @@ export default function Users() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>用户管理</Typography.Title>
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => { setShowCreate(true); createForm.resetFields(); }}>
           添加用户
         </Button>

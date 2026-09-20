@@ -9,7 +9,7 @@ import type { RiskItem, RiskType, RiskLevel } from "../types";
 import { RISK_TYPE_LABELS, RISK_LEVEL_LABELS, RISK_LEVEL_META, RISK_TYPE_ICONS } from "../types";
 import { countdownText } from "../utils/risk";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 const LEVELS: RiskLevel[] = ["red", "yellow", "green"];
 const TYPES: RiskType[] = ["contract_end", "probation_end", "birthday", "resignation"];
@@ -122,13 +122,7 @@ export default function Risks() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div>
-          <Title level={4} style={{ margin: 0 }}>风险预警看板</Title>
-          <Text type="secondary" style={{ fontSize: "0.82rem" }}>
-            监控合同到期、试用期结束、生日与离职倒计时，按剩余天数自动分级
-          </Text>
-        </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 16 }}>
         <Button icon={<ReloadOutlined />} onClick={fetchRisks} loading={loading}>刷新</Button>
       </div>
 

@@ -203,10 +203,6 @@ export default function TalentList() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>人才库</Typography.Title>
-      </div>
-
       {/* 顶部搜索区域：label 左 + 控件右，一行 3 个，超过两行可展开/收起 */}
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px 24px" }}>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Card, Table, Tag as AntTag, Popconfirm, message, Typography, Button, Space,
+  Card, Table, Tag as AntTag, Popconfirm, message, Button, Space,
 } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { api } from "../api";
@@ -97,8 +97,7 @@ export default function Tags() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>标签管理</Typography.Title>
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增标签</Button>
       </div>
 
