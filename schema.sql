@@ -2,6 +2,14 @@
 -- 注意：users 表结构已变更（email → phone，新增 role），
 -- 如已存在旧表需先执行：DROP TABLE IF EXISTS users;
 
+-- 角色表（自定义角色 + 菜单权限）
+CREATE TABLE IF NOT EXISTS roles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  permissions TEXT NOT NULL DEFAULT '[]',  -- JSON 数组，如 ["talents","risks"]
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- 用户表（手机号登录 + 角色）
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -9,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'user',  -- admin / user
+  role_id TEXT REFERENCES roles(id), -- 关联自定义角色（admin 忽略）
   created_at TEXT DEFAULT (datetime('now'))
 );
 

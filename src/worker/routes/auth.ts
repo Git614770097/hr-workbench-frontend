@@ -99,7 +99,7 @@ auth.post("/login", async (c) => {
     return c.json({ error: "验证码错误" }, 400);
   }
 
-  const user = await c.env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first<{ id: string; phone: string; name: string; password_hash: string; role: string }>();
+  const user = await c.env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first<{ id: string; phone: string; name: string; password_hash: string; role: string; role_id: string | null }>();
 
   if (!user) return c.json({ error: "手机号或密码错误" }, 401);
 
@@ -117,9 +117,22 @@ auth.post("/login", async (c) => {
 auth.get("/me", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  const user = await c.env.DB.prepare("SELECT id, phone, name, role FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string }>();
+  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null }>();
   if (!user) return c.json({ error: "用户不存在" }, 401);
-  return c.json(user);
+
+  // 管理员拥有全部权限；普通用户取角色 permissions
+  let permissions: string[] = [];
+  if (user.role !== "admin" && user.role_id) {
+    const role = await c.env.DB.prepare("SELECT permissions FROM roles WHERE id = ?").bind(user.role_id).first<{ permissions: string }>();
+    if (role) {
+      try {
+        const arr = JSON.parse(role.permissions);
+        if (Array.isArray(arr)) permissions = arr.filter((x) => typeof x === "string");
+      } catch {}
+    }
+  }
+
+  return c.json({ id: user.id, phone: user.phone, name: user.name, role: user.role, role_id: user.role_id, permissions });
 });
 
 // ---- 退出登录 ----
@@ -135,18 +148,26 @@ auth.post("/users", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
   if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
 
-  const { phone, name, password } = await c.req.json<{ phone: string; name: string; password: string }>();
+  const { phone, name, password, role_id } = await c.req.json<{ phone: string; name: string; password: string; role_id?: string | null }>();
   if (!phone || !name || !password) return c.json({ error: "手机号、姓名、密码均为必填" }, 400);
 
   const existing = await c.env.DB.prepare("SELECT id FROM users WHERE phone = ?").bind(phone).first();
   if (existing) return c.json({ error: "该手机号已存在" }, 409);
 
+  // 校验角色存在
+  let finalRoleId: string | null = null;
+  if (role_id) {
+    const r = await c.env.DB.prepare("SELECT id FROM roles WHERE id = ?").bind(role_id).first();
+    if (!r) return c.json({ error: "角色不存在" }, 400);
+    finalRoleId = role_id;
+  }
+
   const id = genId();
   const passwordHash = await hashPassword(password);
-  await c.env.DB.prepare("INSERT INTO users (id, phone, name, password_hash, role) VALUES (?, ?, ?, ?, 'user')")
-    .bind(id, phone, name, passwordHash).run();
+  await c.env.DB.prepare("INSERT INTO users (id, phone, name, password_hash, role, role_id) VALUES (?, ?, ?, ?, 'user', ?)")
+    .bind(id, phone, name, passwordHash, finalRoleId).run();
 
-  return c.json({ id, phone, name, role: "user" });
+  return c.json({ id, phone, name, role: "user", role_id: finalRoleId });
 });
 
 // ---- 管理员：用户列表 ----
@@ -155,8 +176,34 @@ auth.get("/users", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
   if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
 
-  const rows = await c.env.DB.prepare("SELECT id, phone, name, role, created_at FROM users ORDER BY created_at").all();
+  const rows = await c.env.DB.prepare(
+    "SELECT u.id, u.phone, u.name, u.role, u.role_id, u.created_at, r.name as role_name FROM users u LEFT JOIN roles r ON u.role_id = r.id ORDER BY u.created_at"
+  ).all();
   return c.json(rows.results);
+});
+
+// ---- 管理员：更新用户角色 ----
+auth.put("/users/:id/role", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const id = c.req.param("id");
+  const { role_id } = await c.req.json<{ role_id: string | null }>();
+
+  const target = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?").bind(id).first<{ role: string }>();
+  if (!target) return c.json({ error: "用户不存在" }, 404);
+  if (target.role === "admin") return c.json({ error: "不能修改管理员的角色" }, 400);
+
+  let finalRoleId: string | null = null;
+  if (role_id) {
+    const r = await c.env.DB.prepare("SELECT id FROM roles WHERE id = ?").bind(role_id).first();
+    if (!r) return c.json({ error: "角色不存在" }, 400);
+    finalRoleId = role_id;
+  }
+
+  await c.env.DB.prepare("UPDATE users SET role_id = ? WHERE id = ?").bind(finalRoleId, id).run();
+  return c.json({ ok: true });
 });
 
 // ---- 管理员：重置用户密码 ----

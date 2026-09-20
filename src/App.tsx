@@ -15,6 +15,7 @@ const TalentDetail = lazy(() => import("./pages/TalentDetail"));
 const Risks = lazy(() => import("./pages/Risks"));
 const Tags = lazy(() => import("./pages/Tags"));
 const Users = lazy(() => import("./pages/Users"));
+const Roles = lazy(() => import("./pages/Roles"));
 const TemplateLibrary = lazy(() => import("./pages/TemplateLibrary"));
 
 // 页面切换时的加载占位
@@ -23,6 +24,13 @@ const pageFallback = (
     <Spin size="large" />
   </div>
 );
+
+// 权限守卫：无权限访问某菜单时重定向到人才库（admin 永远放行）
+function RequirePerm({ user, perm, children }: { user: User; perm: string; children: React.ReactNode }) {
+  if (user.role === "admin") return <>{children}</>;
+  if ((user.permissions || []).includes(perm)) return <>{children}</>;
+  return <Navigate to="/talents" replace />;
+}
 
 interface AppProps {
   themeKey: ThemeKey;
@@ -80,11 +88,12 @@ export default function App({ themeKey, onChangeTheme }: AppProps) {
       <Suspense fallback={pageFallback}>
         <Routes>
           <Route path="/" element={<Navigate to="/talents" replace />} />
-          <Route path="/talents" element={<TalentList />} />
-          <Route path="/talents/:id" element={<TalentDetail />} />
-          <Route path="/risks" element={<Risks />} />
-          <Route path="/templates" element={<TemplateLibrary />} />
-          <Route path="/tags" element={<Tags />} />
+          <Route path="/talents" element={<RequirePerm user={user} perm="talents"><TalentList /></RequirePerm>} />
+          <Route path="/talents/:id" element={<RequirePerm user={user} perm="talents"><TalentDetail /></RequirePerm>} />
+          <Route path="/risks" element={<RequirePerm user={user} perm="risks"><Risks /></RequirePerm>} />
+          <Route path="/templates" element={<RequirePerm user={user} perm="templates"><TemplateLibrary /></RequirePerm>} />
+          <Route path="/tags" element={<RequirePerm user={user} perm="tags"><Tags /></RequirePerm>} />
+          {user.role === "admin" && <Route path="/roles" element={<Roles />} />}
           {user.role === "admin" && <Route path="/users" element={<Users />} />}
           <Route path="*" element={<Navigate to="/talents" replace />} />
         </Routes>

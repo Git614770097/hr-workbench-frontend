@@ -1,12 +1,15 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { getCookie } from "hono/cookie";
 import { authRoutes } from "./routes/auth";
 import { talentRoutes } from "./routes/talents";
 import { tagRoutes } from "./routes/tags";
 import { communicationRoutes } from "./routes/communications";
 import { riskRoutes } from "./routes/risks";
 import { templateRoutes } from "./routes/templates";
+import { roleRoutes } from "./routes/roles";
+import { parsePermissions } from "./permissions";
 
 export interface Env {
   DB: D1Database;
@@ -20,6 +23,84 @@ const app = new Hono<{ Bindings: Env }>();
 app.use("*", logger());
 app.use("/api/*", cors());
 
+// ---- 菜单权限拦截 ----
+// 根据路径前缀映射到菜单 key，校验当前会话是否有对应权限。
+// admin 永远放行；普通用户需在角色 permissions 中包含该菜单。
+const MENU_PATH_MAP: Record<string, string> = {
+  "/api/talents": "talents",
+  "/api/risks": "risks",
+  "/api/templates": "templates",
+  "/api/tags": "tags",
+  "/api/users": "users", // 用户管理（实际是 /api/auth/users，见下）
+};
+
+async function menuGuard(c: any, menuKey: string) {
+  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  if (!token) return c.json({ error: "未登录" }, 401);
+  const sessionRaw = await c.env.SESSIONS.get(token);
+  if (!sessionRaw) return c.json({ error: "未登录" }, 401);
+  let session: { userId: string; role: string };
+  try {
+    session = JSON.parse(sessionRaw);
+  } catch {
+    return c.json({ error: "未登录" }, 401);
+  }
+  if (session.role === "admin") return null; // 管理员放行
+
+  // 查用户角色权限
+  const user = (await c.env.DB.prepare("SELECT role_id FROM users WHERE id = ?").bind(session.userId).first()) as { role_id: string | null } | null;
+  if (!user) return c.json({ error: "用户不存在" }, 401);
+  if (!user.role_id) return c.json({ error: "无权限访问该功能" }, 403);
+
+  const role = (await c.env.DB.prepare("SELECT permissions FROM roles WHERE id = ?").bind(user.role_id).first()) as { permissions: string } | null;
+  const perms = role ? parsePermissions(role.permissions) : [];
+  if (!perms.includes(menuKey)) return c.json({ error: "无权限访问该功能" }, 403);
+  return null;
+}
+
+// 人才库 / 风险预警 / 模板 / 标签 的路径前缀即菜单 key
+app.use("/api/talents/*", async (c, next) => {
+  const blocked = await menuGuard(c, "talents");
+  if (blocked) return blocked;
+  return next();
+});
+app.use("/api/risks/*", async (c, next) => {
+  const blocked = await menuGuard(c, "risks");
+  if (blocked) return blocked;
+  return next();
+});
+app.use("/api/templates/*", async (c, next) => {
+  const blocked = await menuGuard(c, "templates");
+  if (blocked) return blocked;
+  return next();
+});
+app.use("/api/tags/*", async (c, next) => {
+  const blocked = await menuGuard(c, "tags");
+  if (blocked) return blocked;
+  return next();
+});
+// 用户管理在 /api/auth/users 下（auth 路由里），单独拦
+app.use("/api/auth/users/*", async (c, next) => {
+  const blocked = await menuGuard(c, "users");
+  if (blocked) return blocked;
+  return next();
+});
+app.use("/api/auth/users", async (c, next) => {
+  const blocked = await menuGuard(c, "users");
+  if (blocked) return blocked;
+  return next();
+});
+// 角色管理仅 admin（roles 路由内部已校验 admin，这里也拦一层双保险）
+app.use("/api/roles/*", async (c, next) => {
+  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  const sessionRaw = token ? await c.env.SESSIONS.get(token) : null;
+  if (!sessionRaw) return c.json({ error: "未登录" }, 401);
+  let session: { role: string };
+  try { session = JSON.parse(sessionRaw); } catch { return c.json({ error: "未登录" }, 401); }
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+  return next();
+});
+
 // ---- API Routes ----
 app.route("/api/auth", authRoutes);
 app.route("/api/talents", talentRoutes);
@@ -27,6 +108,7 @@ app.route("/api/tags", tagRoutes);
 app.route("/api/communications", communicationRoutes);
 app.route("/api/risks", riskRoutes);
 app.route("/api/templates", templateRoutes);
+app.route("/api/roles", roleRoutes);
 
 // ---- Health check ----
 app.get("/api/health", (c) =>

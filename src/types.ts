@@ -3,6 +3,26 @@ export interface User {
   phone: string;
   name: string;
   role: string;
+  role_id?: string | null;
+  permissions?: string[];
+}
+
+// 菜单权限 key（与后端 src/worker/permissions.ts 保持一致）
+export type MenuKey = "talents" | "risks" | "templates" | "tags" | "users";
+
+export const MENU_PERMISSIONS: { key: MenuKey; label: string }[] = [
+  { key: "talents", label: "人才库" },
+  { key: "risks", label: "风险预警" },
+  { key: "templates", label: "文件模板库" },
+  { key: "tags", label: "标签管理" },
+  { key: "users", label: "用户管理" },
+];
+
+export interface Role {
+  id: string;
+  name: string;
+  permissions: string[];
+  created_at?: string;
 }
 
 export interface Tag {

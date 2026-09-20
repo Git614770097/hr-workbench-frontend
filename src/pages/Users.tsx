@@ -1,26 +1,32 @@
 import { useState, useEffect } from "react";
 import {
-  Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Tooltip,
+  Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Tooltip, Select,
 } from "antd";
-import { PlusOutlined, DeleteOutlined, KeyOutlined } from "@ant-design/icons";
+import { PlusOutlined, DeleteOutlined, KeyOutlined, SafetyOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { ROLE_LABELS } from "../types";
+import type { Role } from "../types";
 
 interface UserRow {
   id: string;
   phone: string;
   name: string;
   role: string;
+  role_id: string | null;
+  role_name: string | null;
   created_at: string;
 }
 
 export default function Users() {
   const [users, setUsers] = useState<UserRow[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [showReset, setShowReset] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<UserRow | null>(null);
   const [createForm] = Form.useForm();
   const [resetForm] = Form.useForm();
+  const [assignForm] = Form.useForm();
 
   const fetchUsers = async () => {
     try {
@@ -32,14 +38,35 @@ export default function Users() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchUsers(); }, []);
+  const fetchRoles = async () => {
+    try {
+      setRoles(await api.getRoles());
+    } catch {
+      // 角色加载失败不阻塞用户列表
+    }
+  };
 
-  const handleCreate = async (values: { phone: string; name: string; password: string }) => {
+  useEffect(() => { fetchUsers(); fetchRoles(); }, []);
+
+  const handleCreate = async (values: { phone: string; name: string; password: string; role_id?: string | null }) => {
     try {
       await api.createUser(values);
       createForm.resetFields();
       setShowCreate(false);
       message.success("用户已创建");
+      fetchUsers();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
+  const handleAssignRole = async (values: { role_id?: string | null }) => {
+    if (!assigning) return;
+    try {
+      await api.updateUserRole(assigning.id, values.role_id ?? null);
+      assignForm.resetFields();
+      setAssigning(null);
+      message.success("角色已更新");
       fetchUsers();
     } catch (err) {
       message.error((err as Error).message);
@@ -84,10 +111,10 @@ export default function Users() {
       title: "角色",
       dataIndex: "role",
       key: "role",
-      width: 100,
-      render: (role: string) => (
+      width: 120,
+      render: (role: string, record: UserRow) => (
         <Tag color={role === "admin" ? "gold" : "blue"}>
-          {ROLE_LABELS[role] || role}
+          {role === "admin" ? ROLE_LABELS.admin : (record.role_name || ROLE_LABELS.user)}
         </Tag>
       ),
     },
@@ -101,16 +128,21 @@ export default function Users() {
     {
       title: "操作",
       key: "action",
-      width: 160,
+      width: 220,
       render: (_: any, record: UserRow) => (
         <Space>
           <Tooltip title="重置密码">
             <Button type="link" size="small" icon={<KeyOutlined />} onClick={() => { setShowReset(record.id); resetForm.resetFields(); }} />
           </Tooltip>
           {record.role !== "admin" && (
-            <Popconfirm title="确认删除？该用户的所有数据将被清除。" onConfirm={() => handleDelete(record.id, record.name)}>
-              <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
-            </Popconfirm>
+            <>
+              <Tooltip title="分配角色">
+                <Button type="link" size="small" icon={<SafetyOutlined />} onClick={() => { setAssigning(record); assignForm.setFieldsValue({ role_id: record.role_id }); }}>分配角色</Button>
+              </Tooltip>
+              <Popconfirm title="确认删除？该用户的所有数据将被清除。" onConfirm={() => handleDelete(record.id, record.name)}>
+                <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+              </Popconfirm>
+            </>
           )}
         </Space>
       ),
@@ -159,6 +191,13 @@ export default function Users() {
           <Form.Item name="password" label="初始密码" rules={[{ required: true, message: "请输入密码" }, { min: 6, message: "至少6位" }]}>
             <Input.Password placeholder="至少6位" />
           </Form.Item>
+          <Form.Item name="role_id" label="角色（可选）">
+            <Select
+              allowClear
+              placeholder="不选则无菜单权限，需稍后分配"
+              options={roles.map((r) => ({ value: r.id, label: r.name }))}
+            />
+          </Form.Item>
           <Form.Item style={{ marginBottom: 0 }}>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Button onClick={() => setShowCreate(false)}>取消</Button>
@@ -183,6 +222,30 @@ export default function Users() {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Button onClick={() => setShowReset(null)}>取消</Button>
               <Button type="primary" htmlType="submit">确认重置</Button>
+            </div>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 分配角色弹窗 */}
+      <Modal
+        title={`分配角色 — ${assigning?.name || ""}`}
+        open={!!assigning}
+        onCancel={() => setAssigning(null)}
+        footer={null}
+      >
+        <Form form={assignForm} layout="vertical" onFinish={handleAssignRole}>
+          <Form.Item name="role_id" label="角色">
+            <Select
+              allowClear
+              placeholder="不选则无菜单权限"
+              options={roles.map((r) => ({ value: r.id, label: r.name }))}
+            />
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button onClick={() => setAssigning(null)}>取消</Button>
+              <Button type="primary" htmlType="submit">保存</Button>
             </div>
           </Form.Item>
         </Form>

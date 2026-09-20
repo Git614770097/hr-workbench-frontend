@@ -1,4 +1,4 @@
-import type { User, Talent, Tag, Communication, DocTemplate, PaginatedResponse, RiskItem, RiskSummary } from "./types";
+import type { User, Talent, Tag, Communication, DocTemplate, PaginatedResponse, RiskItem, RiskSummary, Role } from "./types";
 
 const BASE = "/api";
 
@@ -51,13 +51,23 @@ export const api = {
   logout: () => request("/auth/logout", { method: "POST" }),
 
   // User management (admin only)
-  getUsers: () => request<{ id: string; phone: string; name: string; role: string; created_at: string }[]>("/auth/users"),
-  createUser: (data: { phone: string; name: string; password: string }) =>
+  getUsers: () => request<{ id: string; phone: string; name: string; role: string; role_id: string | null; role_name: string | null; created_at: string }[]>("/auth/users"),
+  createUser: (data: { phone: string; name: string; password: string; role_id?: string | null }) =>
     request("/auth/users", { method: "POST", body: JSON.stringify(data) }),
+  updateUserRole: (id: string, role_id: string | null) =>
+    request(`/auth/users/${id}/role`, { method: "PUT", body: JSON.stringify({ role_id }) }),
   resetUserPassword: (id: string, password: string) =>
     request(`/auth/users/${id}/password`, { method: "PUT", body: JSON.stringify({ password }) }),
   deleteUser: (id: string) =>
     request(`/auth/users/${id}`, { method: "DELETE" }),
+
+  // Roles (admin only)
+  getRoles: () => request<Role[]>("/roles"),
+  createRole: (data: { name: string; permissions: string[] }) =>
+    request<Role>("/roles", { method: "POST", body: JSON.stringify(data) }),
+  updateRole: (id: string, data: { name?: string; permissions?: string[] }) =>
+    request<Role>(`/roles/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteRole: (id: string) => request(`/roles/${id}`, { method: "DELETE" }),
 
   // Talents
   getTalents: (params: Record<string, string | number>) => {

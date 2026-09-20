@@ -12,6 +12,7 @@ import {
   MenuUnfoldOutlined,
   BgColorsOutlined,
   CheckOutlined,
+  SafetyOutlined,
 } from "@ant-design/icons";
 import type { User } from "../types";
 import { ROLE_LABELS } from "../types";
@@ -55,13 +56,20 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
     });
   };
 
-  const navItems: { to: string; label: string; icon: React.ReactNode; color: string; badge?: number }[] = [
-    { to: "/talents", label: "人才库", icon: <TeamOutlined />, color: "#3b82f6" },
-    { to: "/risks", label: "风险预警", icon: <AlertOutlined />, color: "#f43f5e", badge: urgentCount },
-    { to: "/templates", label: "文件模板库", icon: <FileTextOutlined />, color: "#8b5cf6" },
-    { to: "/tags", label: "标签管理", icon: <TagsOutlined />, color: "#10b981" },
-    ...(user.role === "admin" ? [{ to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b" }] : []),
-  ];
+  // 判断某菜单是否可见（admin 全可见；普通用户看 permissions）
+  const canSee = (key: string) => {
+    if (user.role === "admin") return true;
+    return (user.permissions || []).includes(key);
+  };
+
+  const navItems: { to: string; label: string; icon: React.ReactNode; color: string; badge?: number; perm: string }[] = [
+    { to: "/talents", label: "人才库", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
+    { to: "/risks", label: "风险预警", icon: <AlertOutlined />, color: "#f43f5e", badge: urgentCount, perm: "risks" },
+    { to: "/templates", label: "文件模板库", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
+    { to: "/tags", label: "标签管理", icon: <TagsOutlined />, color: "#10b981", perm: "tags" },
+    ...(user.role === "admin" ? [{ to: "/roles", label: "角色管理", icon: <SafetyOutlined />, color: "#f59e0b", perm: "roles" }] : []),
+    ...(user.role === "admin" ? [{ to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users" }] : []),
+  ].filter((item) => canSee(item.perm));
 
   const handleLogout = () => {
     onLogout();
