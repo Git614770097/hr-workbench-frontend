@@ -20,12 +20,6 @@ body {
   padding: 1.4rem 1.5rem 1rem; font-size: 1.1rem; font-weight: 700;
   display: flex; align-items: center; gap: 0.6rem; flex-shrink: 0;
 }
-.sidebar-logo .logo-icon {
-  font-size: 1.5rem; width: 40px; height: 40px; border-radius: 12px;
-  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.25);
-}
 .sidebar-logo .logo-text {
   background: linear-gradient(135deg, #3b82f6, #8b5cf6);
   -webkit-background-clip: text; background-clip: text;
@@ -116,11 +110,6 @@ body {
   content: ""; position: absolute; right: -80px; bottom: -80px;
   width: 220px; height: 220px; border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
-}
-.auth-brand-logo {
-  font-size: 3rem; width: 72px; height: 72px; border-radius: 18px;
-  background: rgba(255, 255, 255, 0.18); backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem;
 }
 .auth-brand-title { color: #fff !important; margin-bottom: 0.5rem !important; }
 .auth-brand-desc { color: rgba(255, 255, 255, 0.85) !important; font-size: 0.95rem; }

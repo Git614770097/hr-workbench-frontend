@@ -58,7 +58,6 @@ export default function Login({ onLogin }: Props) {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-brand">
-          <span className="auth-brand-logo">🎯</span>
           <Typography.Title level={3} className="auth-brand-title">
             HR 工作台
           </Typography.Title>

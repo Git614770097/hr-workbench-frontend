@@ -94,7 +94,6 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
     <div className="app-layout">
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
         <div className="sidebar-logo">
-          <span className="logo-icon">🎯</span>
           <span className="logo-text">HR 工作台</span>
         </div>
 
