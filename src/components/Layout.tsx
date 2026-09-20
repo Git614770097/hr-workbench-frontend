@@ -10,18 +10,23 @@ import {
   UserOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  BgColorsOutlined,
+  CheckOutlined,
 } from "@ant-design/icons";
 import type { User } from "../types";
 import { ROLE_LABELS } from "../types";
 import { api } from "../api";
+import { THEMES, type ThemeKey } from "../theme";
 
 interface Props {
   user: User;
   onLogout: () => void;
+  themeKey: ThemeKey;
+  onChangeTheme: (key: ThemeKey) => void;
   children: React.ReactNode;
 }
 
-export default function Layout({ user, onLogout, children }: Props) {
+export default function Layout({ user, onLogout, themeKey, onChangeTheme, children }: Props) {
   const navigate = useNavigate();
   // 侧栏紧急预警角标（红级风险数量），失败静默
   const [urgentCount, setUrgentCount] = useState(0);
@@ -72,6 +77,19 @@ export default function Layout({ user, onLogout, children }: Props) {
     },
   ];
 
+  // 换肤下拉：列出所有主题，当前项打勾
+  const themeMenuItems = THEMES.map((t) => ({
+    key: t.key,
+    label: (
+      <span className="theme-menu-item">
+        <span className="theme-swatch" style={{ background: t.swatch }} />
+        <span className="theme-menu-label">{t.label}</span>
+        {t.key === themeKey ? <CheckOutlined className="theme-menu-check" /> : null}
+      </span>
+    ),
+    onClick: () => onChangeTheme(t.key),
+  }));
+
   return (
     <div className="app-layout">
       <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
@@ -121,7 +139,14 @@ export default function Layout({ user, onLogout, children }: Props) {
             icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={toggleCollapsed}
           />
-          <div className="topbar-user">
+          <div className="topbar-right">
+            <Dropdown
+              menu={{ items: themeMenuItems, selectable: true, selectedKeys: [themeKey] }}
+              placement="bottomRight"
+              trigger={["click"]}
+            >
+              <Button type="text" className="topbar-theme-btn" icon={<BgColorsOutlined />} title="切换风格" />
+            </Dropdown>
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={["click"]}>
               <div className="topbar-user-trigger">
                 <Avatar style={{ backgroundColor: user.role === "admin" ? "#f59e0b" : "#3b82f6" }}>

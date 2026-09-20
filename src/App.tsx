@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { Spin } from "antd";
 import type { User } from "./types";
+import type { ThemeKey } from "./theme";
 import { api } from "./api";
 // 登录页保持同步加载（未登录时的首屏，避免白屏闪烁）
 import Login from "./pages/Login";
@@ -23,7 +24,12 @@ const pageFallback = (
   </div>
 );
 
-export default function App() {
+interface AppProps {
+  themeKey: ThemeKey;
+  onChangeTheme: (key: ThemeKey) => void;
+}
+
+export default function App({ themeKey, onChangeTheme }: AppProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -70,7 +76,7 @@ export default function App() {
   }
 
   return (
-    <Layout user={user} onLogout={logout}>
+    <Layout user={user} onLogout={logout} themeKey={themeKey} onChangeTheme={onChangeTheme}>
       <Suspense fallback={pageFallback}>
         <Routes>
           <Route path="/" element={<Navigate to="/talents" replace />} />

@@ -1,0 +1,57 @@
+import { useState } from "react";
+import { Form, Input, Button, Alert, Typography } from "antd";
+import { UserOutlined, LockOutlined, MailOutlined } from "@ant-design/icons";
+import { api } from "../api";
+
+interface Props {
+  onLogin: () => void;
+}
+
+export default function Register({ onLogin }: Props) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (values: { name: string; email: string; password: string }) => {
+    setError("");
+    setLoading(true);
+    try {
+      await api.register(values);
+      onLogin();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="auth-page">
+      <div className="auth-card">
+        <div className="auth-header">
+          <span className="auth-logo">🎯</span>
+          <Typography.Title level={3}>HR 人才库管理系统</Typography.Title>
+          <Typography.Text type="secondary">创建你的账号</Typography.Text>
+        </div>
+        {error && <Alert message={error} type="error" showIcon style={{ marginBottom: 16 }} />}
+        <Form onFinish={handleSubmit} layout="vertical" size="large">
+          <Form.Item name="name" rules={[{ required: true, message: "请输入姓名" }]}>
+            <Input prefix={<UserOutlined />} placeholder="姓名" />
+          </Form.Item>
+          <Form.Item name="email" rules={[{ required: true, message: "请输入邮箱" }, { type: "email", message: "邮箱格式不正确" }]}>
+            <Input prefix={<MailOutlined />} placeholder="邮箱" />
+          </Form.Item>
+          <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }, { min: 6, message: "密码至少6位" }]}>
+            <Input.Password prefix={<LockOutlined />} placeholder="至少6位" />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" htmlType="submit" block loading={loading}>
+              注册
+            </Button>
+          </Form.Item>
+        </Form>
+        <p className="auth-switch">
+          已有账号？ <a href="/login">去登录</a>
+        </p>
+      </div>
+    </div>
+  );
+}

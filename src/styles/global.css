@@ -75,6 +75,9 @@ body {
 .topbar-collapse { font-size: 1.1rem; color: #5b6472; }
 .topbar-collapse:hover { color: #3b82f6; }
 .topbar-user { display: flex; align-items: center; }
+.topbar-right { display: flex; align-items: center; gap: 0.25rem; }
+.topbar-theme-btn { font-size: 1.05rem; color: #5b6472; }
+.topbar-theme-btn:hover { color: var(--color-primary, #3b82f6); }
 .topbar-user-trigger {
   display: flex; align-items: center; gap: 0.6rem; cursor: pointer;
   padding: 0.25rem 0.5rem; border-radius: 8px; transition: background 0.15s;
@@ -82,6 +85,12 @@ body {
 .topbar-user-trigger:hover { background: #f3f4f6; }
 .topbar-user-info { display: flex; align-items: center; }
 .topbar-user-name { font-size: 0.85rem; font-weight: 600; color: #1f2937; }
+
+/* 换肤下拉菜单项 */
+.theme-menu-item { display: flex; align-items: center; gap: 0.6rem; }
+.theme-swatch { width: 18px; height: 18px; border-radius: 6px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
+.theme-menu-label { flex: 1; }
+.theme-menu-check { color: var(--color-primary, #3b82f6); }
 
 .main-content { flex: 1; overflow-y: auto; padding: 1.5rem 2rem; background: #f5f6f8; }
 
@@ -283,3 +292,53 @@ body {
 .doc-preview td, .doc-preview th { border: 1px solid #ddd; padding: 0.35rem 0.6rem; }
 .doc-preview blockquote { border-left: 3px solid #ddd; padding-left: 1rem; color: #666; margin: 0.5rem 0; }
 .doc-preview img { max-width: 100%; }
+
+/* ===== 暗黑模式：自定义布局配色（antd 组件由 darkAlgorithm 处理） ===== */
+html[data-theme="dark"] body { background: #141414; }
+
+html[data-theme="dark"] .sidebar {
+  background: #1f1f1f; color: #e5e7eb; border-right-color: #303030;
+}
+html[data-theme="dark"] .sidebar-group-label { color: #6b7280; }
+html[data-theme="dark"] .sidebar-nav a { color: #b0b6c0; }
+html[data-theme="dark"] .sidebar-nav a:hover { color: #fff; background: #2a2a2a; }
+html[data-theme="dark"] .sidebar-nav a.active { color: var(--color-primary, #3b82f6); background: #262626; }
+html[data-theme="dark"] .sidebar-toggle { border-top-color: #303030; color: #b0b6c0; }
+html[data-theme="dark"] .sidebar-toggle:hover { color: var(--color-primary, #3b82f6); background: #2a2a2a; }
+
+html[data-theme="dark"] .topbar { background: #1f1f1f; border-bottom-color: #303030; }
+html[data-theme="dark"] .topbar-user-trigger:hover { background: #2a2a2a; }
+html[data-theme="dark"] .topbar-user-name { color: #e5e7eb; }
+html[data-theme="dark"] .topbar-theme-btn { color: #b0b6c0; }
+html[data-theme="dark"] .topbar-collapse { color: #b0b6c0; }
+
+html[data-theme="dark"] .main-content { background: #141414; }
+
+/* 暗黑模式下内容卡片/列表底色跟随（人才卡、风险卡、文档预览等） */
+html[data-theme="dark"] .talent-card,
+html[data-theme="dark"] .risk-stat,
+html[data-theme="dark"] .risk-board-col,
+html[data-theme="dark"] .risk-board-card,
+html[data-theme="dark"] .doc-preview,
+html[data-theme="dark"] .resume-doc-preview,
+html[data-theme="dark"] .comm-item {
+  background: #1f1f1f; border-color: #303030; color: #e5e7eb;
+}
+html[data-theme="dark"] .talent-name,
+html[data-theme="dark"] .risk-board-card-name { color: #e5e7eb; }
+html[data-theme="dark"] .talent-field .field-label,
+html[data-theme="dark"] .risk-stat-label,
+html[data-theme="dark"] .risk-board-card-meta,
+html[data-theme="dark"] .comm-date { color: #8c8c8c; }
+html[data-theme="dark"] .comm-content { color: #b0b6c0; }
+html[data-theme="dark"] .risk-stat-total .risk-stat-value { color: #e5e7eb; }
+html[data-theme="dark"] .talent-card-footer,
+html[data-theme="dark"] .talent-card { border-color: #303030; }
+
+/* 暗黑模式下风险表格分色（保持可读的深色底） */
+html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-red > td { background: #2a1a1a; }
+html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-red:hover > td { background: #3a1f1f; }
+html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-yellow > td { background: #2a2415; }
+html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-yellow:hover > td { background: #3a3020; }
+html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green > td { background: #18251a; }
+html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green:hover > td { background: #203020; }
