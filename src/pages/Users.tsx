@@ -174,7 +174,7 @@ export default function Users() {
         onCancel={() => setShowCreate(false)}
         footer={null}
       >
-        <Form form={createForm} layout="vertical" onFinish={handleCreate}>
+        <Form form={createForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleCreate}>
           <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入姓名" }]}>
             <Input placeholder="姓名" />
           </Form.Item>
@@ -214,7 +214,7 @@ export default function Users() {
         onCancel={() => setShowReset(null)}
         footer={null}
       >
-        <Form form={resetForm} layout="vertical" onFinish={handleReset}>
+        <Form form={resetForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleReset}>
           <Form.Item name="password" label="新密码" rules={[{ required: true, message: "请输入新密码" }, { min: 6, message: "至少6位" }]}>
             <Input.Password placeholder="至少6位" />
           </Form.Item>
@@ -234,7 +234,7 @@ export default function Users() {
         onCancel={() => setAssigning(null)}
         footer={null}
       >
-        <Form form={assignForm} layout="vertical" onFinish={handleAssignRole}>
+        <Form form={assignForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleAssignRole}>
           <Form.Item name="role_id" label="角色">
             <Select
               allowClear

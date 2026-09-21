@@ -380,6 +380,63 @@ html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-yellow:hover 
 html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green > td { background: #18251a; }
 html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green:hover > td { background: #203020; }
 
+/* ===== 弹窗表单：label 与控件横向排列（全站统一约定）=====
+   约定：所有「新增/编辑」弹窗内的表单，label 固定在左侧、控件在右侧，
+   不要默认的上下（vertical）布局。用法：<Form className="form-horizontal"> */
+.form-horizontal .ant-form-item {
+  align-items: center;
+  margin-bottom: 16px;
+}
+.form-horizontal .ant-form-item-row {
+  flex-wrap: nowrap;
+}
+.form-horizontal .ant-form-item-label {
+  flex: 0 0 auto;
+  text-align: right;
+  padding-right: 12px;
+  /* 防止 label 换行导致控件错位 */
+  white-space: nowrap;
+}
+.form-horizontal .ant-form-item-label > label {
+  height: auto;
+  color: #5b6472;
+}
+.form-horizontal .ant-form-item-control {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* 横向布局下必填星号仍在 label 前，去掉默认的 padding */
+.form-horizontal .ant-form-item-label > label.ant-form-item-required::before {
+  margin-inline-end: 4px;
+}
+
+/* 横向表单里的两列并排项：宽度计算会自动扣掉 label 宽度，这里统一宽度基准 */
+.form-horizontal .ant-form-item.col-2 {
+  display: inline-block;
+  width: calc(50% - 8px);
+  vertical-align: top;
+}
+.form-horizontal .ant-form-item.col-2 + .ant-form-item.col-2 {
+  margin-left: 16px;
+}
+.form-horizontal .ant-form-item.col-3 {
+  display: inline-block;
+  width: calc(33.333% - 11px);
+  vertical-align: top;
+}
+.form-horizontal .ant-form-item.col-3 + .ant-form-item.col-3 {
+  margin-left: 16px;
+}
+
+@media (max-width: 640px) {
+  .form-horizontal .ant-form-item.col-2,
+  .form-horizontal .ant-form-item.col-3 {
+    display: block;
+    width: 100%;
+    margin-left: 0 !important;
+  }
+}
+
 /* ===== 人才库导出打印样式：打印时只显示导出容器 ===== */
 .export-print-area { display: none; }
 

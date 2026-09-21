@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Modal, Form, Input, InputNumber, Select, DatePicker, message, Alert,
+  Modal, Form, Input, InputNumber, Select, DatePicker, message, Alert, Button,
 } from "antd";
 import dayjs from "dayjs";
 import { api } from "../api";
@@ -72,14 +72,14 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
       footer={null}
       destroyOnClose
     >
-      <Form form={form} layout="vertical" onFinish={handleSubmit}>
+      <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSubmit}>
         <Form.Item
           name="title" label="岗位名称" rules={[{ required: true, message: "请输入岗位名称" }]}
-          style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}
+          className="col-2"
         >
           <Input placeholder="如 高级前端工程师" />
         </Form.Item>
-        <Form.Item name="department" label="用人部门" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
+        <Form.Item name="department" label="用人部门" className="col-2">
           <Select
             showSearch allowClear placeholder="请选择或输入部门"
             mode="tags" maxCount={1}
@@ -89,34 +89,34 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
           />
         </Form.Item>
 
-        <Form.Item name="city" label="工作城市" style={{ display: "inline-block", width: "calc(33% - 11px)", marginRight: 16 }}>
+        <Form.Item name="city" label="工作城市" className="col-3">
           <Input placeholder="如 深圳" />
         </Form.Item>
-        <Form.Item name="job_type" label="用工类型" style={{ display: "inline-block", width: "calc(33% - 11px)", marginRight: 16 }}>
+        <Form.Item name="job_type" label="用工类型" className="col-3">
           <Select options={Object.entries(JOB_TYPE_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
         </Form.Item>
-        <Form.Item name="headcount" label="招聘人数（HC）" style={{ display: "inline-block", width: "calc(33% - 11px)" }}>
+        <Form.Item name="headcount" label="招聘人数" className="col-3">
           <InputNumber style={{ width: "100%" }} min={1} max={999} />
         </Form.Item>
 
-        <Form.Item name="priority" label="紧急度" style={{ display: "inline-block", width: "calc(33% - 11px)", marginRight: 16 }}>
+        <Form.Item name="priority" label="紧急度" className="col-3">
           <Select options={Object.entries(PRIORITY_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
         </Form.Item>
-        <Form.Item name="status" label="状态" style={{ display: "inline-block", width: "calc(33% - 11px)", marginRight: 16 }}>
+        <Form.Item name="status" label="状态" className="col-3">
           <Select options={[
             { label: "在招", value: "open" },
             { label: "暂停", value: "paused" },
             { label: "已关闭", value: "closed" },
           ]} />
         </Form.Item>
-        <Form.Item name="opened_at" label="开放日期" style={{ display: "inline-block", width: "calc(33% - 11px)" }}>
-          <DatePicker style={{ width: "100%" }} placeholder="请选择" />
+        <Form.Item name="opened_at" label="开放日期" className="col-3">
+          <DatePicker style={{ width: "100%" }} placeholder="请选择日期" />
         </Form.Item>
 
-        <Form.Item name="salary_range" label="薪资范围" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
+        <Form.Item name="salary_range" label="薪资范围" className="col-2">
           <Input placeholder="如 25-40K·14薪" />
         </Form.Item>
-        <Form.Item name="education" label="学历要求" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
+        <Form.Item name="education" label="学历要求" className="col-2">
           <Select allowClear placeholder="不限" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} />
         </Form.Item>
 
@@ -140,10 +140,10 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
         />
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button type="button" className="ant-btn ant-btn-default" onClick={onClose}>取消</button>
-          <button type="submit" className="ant-btn ant-btn-primary" disabled={saving}>
-            {saving ? "保存中…" : isEdit ? "保存修改" : "创建岗位"}
-          </button>
+          <Button onClick={onClose}>取消</Button>
+          <Button type="primary" htmlType="submit" loading={saving}>
+            {isEdit ? "保存修改" : "创建岗位"}
+          </Button>
         </div>
       </Form>
     </Modal>

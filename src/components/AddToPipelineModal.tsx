@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Modal, Form, Select, Input, message, Alert } from "antd";
+import { Modal, Form, Select, Input, message, Alert, Button } from "antd";
 import { api } from "../api";
 import type { Talent, Job } from "../types";
 import { PIPELINE_STAGES } from "../types";
@@ -81,7 +81,7 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
           description="招聘流程需要先有岗位。请先到「岗位管理」创建一个在招岗位，再回来添加候选人。"
         />
       ) : (
-        <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ stage: "screening" }}>
+        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleSubmit} initialValues={{ stage: "screening" }}>
           <Form.Item name="talent_id" label="人才" rules={[{ required: true, message: "请选择人才" }]}>
             <Select
               showSearch
@@ -124,10 +124,8 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
           </Form.Item>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <button type="button" className="ant-btn ant-btn-default" onClick={onClose}>取消</button>
-            <button type="submit" className="ant-btn ant-btn-primary" disabled={saving}>
-              {saving ? "添加中…" : "加入流程"}
-            </button>
+            <Button onClick={onClose}>取消</Button>
+            <Button type="primary" htmlType="submit" loading={saving}>加入流程</Button>
           </div>
         </Form>
       )}

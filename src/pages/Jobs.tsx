@@ -216,6 +216,8 @@ export default function Jobs() {
   return (
     <div>
       <Card style={{ marginBottom: 16 }}>
+        {/* 布局约定（全站统一）：搜索 Card 只放字段（label 左 / 控件右，一行 4 个）；
+            筛选条件超过 4 个时自动换行，不另起按钮行。 */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px 24px" }}>
           <Field label="岗位">
             <Input
@@ -247,13 +249,11 @@ export default function Jobs() {
             </Field>
           ) : <div />}
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
-          <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
-          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
-        </div>
       </Card>
 
       <Card>
+        {/* 布局约定（全站统一）：查询区的「重置/查询」与工具栏的「新增」放在同一列、
+            同一条竖线上，用 grid 的透明占位格把按钮推到第 4 列，形成对齐的右侧操作区。 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <Space>
             <Button
@@ -265,6 +265,10 @@ export default function Jobs() {
             <Link to="/pipeline">
               <Button icon={<TeamOutlined />}>查看招聘流程</Button>
             </Link>
+          </Space>
+          <Space>
+            <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
+            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
           </Space>
         </div>
 

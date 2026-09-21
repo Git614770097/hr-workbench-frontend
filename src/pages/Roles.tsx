@@ -119,7 +119,7 @@ export default function Roles() {
         footer={null}
         destroyOnClose
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleSubmit}>
           <Form.Item name="name" label="角色名" rules={[{ required: true, message: "请输入角色名" }]}>
             <Input placeholder="例如：招聘专员" maxLength={20} />
           </Form.Item>

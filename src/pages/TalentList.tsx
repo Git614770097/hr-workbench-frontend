@@ -390,7 +390,9 @@ export default function TalentList() {
       </Card>
 
       <Card>
-        {/* 列表顶部工具行：左侧导入+导出，右侧重置/搜索/展开收起 */}
+        {/* 布局约定（全站统一）：搜索 Card 只放搜索字段（label 左 / 控件右，一行 4 个）；
+            顶部工具行左侧是「导入/导出」等数据操作，右侧是「展开收起 / 重置 / 查询」，
+            两者形成一条对齐的右侧操作区，不要另起一行。 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <Space>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
@@ -405,7 +407,7 @@ export default function TalentList() {
               </Button>
             )}
             <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>搜索</Button>
+            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
           </Space>
         </div>
         <Table

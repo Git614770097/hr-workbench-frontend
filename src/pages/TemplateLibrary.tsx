@@ -335,18 +335,17 @@ export default function TemplateLibrary() {
         destroyOnClose
         footer={null}
       >
-        <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ category: "证明文档", scope: "shared" }}>
-          <Form.Item name="name" label="模板名称" rules={[{ required: true, message: "请输入模板名称" }]} style={{ display: "inline-block", width: "calc(45% - 11px)", marginRight: 16 }}>
+        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "76px" }} onFinish={handleSave} initialValues={{ category: "证明文档", scope: "shared" }}>
+          <Form.Item name="name" label="模板名称" rules={[{ required: true, message: "请输入模板名称" }]} className="col-2">
             <Input placeholder="请输入模板名称，如：劳动合同（技术岗）" />
           </Form.Item>
-          <Form.Item name="category" label="分类" rules={[{ required: true, message: "请选择分类" }]} style={{ display: "inline-block", width: "calc(27.5% - 5px)", marginRight: 16 }}>
+          <Form.Item name="category" label="分类" rules={[{ required: true, message: "请选择分类" }]} className="col-2">
             <Select placeholder="请选择分类" options={TEMPLATE_CATEGORIES.map((c) => ({ label: c, value: c }))} />
           </Form.Item>
           <Form.Item
             name="scope"
             label="级别"
             rules={[{ required: true, message: "请选择级别" }]}
-            style={{ display: "inline-block", width: "27.5%" }}
             tooltip={isAdmin ? "官方模板全员只读，仅管理员可维护" : "个人模板仅自己可见"}
           >
             <Select

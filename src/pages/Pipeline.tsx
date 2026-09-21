@@ -220,14 +220,11 @@ export default function Pipeline() {
               />
             </div>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={labelStyle} />
-            <Space>
-              <Button type="primary" icon={<SearchOutlined />} onClick={() => setAppliedQ(draftQ)}>搜索</Button>
-              <Button icon={<ReloadOutlined />} onClick={() => {
-                setDraftQ(""); setAppliedQ(""); setJobFilter(""); setOwnerFilter("");
-              }}>重置</Button>
-            </Space>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+            <Button icon={<ReloadOutlined />} onClick={() => {
+              setDraftQ(""); setAppliedQ(""); setJobFilter(""); setOwnerFilter("");
+            }}>重置</Button>
+            <Button type="primary" icon={<SearchOutlined />} onClick={() => setAppliedQ(draftQ)}>查询</Button>
           </div>
         </div>
       </Card>

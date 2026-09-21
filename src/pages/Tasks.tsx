@@ -300,26 +300,26 @@ export default function Tasks() {
         width={560}
         destroyOnClose
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleSubmit}>
           <Form.Item name="title" label="待办事项" rules={[{ required: true, message: "请输入待办内容" }]}>
             <Input placeholder="如：跟进张三维的面试时间确认" />
           </Form.Item>
 
-          <Form.Item name="due_date" label="到期日" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
+          <Form.Item name="due_date" label="到期日" className="col-2">
             <DatePicker style={{ width: "100%" }} placeholder="不限时可不填" />
           </Form.Item>
-          <Form.Item name="priority" label="优先级" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
+          <Form.Item name="priority" label="优先级" className="col-2">
             <Select options={Object.entries(PRIORITY_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
           </Form.Item>
 
-          <Form.Item name="talent_id" label="关联人才" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
+          <Form.Item name="talent_id" label="关联人才" className="col-2">
             <Select
               showSearch allowClear placeholder="可选"
               optionFilterProp="label"
               options={talents.map((t) => ({ label: t.name, value: t.id }))}
             />
           </Form.Item>
-          <Form.Item name="job_id" label="关联岗位" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
+          <Form.Item name="job_id" label="关联岗位" className="col-2">
             <Select
               showSearch allowClear placeholder="可选"
               optionFilterProp="label"
@@ -332,10 +332,10 @@ export default function Tasks() {
           </Form.Item>
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <button type="button" className="ant-btn ant-btn-default" onClick={() => setModalOpen(false)}>取消</button>
-            <button type="submit" className="ant-btn ant-btn-primary" disabled={saving}>
-              {saving ? "保存中…" : editing ? "保存修改" : "创建待办"}
-            </button>
+            <Button onClick={() => setModalOpen(false)}>取消</Button>
+            <Button type="primary" htmlType="submit" loading={saving}>
+              {editing ? "保存修改" : "创建待办"}
+            </Button>
           </div>
         </Form>
       </Modal>

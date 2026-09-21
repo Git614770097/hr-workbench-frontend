@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Modal, Form, Input, InputNumber, Select, Spin, message, Upload,
+  Modal, Form, Input, InputNumber, Select, Spin, message, Upload, Button,
 } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import { api } from "../api";
@@ -95,51 +95,51 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
       {loading ? (
         <div style={{ textAlign: "center", padding: "3rem" }}><Spin size="large" /></div>
       ) : (
-        <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ status: "active" }}>
-          <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入姓名" }]}>
+        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "82px" }} onFinish={handleSubmit} initialValues={{ status: "active" }}>
+          <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入姓名" }]} className="col-2">
             <Input placeholder="请输入姓名" />
           </Form.Item>
-          <Form.Item name="phone" label="电话" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
+          <Form.Item name="phone" label="电话" className="col-2">
             <Input placeholder="请输入手机号" />
           </Form.Item>
-          <Form.Item name="email" label="邮箱" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
+          <Form.Item name="email" label="邮箱" className="col-2">
             <Input placeholder="请输入邮箱" />
           </Form.Item>
-          <Form.Item name="age" label="年龄" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
+          <Form.Item name="age" label="年龄" className="col-2">
             <InputNumber style={{ width: "100%" }} min={16} max={80} placeholder="请输入年龄" />
           </Form.Item>
-          <Form.Item name="education" label="学历" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
+          <Form.Item name="education" label="学历" className="col-2">
             <Select allowClear placeholder="请选择学历" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} />
           </Form.Item>
-          <Form.Item name="school" label="毕业院校" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
+          <Form.Item name="school" label="毕业院校" className="col-2">
             <Input placeholder="请输入毕业院校" />
           </Form.Item>
-          <Form.Item name="current_company" label="当前公司" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
+          <Form.Item name="current_company" label="当前公司" className="col-2">
             <Input placeholder="请输入当前公司" />
           </Form.Item>
-          <Form.Item name="current_title" label="当前职位" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
+          <Form.Item name="current_title" label="当前职位" className="col-2">
             <Input placeholder="请输入当前职位" />
           </Form.Item>
-          <Form.Item name="years_experience" label="工作年限" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
+          <Form.Item name="years_experience" label="工作年限" className="col-2">
             <InputNumber style={{ width: "100%" }} min={0} placeholder="请输入工作年限" />
           </Form.Item>
-          <Form.Item name="city" label="所在城市" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
+          <Form.Item name="city" label="所在城市" className="col-2">
             <Input placeholder="请输入所在城市" />
           </Form.Item>
-          <Form.Item name="industry" label="行业" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
+          <Form.Item name="industry" label="行业" className="col-2">
             <Input placeholder="请输入行业" />
           </Form.Item>
-          <Form.Item name="expected_salary" label="期望薪资" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
+          <Form.Item name="expected_salary" label="期望薪资" className="col-2">
             <Input placeholder="如 30-40k" />
           </Form.Item>
-          <Form.Item name="expected_city" label="期望城市" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
+          <Form.Item name="expected_city" label="期望城市" className="col-2">
             <Input placeholder="请输入期望城市" />
           </Form.Item>
-          <Form.Item name="status" label="状态">
+          <Form.Item name="status" label="状态" className="col-2">
             <Select placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
           </Form.Item>
-          <Form.Item name="skills" label="技能（逗号分隔）">
-            <Input placeholder="如 Java, Spring, MySQL, 微服务" />
+          <Form.Item name="skills" label="技能" className="col-2">
+            <Input placeholder="逗号分隔，如 Java, Spring" />
           </Form.Item>
           {tags.length > 0 && (
             <Form.Item name="tag_ids" label="自定义标签">
@@ -167,16 +167,14 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
               onRemove={() => { setResumeFile(null); }}
               fileList={resumeFile ? [{ uid: "-1", name: resumeFile.name, status: "done" }] : []}
             >
-              <button type="button" className="ant-btn ant-btn-default">
-                <UploadOutlined /> 选择简历文件
-              </button>
+              <Button icon={<UploadOutlined />}>选择简历文件</Button>
             </Upload>
           </Form.Item>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <button type="button" className="ant-btn ant-btn-default" onClick={onClose}>取消</button>
-            <button type="submit" className="ant-btn ant-btn-primary" disabled={saving}>
-              {saving ? "保存中…" : isEdit ? "保存修改" : "创建人才"}
-            </button>
+            <Button onClick={onClose}>取消</Button>
+            <Button type="primary" htmlType="submit" loading={saving}>
+              {isEdit ? "保存修改" : "创建人才"}
+            </Button>
           </div>
         </Form>
       )}

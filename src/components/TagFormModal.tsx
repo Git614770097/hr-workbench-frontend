@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Modal, Form, Input, message,
+  Modal, Form, Input, message, Button,
 } from "antd";
 import { api } from "../api";
 import type { Tag } from "../types";
@@ -59,12 +59,12 @@ export default function TagFormModal({ open, tag, onClose, onSuccess }: Props) {
       destroyOnClose
       footer={null}
     >
-      <Form form={form} layout="vertical" onFinish={handleSubmit}>
+      <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleSubmit}>
         <Form.Item name="name" label="标签名称" rules={[{ required: true, message: "请输入标签名称" }]}>
           <Input placeholder="请输入标签名称" />
         </Form.Item>
         <Form.Item label="颜色">
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", minHeight: 32 }}>
             {COLORS.map((c) => (
               <div
                 key={c}
@@ -80,10 +80,10 @@ export default function TagFormModal({ open, tag, onClose, onSuccess }: Props) {
           </div>
         </Form.Item>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <button type="button" className="ant-btn ant-btn-default" onClick={onClose}>取消</button>
-          <button type="submit" className="ant-btn ant-btn-primary" disabled={saving}>
-            {saving ? "保存中…" : isEdit ? "保存" : "创建"}
-          </button>
+          <Button onClick={onClose}>取消</Button>
+          <Button type="primary" htmlType="submit" loading={saving}>
+            {isEdit ? "保存" : "创建"}
+          </Button>
         </div>
       </Form>
     </Modal>
