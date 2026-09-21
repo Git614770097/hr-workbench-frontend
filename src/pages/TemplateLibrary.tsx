@@ -148,7 +148,7 @@ export default function TemplateLibrary() {
       setEditTarget(null);
       form.setFieldsValue({
         name: file.name.replace(/\.(docx?|txt)$/i, ""),
-        category: "其他",
+        category: "证明文档",
         content: html,
         scope: "shared",
       });
@@ -335,7 +335,7 @@ export default function TemplateLibrary() {
         destroyOnClose
         footer={null}
       >
-        <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ category: "其他", scope: "shared" }}>
+        <Form form={form} layout="vertical" onFinish={handleSave} initialValues={{ category: "证明文档", scope: "shared" }}>
           <Form.Item name="name" label="模板名称" rules={[{ required: true, message: "请输入模板名称" }]} style={{ display: "inline-block", width: "calc(45% - 11px)", marginRight: 16 }}>
             <Input placeholder="请输入模板名称，如：劳动合同（技术岗）" />
           </Form.Item>

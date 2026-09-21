@@ -102,7 +102,7 @@ templates.post("/", async (c) => {
   const id = genId();
   await c.env.DB.prepare(
     "INSERT INTO doc_templates (id, owner_id, name, category, content, scope) VALUES (?, ?, ?, ?, ?, ?)"
-  ).bind(id, session.userId, body.name, body.category || "其他", body.content, scope).run();
+  ).bind(id, session.userId, body.name, body.category || "证明文档", body.content, scope).run();
   return c.json({ id, name: body.name, scope });
 });
 
