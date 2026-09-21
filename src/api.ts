@@ -1,4 +1,4 @@
-import type { User, Talent, Tag, Communication, DocTemplate, PaginatedResponse, RiskItem, RiskSummary, Role } from "./types";
+import type { User, Talent, Tag, Communication, DocTemplate, PaginatedResponse, RiskItem, RiskSummary, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, Task, TaskSummary } from "./types";
 
 const BASE = "/api";
 
@@ -187,4 +187,62 @@ export const api = {
   // 风险预警
   getRisks: () =>
     request<{ items: RiskItem[]; summary: RiskSummary }>("/risks"),
+
+  // ---- 岗位管理 ----
+  getJobs: (params: Record<string, string | number> = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v !== "" && v != null).map(([k, v]) => [k, String(v)])
+    ).toString();
+    return request<PaginatedResponse<Job>>(`/jobs${qs ? `?${qs}` : ""}`);
+  },
+  getJobOptions: (onlyOpen = false) =>
+    request<(Pick<Job, "id" | "title" | "department" | "city" | "status" | "headcount">)[]>(
+      `/jobs/options${onlyOpen ? "?open=1" : ""}`
+    ),
+  getDepartments: () => request<string[]>("/jobs/departments"),
+  getJob: (id: string) => request<JobDetail>(`/jobs/${id}`),
+  createJob: (data: Partial<Job>) =>
+    request<{ id: string }>("/jobs", { method: "POST", body: JSON.stringify(data) }),
+  updateJob: (id: string, data: Partial<Job>) =>
+    request(`/jobs/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteJob: (id: string) => request(`/jobs/${id}`, { method: "DELETE" }),
+
+  // ---- 招聘流程 ----
+  getPipeline: (params: { job_id?: string; owner_id?: string; q?: string } = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v) as [string, string][]
+    ).toString();
+    return request<PipelineResponse>(`/pipeline${qs ? `?${qs}` : ""}`);
+  },
+  addToPipeline: (data: { talent_id: string; job_id: string; stage?: string; notes?: string }) =>
+    request<{ id: string; talent_name: string; job_title: string; stage: string }>("/pipeline", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateStage: (linkId: string, stage: string, remark?: string) =>
+    request<{ ok: boolean; stage: string }>(`/pipeline/${linkId}/stage`, {
+      method: "PUT",
+      body: JSON.stringify({ stage, remark }),
+    }),
+  getStageLogs: (linkId: string) => request<StageLog[]>(`/pipeline/${linkId}/logs`),
+  removeFromPipeline: (linkId: string) =>
+    request(`/pipeline/${linkId}`, { method: "DELETE" }),
+  getStaleCandidates: () =>
+    request<{ items: (PipelineCard & { days_stale: number })[]; total: number }>("/pipeline/stale"),
+
+  // ---- 跟进待办 ----
+  getTasks: (params: { scope?: string; talent_id?: string; priority?: string; owner_id?: string } = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v) as [string, string][]
+    ).toString();
+    return request<{ items: Task[]; total: number }>(`/tasks${qs ? `?${qs}` : ""}`);
+  },
+  getTaskSummary: () => request<TaskSummary>("/tasks/summary"),
+  createTask: (data: Partial<Task>) =>
+    request<{ id: string }>("/tasks", { method: "POST", body: JSON.stringify(data) }),
+  updateTask: (id: string, data: Partial<Task>) =>
+    request(`/tasks/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  updateTaskStatus: (id: string, status: string) =>
+    request(`/tasks/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) }),
+  deleteTask: (id: string) => request(`/tasks/${id}`, { method: "DELETE" }),
 };

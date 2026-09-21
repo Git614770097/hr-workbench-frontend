@@ -15,6 +15,14 @@
 - 批量导入（上传 PDF / Word 简历，自动提取姓名、手机号、邮箱、年龄、学历、院校、年限、城市、职位等信息，核对后导入，同时保存原始文件）
 - **统一弹窗风格**：新增、编辑、导入等二级页面全部使用弹窗，按钮统一靠右
 
+### 招聘流程（P0）
+
+- **岗位管理**：岗位 CRUD、用人部门、HC 需求、紧急度、薪资范围、在招/暂停/关闭状态流转（关闭自动记日期）、招聘进度条（已入职/HC）、看板式岗位详情
+- **招聘流程看板**：7 个阶段（简历筛选 → 初试 → 复试 → Offer → 已入职 / 已淘汰 / 已放弃）分列展示，支持**拖拽卡片换阶段**、每条卡片快速流转、阶段流转日志留痕、停留天数预警（≥7 天标橙）
+- 一名人才可同时应聘多个岗位，互不影响
+- 候选人**加入流程弹窗**：从人才库选人挂到岗位，或从岗位详情批量添加
+- **跟进待办**：手动创建待办（关联人才/岗位、到期日、优先级），逾期/今日到期高亮，侧栏角标提醒；可按人才/优先级/负责人筛选
+
 ## 技术栈
 
 | 层 | 技术 |
@@ -41,6 +49,9 @@ npx wrangler d1 execute hr-workbench --remote --file=./schema.sql
 
 # ⚠️ 2026-09-18 talents 表新增 年龄/学历/院校 字段，已有数据库需执行迁移：
 npx wrangler d1 execute hr-workbench --remote --file=./migration-20260918-add-edu-fields.sql
+
+# ⚠️ 2026-09-21 新增 岗位/招聘流程/待办 四张表 + talents.stage/source 字段：
+npx wrangler d1 execute hr-workbench --remote --file=./migration-20260921-jobs-pipeline-tasks.sql
 
 npm run build
 npm run deploy

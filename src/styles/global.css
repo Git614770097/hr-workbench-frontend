@@ -383,6 +383,93 @@ html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green:hover >
 /* ===== 人才库导出打印样式：打印时只显示导出容器 ===== */
 .export-print-area { display: none; }
 
+/* ===== 招聘流程看板 ===== */
+.pipe-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(232px, 1fr);
+  gap: 0.7rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+.pipe-col {
+  background: #f7f8fa; border: 1px solid #eef0f3; border-radius: 10px;
+  display: flex; flex-direction: column; min-height: 320px; overflow: hidden;
+}
+.pipe-col-head {
+  padding: 0.55rem 0.7rem; display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.82rem; font-weight: 600; border-bottom: 1px solid #eef0f3;
+  position: sticky; top: 0; z-index: 1;
+}
+.pipe-col-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.pipe-col-count {
+  margin-left: auto; min-width: 20px; height: 18px; padding: 0 6px;
+  border-radius: 9px; background: rgba(0, 0, 0, 0.08);
+  font-size: 0.7rem; line-height: 18px; text-align: center; font-weight: 600;
+}
+.pipe-col-body { flex: 1; padding: 0.5rem; overflow-y: auto; max-height: 62vh; }
+.pipe-col-body.drop-target { background: rgba(59, 130, 246, 0.07); }
+
+.pipe-card {
+  background: #fff; border: 1px solid #eceef2; border-radius: 8px;
+  padding: 0.6rem 0.7rem; margin-bottom: 0.5rem; cursor: grab;
+  transition: box-shadow 0.15s, border-color 0.15s, transform 0.1s;
+}
+.pipe-card:hover { box-shadow: 0 3px 10px rgba(0, 0, 0, 0.09); border-color: #d8dde5; }
+.pipe-card.dragging { opacity: 0.45; }
+.pipe-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.4rem; }
+.pipe-card-name { font-size: 0.88rem; font-weight: 600; color: #1a1a2e; text-decoration: none; }
+.pipe-card-name:hover { color: #3b82f6; }
+.pipe-card-sub { font-size: 0.76rem; color: #6b7280; margin-top: 0.22rem; line-height: 1.45; }
+.pipe-card-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem; }
+.pipe-card-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.4rem; margin-top: 0.45rem; padding-top: 0.4rem;
+  border-top: 1px solid #f4f5f7;
+}
+.pipe-card-stale { font-size: 0.72rem; }
+.pipe-empty { text-align: center; color: #c2c6cc; font-size: 0.76rem; padding: 1.4rem 0; }
+
+/* ===== 待办列表 ===== */
+.task-item {
+  display: flex; align-items: flex-start; gap: 0.7rem;
+  padding: 0.7rem 0.9rem; border: 1px solid #eef0f3; border-radius: 9px;
+  background: #fff; margin-bottom: 0.5rem; transition: box-shadow 0.15s;
+}
+.task-item:hover { box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07); }
+.task-item.is-overdue { border-left: 3px solid #ff4d4f; background: #fff9f9; }
+.task-item.is-today { border-left: 3px solid #faad14; background: #fffdf6; }
+.task-item.is-done { opacity: 0.62; }
+.task-main { flex: 1; min-width: 0; }
+.task-title { font-size: 0.9rem; font-weight: 600; color: #1a1a2e; }
+.task-item.is-done .task-title { text-decoration: line-through; color: #8c8c8c; }
+.task-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.35rem; font-size: 0.76rem; color: #8c8c8c; }
+.task-content { font-size: 0.82rem; color: #4b5563; margin-top: 0.3rem; line-height: 1.55; }
+.task-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
+
+/* ===== 岗位卡片 ===== */
+.job-stat-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+.job-meta { font-size: 0.8rem; color: #4b5563; line-height: 1.7; }
+
+@media (max-width: 900px) {
+  .pipe-board { grid-auto-columns: minmax(200px, 1fr); }
+}
+
+/* 暗黑模式 */
+html[data-theme="dark"] .pipe-col { background: #1a1a1a; border-color: #303030; }
+html[data-theme="dark"] .pipe-col-head { border-bottom-color: #303030; }
+html[data-theme="dark"] .pipe-card { background: #1f1f1f; border-color: #303030; }
+html[data-theme="dark"] .pipe-card:hover { border-color: #3f3f3f; }
+html[data-theme="dark"] .pipe-card-name { color: #e5e7eb; }
+html[data-theme="dark"] .pipe-card-sub { color: #9ca3af; }
+html[data-theme="dark"] .pipe-card-foot { border-top-color: #303030; }
+html[data-theme="dark"] .task-item { background: #1f1f1f; border-color: #303030; }
+html[data-theme="dark"] .task-item.is-overdue { background: #2a1a1a; }
+html[data-theme="dark"] .task-item.is-today { background: #2a2415; }
+html[data-theme="dark"] .task-title { color: #e5e7eb; }
+html[data-theme="dark"] .task-content { color: #b0b6c0; }
+html[data-theme="dark"] .job-meta { color: #b0b6c0; }
+
 @media print {
   body * { visibility: hidden; }
   .export-print-area, .export-print-area * { visibility: visible; }

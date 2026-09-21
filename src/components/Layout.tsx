@@ -13,6 +13,9 @@ import {
   BgColorsOutlined,
   CheckOutlined,
   SafetyOutlined,
+  DeploymentUnitOutlined,
+  SolutionOutlined,
+  CarryOutOutlined,
 } from "@ant-design/icons";
 import type { User } from "../types";
 import { ROLE_LABELS } from "../types";
@@ -31,6 +34,8 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
   const navigate = useNavigate();
   // 侧栏紧急预警角标（红级风险数量），失败静默
   const [urgentCount, setUrgentCount] = useState(0);
+  // 侧栏待办角标（逾期 + 今日到期），失败静默
+  const [taskBadge, setTaskBadge] = useState(0);
   // 侧栏折叠状态，记住用户偏好
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -40,10 +45,23 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
     }
   });
 
+  // canSee 需要先于 useEffect 使用，提前定义（函数声明有提升，但为可读性放前面）
+  const canSee = (key: string) => {
+    if (user.role === "admin") return true;
+    return (user.permissions || []).includes(key);
+  };
+
   useEffect(() => {
-    api.getRisks()
-      .then((res) => setUrgentCount(res.summary.red))
-      .catch(() => setUrgentCount(0));
+    if (canSee("risks")) {
+      api.getRisks()
+        .then((res) => setUrgentCount(res.summary.red))
+        .catch(() => setUrgentCount(0));
+    }
+    if (canSee("tasks")) {
+      api.getTaskSummary()
+        .then((res) => setTaskBadge(res.overdue + res.today))
+        .catch(() => setTaskBadge(0));
+    }
   }, []);
 
   const toggleCollapsed = () => {
@@ -57,13 +75,13 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
   };
 
   // 判断某菜单是否可见（admin 全可见；普通用户看 permissions）
-  const canSee = (key: string) => {
-    if (user.role === "admin") return true;
-    return (user.permissions || []).includes(key);
-  };
+  // 见上方提前定义的 canSee
 
   const navItems: { to: string; label: string; icon: React.ReactNode; color: string; badge?: number; perm: string }[] = [
     { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
+    { to: "/pipeline", label: "招聘流程", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
+    { to: "/jobs", label: "岗位管理", icon: <SolutionOutlined />, color: "#6366f1", perm: "jobs" },
+    { to: "/tasks", label: "跟进待办", icon: <CarryOutOutlined />, color: "#f97316", badge: taskBadge, perm: "tasks" },
     { to: "/risks", label: "风险预警", icon: <AlertOutlined />, color: "#f43f5e", badge: urgentCount, perm: "risks" },
     { to: "/templates", label: "模板库管理", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
     { to: "/tags", label: "标签管理", icon: <TagsOutlined />, color: "#10b981", perm: "tags" },

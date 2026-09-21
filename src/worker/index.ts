@@ -9,6 +9,9 @@ import { communicationRoutes } from "./routes/communications";
 import { riskRoutes } from "./routes/risks";
 import { templateRoutes } from "./routes/templates";
 import { roleRoutes } from "./routes/roles";
+import { jobRoutes } from "./routes/jobs";
+import { pipelineRoutes } from "./routes/pipeline";
+import { taskRoutes } from "./routes/tasks";
 import aiParseRoutes from "./routes/aiParse";
 import { parsePermissions } from "./permissions";
 
@@ -33,6 +36,9 @@ const MENU_PATH_MAP: Record<string, string> = {
   "/api/risks": "risks",
   "/api/templates": "templates",
   "/api/tags": "tags",
+  "/api/jobs": "jobs",
+  "/api/pipeline": "pipeline",
+  "/api/tasks": "tasks",
   "/api/users": "users", // 用户管理（实际是 /api/auth/users，见下）
 };
 
@@ -81,6 +87,39 @@ app.use("/api/tags/*", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
+// 岗位管理
+app.use("/api/jobs/*", async (c, next) => {
+  const blocked = await menuGuard(c, "jobs");
+  if (blocked) return blocked;
+  return next();
+});
+app.use("/api/jobs", async (c, next) => {
+  const blocked = await menuGuard(c, "jobs");
+  if (blocked) return blocked;
+  return next();
+});
+// 招聘流程看板（与岗位管理同权限：没有岗位就看不了流程）
+app.use("/api/pipeline/*", async (c, next) => {
+  const blocked = await menuGuard(c, "pipeline");
+  if (blocked) return blocked;
+  return next();
+});
+app.use("/api/pipeline", async (c, next) => {
+  const blocked = await menuGuard(c, "pipeline");
+  if (blocked) return blocked;
+  return next();
+});
+// 跟进待办
+app.use("/api/tasks/*", async (c, next) => {
+  const blocked = await menuGuard(c, "tasks");
+  if (blocked) return blocked;
+  return next();
+});
+app.use("/api/tasks", async (c, next) => {
+  const blocked = await menuGuard(c, "tasks");
+  if (blocked) return blocked;
+  return next();
+});
 // 用户管理在 /api/auth/users 下（auth 路由里），单独拦
 app.use("/api/auth/users/*", async (c, next) => {
   const blocked = await menuGuard(c, "users");
@@ -117,6 +156,9 @@ app.route("/api/communications", communicationRoutes);
 app.route("/api/risks", riskRoutes);
 app.route("/api/templates", templateRoutes);
 app.route("/api/roles", roleRoutes);
+app.route("/api/jobs", jobRoutes);
+app.route("/api/pipeline", pipelineRoutes);
+app.route("/api/tasks", taskRoutes);
 app.route("/api/parse-resume", aiParseRoutes);
 
 // ---- Health check ----
