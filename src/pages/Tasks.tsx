@@ -305,27 +305,29 @@ export default function Tasks() {
             <Input placeholder="如：跟进张三维的面试时间确认" />
           </Form.Item>
 
-          <Form.Item name="due_date" label="到期日" className="col-2">
-            <DatePicker style={{ width: "100%" }} placeholder="不限时可不填" />
-          </Form.Item>
-          <Form.Item name="priority" label="优先级" className="col-2">
-            <Select options={Object.entries(PRIORITY_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
-          </Form.Item>
+          <div className="form-grid">
+            <Form.Item name="due_date" label="到期日">
+              <DatePicker style={{ width: "100%" }} placeholder="不限时可不填" />
+            </Form.Item>
+            <Form.Item name="priority" label="优先级">
+              <Select options={Object.entries(PRIORITY_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
+            </Form.Item>
 
-          <Form.Item name="talent_id" label="关联人才" className="col-2">
-            <Select
-              showSearch allowClear placeholder="可选"
-              optionFilterProp="label"
-              options={talents.map((t) => ({ label: t.name, value: t.id }))}
-            />
-          </Form.Item>
-          <Form.Item name="job_id" label="关联岗位" className="col-2">
-            <Select
-              showSearch allowClear placeholder="可选"
-              optionFilterProp="label"
-              options={jobs.map((j) => ({ label: j.title, value: j.id }))}
-            />
-          </Form.Item>
+            <Form.Item name="talent_id" label="关联人才">
+              <Select
+                showSearch allowClear placeholder="可选"
+                optionFilterProp="label"
+                options={talents.map((t) => ({ label: t.name, value: t.id }))}
+              />
+            </Form.Item>
+            <Form.Item name="job_id" label="关联岗位">
+              <Select
+                showSearch allowClear placeholder="可选"
+                optionFilterProp="label"
+                options={jobs.map((j) => ({ label: j.title, value: j.id }))}
+              />
+            </Form.Item>
+          </div>
 
           <Form.Item name="content" label="备注">
             <Input.TextArea rows={3} placeholder="补充说明…" />

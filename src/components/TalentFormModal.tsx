@@ -95,52 +95,54 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
       {loading ? (
         <div style={{ textAlign: "center", padding: "3rem" }}><Spin size="large" /></div>
       ) : (
-        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "82px" }} onFinish={handleSubmit} initialValues={{ status: "active" }}>
-          <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入姓名" }]} className="col-2">
-            <Input placeholder="请输入姓名" />
-          </Form.Item>
-          <Form.Item name="phone" label="电话" className="col-2">
-            <Input placeholder="请输入手机号" />
-          </Form.Item>
-          <Form.Item name="email" label="邮箱" className="col-2">
-            <Input placeholder="请输入邮箱" />
-          </Form.Item>
-          <Form.Item name="age" label="年龄" className="col-2">
-            <InputNumber style={{ width: "100%" }} min={16} max={80} placeholder="请输入年龄" />
-          </Form.Item>
-          <Form.Item name="education" label="学历" className="col-2">
-            <Select allowClear placeholder="请选择学历" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} />
-          </Form.Item>
-          <Form.Item name="school" label="毕业院校" className="col-2">
-            <Input placeholder="请输入毕业院校" />
-          </Form.Item>
-          <Form.Item name="current_company" label="当前公司" className="col-2">
-            <Input placeholder="请输入当前公司" />
-          </Form.Item>
-          <Form.Item name="current_title" label="当前职位" className="col-2">
-            <Input placeholder="请输入当前职位" />
-          </Form.Item>
-          <Form.Item name="years_experience" label="工作年限" className="col-2">
-            <InputNumber style={{ width: "100%" }} min={0} placeholder="请输入工作年限" />
-          </Form.Item>
-          <Form.Item name="city" label="所在城市" className="col-2">
-            <Input placeholder="请输入所在城市" />
-          </Form.Item>
-          <Form.Item name="industry" label="行业" className="col-2">
-            <Input placeholder="请输入行业" />
-          </Form.Item>
-          <Form.Item name="expected_salary" label="期望薪资" className="col-2">
-            <Input placeholder="如 30-40k" />
-          </Form.Item>
-          <Form.Item name="expected_city" label="期望城市" className="col-2">
-            <Input placeholder="请输入期望城市" />
-          </Form.Item>
-          <Form.Item name="status" label="状态" className="col-2">
-            <Select placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
-          </Form.Item>
-          <Form.Item name="skills" label="技能" className="col-2">
-            <Input placeholder="逗号分隔，如 Java, Spring" />
-          </Form.Item>
+        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSubmit} initialValues={{ status: "active" }}>
+          <div className="form-grid">
+            <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入姓名" }]}>
+              <Input placeholder="请输入姓名" />
+            </Form.Item>
+            <Form.Item name="phone" label="电话">
+              <Input placeholder="请输入手机号" />
+            </Form.Item>
+            <Form.Item name="email" label="邮箱">
+              <Input placeholder="请输入邮箱" />
+            </Form.Item>
+            <Form.Item name="age" label="年龄">
+              <InputNumber style={{ width: "100%" }} min={16} max={80} placeholder="请输入年龄" />
+            </Form.Item>
+            <Form.Item name="education" label="学历">
+              <Select allowClear placeholder="请选择学历" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} />
+            </Form.Item>
+            <Form.Item name="school" label="毕业院校">
+              <Input placeholder="请输入毕业院校" />
+            </Form.Item>
+            <Form.Item name="current_company" label="当前公司">
+              <Input placeholder="请输入当前公司" />
+            </Form.Item>
+            <Form.Item name="current_title" label="当前职位">
+              <Input placeholder="请输入当前职位" />
+            </Form.Item>
+            <Form.Item name="years_experience" label="工作年限">
+              <InputNumber style={{ width: "100%" }} min={0} placeholder="请输入工作年限" />
+            </Form.Item>
+            <Form.Item name="city" label="所在城市">
+              <Input placeholder="请输入所在城市" />
+            </Form.Item>
+            <Form.Item name="industry" label="行业">
+              <Input placeholder="请输入行业" />
+            </Form.Item>
+            <Form.Item name="expected_salary" label="期望薪资">
+              <Input placeholder="如 30-40k" />
+            </Form.Item>
+            <Form.Item name="expected_city" label="期望城市">
+              <Input placeholder="请输入期望城市" />
+            </Form.Item>
+            <Form.Item name="status" label="状态">
+              <Select placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
+            </Form.Item>
+            <Form.Item name="skills" label="技能">
+              <Input placeholder="逗号分隔，如 Java, Spring" />
+            </Form.Item>
+          </div>
           {tags.length > 0 && (
             <Form.Item name="tag_ids" label="自定义标签">
               <Select

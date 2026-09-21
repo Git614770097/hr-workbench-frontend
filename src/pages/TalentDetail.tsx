@@ -208,10 +208,12 @@ export default function TalentDetail() {
           >
             {showCommForm && (
               <Form form={commForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleAddComm} style={{ marginBottom: 16, padding: 16, background: "#fafafa", borderRadius: 8 }}>
-                <Form.Item name="type" label="类型" rules={[{ required: true }]} initialValue="call" className="col-2">
-                  <Select placeholder="请选择沟通类型" options={Object.entries(COMM_TYPES).map(([k, v]) => ({ label: v, value: k }))} />
-                </Form.Item>
-                <Form.Item name="rating" label="评分" className="col-2"><Rate /></Form.Item>
+                <div className="form-grid">
+                  <Form.Item name="type" label="类型" rules={[{ required: true }]} initialValue="call">
+                    <Select placeholder="请选择沟通类型" options={Object.entries(COMM_TYPES).map(([k, v]) => ({ label: v, value: k }))} />
+                  </Form.Item>
+                  <Form.Item name="rating" label="评分"><Rate /></Form.Item>
+                </div>
                 <Form.Item name="follow_up_date" label="跟进提醒"><DatePicker style={{ width: "100%" }} placeholder="请选择跟进日期" /></Form.Item>
                 <Form.Item name="content" label="沟通内容"><TextArea rows={3} placeholder="记录沟通要点…" /></Form.Item>
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>

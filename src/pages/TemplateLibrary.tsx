@@ -335,27 +335,29 @@ export default function TemplateLibrary() {
         destroyOnClose
         footer={null}
       >
-        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "76px" }} onFinish={handleSave} initialValues={{ category: "证明文档", scope: "shared" }}>
-          <Form.Item name="name" label="模板名称" rules={[{ required: true, message: "请输入模板名称" }]} className="col-2">
-            <Input placeholder="请输入模板名称，如：劳动合同（技术岗）" />
-          </Form.Item>
-          <Form.Item name="category" label="分类" rules={[{ required: true, message: "请选择分类" }]} className="col-2">
-            <Select placeholder="请选择分类" options={TEMPLATE_CATEGORIES.map((c) => ({ label: c, value: c }))} />
-          </Form.Item>
-          <Form.Item
-            name="scope"
-            label="级别"
-            rules={[{ required: true, message: "请选择级别" }]}
-            tooltip={isAdmin ? "官方模板全员只读，仅管理员可维护" : "个人模板仅自己可见"}
-          >
-            <Select
-              placeholder="请选择级别"
-              options={(isAdmin ? ["official", "shared", "private"] : ["shared", "private"]).map((s) => ({
-                label: SCOPE_LABELS[s],
-                value: s,
-              }))}
-            />
-          </Form.Item>
+        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSave} initialValues={{ category: "证明文档", scope: "shared" }}>
+          <div className="form-grid">
+            <Form.Item name="name" label="模板名称" rules={[{ required: true, message: "请输入模板名称" }]}>
+              <Input placeholder="请输入模板名称，如：劳动合同（技术岗）" />
+            </Form.Item>
+            <Form.Item name="category" label="分类" rules={[{ required: true, message: "请选择分类" }]}>
+              <Select placeholder="请选择分类" options={TEMPLATE_CATEGORIES.map((c) => ({ label: c, value: c }))} />
+            </Form.Item>
+            <Form.Item
+              name="scope"
+              label="级别"
+              rules={[{ required: true, message: "请选择级别" }]}
+              tooltip={isAdmin ? "官方模板全员只读，仅管理员可维护" : "个人模板仅自己可见"}
+            >
+              <Select
+                placeholder="请选择级别"
+                options={(isAdmin ? ["official", "shared", "private"] : ["shared", "private"]).map((s) => ({
+                  label: SCOPE_LABELS[s],
+                  value: s,
+                }))}
+              />
+            </Form.Item>
+          </div>
           <Form.Item
             name="content"
             label={

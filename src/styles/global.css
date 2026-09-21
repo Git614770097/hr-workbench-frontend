@@ -430,42 +430,44 @@ html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green:hover >
   width: 100%;
 }
 
-/* 横向表单里的多列并排项：
-   每个 Form.Item 内部结构是 [label(88px) | control]，使用 inline-block 并排时，
-   两个 item 之间留 16px，其余宽度按列数均分。
-   注意 overflow 必须可见，否则 label 会被裁掉。 */
-.form-horizontal .ant-form-item.col-2,
-.form-horizontal .ant-form-item.col-3 {
-  display: inline-block;
-  vertical-align: top;
-  margin-right: 0;
+/* 横向表单里的多列并排项 —— 用 grid 而不是 inline-block。
+   为什么不用 inline-block：行内元素之间的换行符会渲染成一个空格，
+   再加上 margin-left 的列间距，两列加起来会超过 100% 宽度而提前换行，
+   结果每行只剩一个字段（这是之前「一行两个」没生效的真正原因）。
+   grid 没有这个问题：列宽由 grid 均分，行不会被行内空格意外挤断。 */
+.form-horizontal .form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 20px;
 }
-.form-horizontal .ant-form-item.col-2 {
-  width: calc(50% - 8px);
+/* 三列变体，需要时加 cols-3 */
+.form-horizontal .form-grid.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-.form-horizontal .ant-form-item.col-3 {
-  width: calc(33.333% - 11px);
+/* 跨整行（如备注、描述这类长文本域） */
+.form-horizontal .form-grid > .span-all {
+  grid-column: 1 / -1;
 }
-/* 相邻并排项之间的间距（不依赖 :last-child 判断，用 nth 模式更稳） */
-.form-horizontal .ant-form-item.col-2 + .ant-form-item.col-2,
-.form-horizontal .ant-form-item.col-3 + .ant-form-item.col-3 {
-  margin-left: 16px;
+
+/* 网格里的 Form.Item：宽度由 grid 决定，间距交给 gap。
+   网格项默认 stretch → 同一行里 label 列宽一致、控件右边界也对齐，
+   所以看起来宽度完全一样（这正是「宽度一样」的视觉来源）。 */
+.form-horizontal .form-grid > .ant-form-item {
+  margin-bottom: 16px;
+  width: auto;
+  min-width: 0;
 }
-/* 换行占位元素（用于补齐每行不足两列的尾部） */
-.form-horizontal .form-row-filler {
-  display: inline-block;
-  vertical-align: top;
+
+/* 占位元素：字段数为奇数时补一个，避免最后一个字段独占左列后被拉宽。
+   grid 下只需占据一个单元格即可。 */
+.form-horizontal .form-grid > .form-row-filler {
+  display: block;
 }
-.form-horizontal .form-row-filler.col-2 { width: calc(50% - 8px); }
-.form-horizontal .form-row-filler.col-3 { width: calc(33.333% - 11px); }
 
 @media (max-width: 640px) {
-  .form-horizontal .ant-form-item.col-2,
-  .form-horizontal .ant-form-item.col-3,
-  .form-horizontal .form-row-filler {
-    display: block;
-    width: 100%;
-    margin-left: 0 !important;
+  .form-horizontal .form-grid,
+  .form-horizontal .form-grid.cols-3 {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

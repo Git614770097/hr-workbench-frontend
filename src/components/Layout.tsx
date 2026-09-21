@@ -77,13 +77,19 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
   // 判断某菜单是否可见（admin 全可见；普通用户看 permissions）
   // 见上方提前定义的 canSee
 
+  // 菜单顺序按「日常使用频率」排列：
+  //   高频业务（每天要用）→ 中频管理（每周/按需）→ 低频配置（仅管理员）。
+  // 同类里再按流程先后：先有人（人才库）→ 再有岗（岗位管理）→ 再看进度（招聘流程）→ 最后跟进（待办）。
   const navItems: { to: string; label: string; icon: React.ReactNode; color: string; badge?: number; perm: string }[] = [
+    // —— 第一梯队：招聘日常主循环，使用频率最高 ——
     { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
-    { to: "/pipeline", label: "招聘流程", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
     { to: "/jobs", label: "岗位管理", icon: <SolutionOutlined />, color: "#6366f1", perm: "jobs" },
+    { to: "/pipeline", label: "招聘流程", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
     { to: "/tasks", label: "跟进待办", icon: <CarryOutOutlined />, color: "#f97316", badge: taskBadge, perm: "tasks" },
-    { to: "/risks", label: "风险预警", icon: <AlertOutlined />, color: "#f43f5e", badge: urgentCount, perm: "risks" },
+    // —— 第二梯队：按需查阅与产出 ——
     { to: "/templates", label: "模板库管理", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
+    { to: "/risks", label: "风险预警", icon: <AlertOutlined />, color: "#f43f5e", badge: urgentCount, perm: "risks" },
+    // —— 第三梯队：基础配置与系统管理，频率最低 ——
     { to: "/tags", label: "标签管理", icon: <TagsOutlined />, color: "#10b981", perm: "tags" },
     ...(user.role === "admin" ? [{ to: "/roles", label: "角色管理", icon: <SafetyOutlined />, color: "#f59e0b", perm: "roles" }] : []),
     ...(user.role === "admin" ? [{ to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users" }] : []),
