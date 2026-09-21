@@ -65,6 +65,25 @@ export function isAutoFillable(key: string): boolean {
   return key in TALENT_PLACEHOLDER_MAP || key === "日期" || key === "今天日期";
 }
 
+// 返回每个占位符当前的解析值，供「套用生成」弹窗做填充核对与手动覆盖。
+// auto=true 表示该值由人才档案/日期自动得出（未被手动覆盖）；auto=false 表示手动填写或仍为空。
+export function getPlaceholderValues(
+  content: string,
+  talent: Talent | null,
+  manualValues: Record<string, string>
+): { key: string; value: string; auto: boolean }[] {
+  return extractPlaceholders(content).map((key) => {
+    if (manualValues[key] !== undefined) return { key, value: manualValues[key] || "", auto: false };
+    let value = "";
+    if (talent && key in TALENT_PLACEHOLDER_MAP) {
+      value = TALENT_PLACEHOLDER_MAP[key](talent);
+    } else if (key === "日期" || key === "今天日期") {
+      value = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
+    }
+    return { key, value, auto: !!value };
+  });
+}
+
 function resolvePlaceholderValue(
   key: string,
   talent: Talent | null,
@@ -76,7 +95,7 @@ function resolvePlaceholderValue(
   } else if (key === "日期" || key === "今天日期") {
     value = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
   }
-  if (manualValues[key]) value = manualValues[key];
+  if (manualValues[key] !== undefined) value = manualValues[key];
   return value;
 }
 

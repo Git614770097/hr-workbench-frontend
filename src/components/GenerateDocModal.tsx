@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
-  Modal, Select, Input, Button, Alert, Tag, Typography, message, Divider,
+  Modal, Select, Input, Button, Alert, Tag, Typography, message, Divider, Spin,
 } from "antd";
 import { DownloadOutlined, PrinterOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import type { Talent, DocTemplate } from "../types";
-import { extractPlaceholders, isAutoFillable, fillTemplate, exportAsWord, printDoc } from "../utils/template";
+import { extractPlaceholders, getPlaceholderValues, fillTemplate, exportAsWord, printDoc } from "../utils/template";
 import RichTextEditor from "./RichTextEditor";
 
 interface Props {
@@ -13,23 +13,40 @@ interface Props {
   onClose: () => void;
 }
 
-// 一键套用生成：选人才 → 自动替换占位符 → 缺失的手动补 → 富文本预览微调 → 导出
+// 一键套用生成：选人才 → 自动替换占位符 → 缺失的补 → 富文本预览微调 → 导出
 export default function GenerateDocModal({ template, onClose }: Props) {
   const [talents, setTalents] = useState<Talent[]>([]);
+  const [talentSearching, setTalentSearching] = useState(false);
   const [talentId, setTalentId] = useState<string | undefined>(undefined);
   const [manualValues, setManualValues] = useState<Record<string, string>>({});
   const [editedHtml, setEditedHtml] = useState("");
   const [touched, setTouched] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 加载人才列表（用于套用选择）
+  // 远程搜索人才（输入关键字实时查，避免一次只加载前 100 条找不到人）
+  const fetchTalents = (q: string) => {
+    setTalentSearching(true);
+    api.getTalents({ page: 1, limit: 30, q })
+      .then((res) => setTalents(res.items))
+      .catch(() => {})
+      .finally(() => setTalentSearching(false));
+  };
+
   useEffect(() => {
     if (!template) return;
-    api.getTalents({ page: 1, limit: 100 }).then((res) => setTalents(res.items)).catch(() => {});
+    fetchTalents("");
     setTalentId(undefined);
     setManualValues({});
     setEditedHtml("");
     setTouched(false);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [template?.id]);
+
+  const onSearch = (v: string) => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => fetchTalents(v), 300);
+  };
 
   const talent = talents.find((t) => t.id === talentId) || null;
 
@@ -37,11 +54,12 @@ export default function GenerateDocModal({ template, onClose }: Props) {
     () => (template ? extractPlaceholders(template.content) : []),
     [template]
   );
-  // 需要手动填写的占位符（人才字段覆盖不到的）
-  const manualKeys = useMemo(
-    () => placeholders.filter((k) => !isAutoFillable(k)),
-    [placeholders]
+  // 每个占位符当前值（自动填充 / 手动填写 / 待填）
+  const preview = useMemo(
+    () => (template ? getPlaceholderValues(template.content, talent, manualValues) : []),
+    [template, talent, manualValues]
   );
+  const filledCount = preview.filter((p) => p.value).length;
 
   const { html: generated, missing } = useMemo(() => {
     if (!template) return { html: "", missing: [] as string[] };
@@ -70,15 +88,18 @@ export default function GenerateDocModal({ template, onClose }: Props) {
     >
       {template && (
         <div>
-          {/* 第一步：选择人才 */}
+          {/* 第一步：选择人才（远程搜索） */}
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
             <span style={{ flexShrink: 0 }}>套用人才：</span>
             <Select
               style={{ flex: 1 }}
               showSearch
               allowClear
-              placeholder="请选择人才，自动填充姓名、手机号、公司、职位等信息"
-              optionFilterProp="label"
+              filterOption={false}
+              loading={talentSearching}
+              onSearch={onSearch}
+              notFoundContent={talentSearching ? <Spin size="small" /> : "未找到匹配人才"}
+              placeholder="搜索并选择人才，自动填充姓名、手机号、公司、职位等信息"
               value={talentId}
               onChange={(v) => { setTalentId(v); setTouched(false); }}
               options={talents.map((t) => ({
@@ -88,22 +109,36 @@ export default function GenerateDocModal({ template, onClose }: Props) {
             />
           </div>
 
-          {/* 第二步：手动补充人才信息覆盖不到的占位符 */}
-          {manualKeys.length > 0 && (
+          {/* 第二步：占位符填充核对（列出全部占位符，可覆盖任何一项） */}
+          {placeholders.length > 0 && (
             <div style={{ marginBottom: 12, padding: 12, background: "#fafafa", borderRadius: 8 }}>
-              <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
-                以下占位符无法从人才档案自动填充，请手动补充：
-              </Typography.Text>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px 16px" }}>
-                {manualKeys.map((key) => (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  占位符填充核对（共 {placeholders.length} 个，已填 {filledCount}）
+                </Typography.Text>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px 16px" }}>
+                {preview.map(({ key, value, auto }) => (
                   <div key={key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ flexShrink: 0, fontSize: 13, color: "#666", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={key}>{key}</span>
+                    <span
+                      style={{ flexShrink: 0, fontSize: 13, color: "#666", width: 72, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                      title={key}
+                    >
+                      {key}
+                    </span>
                     <Input
                       size="small"
-                      placeholder={`请输入${key}`}
-                      value={manualValues[key] || ""}
+                      status={value ? undefined : "warning"}
+                      placeholder={value ? undefined : `请输入${key}`}
+                      value={manualValues[key] ?? value}
                       onChange={(e) => { setManualValues((prev) => ({ ...prev, [key]: e.target.value })); setTouched(false); }}
                     />
+                    <Tag
+                      style={{ flexShrink: 0, marginInlineEnd: 0 }}
+                      color={value ? (auto ? "green" : "blue") : "orange"}
+                    >
+                      {value ? (auto ? "自动" : "手动") : "待填"}
+                    </Tag>
                   </div>
                 ))}
               </div>
@@ -123,8 +158,8 @@ export default function GenerateDocModal({ template, onClose }: Props) {
           <Divider style={{ margin: "8px 0" }}>生成预览（可直接编辑排版）</Divider>
           <div style={{ marginBottom: 8 }}>
             {talent && <Tag color="green">已套用：{talent.name}</Tag>}
-            {placeholders.filter((k) => isAutoFillable(k)).length > 0 && (
-              <Tag>自动填充 {placeholders.filter((k) => isAutoFillable(k)).length} 处</Tag>
+            {preview.filter((p) => p.auto).length > 0 && (
+              <Tag>自动填充 {preview.filter((p) => p.auto).length} 处</Tag>
             )}
           </div>
           <RichTextEditor
