@@ -1,9 +1,8 @@
 import { useState, useEffect } from "react";
 import {
-  Modal, Form, Input, InputNumber, Select, Spin, message, Upload, DatePicker, Divider,
+  Modal, Form, Input, InputNumber, Select, Spin, message, Upload,
 } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
-import dayjs from "dayjs";
 import { api } from "../api";
 import type { Talent, Tag } from "../types";
 import { STATUS_LABELS, EDUCATION_OPTIONS } from "../types";
@@ -36,10 +35,6 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
             ...t,
             skills: t.skills.join(", "),
             tag_ids: t.tags.map((tag) => tag.id),
-            birth_date: t.birth_date ? dayjs(t.birth_date) : null,
-            contract_end: t.contract_end ? dayjs(t.contract_end) : null,
-            probation_end: t.probation_end ? dayjs(t.probation_end) : null,
-            resignation_date: t.resignation_date ? dayjs(t.resignation_date) : null,
           });
         } else {
           form.resetFields();
@@ -60,11 +55,6 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
         years_experience: values.years_experience ?? undefined,
         skills: values.skills ? values.skills.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
         tag_ids: values.tag_ids || [],
-        // 日期：dayjs → "YYYY-MM-DD"；清空传 "" 让后端置 NULL
-        birth_date: values.birth_date ? values.birth_date.format("YYYY-MM-DD") : "",
-        contract_end: values.contract_end ? values.contract_end.format("YYYY-MM-DD") : "",
-        probation_end: values.probation_end ? values.probation_end.format("YYYY-MM-DD") : "",
-        resignation_date: values.resignation_date ? values.resignation_date.format("YYYY-MM-DD") : "",
       };
       let result;
       if (isEdit && talentId) {
@@ -168,19 +158,6 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
           )}
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={3} placeholder="补充说明…" />
-          </Form.Item>
-          <Divider style={{ margin: "4px 0 16px" }}>关键日期（用于风险预警，选填）</Divider>
-          <Form.Item name="birth_date" label="出生日期" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
-            <DatePicker style={{ width: "100%" }} placeholder="请选择出生日期" />
-          </Form.Item>
-          <Form.Item name="contract_end" label="合同到期日" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
-            <DatePicker style={{ width: "100%" }} placeholder="请选择合同到期日" />
-          </Form.Item>
-          <Form.Item name="probation_end" label="试用期结束日" style={{ display: "inline-block", width: "calc(50% - 8px)", marginRight: 16 }}>
-            <DatePicker style={{ width: "100%" }} placeholder="请选择试用期结束日" />
-          </Form.Item>
-          <Form.Item name="resignation_date" label="预计离职日期" style={{ display: "inline-block", width: "calc(50% - 8px)" }}>
-            <DatePicker style={{ width: "100%" }} placeholder="请选择预计离职日期" />
           </Form.Item>
           <Form.Item label="简历文件">
             <Upload

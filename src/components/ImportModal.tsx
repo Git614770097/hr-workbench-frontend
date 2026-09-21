@@ -165,6 +165,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   const [importing, setImporting] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const parsingRef = useRef(false);
+  // 多文件选择的缓冲：beforeUpload 对每个文件同步调用一次，先用队列收齐，再统一解析
+  const pendingFilesRef = useRef<File[]>([]);
   // 行 key 全局递增：此前用批次内下标，分两次上传会生成重复 key，
   // 导致按 key 编辑/删除时同时命中多行。
   const keySeq = useRef(0);
@@ -221,7 +223,15 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   };
 
   const handleBeforeUpload = (file: File) => {
-    handleFiles([file]);
+    pendingFilesRef.current.push(file);
+    // beforeUpload 对同一批选择的多个文件是同步依次调用的，
+    // 用 setTimeout(0) 把"统一解析"推迟到本轮同步调用全部结束后，一次性处理所有文件
+    setTimeout(() => {
+      if (pendingFilesRef.current.length === 0) return;
+      const files = pendingFilesRef.current;
+      pendingFilesRef.current = [];
+      handleFiles(files);
+    }, 0);
     return false;
   };
 

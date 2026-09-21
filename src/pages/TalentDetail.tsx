@@ -7,9 +7,8 @@ import {
 } from "antd";
 import { EditOutlined, DeleteOutlined, PlusOutlined, ArrowLeftOutlined, FilePdfOutlined, UploadOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import type { Talent, Communication, User, RiskItem, RiskType } from "../types";
-import { STATUS_LABELS, STATUS_COLORS, COMM_TYPES, RISK_LEVEL_META } from "../types";
-import { countdownText } from "../utils/risk";
+import type { Talent, Communication, User } from "../types";
+import { STATUS_LABELS, STATUS_COLORS, COMM_TYPES } from "../types";
 import TalentFormModal from "../components/TalentFormModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
 
@@ -26,8 +25,6 @@ export default function TalentDetail() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
-  // 该人才命中的预警（按类型索引），用于给关键日期标色
-  const [risks, setRisks] = useState<Partial<Record<RiskType, RiskItem>>>({});
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -37,16 +34,12 @@ export default function TalentDetail() {
   const fetchData = async () => {
     if (!id) return;
     try {
-      const [t, c, r] = await Promise.all([
+      const [t, c] = await Promise.all([
         api.getTalent(id),
         api.getCommunications(id),
-        api.getRisks().catch(() => ({ items: [] as RiskItem[], summary: { red: 0, yellow: 0, green: 0 } })),
       ]);
       setTalent(t);
       setComms(c);
-      const map: Partial<Record<RiskType, RiskItem>> = {};
-      r.items.forEach((item) => { if (item.talent_id === id) map[item.type] = item; });
-      setRisks(map);
     } catch (err) {
       console.error(err);
     }
@@ -156,47 +149,6 @@ export default function TalentDetail() {
               {isAdmin && <Descriptions.Item label="创建人">{talent.owner_name || "—"}</Descriptions.Item>}
             </Descriptions>
           </Card>
-
-          {(() => {
-            const dateRows: { label: string; type: RiskType; value: string | null }[] = [
-              { label: "合同到期日", type: "contract_end", value: talent.contract_end },
-              { label: "试用期结束日", type: "probation_end", value: talent.probation_end },
-              { label: "出生日期", type: "birthday", value: talent.birth_date },
-              { label: "预计离职日期", type: "resignation", value: talent.resignation_date },
-            ];
-            const filled = dateRows.filter((r) => r.value);
-            return (
-              <Card
-                title="关键日期"
-                style={{ marginBottom: 16 }}
-                extra={<Link to="/risks"><Button type="link" size="small">风险预警看板 →</Button></Link>}
-              >
-                {filled.length === 0 ? (
-                  <Empty description="尚未录入关键日期，编辑人才可补充" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                ) : (
-                  <Descriptions column={1} size="small">
-                    {filled.map(({ label, type, value }) => {
-                      const risk = risks[type];
-                      const meta = risk ? RISK_LEVEL_META[risk.level] : null;
-                      return (
-                        <Descriptions.Item key={type} label={label}>
-                          <span className="date-cell">
-                            <span className="date-dot" style={{ background: meta ? meta.color : "#d9d9d9" }} />
-                            <span>{value}</span>
-                            {risk && meta && (
-                              <span className="date-countdown" style={{ color: meta.color }}>
-                                {countdownText(risk.days_left, type)} · {meta.label}
-                              </span>
-                            )}
-                          </span>
-                        </Descriptions.Item>
-                      );
-                    })}
-                  </Descriptions>
-                )}
-              </Card>
-            );
-          })()}
 
           {talent.skills.length > 0 && (
             <Card title="技能标签" style={{ marginBottom: 16 }}>
