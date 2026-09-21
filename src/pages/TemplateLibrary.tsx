@@ -1,18 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Card, Input, Select, Button, Tag, Typography, Modal, Form,
-  message, Popconfirm, Upload, Tooltip, Table,
+  message, Popconfirm, Upload, Tooltip, Table, Tabs, Dropdown,
 } from "antd";
+import type { MenuProps } from "antd";
 import {
   PlusOutlined, SearchOutlined, FileTextOutlined, EditOutlined,
   DeleteOutlined, DownloadOutlined, EyeOutlined, ThunderboltOutlined,
   ImportOutlined, ReloadOutlined, CopyOutlined,
+  FileWordOutlined, FilePdfOutlined,
 } from "@ant-design/icons";
 import mammoth from "mammoth";
 import { api } from "../api";
 import type { DocTemplate, User } from "../types";
 import { TEMPLATE_CATEGORIES, SCOPE_LABELS, SCOPE_COLORS } from "../types";
-import { extractPlaceholders, exportTemplateAsDoc, toHtml, stripHtml, smartTidyHtml } from "../utils/template";
+import { extractPlaceholders, exportTemplateAsDoc, exportTemplateAsPdf, toHtml, stripHtml, smartTidyHtml } from "../utils/template";
 import { parseDocFile } from "../utils/docImport";
 import GenerateDocModal from "../components/GenerateDocModal";
 import RichTextEditor from "../components/RichTextEditor";
@@ -21,6 +23,7 @@ export default function TemplateLibrary() {
   const [templates, setTemplates] = useState<DocTemplate[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -45,14 +48,14 @@ export default function TemplateLibrary() {
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.getTemplates({ category: category || undefined, q: appliedKeyword || undefined, page, limit: 10 });
+      const res = await api.getTemplates({ category: category || undefined, q: appliedKeyword || undefined, page, limit: pageSize });
       setTemplates(res.items);
       setTotal(res.total || 0);
     } catch (err) {
       message.error((err as Error).message);
     }
     setLoading(false);
-  }, [category, appliedKeyword, page]);
+  }, [category, appliedKeyword, page, pageSize]);
 
   useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
 
@@ -107,6 +110,16 @@ export default function TemplateLibrary() {
     } catch (err) {
       message.error((err as Error).message);
     }
+  };
+
+  // 导出菜单（Word / PDF）
+  const exportMenuItems: MenuProps["items"] = [
+    { key: "word", label: "导出 Word", icon: <FileWordOutlined /> },
+    { key: "pdf", label: "导出 PDF", icon: <FilePdfOutlined /> },
+  ];
+  const onExportMenuClick = (t: DocTemplate): MenuProps["onClick"] => ({ key }) => {
+    if (key === "word") exportTemplateAsDoc(t);
+    else if (key === "pdf") exportTemplateAsPdf(t);
   };
 
   // 导入：.docx 保留排版转 HTML；.doc 按形态解析（HTML 型保留排版，RTF/二进制型提取文字）；.txt 按段落转换
@@ -234,7 +247,11 @@ export default function TemplateLibrary() {
         <span style={{ display: "inline-flex", gap: 4 }}>
           <Button type="primary" size="small" icon={<ThunderboltOutlined />} onClick={() => setGenerateTarget(t)}>套用生成</Button>
           <Tooltip title="查看"><Button size="small" icon={<EyeOutlined />} onClick={() => setViewTarget(t)} /></Tooltip>
-          <Tooltip title="导出模板"><Button size="small" icon={<DownloadOutlined />} onClick={() => exportTemplateAsDoc(t)} /></Tooltip>
+          <Tooltip title="导出模板">
+            <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick(t) }} trigger={["click"]}>
+              <Button size="small" icon={<DownloadOutlined />} />
+            </Dropdown>
+          </Tooltip>
           {canModify(t) ? (
             <>
               <Tooltip title="编辑"><Button size="small" icon={<EditOutlined />} onClick={() => openEdit(t)} /></Tooltip>
@@ -254,17 +271,9 @@ export default function TemplateLibrary() {
 
   return (
     <div>
-      {/* 搜索区：分类 + 关键词 */}
+      {/* 搜索区：关键词 + 操作按钮 */}
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <Select
-            style={{ width: 160 }}
-            allowClear
-            placeholder="请选择分类"
-            value={category || undefined}
-            onChange={(v) => setCategory(v || "")}
-            options={TEMPLATE_CATEGORIES.map((c) => ({ label: c, value: c }))}
-          />
           <Input
             style={{ width: 260 }}
             placeholder="请输入模板名称或内容关键词"
@@ -272,7 +281,7 @@ export default function TemplateLibrary() {
             prefix={<SearchOutlined style={{ color: "#bbb" }} />}
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            onPressEnter={() => setAppliedKeyword(keyword)}
+            onPressEnter={() => { setPage(1); setAppliedKeyword(keyword); }}
           />
           <Button type="primary" icon={<SearchOutlined />} onClick={() => { setPage(1); setAppliedKeyword(keyword); }}>搜索</Button>
           <Button icon={<ReloadOutlined />} onClick={() => { setKeyword(""); setAppliedKeyword(""); setCategory(""); setPage(1); }}>重置</Button>
@@ -287,6 +296,16 @@ export default function TemplateLibrary() {
 
       {/* 模板列表 */}
       <Card>
+        {/* 分类 Tab */}
+        <Tabs
+          activeKey={category || "all"}
+          onChange={(key) => { setCategory(key === "all" ? "" : key); setPage(1); }}
+          items={[
+            { key: "all", label: "全部" },
+            ...TEMPLATE_CATEGORIES.map((c) => ({ key: c, label: c })),
+          ]}
+          style={{ marginBottom: 8 }}
+        />
         <Table
           rowKey="id"
           columns={columns}
@@ -295,9 +314,12 @@ export default function TemplateLibrary() {
           size="middle"
           pagination={{
             current: page,
-            pageSize: 10,
+            pageSize,
             total,
             onChange: (p) => setPage(p),
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            onShowSizeChange: (_current, size) => { setPageSize(size); setPage(1); },
             showTotal: (t) => `共 ${t} 个模板`,
           }}
           locale={{ emptyText: "暂无模板，点击右上角新建或导入" }}
@@ -372,7 +394,9 @@ export default function TemplateLibrary() {
         width={820}
         footer={
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <Button icon={<DownloadOutlined />} onClick={() => viewTarget && exportTemplateAsDoc(viewTarget)}>导出模板</Button>
+            <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick(viewTarget!) }} trigger={["click"]}>
+              <Button icon={<DownloadOutlined />}>导出模板</Button>
+            </Dropdown>
             <Button type="primary" icon={<ThunderboltOutlined />} onClick={() => { setGenerateTarget(viewTarget); setViewTarget(null); }}>套用生成</Button>
           </div>
         }

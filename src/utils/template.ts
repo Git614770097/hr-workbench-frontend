@@ -285,6 +285,11 @@ export function exportTemplateAsDoc(template: DocTemplate) {
   exportAsWord(template.name, toHtml(template.content));
 }
 
+// 导出模板为 PDF（打印视图，浏览器"另存为 PDF"）
+export function exportTemplateAsPdf(template: DocTemplate) {
+  printDoc(template.name, toHtml(template.content));
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
