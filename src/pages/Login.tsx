@@ -230,12 +230,12 @@ export default function Login({ onLogin }: Props) {
             {mode === "login" ? (
               <>
                 还没有账号？
-                <a onClick={() => switchMode("register")}>立即注册</a>
+                <a className="auth-switch-link" onClick={() => switchMode("register")}>立即注册</a>
               </>
             ) : (
               <>
                 已有账号？
-                <a onClick={() => switchMode("login")}>返回登录</a>
+                <a className="auth-switch-link" onClick={() => switchMode("login")}>返回登录</a>
               </>
             )}
           </p>

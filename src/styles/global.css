@@ -127,6 +127,23 @@ body {
 .auth-switch {
   text-align: center; margin-top: 1.2rem; font-size: 0.8rem; color: #aaa;
 }
+/* 登录/注册切换链接：需要明确的「可点击」反馈 */
+.auth-switch-link {
+  color: #3b82f6; cursor: pointer; font-weight: 500;
+  padding: 2px 4px; border-radius: 4px; margin-left: 2px;
+  border-bottom: 1px solid transparent;
+  transition: color 0.15s, background-color 0.15s, border-color 0.15s;
+}
+.auth-switch-link:hover {
+  color: #2563eb; background-color: rgba(59, 130, 246, 0.1);
+  border-bottom-color: #2563eb;
+}
+.auth-switch-link:active {
+  color: #1d4ed8; background-color: rgba(59, 130, 246, 0.18);
+}
+.auth-switch-link:focus-visible {
+  outline: 2px solid #3b82f6; outline-offset: 2px;
+}
 /* 验证码行 */
 .captcha-row { display: flex; align-items: center; gap: 0.6rem; }
 .captcha-input { flex: 1; }
