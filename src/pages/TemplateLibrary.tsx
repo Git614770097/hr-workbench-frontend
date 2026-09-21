@@ -360,16 +360,16 @@ export default function TemplateLibrary() {
           </div>
           <Form.Item
             name="content"
-            label={
-              <span style={{ display: "flex", alignItems: "center", width: "100%" }}>
-                模板内容
-                <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 8, fontWeight: "normal" }}>
-                  用 {"{{占位符}}"} 标记可变内容，如 {"{{姓名}}"}、{"{{公司}}"}、{"{{日期}}"}
+            label="模板内容"
+            extra={
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: -4 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  用 {"{{占位符}}"} 标记可变内容，如 {"{{姓名}}"}、{"{{公司}}"}、{"{{日期}}"}；支持字体/字号/颜色等排版
                 </Typography.Text>
-                <Button type="link" size="small" style={{ marginLeft: "auto", padding: 0 }} onClick={handleSmartTidy}>
+                <Button type="link" size="small" style={{ padding: 0, flexShrink: 0 }} onClick={handleSmartTidy}>
                   一键整理格式
                 </Button>
-              </span>
+              </div>
             }
             rules={[{
               validator: (_: any, v: string) =>
