@@ -144,7 +144,7 @@ talents.put("/:id", async (c) => {
   if (!existing) return c.json({ error: "人才不存在" }, 404);
 
   const body = await c.req.json<any>();
-  const skills = body.skills ? JSON.stringify(body.skills) : undefined;
+  const skills = body.skills ? JSON.stringify(body.skills) : null;
   // 日期字段动态拼 SET：传了才更新（含清空 ""→NULL），未传保持原值——COALESCE 无法区分这两种情况
   const dateFields = ["birth_date", "contract_end", "probation_end", "resignation_date"] as const;
   let dateSet = "";
@@ -155,8 +155,16 @@ talents.put("/:id", async (c) => {
       dateParams.push(body[f] || null);
     }
   }
+  // D1 的 .bind() 不接受 undefined，必须归一化为 null，否则编辑时任意空字段都会 500。
+  // 标量字段统一走 undefined → null 转换（name 为 NOT NULL，前端编辑时必传，不会是 null）。
+  const scalars: (string | number | null)[] = [
+    body.name, body.phone, body.email, body.age, body.gender, body.education,
+    body.school, body.current_company, body.current_title, body.years_experience,
+    body.city, skills, body.industry, body.expected_salary, body.expected_city,
+    body.status, body.resume_url, body.notes,
+  ].map((v) => (v === undefined ? null : v));
   await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), resume_url = COALESCE(?, resume_url), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
-    .bind(body.name, body.phone, body.email, body.age, body.gender, body.education, body.school, body.current_company, body.current_title, body.years_experience, body.city, skills, body.industry, body.expected_salary, body.expected_city, body.status, body.resume_url, body.notes, ...dateParams, id).run();
+    .bind(...scalars, ...dateParams, id).run();
 
   if (body.tag_ids !== undefined) {
     await c.env.DB.prepare("DELETE FROM talent_tags WHERE talent_id = ?").bind(id).run();
