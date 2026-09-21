@@ -6,7 +6,7 @@ const tasks = new Hono<{ Bindings: Env }>();
 
 function genId(): string { return crypto.randomUUID(); }
 
-// 以中国时区（UTC+8）取今天 YYYY-MM-DD，与风险预警保持一致的日期基准
+// 以中国时区（UTC+8）取今天 YYYY-MM-DD，全站统一的日期基准
 function todayYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Shanghai",

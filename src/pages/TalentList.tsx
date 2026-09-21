@@ -7,7 +7,7 @@ import {
 import {
   DeleteOutlined, ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
-  FileWordOutlined,
+  FileWordOutlined, TagsOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -15,6 +15,7 @@ import type { Talent, User } from "../types";
 import { STATUS_LABELS, STATUS_COLORS, EDUCATION_OPTIONS } from "../types";
 import ImportModal from "../components/ImportModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
+import TagManagerModal from "../components/TagManagerModal";
 
 // 搜索条件（draft = 编辑中，applied = 已生效）
 interface Filters {
@@ -79,6 +80,8 @@ export default function TalentList() {
 
   // 弹窗状态
   const [importModalOpen, setImportModalOpen] = useState(false);
+  // 标签管理弹窗（低频配置，收进人才库工具栏）
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
   const [previewTalent, setPreviewTalent] = useState<Talent | null>(null);
 
   // 导出状态
@@ -395,6 +398,7 @@ export default function TalentList() {
             两者形成一条对齐的右侧操作区，不要另起一行。 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <Space>
+            <Button icon={<TagsOutlined />} onClick={() => setTagManagerOpen(true)}>标签管理</Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
             <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
               <Button icon={<ExportOutlined />} loading={exporting}>导出</Button>
@@ -437,6 +441,9 @@ export default function TalentList() {
         onClose={() => setImportModalOpen(false)}
         onSuccess={fetchTalents}
       />
+
+      {/* 标签管理弹窗（低频配置项，从工具栏入口打开，不占侧栏菜单） */}
+      <TagManagerModal open={tagManagerOpen} onClose={() => setTagManagerOpen(false)} />
 
       {/* 简历预览弹窗（PDF 原生渲染保留格式；Word 在线转 HTML 查看，不下载） */}
       <ResumePreviewModal talent={previewTalent} onClose={() => setPreviewTalent(null)} />

@@ -26,7 +26,7 @@ export default function Roles() {
   const openCreate = () => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ permissions: ["talents", "risks", "templates", "tags"] });
+    form.setFieldsValue({ permissions: ["talents", "templates"] });
     setShowModal(true);
   };
 

@@ -1,4 +1,4 @@
-import type { User, Talent, Tag, Communication, DocTemplate, PaginatedResponse, RiskItem, RiskSummary, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, Task, TaskSummary } from "./types";
+import type { User, Talent, Tag, Communication, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, Task, TaskSummary } from "./types";
 
 const BASE = "/api";
 
@@ -183,10 +183,6 @@ export const api = {
 
   duplicateTemplate: (id: string) =>
     request(`/templates/${id}/duplicate`, { method: "POST" }),
-
-  // 风险预警
-  getRisks: () =>
-    request<{ items: RiskItem[]; summary: RiskSummary }>("/risks"),
 
   // ---- 岗位管理 ----
   getJobs: (params: Record<string, string | number> = {}) => {

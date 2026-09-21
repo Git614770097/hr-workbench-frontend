@@ -135,6 +135,7 @@ export default function TalentDetail() {
           <Card title="基本信息" style={{ marginBottom: 16 }}>
             <Descriptions column={1} size="small">
               <Descriptions.Item label="年龄">{talent.age != null ? `${talent.age}岁` : "—"}</Descriptions.Item>
+              <Descriptions.Item label="性别">{talent.gender || "—"}</Descriptions.Item>
               <Descriptions.Item label="学历">{talent.education || "—"}</Descriptions.Item>
               <Descriptions.Item label="毕业院校">{talent.school || "—"}</Descriptions.Item>
               <Descriptions.Item label="当前公司">{talent.current_company || "—"}</Descriptions.Item>

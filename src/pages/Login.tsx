@@ -62,11 +62,11 @@ export default function Login({ onLogin }: Props) {
             人力资源管理系统
           </Typography.Title>
           <Typography.Text className="auth-brand-desc">
-            人才库 · 模板库 · 风险预警，一站式人事工作台
+            人才库 · 招聘流程 · 岗位管理，一站式人事工作台
           </Typography.Text>
           <div className="auth-brand-points">
             <span>智能人才档案管理</span>
-            <span>合同到期风险预警</span>
+            <span>招聘流程可视化看板</span>
             <span>模板库管理</span>
           </div>
         </div>

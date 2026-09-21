@@ -6,7 +6,6 @@ import { authRoutes } from "./routes/auth";
 import { talentRoutes } from "./routes/talents";
 import { tagRoutes } from "./routes/tags";
 import { communicationRoutes } from "./routes/communications";
-import { riskRoutes } from "./routes/risks";
 import { templateRoutes } from "./routes/templates";
 import { roleRoutes } from "./routes/roles";
 import { jobRoutes } from "./routes/jobs";
@@ -29,18 +28,8 @@ app.use("*", logger());
 app.use("/api/*", cors());
 
 // ---- 菜单权限拦截 ----
-// 根据路径前缀映射到菜单 key，校验当前会话是否有对应权限。
+// 各业务路径通过下面的 app.use(...) 显式绑定菜单 key 做校验，
 // admin 永远放行；普通用户需在角色 permissions 中包含该菜单。
-const MENU_PATH_MAP: Record<string, string> = {
-  "/api/talents": "talents",
-  "/api/risks": "risks",
-  "/api/templates": "templates",
-  "/api/tags": "tags",
-  "/api/jobs": "jobs",
-  "/api/pipeline": "pipeline",
-  "/api/tasks": "tasks",
-  "/api/users": "users", // 用户管理（实际是 /api/auth/users，见下）
-};
 
 async function menuGuard(c: any, menuKey: string) {
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
@@ -66,14 +55,9 @@ async function menuGuard(c: any, menuKey: string) {
   return null;
 }
 
-// 人才库 / 风险预警 / 模板 / 标签 的路径前缀即菜单 key
+// 人才库 / 模板 / 标签 的路径前缀即菜单 key
 app.use("/api/talents/*", async (c, next) => {
   const blocked = await menuGuard(c, "talents");
-  if (blocked) return blocked;
-  return next();
-});
-app.use("/api/risks/*", async (c, next) => {
-  const blocked = await menuGuard(c, "risks");
   if (blocked) return blocked;
   return next();
 });
@@ -82,8 +66,9 @@ app.use("/api/templates/*", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
+// 标签管理已降级为人才库页内弹窗，接口权限跟随人才库（talents）
 app.use("/api/tags/*", async (c, next) => {
-  const blocked = await menuGuard(c, "tags");
+  const blocked = await menuGuard(c, "talents");
   if (blocked) return blocked;
   return next();
 });
@@ -153,7 +138,6 @@ app.route("/api/auth", authRoutes);
 app.route("/api/talents", talentRoutes);
 app.route("/api/tags", tagRoutes);
 app.route("/api/communications", communicationRoutes);
-app.route("/api/risks", riskRoutes);
 app.route("/api/templates", templateRoutes);
 app.route("/api/roles", roleRoutes);
 app.route("/api/jobs", jobRoutes);

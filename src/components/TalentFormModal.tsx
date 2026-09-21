@@ -109,6 +109,9 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
             <Form.Item name="age" label="年龄">
               <InputNumber style={{ width: "100%" }} min={16} max={80} placeholder="请输入年龄" />
             </Form.Item>
+            <Form.Item name="gender" label="性别">
+              <Select allowClear placeholder="请选择性别" options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} />
+            </Form.Item>
             <Form.Item name="education" label="学历">
               <Select allowClear placeholder="请选择学历" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} />
             </Form.Item>

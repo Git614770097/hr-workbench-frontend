@@ -8,17 +8,17 @@ export interface User {
 }
 
 // 菜单权限 key（与后端 src/worker/permissions.ts 保持一致）
+// 注：标签管理已降级为人才库页内入口，不再是独立菜单，故不在此列——
+//     它的访问权限跟随「人才库管理」（talents）。
 export type MenuKey =
-  | "talents" | "pipeline" | "jobs" | "tasks" | "risks" | "templates" | "tags" | "users";
+  | "talents" | "pipeline" | "jobs" | "tasks" | "templates" | "users";
 
 export const MENU_PERMISSIONS: { key: MenuKey; label: string }[] = [
   { key: "talents", label: "人才库管理" },
   { key: "pipeline", label: "招聘流程" },
   { key: "jobs", label: "岗位管理" },
   { key: "tasks", label: "跟进待办" },
-  { key: "risks", label: "风险预警" },
   { key: "templates", label: "模板库管理" },
-  { key: "tags", label: "标签管理" },
   { key: "users", label: "用户管理" },
 ];
 
@@ -44,6 +44,7 @@ export interface Talent {
   phone: string | null;
   email: string | null;
   age: number | null;
+  gender: string | null;   // 性别：男 / 女
   education: string | null;
   school: string | null;
   current_company: string | null;
@@ -67,52 +68,6 @@ export interface Talent {
   updated_at: string;
   tags: Tag[];
 }
-
-// 风险预警
-export type RiskType = "contract_end" | "probation_end" | "birthday" | "resignation";
-export type RiskLevel = "red" | "yellow" | "green";
-
-export interface RiskItem {
-  talent_id: string;
-  name: string;
-  type: RiskType;
-  date: string;
-  days_left: number;
-  level: RiskLevel;
-}
-
-export interface RiskSummary {
-  red: number;
-  yellow: number;
-  green: number;
-}
-
-export const RISK_TYPE_LABELS: Record<string, string> = {
-  contract_end: "合同到期",
-  probation_end: "试用期结束",
-  birthday: "生日",
-  resignation: "离职倒计时",
-};
-
-export const RISK_LEVEL_LABELS: Record<string, string> = {
-  red: "紧急",
-  yellow: "关注",
-  green: "提醒",
-};
-
-// 风险级别视觉规范（红黄绿分色，全站统一）
-export const RISK_LEVEL_META: Record<RiskLevel, { label: string; color: string; tag: string; bg: string }> = {
-  red: { label: "紧急", color: "#ff4d4f", tag: "red", bg: "#fff1f0" },
-  yellow: { label: "关注", color: "#faad14", tag: "gold", bg: "#fffbe6" },
-  green: { label: "提醒", color: "#52c41a", tag: "green", bg: "#f6ffed" },
-};
-
-export const RISK_TYPE_ICONS: Record<RiskType, string> = {
-  contract_end: "📝",
-  probation_end: "⏳",
-  birthday: "🎂",
-  resignation: "🚪",
-};
 
 // 学历选项（筛选 / 表单 / 导入解析共用）
 export const EDUCATION_OPTIONS = [

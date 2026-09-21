@@ -5,9 +5,13 @@ import {
 import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import type { Tag, User } from "../types";
-import TagFormModal from "../components/TagFormModal";
+import TagFormModal from "./TagFormModal";
 
-export default function Tags() {
+// 标签管理主体内容。
+// 原先这是一个独立的一级菜单页面（pages/Tags.tsx），后来降级为
+// 「人才库 → 标签管理」弹窗内的内容 —— 因为它是配置项、使用频率很低，
+// 不值得占用侧栏一个主菜单位。本组件同时可用于弹窗和独立页面。
+export default function TagManagerContent() {
   const [tags, setTags] = useState<(Tag & { talent_count?: number; owner_name?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -63,7 +67,7 @@ export default function Tags() {
       title: "颜色",
       dataIndex: "color",
       key: "color",
-      width: 200,
+      width: 90,
       render: (c: string) => <div style={{ width: 24, height: 24, borderRadius: "50%", background: c }} />,
     },
     {
@@ -97,11 +101,14 @@ export default function Tags() {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <span style={{ fontSize: 13, color: "#8c8c8c" }}>
+          标签用于给人才打分类标记，新建/编辑人才时可选择。
+        </span>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增标签</Button>
       </div>
 
-      <Card>
+      <Card styles={{ body: { padding: 0 } }}>
         <Table
           columns={columns}
           dataSource={tags}

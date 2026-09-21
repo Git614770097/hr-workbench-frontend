@@ -4,9 +4,7 @@ import { Avatar, Button, Tag, Dropdown, Tooltip } from "antd";
 import {
   LogoutOutlined,
   TeamOutlined,
-  AlertOutlined,
   FileTextOutlined,
-  TagsOutlined,
   UserOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -32,8 +30,6 @@ interface Props {
 
 export default function Layout({ user, onLogout, themeKey, onChangeTheme, children }: Props) {
   const navigate = useNavigate();
-  // 侧栏紧急预警角标（红级风险数量），失败静默
-  const [urgentCount, setUrgentCount] = useState(0);
   // 侧栏待办角标（逾期 + 今日到期），失败静默
   const [taskBadge, setTaskBadge] = useState(0);
   // 侧栏折叠状态，记住用户偏好
@@ -52,11 +48,6 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
   };
 
   useEffect(() => {
-    if (canSee("risks")) {
-      api.getRisks()
-        .then((res) => setUrgentCount(res.summary.red))
-        .catch(() => setUrgentCount(0));
-    }
     if (canSee("tasks")) {
       api.getTaskSummary()
         .then((res) => setTaskBadge(res.overdue + res.today))
@@ -88,9 +79,8 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
     { to: "/tasks", label: "跟进待办", icon: <CarryOutOutlined />, color: "#f97316", badge: taskBadge, perm: "tasks" },
     // —— 第二梯队：按需查阅与产出 ——
     { to: "/templates", label: "模板库管理", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
-    { to: "/risks", label: "风险预警", icon: <AlertOutlined />, color: "#f43f5e", badge: urgentCount, perm: "risks" },
     // —— 第三梯队：基础配置与系统管理，频率最低 ——
-    { to: "/tags", label: "标签管理", icon: <TagsOutlined />, color: "#10b981", perm: "tags" },
+    // 注：标签管理已降级为「人才库」页内的弹窗入口，不再占侧栏一级菜单
     ...(user.role === "admin" ? [{ to: "/roles", label: "角色管理", icon: <SafetyOutlined />, color: "#f59e0b", perm: "roles" }] : []),
     ...(user.role === "admin" ? [{ to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users" }] : []),
   ].filter((item) => canSee(item.perm));

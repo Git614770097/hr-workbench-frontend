@@ -15,8 +15,6 @@ const TalentDetail = lazy(() => import("./pages/TalentDetail"));
 const Pipeline = lazy(() => import("./pages/Pipeline"));
 const Jobs = lazy(() => import("./pages/Jobs"));
 const Tasks = lazy(() => import("./pages/Tasks"));
-const Risks = lazy(() => import("./pages/Risks"));
-const Tags = lazy(() => import("./pages/Tags"));
 const Users = lazy(() => import("./pages/Users"));
 const Roles = lazy(() => import("./pages/Roles"));
 const TemplateLibrary = lazy(() => import("./pages/TemplateLibrary"));
@@ -96,9 +94,7 @@ export default function App({ themeKey, onChangeTheme }: AppProps) {
           <Route path="/pipeline" element={<RequirePerm user={user} perm="pipeline"><Pipeline /></RequirePerm>} />
           <Route path="/jobs" element={<RequirePerm user={user} perm="jobs"><Jobs /></RequirePerm>} />
           <Route path="/tasks" element={<RequirePerm user={user} perm="tasks"><Tasks /></RequirePerm>} />
-          <Route path="/risks" element={<RequirePerm user={user} perm="risks"><Risks /></RequirePerm>} />
           <Route path="/templates" element={<RequirePerm user={user} perm="templates"><TemplateLibrary /></RequirePerm>} />
-          <Route path="/tags" element={<RequirePerm user={user} perm="tags"><Tags /></RequirePerm>} />
           {user.role === "admin" && <Route path="/roles" element={<Roles />} />}
           {user.role === "admin" && <Route path="/users" element={<Users />} />}
           <Route path="*" element={<Navigate to="/talents" replace />} />

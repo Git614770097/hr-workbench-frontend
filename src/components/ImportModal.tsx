@@ -7,7 +7,7 @@ import mammoth from "mammoth";
 import { api } from "../api";
 import { EDUCATION_OPTIONS, STATUS_LABELS } from "../types";
 import {
-  extractName, extractPhone, extractEmail, extractAge,
+  extractName, extractPhone, extractEmail, extractAge, extractGender,
   extractTitle, extractCompany, extractSchool, extractCity, extractSkills,
   extractYearsExperience, extractPdfLines, normalizeEducation,
 } from "../utils/resumeParser";
@@ -38,6 +38,7 @@ interface ParsedTalent {
   phone: string;
   email: string;
   age: number | null;
+  gender: string;
   education: string;
   school: string;
   current_company: string;
@@ -58,6 +59,7 @@ const JSON_SAMPLE = `[
     "phone": "13800138000",
     "email": "zhangsan@example.com",
     "age": 28,
+    "gender": "男",
     "education": "本科",
     "school": "浙江大学",
     "current_company": "阿里巴巴",
@@ -71,7 +73,7 @@ const JSON_SAMPLE = `[
 
 // JSON 支持字段说明（与下方提示文案共用，避免两处不一致）
 const JSON_FIELD_HINT =
-  "name（必填）、phone、email、age、education、school、current_company、current_title、years_experience、city、skills（数组或逗号分隔）、status、notes";
+  "name（必填）、phone、email、age、gender（男/女）、education、school、current_company、current_title、years_experience、city、skills（数组或逗号分隔）、status、notes";
 
 const STATUS_KEYS = Object.keys(STATUS_LABELS);
 
@@ -105,6 +107,7 @@ function extractTalentLocal(text: string, key: string, fileName: string, file: F
     phone: extractPhone(text),
     email: extractEmail(text),
     age: extractAge(text),
+    gender: extractGender(text),
     education: normalizeEducation(text),
     school: extractSchool(text),
     current_company: extractCompany(text),
@@ -137,6 +140,7 @@ function extractTalentWithAI(
     phone: ai.phone || local.phone,
     email: ai.email || local.email,
     age: ai.age ?? local.age,
+    gender: ai.gender || local.gender,
     education: ai.education || local.education,
     school: ai.school || local.school,
     current_company: ai.current_company || local.current_company,
@@ -262,6 +266,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         phone: str(o.phone),
         email: str(o.email),
         age: num(o.age),
+        gender: str(o.gender),
         education: str(o.education),
         school: str(o.school),
         current_company: str(o.current_company),
@@ -326,6 +331,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         phone: r.phone || undefined,
         email: r.email || undefined,
         age: r.age ?? undefined,
+        gender: r.gender || undefined,
         education: r.education || undefined,
         school: r.school || undefined,
         current_company: r.current_company || undefined,
@@ -376,6 +382,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     { title: "手机号", dataIndex: "phone", width: 125, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入手机号" {...missingStyle(v)} onChange={(e) => updateRecord(r.key, "phone", e.target.value)} /> },
     { title: "邮箱", dataIndex: "email", width: 175, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入邮箱" onChange={(e) => updateRecord(r.key, "email", e.target.value)} /> },
     { title: "年龄", dataIndex: "age", width: 75, render: (v: number | null, r: ParsedTalent) => <InputNumber size="small" min={16} max={80} value={v ?? undefined} placeholder="年龄" onChange={(val) => updateRecord(r.key, "age", val ?? null)} style={{ width: "100%" }} /> },
+    { title: "性别", dataIndex: "gender", width: 85, render: (v: string, r: ParsedTalent) => <Select size="small" value={v || undefined} allowClear placeholder="性别" onChange={(val) => updateRecord(r.key, "gender", val || "")} options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} style={{ width: "100%" }} /> },
     { title: "学历", dataIndex: "education", width: 110, render: (v: string, r: ParsedTalent) => <Select size="small" value={v || undefined} allowClear placeholder="请选择学历" onChange={(val) => updateRecord(r.key, "education", val || "")} options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} style={{ width: "100%" }} /> },
     { title: "院校", dataIndex: "school", width: 140, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入院校" onChange={(e) => updateRecord(r.key, "school", e.target.value)} /> },
     { title: "当前公司", dataIndex: "current_company", width: 140, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入当前公司" onChange={(e) => updateRecord(r.key, "current_company", e.target.value)} /> },
