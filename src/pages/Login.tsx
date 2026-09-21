@@ -67,7 +67,7 @@ export default function Login({ onLogin }: Props) {
           <div className="auth-brand-points">
             <span>智能人才档案管理</span>
             <span>合同到期风险预警</span>
-            <span>标准化文件模板库</span>
+            <span>模板库管理</span>
           </div>
         </div>
 

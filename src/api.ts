@@ -162,12 +162,14 @@ export const api = {
     request(`/communications/${id}`, { method: "DELETE" }),
 
   // Doc templates
-  getTemplates: (params: { category?: string; q?: string }) => {
+  getTemplates: (params: { category?: string; q?: string; page?: number; limit?: number }) => {
     const qs = new URLSearchParams();
     if (params.category) qs.set("category", params.category);
     if (params.q) qs.set("q", params.q);
+    if (params.page) qs.set("page", String(params.page));
+    if (params.limit) qs.set("limit", String(params.limit));
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return request<{ items: DocTemplate[] }>(`/templates${suffix}`);
+    return request<{ items: DocTemplate[]; total: number }>(`/templates${suffix}`);
   },
   getTemplateCategories: () =>
     request<{ items: { category: string; count: number }[] }>("/templates/categories"),

@@ -19,6 +19,8 @@ import RichTextEditor from "../components/RichTextEditor";
 
 export default function TemplateLibrary() {
   const [templates, setTemplates] = useState<DocTemplate[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -43,13 +45,14 @@ export default function TemplateLibrary() {
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.getTemplates({ category: category || undefined, q: appliedKeyword || undefined });
+      const res = await api.getTemplates({ category: category || undefined, q: appliedKeyword || undefined, page, limit: 10 });
       setTemplates(res.items);
+      setTotal(res.total || 0);
     } catch (err) {
       message.error((err as Error).message);
     }
     setLoading(false);
-  }, [category, appliedKeyword]);
+  }, [category, appliedKeyword, page]);
 
   useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
 
@@ -271,8 +274,8 @@ export default function TemplateLibrary() {
             onChange={(e) => setKeyword(e.target.value)}
             onPressEnter={() => setAppliedKeyword(keyword)}
           />
-          <Button type="primary" icon={<SearchOutlined />} onClick={() => setAppliedKeyword(keyword)}>搜索</Button>
-          <Button icon={<ReloadOutlined />} onClick={() => { setKeyword(""); setAppliedKeyword(""); setCategory(""); }}>重置</Button>
+          <Button type="primary" icon={<SearchOutlined />} onClick={() => { setPage(1); setAppliedKeyword(keyword); }}>搜索</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => { setKeyword(""); setAppliedKeyword(""); setCategory(""); setPage(1); }}>重置</Button>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <Upload accept=".doc,.docx,.txt" showUploadList={false} beforeUpload={handleImportFile}>
               <Button icon={<ImportOutlined />}>导入模板</Button>
@@ -290,7 +293,13 @@ export default function TemplateLibrary() {
           dataSource={templates}
           loading={loading}
           size="middle"
-          pagination={{ pageSize: 10, showTotal: (total) => `共 ${total} 个模板` }}
+          pagination={{
+            current: page,
+            pageSize: 10,
+            total,
+            onChange: (p) => setPage(p),
+            showTotal: (t) => `共 ${t} 个模板`,
+          }}
           locale={{ emptyText: "暂无模板，点击右上角新建或导入" }}
         />
       </Card>

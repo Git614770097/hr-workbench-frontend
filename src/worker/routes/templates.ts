@@ -30,13 +30,15 @@ function visibilityCondition(session: Session): { sql: string; params: string[] 
 // 排序：官方 → 共享 → 个人，同级按更新时间倒序
 const SCOPE_ORDER = "CASE dt.scope WHEN 'official' THEN 0 WHEN 'shared' THEN 1 ELSE 2 END";
 
-// ---- 模板列表（分类 + 关键词筛选，按作用域过滤与排序）----
+// ---- 模板列表（分类 + 关键词筛选，按作用域过滤与排序，支持分页）----
 templates.get("/", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const category = (c.req.query("category") || "").trim();
   const q = (c.req.query("q") || "").trim();
+  const page = parseInt(c.req.query("page") || "1", 10);
+  const limit = Math.min(parseInt(c.req.query("limit") || "10", 10), 100);
 
   const vis = visibilityCondition(session);
   const conditions: string[] = [vis.sql];
@@ -44,12 +46,20 @@ templates.get("/", async (c) => {
   if (category) { conditions.push("dt.category = ?"); params.push(category); }
   if (q) { conditions.push("(dt.name LIKE ? OR dt.content LIKE ?)"); params.push(`%${q}%`, `%${q}%`); }
 
+  const where = conditions.join(" AND ");
+  const offset = (page - 1) * limit;
+
+  const countResult = await c.env.DB.prepare(
+    `SELECT COUNT(*) as total FROM doc_templates dt WHERE ${where}`
+  ).bind(...params).first<{ total: number }>();
+
   const rows = await c.env.DB.prepare(
     `SELECT dt.*, u.name as owner_name FROM doc_templates dt LEFT JOIN users u ON dt.owner_id = u.id
-     WHERE ${conditions.join(" AND ")} ORDER BY ${SCOPE_ORDER}, dt.updated_at DESC`
-  ).bind(...params).all();
+     WHERE ${where} ORDER BY ${SCOPE_ORDER}, dt.updated_at DESC LIMIT ? OFFSET ?`
+  ).bind(...params, limit, offset).all();
 
-  return c.json({ items: rows.results });
+  const total = countResult?.total || 0;
+  return c.json({ items: rows.results, total, page, limit, pages: Math.ceil(total / limit) });
 });
 
 // ---- 分类列表（含各分类模板数，按可见性过滤）----
