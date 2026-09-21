@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'user',  -- admin / user
   role_id TEXT REFERENCES roles(id), -- 关联自定义角色（admin 忽略）
+  status TEXT NOT NULL DEFAULT 'active', -- active 可登录 / pending 待管理员审批
   created_at TEXT DEFAULT (datetime('now'))
 );
 

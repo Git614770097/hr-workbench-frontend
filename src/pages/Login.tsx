@@ -1,18 +1,27 @@
 import { useState, useEffect, useCallback } from "react";
 import { Form, Input, Button, Alert, Typography } from "antd";
-import { MobileOutlined, LockOutlined, SafetyCertificateOutlined, ReloadOutlined } from "@ant-design/icons";
+import {
+  MobileOutlined, LockOutlined, SafetyCertificateOutlined, ReloadOutlined, UserOutlined,
+} from "@ant-design/icons";
 import { api } from "../api";
 
 interface Props {
   onLogin: () => void;
 }
 
+type Mode = "login" | "register";
+
 export default function Login({ onLogin }: Props) {
+  const [mode, setMode] = useState<Mode>("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [captchaId, setCaptchaId] = useState("");
   const [captchaSvg, setCaptchaSvg] = useState("");
   const [captchaLoading, setCaptchaLoading] = useState(false);
+
+  const [loginForm] = Form.useForm();
+  const [registerForm] = Form.useForm();
 
   const refreshCaptcha = useCallback(async () => {
     setCaptchaLoading(true);
@@ -31,12 +40,19 @@ export default function Login({ onLogin }: Props) {
     refreshCaptcha();
   }, [refreshCaptcha]);
 
-  const handleSubmit = async (values: {
-    phone: string;
-    password: string;
-    captcha: string;
-  }) => {
+  // 切换登录/注册时清空提示与表单，避免上一模式的错误信息残留
+  const switchMode = (next: Mode) => {
+    setMode(next);
     setError("");
+    setSuccess("");
+    loginForm.resetFields();
+    registerForm.resetFields();
+    refreshCaptcha();
+  };
+
+  const handleLogin = async (values: { phone: string; password: string; captcha: string }) => {
+    setError("");
+    setSuccess("");
     setLoading(true);
     try {
       await api.login({
@@ -53,6 +69,56 @@ export default function Login({ onLogin }: Props) {
     }
     setLoading(false);
   };
+
+  const handleRegister = async (values: {
+    phone: string; name: string; password: string; confirm: string; captcha: string;
+  }) => {
+    setError("");
+    setSuccess("");
+    setLoading(true);
+    try {
+      const res = await api.register({
+        phone: values.phone,
+        name: values.name,
+        password: values.password,
+        captcha_id: captchaId,
+        captcha: values.captcha,
+      });
+      setSuccess(res.message || "注册已提交，请等待管理员审批后登录");
+      registerForm.resetFields();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    // 验证码一次性（无论成功失败都已消费），刷新以备重试
+    refreshCaptcha();
+    setLoading(false);
+  };
+
+  // 验证码输入框 + 图形 + 刷新按钮（登录与注册共用）
+  const captchaField = (
+    <Form.Item name="captcha" rules={[{ required: true, message: "请输入验证码" }]}>
+      <div className="captcha-row">
+        <Input
+          prefix={<SafetyCertificateOutlined />}
+          placeholder="验证码"
+          maxLength={4}
+          className="captcha-input"
+        />
+        <div
+          className="captcha-img"
+          onClick={refreshCaptcha}
+          title="点击刷新验证码"
+          dangerouslySetInnerHTML={{
+            __html: captchaSvg || '<span style="color:#999;font-size:12px;">加载中…</span>',
+          }}
+        />
+        <ReloadOutlined
+          className={`captcha-refresh ${captchaLoading ? "spinning" : ""}`}
+          onClick={refreshCaptcha}
+        />
+      </div>
+    </Form.Item>
+  );
 
   return (
     <div className="auth-page">
@@ -74,64 +140,104 @@ export default function Login({ onLogin }: Props) {
         <div className="auth-form">
           <div className="auth-form-header">
             <Typography.Title level={4} style={{ margin: 0 }}>
-              欢迎登录
+              {mode === "login" ? "欢迎登录" : "注册账号"}
             </Typography.Title>
             <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-              请输入账号信息
+              {mode === "login" ? "请输入账号信息" : "提交后需管理员审批通过"}
             </Typography.Text>
           </div>
 
           {error && <Alert message={error} type="error" showIcon style={{ marginBottom: 20 }} />}
+          {success && <Alert message={success} type="success" showIcon style={{ marginBottom: 20 }} />}
 
-          <Form onFinish={handleSubmit} layout="vertical" size="large">
-            <Form.Item
-              name="phone"
-              rules={[
-                { required: true, message: "请输入手机号" },
-                { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
-              ]}
-            >
-              <Input prefix={<MobileOutlined />} placeholder="手机号" maxLength={11} />
-            </Form.Item>
+          {mode === "login" ? (
+            <Form form={loginForm} onFinish={handleLogin} layout="vertical" size="large">
+              <Form.Item
+                name="phone"
+                rules={[
+                  { required: true, message: "请输入手机号" },
+                  { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
+                ]}
+              >
+                <Input prefix={<MobileOutlined />} placeholder="手机号" maxLength={11} />
+              </Form.Item>
 
-            <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
-              <Input.Password prefix={<LockOutlined />} placeholder="密码" />
-            </Form.Item>
+              <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
+                <Input.Password prefix={<LockOutlined />} placeholder="密码" />
+              </Form.Item>
 
-            <Form.Item name="captcha" rules={[{ required: true, message: "请输入验证码" }]}>
-              <div className="captcha-row">
-                <Input
-                  prefix={<SafetyCertificateOutlined />}
-                  placeholder="验证码"
-                  maxLength={4}
-                  className="captcha-input"
-                />
-                <div
-                  className="captcha-img"
-                  onClick={refreshCaptcha}
-                  title="点击刷新验证码"
-                  dangerouslySetInnerHTML={{
-                    __html:
-                      captchaSvg ||
-                      '<span style="color:#999;font-size:12px;">加载中…</span>',
-                  }}
-                />
-                <ReloadOutlined
-                  className={`captcha-refresh ${captchaLoading ? "spinning" : ""}`}
-                  onClick={refreshCaptcha}
-                />
-              </div>
-            </Form.Item>
+              {captchaField}
 
-            <Form.Item style={{ marginBottom: 8 }}>
-              <Button type="primary" htmlType="submit" block loading={loading}>
-                登 录
-              </Button>
-            </Form.Item>
-          </Form>
+              <Form.Item style={{ marginBottom: 8 }}>
+                <Button type="primary" htmlType="submit" block loading={loading}>
+                  登 录
+                </Button>
+              </Form.Item>
+            </Form>
+          ) : (
+            <Form form={registerForm} onFinish={handleRegister} layout="vertical" size="large">
+              <Form.Item
+                name="phone"
+                rules={[
+                  { required: true, message: "请输入手机号" },
+                  { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
+                ]}
+              >
+                <Input prefix={<MobileOutlined />} placeholder="手机号" maxLength={11} />
+              </Form.Item>
+
+              <Form.Item name="name" rules={[{ required: true, message: "请输入姓名" }]}>
+                <Input prefix={<UserOutlined />} placeholder="姓名" maxLength={20} />
+              </Form.Item>
+
+              <Form.Item
+                name="password"
+                rules={[
+                  { required: true, message: "请输入密码" },
+                  { min: 6, message: "密码至少 6 位" },
+                ]}
+              >
+                <Input.Password prefix={<LockOutlined />} placeholder="密码（至少 6 位）" />
+              </Form.Item>
+
+              <Form.Item
+                name="confirm"
+                dependencies={["password"]}
+                rules={[
+                  { required: true, message: "请再次输入密码" },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      if (!value || getFieldValue("password") === value) return Promise.resolve();
+                      return Promise.reject(new Error("两次输入的密码不一致"));
+                    },
+                  }),
+                ]}
+              >
+                <Input.Password prefix={<LockOutlined />} placeholder="确认密码" />
+              </Form.Item>
+
+              {captchaField}
+
+              <Form.Item style={{ marginBottom: 8 }}>
+                <Button type="primary" htmlType="submit" block loading={loading}>
+                  提交注册
+                </Button>
+              </Form.Item>
+            </Form>
+          )}
 
           <p className="auth-switch">
-            账号由管理员创建，请联系管理员开通
+            {mode === "login" ? (
+              <>
+                还没有账号？
+                <a onClick={() => switchMode("register")}>立即注册</a>
+              </>
+            ) : (
+              <>
+                已有账号？
+                <a onClick={() => switchMode("login")}>返回登录</a>
+              </>
+            )}
           </p>
         </div>
       </div>

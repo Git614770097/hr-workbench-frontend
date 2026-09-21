@@ -83,8 +83,43 @@ auth.get("/captcha", async (c) => {
   return c.json({ captcha_id: id, svg });
 });
 
+// ---- 自助注册 ----
+// 说明：注册后状态为 pending，登录会被拒绝，必须由管理员在「用户管理」中
+//       审批通过并分配角色后才能进入系统。这样既省去管理员手输资料的麻烦，
+//       又保证未经审批的人进不来。
+auth.post("/register", async (c) => {
+  const { phone, name, password, captcha_id, captcha } = await c.req.json<{
+    phone: string; name: string; password: string; captcha_id?: string; captcha?: string;
+  }>();
+
+  if (!phone || !name || !password) return c.json({ error: "手机号、姓名、密码均为必填" }, 400);
+  if (!/^1[3-9]\d{9}$/.test(phone)) return c.json({ error: "请输入正确的手机号" }, 400);
+  if (password.length < 6) return c.json({ error: "密码至少 6 位" }, 400);
+
+  // 校验图文验证码（注册接口同样需要，防止脚本批量灌垃圾申请）
+  if (!captcha_id || !captcha) return c.json({ error: "请输入验证码" }, 400);
+  const storedCode = await c.env.SESSIONS.get(`captcha:${captcha_id}`);
+  if (!storedCode) return c.json({ error: "验证码已过期，请刷新" }, 400);
+  await c.env.SESSIONS.delete(`captcha:${captcha_id}`);
+  if (storedCode.toUpperCase() !== captcha.trim().toUpperCase()) {
+    return c.json({ error: "验证码错误" }, 400);
+  }
+
+  const existing = await c.env.DB.prepare("SELECT id FROM users WHERE phone = ?").bind(phone).first();
+  if (existing) return c.json({ error: "该手机号已注册，请直接登录或联系管理员" }, 409);
+
+  const id = genId();
+  const passwordHash = await hashPassword(password);
+  // role_id 留空 —— 权限由管理员审批时分配，不做任何默认授权
+  await c.env.DB.prepare(
+    "INSERT INTO users (id, phone, name, password_hash, role, role_id, status) VALUES (?, ?, ?, ?, 'user', NULL, 'pending')"
+  ).bind(id, phone, name, passwordHash).run();
+
+  return c.json({ ok: true, message: "注册已提交，请等待管理员审批后登录" });
+});
+
 // ---- 登录（手机号）----
-// 说明：系统无注册功能，用户需由管理员在「用户管理」中创建后才能登录。
+// 说明：用户可由管理员在「用户管理」中创建，也可自助注册（需管理员审批）。
 auth.post("/login", async (c) => {
   const { phone, password, captcha_id, captcha } = await c.req.json<{ phone: string; password: string; captcha_id?: string; captcha?: string }>();
   if (!phone || !password) return c.json({ error: "手机号和密码为必填" }, 400);
@@ -99,12 +134,25 @@ auth.post("/login", async (c) => {
     return c.json({ error: "验证码错误" }, 400);
   }
 
-  const user = await c.env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first<{ id: string; phone: string; name: string; password_hash: string; role: string; role_id: string | null }>();
+  const user = await c.env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first<{ id: string; phone: string; name: string; password_hash: string; role: string; role_id: string | null; status: string | null }>();
 
   if (!user) return c.json({ error: "手机号或密码错误" }, 401);
 
   const passwordHash = await hashPassword(password);
   if (user.password_hash !== passwordHash) return c.json({ error: "手机号或密码错误" }, 401);
+
+  // 待审批 / 已拒绝的账号不允许登录。
+  // 注意：这里放在密码校验之后，避免通过响应差异探测某手机号是否已注册。
+  // 存量用户 status 为 'active'（迁移时的 DEFAULT），不受影响。
+  if (user.status && user.status !== "active") {
+    const msg =
+      user.status === "pending"
+        ? "账号正在等待管理员审批，通过后即可登录"
+        : user.status === "rejected"
+          ? "注册申请未通过，请联系管理员"
+          : "账号已被停用，请联系管理员";
+    return c.json({ error: msg }, 403);
+  }
 
   const token = genToken();
   await c.env.SESSIONS.put(token, JSON.stringify({ userId: user!.id, role: user!.role, name: user!.name }), { expirationTtl: 60 * 60 * 24 * 7 });
@@ -164,25 +212,75 @@ auth.post("/users", async (c) => {
 
   const id = genId();
   const passwordHash = await hashPassword(password);
-  await c.env.DB.prepare("INSERT INTO users (id, phone, name, password_hash, role, role_id) VALUES (?, ?, ?, ?, 'user', ?)")
+  await c.env.DB.prepare("INSERT INTO users (id, phone, name, password_hash, role, role_id, status) VALUES (?, ?, ?, ?, 'user', ?, 'active')")
     .bind(id, phone, name, passwordHash, finalRoleId).run();
 
   return c.json({ id, phone, name, role: "user", role_id: finalRoleId });
 });
 
-// ---- 管理员：用户列表 ----
+// ---- 管理员：用户列表（含注册状态，支持 ?status=pending 只看待审批）----
 auth.get("/users", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
   if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
 
-  const rows = await c.env.DB.prepare(
-    "SELECT u.id, u.phone, u.name, u.role, u.role_id, u.created_at, r.name as role_name FROM users u LEFT JOIN roles r ON u.role_id = r.id ORDER BY u.created_at"
-  ).all();
+  const statusFilter = (c.req.query("status") || "").trim();
+  let sql =
+    "SELECT u.id, u.phone, u.name, u.role, u.role_id, u.status, u.created_at, r.name as role_name " +
+    "FROM users u LEFT JOIN roles r ON u.role_id = r.id";
+  const params: string[] = [];
+  if (statusFilter) {
+    sql += " WHERE u.status = ?";
+    params.push(statusFilter);
+  }
+  sql += " ORDER BY CASE u.status WHEN 'pending' THEN 0 ELSE 1 END, u.created_at DESC";
+
+  const rows = await c.env.DB.prepare(sql).bind(...params).all();
   return c.json(rows.results);
 });
 
-// ---- 管理员：更新用户角色 ----
+// ---- 管理员：审批通过注册申请（同时分配角色）----
+auth.put("/users/:id/approve", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const id = c.req.param("id");
+  const body = await c.req.json<{ role_id?: string | null }>().catch(() => ({ role_id: null as string | null }));
+
+  const target = await c.env.DB.prepare("SELECT role, status FROM users WHERE id = ?").bind(id).first<{ role: string; status: string }>();
+  if (!target) return c.json({ error: "用户不存在" }, 404);
+
+  // 校验角色存在（允许不分配角色，此时用户登录后看不到任何菜单）
+  let finalRoleId: string | null = null;
+  if (body.role_id) {
+    const r = await c.env.DB.prepare("SELECT id FROM roles WHERE id = ?").bind(body.role_id).first();
+    if (!r) return c.json({ error: "角色不存在" }, 400);
+    finalRoleId = body.role_id;
+  }
+
+  await c.env.DB.prepare("UPDATE users SET status = 'active', role_id = ? WHERE id = ?")
+    .bind(finalRoleId, id).run();
+  return c.json({ ok: true });
+});
+
+// ---- 管理员：拒绝注册申请（保留记录，标记 rejected，便于对方看到明确提示）----
+auth.put("/users/:id/reject", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const id = c.req.param("id");
+  if (id === session.userId) return c.json({ error: "不能操作自己" }, 400);
+
+  const target = await c.env.DB.prepare("SELECT id FROM users WHERE id = ?").bind(id).first();
+  if (!target) return c.json({ error: "用户不存在" }, 404);
+
+  await c.env.DB.prepare("UPDATE users SET status = 'rejected' WHERE id = ?").bind(id).run();
+  return c.json({ ok: true });
+});
+
+// ---- 管理员：修改用户角色 ----
 auth.put("/users/:id/role", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);

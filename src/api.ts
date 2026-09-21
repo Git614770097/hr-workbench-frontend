@@ -50,10 +50,26 @@ export const api = {
   me: () => request<User>("/auth/me"),
   logout: () => request("/auth/logout", { method: "POST" }),
 
+  // 自助注册（注册后为 pending 状态，需管理员审批）
+  register: (data: { phone: string; name: string; password: string; captcha_id: string; captcha: string }) =>
+    request<{ ok: boolean; message: string }>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   // User management (admin only)
-  getUsers: () => request<{ id: string; phone: string; name: string; role: string; role_id: string | null; role_name: string | null; created_at: string }[]>("/auth/users"),
+  getUsers: (status?: string) =>
+    request<{ id: string; phone: string; name: string; role: string; role_id: string | null; status: string | null; role_name: string | null; created_at: string }[]>(
+      `/auth/users${status ? `?status=${status}` : ""}`
+    ),
   createUser: (data: { phone: string; name: string; password: string; role_id?: string | null }) =>
     request("/auth/users", { method: "POST", body: JSON.stringify(data) }),
+  // 审批通过注册申请（可同时分配角色）
+  approveUser: (id: string, role_id: string | null) =>
+    request(`/auth/users/${id}/approve`, { method: "PUT", body: JSON.stringify({ role_id }) }),
+  // 拒绝注册申请
+  rejectUser: (id: string) =>
+    request(`/auth/users/${id}/reject`, { method: "PUT" }),
   updateUserRole: (id: string, role_id: string | null) =>
     request(`/auth/users/${id}/role`, { method: "PUT", body: JSON.stringify({ role_id }) }),
   resetUserPassword: (id: string, password: string) =>

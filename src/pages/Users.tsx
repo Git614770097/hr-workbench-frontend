@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
 import {
-  Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Tooltip, Select,
+  Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Tooltip, Select, Alert, Badge,
 } from "antd";
-import { PlusOutlined, DeleteOutlined, KeyOutlined, SafetyOutlined } from "@ant-design/icons";
+import {
+  PlusOutlined, DeleteOutlined, KeyOutlined, SafetyOutlined, UserAddOutlined, CheckOutlined, StopOutlined, ClockCircleOutlined,
+} from "@ant-design/icons";
 import { api } from "../api";
 import { ROLE_LABELS } from "../types";
 import type { Role } from "../types";
@@ -14,24 +16,41 @@ interface UserRow {
   role: string;
   role_id: string | null;
   role_name: string | null;
+  status: string | null;
   created_at: string;
+}
+
+/** 账号状态展示元数据：审批通过的用户不展示状态列内容，保持表格干净 */
+function statusTag(status: string | null) {
+  if (!status || status === "active") return null;
+  if (status === "pending") {
+    return <Tag icon={<ClockCircleOutlined />} color="warning">待审批</Tag>;
+  }
+  if (status === "rejected") {
+    return <Tag color="default">已拒绝</Tag>;
+  }
+  return <Tag color="error">已停用</Tag>;
 }
 
 export default function Users() {
   const [users, setUsers] = useState<UserRow[]>([]);
+  const [pending, setPending] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [showReset, setShowReset] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<UserRow | null>(null);
+  const [approving, setApproving] = useState<UserRow | null>(null);
   const [createForm] = Form.useForm();
   const [resetForm] = Form.useForm();
   const [assignForm] = Form.useForm();
+  const [approveForm] = Form.useForm();
 
   const fetchUsers = async () => {
     try {
-      const res = await api.getUsers();
-      setUsers(res);
+      const [all, waiting] = await Promise.all([api.getUsers(), api.getUsers("pending")]);
+      setUsers(all);
+      setPending(waiting);
     } catch (err) {
       message.error((err as Error).message);
     }
@@ -54,6 +73,30 @@ export default function Users() {
       createForm.resetFields();
       setShowCreate(false);
       message.success("用户已创建");
+      fetchUsers();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
+  /** 审批通过：把 pending 改成 active，并同时挂上角色 */
+  const handleApprove = async (values: { role_id?: string | null }) => {
+    if (!approving) return;
+    try {
+      await api.approveUser(approving.id, values.role_id ?? null);
+      approveForm.resetFields();
+      setApproving(null);
+      message.success(`已通过「${approving.name}」的注册申请`);
+      fetchUsers();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
+  const handleReject = async (record: UserRow) => {
+    try {
+      await api.rejectUser(record.id);
+      message.success(`已拒绝「${record.name}」的注册申请`);
       fetchUsers();
     } catch (err) {
       message.error((err as Error).message);
@@ -95,26 +138,76 @@ export default function Users() {
     }
   };
 
-  const columns = [
+  /** 待审批区块的行内操作：通过 / 拒绝 */
+  const pendingActions = (record: UserRow) => (
+    <Space>
+      <Button
+        type="primary"
+        size="small"
+        icon={<CheckOutlined />}
+        onClick={() => { setApproving(record); approveForm.resetFields(); }}
+      >
+        通过
+      </Button>
+      <Popconfirm
+        title={`确认拒绝「${record.name}」的注册申请？`}
+        description="拒绝后该手机号仍可被管理员手动创建为账号。"
+        onConfirm={() => handleReject(record)}
+      >
+        <Button size="small" danger icon={<StopOutlined />}>拒绝</Button>
+      </Popconfirm>
+    </Space>
+  );
+
+  const pendingColumns = [
     {
       title: "姓名",
       dataIndex: "name",
       key: "name",
       render: (text: string) => <strong>{text}</strong>,
     },
+    { title: "手机号", dataIndex: "phone", key: "phone", width: 140 },
+    {
+      title: "申请时间",
+      dataIndex: "created_at",
+      key: "created_at",
+      width: 180,
+      render: (v: string) => v ? new Date(v).toLocaleString("zh-CN") : "—",
+    },
+    {
+      title: "操作",
+      key: "action",
+      width: 170,
+      render: (_: unknown, record: UserRow) => pendingActions(record),
+    },
+  ];
+
+  const columns = [
+    {
+      title: "姓名",
+      dataIndex: "name",
+      key: "name",
+      render: (text: string, record: UserRow) => (
+        <Space size={6}>
+          <strong>{text}</strong>
+          {statusTag(record.status)}
+        </Space>
+      ),
+    },
     {
       title: "手机号",
       dataIndex: "phone",
       key: "phone",
+      width: 140,
     },
     {
       title: "角色",
       dataIndex: "role",
       key: "role",
-      width: 120,
+      width: 180,
       render: (role: string, record: UserRow) => (
-        <Tag color={role === "admin" ? "gold" : "blue"}>
-          {role === "admin" ? ROLE_LABELS.admin : (record.role_name || ROLE_LABELS.user)}
+        <Tag color={role === "admin" ? "gold" : record.role_id ? "blue" : "default"}>
+          {role === "admin" ? ROLE_LABELS.admin : (record.role_name || "未分配角色")}
         </Tag>
       ),
     },
@@ -129,7 +222,7 @@ export default function Users() {
       title: "操作",
       key: "action",
       width: 220,
-      render: (_: any, record: UserRow) => (
+      render: (_: unknown, record: UserRow) => (
         <Space>
           <Tooltip title="重置密码">
             <Button type="link" size="small" icon={<KeyOutlined />} onClick={() => { setShowReset(record.id); resetForm.resetFields(); }} />
@@ -157,7 +250,34 @@ export default function Users() {
         </Button>
       </div>
 
-      <Card>
+      {pending.length > 0 && (
+        <Card
+          style={{ marginBottom: 16 }}
+          title={
+            <Space>
+              <UserAddOutlined style={{ color: "#f59e0b" }} />
+              <span>待审批注册申请</span>
+              <Badge count={pending.length} style={{ backgroundColor: "#f59e0b" }} />
+            </Space>
+          }
+        >
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="通过后请为其分配角色，否则该用户登录后看不到任何菜单。"
+          />
+          <Table
+            columns={pendingColumns}
+            dataSource={pending}
+            rowKey="id"
+            pagination={false}
+            size="small"
+          />
+        </Card>
+      )}
+
+      <Card title="全部账号">
         <Table
           columns={columns}
           dataSource={users}
@@ -174,7 +294,7 @@ export default function Users() {
         onCancel={() => setShowCreate(false)}
         footer={null}
       >
-        <Form form={createForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleCreate}>
+        <Form form={createForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleCreate}>
           <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入姓名" }]}>
             <Input placeholder="姓名" />
           </Form.Item>
@@ -207,6 +327,41 @@ export default function Users() {
         </Form>
       </Modal>
 
+      {/* 审批通过弹窗 —— 通过的同时必须指定角色 */}
+      <Modal
+        title={`通过注册申请 — ${approving?.name || ""}`}
+        open={!!approving}
+        onCancel={() => setApproving(null)}
+        footer={null}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="建议直接为其分配角色，否则该用户登录后将看不到任何功能菜单。"
+        />
+        <Form form={approveForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleApprove}>
+          {approving && (
+            <Form.Item label="申请人">
+              <span>{approving.name}（{approving.phone}）</span>
+            </Form.Item>
+          )}
+          <Form.Item name="role_id" label="分配角色">
+            <Select
+              allowClear
+              placeholder="不选则暂无菜单权限"
+              options={roles.map((r) => ({ value: r.id, label: r.name }))}
+            />
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button onClick={() => setApproving(null)}>取消</Button>
+              <Button type="primary" htmlType="submit">通过并启用</Button>
+            </div>
+          </Form.Item>
+        </Form>
+      </Modal>
+
       {/* 重置密码弹窗 */}
       <Modal
         title="重置密码"
@@ -214,7 +369,7 @@ export default function Users() {
         onCancel={() => setShowReset(null)}
         footer={null}
       >
-        <Form form={resetForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleReset}>
+        <Form form={resetForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleReset}>
           <Form.Item name="password" label="新密码" rules={[{ required: true, message: "请输入新密码" }, { min: 6, message: "至少6位" }]}>
             <Input.Password placeholder="至少6位" />
           </Form.Item>
@@ -234,7 +389,7 @@ export default function Users() {
         onCancel={() => setAssigning(null)}
         footer={null}
       >
-        <Form form={assignForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleAssignRole}>
+        <Form form={assignForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleAssignRole}>
           <Form.Item name="role_id" label="角色">
             <Select
               allowClear
