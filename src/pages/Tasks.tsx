@@ -300,7 +300,7 @@ export default function Tasks() {
         width={560}
         destroyOnClose
       >
-        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleSubmit}>
+        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSubmit}>
           <Form.Item name="title" label="待办事项" rules={[{ required: true, message: "请输入待办内容" }]}>
             <Input placeholder="如：跟进张三维的面试时间确认" />
           </Form.Item>

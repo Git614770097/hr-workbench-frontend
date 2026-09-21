@@ -392,14 +392,23 @@ html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green:hover >
 }
 .form-horizontal .ant-form-item-label {
   flex: 0 0 auto;
+  /* 默认 label 列宽：必须容纳最长的 4 字 label + 必填星号 + 冒号（约 76px），
+     再留出右边距，否则「关联人才」「待办事项」「应聘岗位」等会被截断出省略号
+     或压到控件上。个别表单如需更宽（如人才表单的「毕业院校」），
+     用 labelCol={{flex:"...px"}} 覆盖。 */
+  width: 88px;
   text-align: right;
   padding-right: 12px;
-  /* 防止 label 换行导致控件错位 */
+  /* 禁止换行；配合上面的宽度保证 label 完整显示 */
   white-space: nowrap;
+  overflow: visible;
 }
 .form-horizontal .ant-form-item-label > label {
   height: auto;
   color: #5b6472;
+  /* 覆盖 antd 默认的 text-overflow: ellipsis，长 label 宁愿占位也不要省略号 */
+  overflow: visible;
+  text-overflow: clip;
 }
 .form-horizontal .ant-form-item-control {
   flex: 1 1 auto;
@@ -409,28 +418,51 @@ html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green:hover >
 .form-horizontal .ant-form-item-label > label.ant-form-item-required::before {
   margin-inline-end: 4px;
 }
+/* 表单内所有控件（Input / Select / DatePicker / InputNumber）统一撑满，
+   避免不同类型的控件宽度参差。 */
+.form-horizontal .ant-form-item-control-input,
+.form-horizontal .ant-form-item-control-input-content {
+  width: 100%;
+}
+.form-horizontal .ant-input-number,
+.form-horizontal .ant-picker,
+.form-horizontal .ant-select {
+  width: 100%;
+}
 
-/* 横向表单里的两列并排项：宽度计算会自动扣掉 label 宽度，这里统一宽度基准 */
-.form-horizontal .ant-form-item.col-2 {
-  display: inline-block;
-  width: calc(50% - 8px);
-  vertical-align: top;
-}
-.form-horizontal .ant-form-item.col-2 + .ant-form-item.col-2 {
-  margin-left: 16px;
-}
+/* 横向表单里的多列并排项：
+   每个 Form.Item 内部结构是 [label(88px) | control]，使用 inline-block 并排时，
+   两个 item 之间留 16px，其余宽度按列数均分。
+   注意 overflow 必须可见，否则 label 会被裁掉。 */
+.form-horizontal .ant-form-item.col-2,
 .form-horizontal .ant-form-item.col-3 {
   display: inline-block;
-  width: calc(33.333% - 11px);
   vertical-align: top;
+  margin-right: 0;
 }
+.form-horizontal .ant-form-item.col-2 {
+  width: calc(50% - 8px);
+}
+.form-horizontal .ant-form-item.col-3 {
+  width: calc(33.333% - 11px);
+}
+/* 相邻并排项之间的间距（不依赖 :last-child 判断，用 nth 模式更稳） */
+.form-horizontal .ant-form-item.col-2 + .ant-form-item.col-2,
 .form-horizontal .ant-form-item.col-3 + .ant-form-item.col-3 {
   margin-left: 16px;
 }
+/* 换行占位元素（用于补齐每行不足两列的尾部） */
+.form-horizontal .form-row-filler {
+  display: inline-block;
+  vertical-align: top;
+}
+.form-horizontal .form-row-filler.col-2 { width: calc(50% - 8px); }
+.form-horizontal .form-row-filler.col-3 { width: calc(33.333% - 11px); }
 
 @media (max-width: 640px) {
   .form-horizontal .ant-form-item.col-2,
-  .form-horizontal .ant-form-item.col-3 {
+  .form-horizontal .ant-form-item.col-3,
+  .form-horizontal .form-row-filler {
     display: block;
     width: 100%;
     margin-left: 0 !important;

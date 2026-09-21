@@ -81,7 +81,7 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
           description="招聘流程需要先有岗位。请先到「岗位管理」创建一个在招岗位，再回来添加候选人。"
         />
       ) : (
-        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "72px" }} onFinish={handleSubmit} initialValues={{ stage: "screening" }}>
+        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSubmit} initialValues={{ stage: "screening" }}>
           <Form.Item name="talent_id" label="人才" rules={[{ required: true, message: "请选择人才" }]}>
             <Select
               showSearch

@@ -6,7 +6,8 @@ import {
 } from "antd";
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined,
-  TeamOutlined, ExportOutlined, PlayCircleOutlined, PauseCircleOutlined,
+  TeamOutlined, PlayCircleOutlined, PauseCircleOutlined, StopOutlined,
+  SwapOutlined, CheckOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -113,14 +114,22 @@ export default function Jobs() {
     setDetailLoading(false);
   };
 
+  // 切换状态菜单：当前状态项打勾置灰不可点，其余为可执行动作。
+  // 图标语义：在招=播放、暂停=暂停、关闭=停止；菜单外观用「开关」而非导出图标。
   const statusMenu = (job: Job): MenuProps["items"] =>
-    (["open", "paused", "closed"] as const)
-      .filter((s) => s !== job.status)
-      .map((s) => ({
+    (["open", "paused", "closed"] as const).map((s) => {
+      const isCurrent = s === job.status;
+      return {
         key: s,
-        label: s === "open" ? "设为在招" : s === "paused" ? "暂停招聘" : "关闭岗位",
-        icon: s === "open" ? <PlayCircleOutlined /> : s === "paused" ? <PauseCircleOutlined /> : <DeleteOutlined />,
-      }));
+        disabled: isCurrent,
+        label: isCurrent
+          ? `${JOB_STATUS_LABELS[s]}（当前）`
+          : s === "open" ? "设为在招" : s === "paused" ? "暂停招聘" : "关闭岗位",
+        icon: isCurrent
+          ? <CheckOutlined />
+          : s === "open" ? <PlayCircleOutlined /> : s === "paused" ? <PauseCircleOutlined /> : <StopOutlined />,
+      };
+    });
 
   const columns = [
     {
@@ -192,11 +201,11 @@ export default function Jobs() {
             <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditingId(r.id); setFormOpen(true); }} />
           </Tooltip>
           <Dropdown
-            menu={{ items: statusMenu(r), onClick: ({ key }) => quickStatus(r, key) }}
+            menu={{ items: statusMenu(r), onClick: ({ key }) => quickStatus(r, key), selectable: true, selectedKeys: [r.status] }}
             trigger={["click"]}
           >
             <Tooltip title="切换状态">
-              <Button type="link" size="small" icon={<ExportOutlined />} />
+              <Button type="link" size="small" icon={<SwapOutlined />} />
             </Tooltip>
           </Dropdown>
           <Popconfirm

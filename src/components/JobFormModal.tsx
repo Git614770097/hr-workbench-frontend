@@ -72,7 +72,10 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
       footer={null}
       destroyOnClose
     >
-      <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSubmit}>
+      <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "76px" }} onFinish={handleSubmit}>
+        {/* 两列布局（全站统一）：每行固定 2 个字段，全部用 col-2；
+            Select / Input / DatePicker / InputNumber 都撑满各自 control 区域，
+            宽度完全一致，不会因控件类型不同而参差。 */}
         <Form.Item
           name="title" label="岗位名称" rules={[{ required: true, message: "请输入岗位名称" }]}
           className="col-2"
@@ -89,28 +92,29 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
           />
         </Form.Item>
 
-        <Form.Item name="city" label="工作城市" className="col-3">
+        <Form.Item name="city" label="工作城市" className="col-2">
           <Input placeholder="如 深圳" />
         </Form.Item>
-        <Form.Item name="job_type" label="用工类型" className="col-3">
+        <Form.Item name="job_type" label="用工类型" className="col-2">
           <Select options={Object.entries(JOB_TYPE_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
         </Form.Item>
-        <Form.Item name="headcount" label="招聘人数" className="col-3">
+
+        <Form.Item name="headcount" label="招聘人数" className="col-2">
           <InputNumber style={{ width: "100%" }} min={1} max={999} />
         </Form.Item>
+        <Form.Item name="opened_at" label="开放日期" className="col-2">
+          <DatePicker style={{ width: "100%" }} placeholder="请选择日期" />
+        </Form.Item>
 
-        <Form.Item name="priority" label="紧急度" className="col-3">
+        <Form.Item name="priority" label="紧急度" className="col-2">
           <Select options={Object.entries(PRIORITY_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
         </Form.Item>
-        <Form.Item name="status" label="状态" className="col-3">
+        <Form.Item name="status" label="状态" className="col-2">
           <Select options={[
             { label: "在招", value: "open" },
             { label: "暂停", value: "paused" },
             { label: "已关闭", value: "closed" },
           ]} />
-        </Form.Item>
-        <Form.Item name="opened_at" label="开放日期" className="col-3">
-          <DatePicker style={{ width: "100%" }} placeholder="请选择日期" />
         </Form.Item>
 
         <Form.Item name="salary_range" label="薪资范围" className="col-2">
@@ -120,16 +124,17 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
           <Select allowClear placeholder="不限" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} />
         </Form.Item>
 
-        <Form.Item name="experience" label="经验要求">
+        <Form.Item name="experience" label="经验要求" className="col-2">
           <Input placeholder="如 3-5年" />
         </Form.Item>
+        <span className="form-row-filler col-2" />
 
         <Form.Item name="description" label="岗位职责">
-          <Input.TextArea rows={4} placeholder="一行一条，或用编号书写…" />
+          <Input.TextArea rows={3} placeholder="一行一条，或用编号书写…" />
         </Form.Item>
 
         <Form.Item name="requirements" label="任职要求">
-          <Input.TextArea rows={4} placeholder="一行一条…" />
+          <Input.TextArea rows={3} placeholder="一行一条…" />
         </Form.Item>
 
         <Alert
