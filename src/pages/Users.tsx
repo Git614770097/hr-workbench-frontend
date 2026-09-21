@@ -3,22 +3,12 @@ import {
   Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Tooltip, Select, Alert, Badge,
 } from "antd";
 import {
-  PlusOutlined, DeleteOutlined, KeyOutlined, SafetyOutlined, UserAddOutlined, CheckOutlined, StopOutlined, ClockCircleOutlined,
+  PlusOutlined, DeleteOutlined, KeyOutlined, SafetyOutlined, UserAddOutlined, CheckOutlined, StopOutlined,
+  ClockCircleOutlined, LockOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import { ROLE_LABELS } from "../types";
-import type { Role } from "../types";
-
-interface UserRow {
-  id: string;
-  phone: string;
-  name: string;
-  role: string;
-  role_id: string | null;
-  role_name: string | null;
-  status: string | null;
-  created_at: string;
-}
+import type { Role, UserRow } from "../types";
 
 /** 账号状态展示元数据：审批通过的用户不展示状态列内容，保持表格干净 */
 function statusTag(status: string | null) {
@@ -35,22 +25,30 @@ function statusTag(status: string | null) {
 export default function Users() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [pending, setPending] = useState<UserRow[]>([]);
+  const [resets, setResets] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [showReset, setShowReset] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<UserRow | null>(null);
   const [approving, setApproving] = useState<UserRow | null>(null);
+  const [resolving, setResolving] = useState<UserRow | null>(null);
   const [createForm] = Form.useForm();
   const [resetForm] = Form.useForm();
   const [assignForm] = Form.useForm();
   const [approveForm] = Form.useForm();
+  const [resolveForm] = Form.useForm();
 
   const fetchUsers = async () => {
     try {
-      const [all, waiting] = await Promise.all([api.getUsers(), api.getUsers("pending")]);
+      const [all, waiting, reqs] = await Promise.all([
+        api.getUsers(),
+        api.getUsers("pending"),
+        api.getResetRequests(),
+      ]);
       setUsers(all);
       setPending(waiting);
+      setResets(reqs);
     } catch (err) {
       message.error((err as Error).message);
     }
@@ -97,6 +95,31 @@ export default function Users() {
     try {
       await api.rejectUser(record.id);
       message.success(`已拒绝「${record.name}」的注册申请`);
+      fetchUsers();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
+  /** 处理忘记密码申请：设置新密码并清除申请 */
+  const handleResolveReset = async (values: { password: string }) => {
+    if (!resolving) return;
+    try {
+      await api.resolveReset(resolving.id, "reset", values.password);
+      message.success(`已为「${resolving.name}」设置新密码，请线下告知本人`);
+      resolveForm.resetFields();
+      setResolving(null);
+      fetchUsers();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
+  /** 忽略重置申请（核对后确认无需改密码，或判定为误操作） */
+  const handleDismissReset = async (record: UserRow) => {
+    try {
+      await api.resolveReset(record.id, "dismiss");
+      message.success(`已忽略「${record.name}」的重置申请`);
       fetchUsers();
     } catch (err) {
       message.error((err as Error).message);
@@ -182,6 +205,50 @@ export default function Users() {
     },
   ];
 
+  /** 待处理重置申请的行内操作：设置新密码 / 忽略 */
+  const resetActions = (record: UserRow) => (
+    <Space>
+      <Button
+        type="primary"
+        size="small"
+        icon={<KeyOutlined />}
+        onClick={() => { setResolving(record); resolveForm.resetFields(); }}
+      >
+        设置新密码
+      </Button>
+      <Popconfirm
+        title={`忽略「${record.name}」的重置申请？`}
+        description="忽略后该申请从列表移除，账号密码保持不变。"
+        onConfirm={() => handleDismissReset(record)}
+      >
+        <Button size="small" icon={<StopOutlined />}>忽略</Button>
+      </Popconfirm>
+    </Space>
+  );
+
+  const resetColumns = [
+    {
+      title: "姓名",
+      dataIndex: "name",
+      key: "name",
+      render: (text: string) => <strong>{text}</strong>,
+    },
+    { title: "手机号", dataIndex: "phone", key: "phone", width: 140 },
+    {
+      title: "申请时间",
+      dataIndex: "reset_requested_at",
+      key: "reset_requested_at",
+      width: 180,
+      render: (v: string) => v ? new Date(v.replace(" ", "T") + "Z").toLocaleString("zh-CN") : "—",
+    },
+    {
+      title: "操作",
+      key: "action",
+      width: 190,
+      render: (_: unknown, record: UserRow) => resetActions(record),
+    },
+  ];
+
   const columns = [
     {
       title: "姓名",
@@ -191,6 +258,11 @@ export default function Users() {
         <Space size={6}>
           <strong>{text}</strong>
           {statusTag(record.status)}
+          {record.must_change_password ? (
+            <Tooltip title="由管理员设置了临时密码，该用户登录后会收到修改提醒">
+              <Tag icon={<LockOutlined />} color="orange">需改密码</Tag>
+            </Tooltip>
+          ) : null}
         </Space>
       ),
     },
@@ -270,6 +342,33 @@ export default function Users() {
           <Table
             columns={pendingColumns}
             dataSource={pending}
+            rowKey="id"
+            pagination={false}
+            size="small"
+          />
+        </Card>
+      )}
+
+      {resets.length > 0 && (
+        <Card
+          style={{ marginBottom: 16 }}
+          title={
+            <Space>
+              <LockOutlined style={{ color: "#ef4444" }} />
+              <span>待处理的密码重置申请</span>
+              <Badge count={resets.length} style={{ backgroundColor: "#ef4444" }} />
+            </Space>
+          }
+        >
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message="请先线下核对申请人身份，再为其设置新密码。系统会打上标记，提醒该用户登录后自行修改。"
+          />
+          <Table
+            columns={resetColumns}
+            dataSource={resets}
             rowKey="id"
             pagination={false}
             size="small"
@@ -362,7 +461,7 @@ export default function Users() {
         </Form>
       </Modal>
 
-      {/* 重置密码弹窗 */}
+      {/* 重置密码弹窗（管理员主动重置） */}
       <Modal
         title="重置密码"
         open={!!showReset}
@@ -377,6 +476,41 @@ export default function Users() {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Button onClick={() => setShowReset(null)}>取消</Button>
               <Button type="primary" htmlType="submit">确认重置</Button>
+            </div>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 处理忘记密码申请弹窗 */}
+      <Modal
+        title={`设置新密码 — ${resolving?.name || ""}`}
+        open={!!resolving}
+        onCancel={() => setResolving(null)}
+        footer={null}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="请先确认对方身份。设置后请通过可信渠道线下告知新密码，勿在群聊里发送。"
+        />
+        <Form form={resolveForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleResolveReset}>
+          {resolving && (
+            <Form.Item label="申请人">
+              <span>{resolving.name}（{resolving.phone}）</span>
+            </Form.Item>
+          )}
+          <Form.Item
+            name="password"
+            label="新密码"
+            rules={[{ required: true, message: "请输入新密码" }, { min: 6, message: "至少6位" }]}
+          >
+            <Input.Password placeholder="至少6位，建议使用临时密码" />
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button onClick={() => setResolving(null)}>取消</Button>
+              <Button type="primary" htmlType="submit">设置并关闭申请</Button>
             </div>
           </Form.Item>
         </Form>

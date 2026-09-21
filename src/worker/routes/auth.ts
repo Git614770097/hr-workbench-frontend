@@ -118,6 +118,46 @@ auth.post("/register", async (c) => {
   return c.json({ ok: true, message: "注册已提交，请等待管理员审批后登录" });
 });
 
+// ---- 忘记密码：提交重置申请 ----
+// 本系统没有短信/邮件通道，无法做短信验证码自助重置。
+// 流程：用户填写手机号 + 姓名（双要素核对）+ 验证码 → 提交申请 →
+//       管理员在「用户管理」中核对身份后批准并设置新密码。
+// 安全：无论手机号是否存在、姓名是否匹配，都返回同一句提示，
+//       避免被用来枚举「哪些手机号已注册」。
+auth.post("/forgot-password", async (c) => {
+  const { phone, name, captcha_id, captcha } = await c.req.json<{
+    phone: string; name: string; captcha_id?: string; captcha?: string;
+  }>();
+
+  if (!phone || !name) return c.json({ error: "手机号和姓名均为必填" }, 400);
+  if (!/^1[3-9]\d{9}$/.test(phone)) return c.json({ error: "请输入正确的手机号" }, 400);
+
+  // 验证码校验（防脚本批量刷申请）
+  if (!captcha_id || !captcha) return c.json({ error: "请输入验证码" }, 400);
+  const storedCode = await c.env.SESSIONS.get(`captcha:${captcha_id}`);
+  if (!storedCode) return c.json({ error: "验证码已过期，请刷新" }, 400);
+  await c.env.SESSIONS.delete(`captcha:${captcha_id}`);
+  if (storedCode.toUpperCase() !== captcha.trim().toUpperCase()) {
+    return c.json({ error: "验证码错误" }, 400);
+  }
+
+  const OK_MSG = "重置申请已提交，请等待管理员核对后设置新密码";
+
+  const user = await c.env.DB.prepare("SELECT id, name FROM users WHERE phone = ?")
+    .bind(phone)
+    .first<{ id: string; name: string }>();
+
+  // 手机号不存在 或 姓名不匹配 → 静默忽略，但对外返回相同提示
+  if (!user || user.name.trim() !== name.trim()) {
+    return c.json({ ok: true, message: OK_MSG });
+  }
+
+  await c.env.DB.prepare("UPDATE users SET reset_requested_at = datetime('now') WHERE id = ?")
+    .bind(user.id).run();
+
+  return c.json({ ok: true, message: OK_MSG });
+});
+
 // ---- 登录（手机号）----
 // 说明：用户可由管理员在「用户管理」中创建，也可自助注册（需管理员审批）。
 auth.post("/login", async (c) => {
@@ -165,7 +205,7 @@ auth.post("/login", async (c) => {
 auth.get("/me", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null }>();
+  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null; must_change_password: number }>();
   if (!user) return c.json({ error: "用户不存在" }, 401);
 
   // 管理员拥有全部权限；普通用户取角色 permissions
@@ -180,7 +220,11 @@ auth.get("/me", async (c) => {
     }
   }
 
-  return c.json({ id: user.id, phone: user.phone, name: user.name, role: user.role, role_id: user.role_id, permissions });
+  return c.json({
+    id: user.id, phone: user.phone, name: user.name, role: user.role, role_id: user.role_id,
+    must_change_password: !!user.must_change_password,
+    permissions,
+  });
 });
 
 // ---- 退出登录 ----
@@ -224,16 +268,27 @@ auth.get("/users", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
   if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
 
+  // 支持两种过滤：
+  //   ?status=pending            —— 待审批的注册申请
+  //   ?reset=1                   —— 有待处理的忘记密码申请
   const statusFilter = (c.req.query("status") || "").trim();
+  const resetFilter = c.req.query("reset") === "1";
+
   let sql =
-    "SELECT u.id, u.phone, u.name, u.role, u.role_id, u.status, u.created_at, r.name as role_name " +
+    "SELECT u.id, u.phone, u.name, u.role, u.role_id, u.status, u.created_at, " +
+    "u.reset_requested_at, u.must_change_password, r.name as role_name " +
     "FROM users u LEFT JOIN roles r ON u.role_id = r.id";
   const params: string[] = [];
   if (statusFilter) {
     sql += " WHERE u.status = ?";
     params.push(statusFilter);
+  } else if (resetFilter) {
+    sql += " WHERE u.reset_requested_at IS NOT NULL";
   }
-  sql += " ORDER BY CASE u.status WHEN 'pending' THEN 0 ELSE 1 END, u.created_at DESC";
+  // 待处理项置顶：待审批注册 > 待处理重置申请 > 其他
+  sql +=
+    " ORDER BY CASE WHEN u.status = 'pending' THEN 0" +
+    " WHEN u.reset_requested_at IS NOT NULL THEN 1 ELSE 2 END, u.created_at DESC";
 
   const rows = await c.env.DB.prepare(sql).bind(...params).all();
   return c.json(rows.results);
@@ -277,6 +332,66 @@ auth.put("/users/:id/reject", async (c) => {
   if (!target) return c.json({ error: "用户不存在" }, 404);
 
   await c.env.DB.prepare("UPDATE users SET status = 'rejected' WHERE id = ?").bind(id).run();
+  return c.json({ ok: true });
+});
+
+// ---- 管理员：处理忘记密码申请 ----
+// action = "reset"  → 同时设置新密码（建议用临时密码，用户登录后自行修改）
+// action = "dismiss" → 仅清除申请（例如核对后确认是本人误操作，不改密码）
+auth.put("/users/:id/reset-password", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const id = c.req.param("id");
+  const body = await c.req.json<{ action?: string; password?: string }>()
+    .catch(() => ({ action: "reset", password: "" }));
+
+  const target = await c.env.DB.prepare("SELECT id, name FROM users WHERE id = ?")
+    .bind(id).first<{ id: string; name: string }>();
+  if (!target) return c.json({ error: "用户不存在" }, 404);
+
+  if (body.action === "dismiss") {
+    await c.env.DB.prepare("UPDATE users SET reset_requested_at = NULL WHERE id = ?").bind(id).run();
+    return c.json({ ok: true });
+  }
+
+  if (!body.password || body.password.length < 6) {
+    return c.json({ error: "新密码至少 6 位" }, 400);
+  }
+
+  const passwordHash = await hashPassword(body.password);
+  // 清除申请 + 打上「需自行修改密码」标记，让用户下次登录后马上改掉临时密码
+  await c.env.DB.prepare(
+    "UPDATE users SET password_hash = ?, reset_requested_at = NULL, must_change_password = 1 WHERE id = ?"
+  ).bind(passwordHash, id).run();
+
+  return c.json({ ok: true });
+});
+
+// ---- 修改自己的密码（登录后可用）----
+// 忘记密码被管理员重置后，用户用临时密码登录，这里提供自行修改入口。
+auth.put("/me/password", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const { old_password, new_password } = await c.req.json<{ old_password: string; new_password: string }>();
+  if (!old_password || !new_password) return c.json({ error: "原密码和新密码均为必填" }, 400);
+  if (new_password.length < 6) return c.json({ error: "新密码至少 6 位" }, 400);
+  if (old_password === new_password) return c.json({ error: "新密码不能与原密码相同" }, 400);
+
+  const user = await c.env.DB.prepare("SELECT id, password_hash FROM users WHERE id = ?")
+    .bind(session.userId).first<{ id: string; password_hash: string }>();
+  if (!user) return c.json({ error: "用户不存在" }, 401);
+
+  if (user.password_hash !== await hashPassword(old_password)) {
+    return c.json({ error: "原密码不正确" }, 400);
+  }
+
+  await c.env.DB.prepare(
+    "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?"
+  ).bind(await hashPassword(new_password), session.userId).run();
+
   return c.json({ ok: true });
 });
 

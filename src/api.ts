@@ -1,4 +1,4 @@
-import type { User, Talent, Tag, Communication, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, Task, TaskSummary } from "./types";
+import type { User, UserRow, Talent, Tag, Communication, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, Task, TaskSummary } from "./types";
 
 const BASE = "/api";
 
@@ -57,11 +57,28 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // 忘记密码：提交重置申请（无短信通道，由管理员核对后处理）
+  forgotPassword: (data: { phone: string; name: string; captcha_id: string; captcha: string }) =>
+    request<{ ok: boolean; message: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  // 修改自己的密码
+  changeMyPassword: (data: { old_password: string; new_password: string }) =>
+    request("/auth/me/password", { method: "PUT", body: JSON.stringify(data) }),
+
   // User management (admin only)
   getUsers: (status?: string) =>
-    request<{ id: string; phone: string; name: string; role: string; role_id: string | null; status: string | null; role_name: string | null; created_at: string }[]>(
-      `/auth/users${status ? `?status=${status}` : ""}`
-    ),
+    request<UserRow[]>(`/auth/users${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+  // 有待处理忘记密码申请的用户
+  getResetRequests: () => request<UserRow[]>("/auth/users?reset=1"),
+  // 处理忘记密码申请：action=reset 会同时设置新密码
+  resolveReset: (id: string, action: "reset" | "dismiss", password?: string) =>
+    request(`/auth/users/${id}/reset-password`, {
+      method: "PUT",
+      body: JSON.stringify({ action, password }),
+    }),
   createUser: (data: { phone: string; name: string; password: string; role_id?: string | null }) =>
     request("/auth/users", { method: "POST", body: JSON.stringify(data) }),
   // 审批通过注册申请（可同时分配角色）

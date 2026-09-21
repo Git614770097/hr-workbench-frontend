@@ -5,6 +5,23 @@ export interface User {
   role: string;
   role_id?: string | null;
   permissions?: string[];
+  /** 管理员用临时密码重置过，需在下次登录后自行修改 */
+  must_change_password?: boolean;
+}
+
+/** 用户管理列表行（管理员视角，含审批与重置申请状态） */
+export interface UserRow {
+  id: string;
+  phone: string;
+  name: string;
+  role: string;
+  role_id: string | null;
+  role_name: string | null;
+  status: string | null;
+  created_at: string;
+  /** 忘记密码申请时间，非 null 表示有待处理申请 */
+  reset_requested_at: string | null;
+  must_change_password: number;
 }
 
 // 菜单权限 key（与后端 src/worker/permissions.ts 保持一致）

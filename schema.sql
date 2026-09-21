@@ -18,7 +18,9 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'user',  -- admin / user
   role_id TEXT REFERENCES roles(id), -- 关联自定义角色（admin 忽略）
-  status TEXT NOT NULL DEFAULT 'active', -- active 可登录 / pending 待管理员审批
+  status TEXT NOT NULL DEFAULT 'active', -- active 可登录 / pending 待管理员审批 / rejected 已拒绝
+  reset_requested_at TEXT,               -- 忘记密码申请时间，NULL 表示无待处理申请
+  must_change_password INTEGER NOT NULL DEFAULT 0, -- 管理员设临时密码后置 1，下次登录需自行修改
   created_at TEXT DEFAULT (datetime('now'))
 );
 

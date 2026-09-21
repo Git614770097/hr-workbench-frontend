@@ -127,6 +127,8 @@ body {
 .auth-switch {
   text-align: center; margin-top: 1.2rem; font-size: 0.8rem; color: #aaa;
 }
+.auth-switch-links { display: inline-flex; align-items: center; gap: 2px; }
+.auth-switch-sep { color: #d1d5db; margin: 0 6px; user-select: none; }
 /* 登录/注册切换链接：需要明确的「可点击」反馈 */
 .auth-switch-link {
   color: #3b82f6; cursor: pointer; font-weight: 500;

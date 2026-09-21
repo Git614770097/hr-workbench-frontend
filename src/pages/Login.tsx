@@ -9,7 +9,7 @@ interface Props {
   onLogin: () => void;
 }
 
-type Mode = "login" | "register";
+type Mode = "login" | "register" | "forgot";
 
 export default function Login({ onLogin }: Props) {
   const [mode, setMode] = useState<Mode>("login");
@@ -22,6 +22,7 @@ export default function Login({ onLogin }: Props) {
 
   const [loginForm] = Form.useForm();
   const [registerForm] = Form.useForm();
+  const [forgotForm] = Form.useForm();
 
   const refreshCaptcha = useCallback(async () => {
     setCaptchaLoading(true);
@@ -40,13 +41,14 @@ export default function Login({ onLogin }: Props) {
     refreshCaptcha();
   }, [refreshCaptcha]);
 
-  // 切换登录/注册时清空提示与表单，避免上一模式的错误信息残留
+  // 切换模式时清空提示与表单，避免上一模式的错误信息残留
   const switchMode = (next: Mode) => {
     setMode(next);
     setError("");
     setSuccess("");
     loginForm.resetFields();
     registerForm.resetFields();
+    forgotForm.resetFields();
     refreshCaptcha();
   };
 
@@ -90,6 +92,26 @@ export default function Login({ onLogin }: Props) {
       setError((err as Error).message);
     }
     // 验证码一次性（无论成功失败都已消费），刷新以备重试
+    refreshCaptcha();
+    setLoading(false);
+  };
+
+  const handleForgot = async (values: { phone: string; name: string; captcha: string }) => {
+    setError("");
+    setSuccess("");
+    setLoading(true);
+    try {
+      const res = await api.forgotPassword({
+        phone: values.phone,
+        name: values.name,
+        captcha_id: captchaId,
+        captcha: values.captcha,
+      });
+      setSuccess(res.message || "重置申请已提交，请等待管理员核对后设置新密码");
+      forgotForm.resetFields();
+    } catch (err) {
+      setError((err as Error).message);
+    }
     refreshCaptcha();
     setLoading(false);
   };
@@ -140,10 +162,14 @@ export default function Login({ onLogin }: Props) {
         <div className="auth-form">
           <div className="auth-form-header">
             <Typography.Title level={4} style={{ margin: 0 }}>
-              {mode === "login" ? "欢迎登录" : "注册账号"}
+              {mode === "login" ? "欢迎登录" : mode === "register" ? "注册账号" : "忘记密码"}
             </Typography.Title>
             <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-              {mode === "login" ? "请输入账号信息" : "提交后需管理员审批通过"}
+              {mode === "login"
+                ? "请输入账号信息"
+                : mode === "register"
+                  ? "提交后需管理员审批通过"
+                  : "提交申请后由管理员核对并设置新密码"}
             </Typography.Text>
           </div>
 
@@ -174,7 +200,7 @@ export default function Login({ onLogin }: Props) {
                 </Button>
               </Form.Item>
             </Form>
-          ) : (
+          ) : mode === "register" ? (
             <Form form={registerForm} onFinish={handleRegister} layout="vertical" size="large">
               <Form.Item
                 name="phone"
@@ -224,21 +250,53 @@ export default function Login({ onLogin }: Props) {
                 </Button>
               </Form.Item>
             </Form>
+          ) : (
+            <Form form={forgotForm} onFinish={handleForgot} layout="vertical" size="large">
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message="本系统未接入短信服务，提交申请后需由管理员核对身份并为你设置新密码。"
+              />
+
+              <Form.Item
+                name="phone"
+                rules={[
+                  { required: true, message: "请输入手机号" },
+                  { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
+                ]}
+              >
+                <Input prefix={<MobileOutlined />} placeholder="手机号" maxLength={11} />
+              </Form.Item>
+
+              <Form.Item
+                name="name"
+                rules={[{ required: true, message: "请输入姓名" }]}
+              >
+                <Input prefix={<UserOutlined />} placeholder="姓名（用于核对身份）" maxLength={20} />
+              </Form.Item>
+
+              {captchaField}
+
+              <Form.Item style={{ marginBottom: 8 }}>
+                <Button type="primary" htmlType="submit" block loading={loading}>
+                  提交重置申请
+                </Button>
+              </Form.Item>
+            </Form>
           )}
 
-          <p className="auth-switch">
+          <div className="auth-switch">
             {mode === "login" ? (
-              <>
-                还没有账号？
+              <span className="auth-switch-links">
                 <a className="auth-switch-link" onClick={() => switchMode("register")}>立即注册</a>
-              </>
+                <span className="auth-switch-sep">·</span>
+                <a className="auth-switch-link" onClick={() => switchMode("forgot")}>忘记密码？</a>
+              </span>
             ) : (
-              <>
-                已有账号？
-                <a className="auth-switch-link" onClick={() => switchMode("login")}>返回登录</a>
-              </>
+              <a className="auth-switch-link" onClick={() => switchMode("login")}>← 返回登录</a>
             )}
-          </p>
+          </div>
         </div>
       </div>
     </div>
