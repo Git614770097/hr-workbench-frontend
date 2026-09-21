@@ -81,7 +81,7 @@ body {
 .auth-page {
   display: flex; align-items: center; justify-content: center;
   height: 100vh; padding: 1.5rem;
-  background: linear-gradient(135deg, #eef2ff 0%, #fdf2f8 50%, #eff6ff 100%);
+  background: linear-gradient(135deg, #dbeafe 0%, #eef2ff 50%, #e0f2fe 100%);
 }
 .auth-card {
   display: flex; width: 880px; max-width: 96vw; min-height: 520px;
@@ -91,7 +91,7 @@ body {
 /* 左侧品牌区 */
 .auth-brand {
   flex: 0 0 46%; padding: 3rem 2.5rem; color: #fff;
-  background: linear-gradient(150deg, #3b82f6 0%, #8b5cf6 55%, #ec4899 100%);
+  background: linear-gradient(150deg, #1e3a8a 0%, #2563eb 55%, #06b6d4 100%);
   display: flex; flex-direction: column; justify-content: center;
   position: relative;
 }
