@@ -400,6 +400,32 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   const handleSaveOne = async () => {
     const rec = reviewRecord;
     if (!rec) return;
+    if (!rec.name.trim()) {
+      message.error("请先填写姓名再录入");
+      return;
+    }
+    // 手机号查重：命中已有记录时先让用户确认，避免同一个人重复入库
+    if (rec.phone.trim()) {
+      try {
+        const dup = await api.getTalents({ phone: rec.phone.trim(), page: 1, limit: 5 });
+        const hit = dup.items.find((t) => (t.phone || "") === rec.phone.trim());
+        if (hit) {
+          const ok = await new Promise<boolean>((resolve) => {
+            Modal.confirm({
+              title: "可能重复录入",
+              content: `手机号 ${rec.phone} 已存在人才「${hit.name}」，仍要再录一条吗？`,
+              okText: "仍然录入",
+              cancelText: "返回修改",
+              onOk: () => resolve(true),
+              onCancel: () => resolve(false),
+            });
+          });
+          if (!ok) return;
+        }
+      } catch {
+        // 查重尽力而为，接口异常不阻断正常录入
+      }
+    }
     setSavingOne(true);
     setError("");
     try {
@@ -422,6 +448,11 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
 
   const handleImport = async () => {
     if (records.length === 0) return;
+    const missingName = records.filter((r) => !r.name.trim()).length;
+    if (missingName > 0) {
+      message.error(`有 ${missingName} 条缺少姓名（必填），请补全后再导入`);
+      return;
+    }
     setImporting(true);
     setError("");
     try {
