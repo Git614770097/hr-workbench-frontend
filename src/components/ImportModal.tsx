@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Modal, Upload, Button, Alert, message, Table, Input, InputNumber, Select, Typography, Segmented, Tooltip,
 } from "antd";
@@ -180,6 +180,21 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   // 逐份核对：reviewKey 指向当前正在核对的记录（null 表示未打开）
   const [reviewKey, setReviewKey] = useState<string | null>(null);
   const [savingOne, setSavingOne] = useState(false);
+
+  // 组件常驻（父级只切换 open），每次打开都从干净状态开始，
+  // 避免上次没处理完的解析记录/核对弹窗残留到下一次导入。
+  useEffect(() => {
+    if (!open) return;
+    setMode("resume");
+    setParsing(false);
+    setRecords([]);
+    setError("");
+    setImporting(false);
+    setJsonText("");
+    setReviewKey(null);
+    setSavingOne(false);
+    pendingFilesRef.current = [];
+  }, [open]);
 
   const handleFiles = async (files: File[]) => {
     if (parsingRef.current) return;
@@ -366,13 +381,20 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     }
   };
 
-  // 处理完当前记录后从队列移除，并自动切到下一份（没有则关闭弹窗）
+  // 处理完当前记录后从队列移除并切到下一份；若全部处理完，关闭整个导入弹窗
   const advanceReview = (key: string) => {
     const idx = records.findIndex((r) => r.key === key);
     const remaining = records.filter((r) => r.key !== key);
-    const next = remaining.length === 0 ? null : remaining[Math.min(Math.max(idx, 0), remaining.length - 1)];
+    if (remaining.length === 0) {
+      setRecords([]);
+      setReviewKey(null);
+      message.success("已处理完全部简历");
+      onClose();
+      return;
+    }
+    const next = remaining[Math.min(Math.max(idx, 0), remaining.length - 1)];
     setRecords(remaining);
-    setReviewKey(next ? next.key : null);
+    setReviewKey(next.key);
   };
 
   const handleSaveOne = async () => {
