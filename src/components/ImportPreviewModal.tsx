@@ -71,6 +71,12 @@ export default function ImportPreviewModal({
       onCancel={onClose}
       width="92%"
       style={{ top: 20 }}
+      // 弹窗嵌套：项目没配 getPopupContainer，antd Modal 默认就地渲染，
+      // 核对弹窗会变成上传弹窗 DOM 的子节点，层级与裁切都不可控。
+      // 强制挂到 body 并显式抬高 z-index（上传 1000 < 核对 1050 < 确认框 1100），
+      // 避免确认框被压在下面变成「点了没反应」。
+      getContainer={() => document.body}
+      zIndex={1050}
       destroyOnClose
       maskClosable={false}
       footer={

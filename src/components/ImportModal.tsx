@@ -316,6 +316,10 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         if (hit) {
           const ok = await new Promise<boolean>((resolve) => {
             Modal.confirm({
+              // 层级必须高于核对弹窗（1050），否则确认框被盖住，
+              // 界面看起来就是「点了保存但什么都没发生，之后点哪都没反应」
+              zIndex: 1100,
+              getContainer: () => document.body,
               title: "可能重复录入",
               content: `手机号 ${rec.phone} 已存在人才「${hit.name}」，仍要再录一条吗？`,
               okText: "仍然录入",
@@ -340,7 +344,11 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       message.success(`已录入「${rec.name || rec.fileName || "未命名"}」（第 ${reviewIndex + 1}/${records.length} 份），人才库列表已更新`);
       advanceReview(rec.key);
     } catch (err) {
-      setError((err as Error).message);
+      // 错误 Alert 在上传弹窗里，核对弹窗盖住时用户根本看不到；
+      // 录入失败必须同时用 message 弹出来，否则表现就是「点了没反应」
+      const msg = (err as Error).message || "录入失败";
+      setError(msg);
+      message.error(`录入失败：${msg}`);
     }
     setSavingOne(false);
   };
@@ -361,6 +369,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       return;
     }
     Modal.confirm({
+      zIndex: 1100,
+      getContainer: () => document.body,
       title: "放弃剩余简历？",
       content: `还有 ${rest} 份未处理，关闭后不会写入人才库（已录入的不受影响）。`,
       okText: "放弃并关闭",
