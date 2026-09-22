@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Modal, Upload, Button, Alert, message, Table, Input, Typography, Segmented, Tooltip, Tag,
+  Modal, Upload, Button, Alert, message, Table, Typography, Tooltip, Tag,
 } from "antd";
-import { InboxOutlined, DeleteOutlined, UploadOutlined, EyeOutlined } from "@ant-design/icons";
+import { InboxOutlined, DeleteOutlined, EyeOutlined } from "@ant-design/icons";
 import mammoth from "mammoth";
 import { api } from "../api";
 import { STATUS_LABELS } from "../types";
@@ -52,34 +52,10 @@ export interface ParsedTalent {
   notes: string;
   fileName: string;
   file: File | null;
-  /** 解析来源：true=AI 解析，false=本地规则回退，undefined=JSON 手工导入 */
+  /** 解析来源：true=AI 解析，false=本地规则回退 */
   _ai?: boolean;
 }
 
-// JSON 导入示例（点「填入示例」填充）
-const JSON_SAMPLE = `[
-  {
-    "name": "张三",
-    "phone": "13800138000",
-    "email": "zhangsan@example.com",
-    "age": 28,
-    "gender": "男",
-    "education": "本科",
-    "school": "浙江大学",
-    "current_company": "阿里巴巴",
-    "current_title": "高级Java工程师",
-    "years_experience": 6,
-    "city": "杭州",
-    "skills": ["Java", "Spring", "MySQL", "微服务"],
-    "status": "active"
-  }
-]`;
-
-// JSON 支持字段说明（与下方提示文案共用，避免两处不一致）
-const JSON_FIELD_HINT =
-  "name（必填）、phone、email、age、gender（男/女）、education、school、current_company、current_title、years_experience、city、skills（数组或逗号分隔）、status、notes";
-
-const STATUS_KEYS = Object.keys(STATUS_LABELS);
 
 // 解析单个文件为文本（PDF 用 pdfjs 按坐标还原行，Word 用 mammoth 提取）
 async function parseFile(file: File): Promise<string> {
@@ -168,11 +144,9 @@ interface Props {
 }
 
 export default function ImportModal({ open, onClose, onSuccess }: Props) {
-  const [mode, setMode] = useState<"resume" | "json">("resume");
   const [parsing, setParsing] = useState(false);
   const [records, setRecords] = useState<ParsedTalent[]>([]);
   const [error, setError] = useState("");
-  const [jsonText, setJsonText] = useState("");
   const parsingRef = useRef(false);
   // 多文件选择的缓冲：beforeUpload 对每个文件同步调用一次，先用队列收齐，再统一解析
   const pendingFilesRef = useRef<File[]>([]);
@@ -189,11 +163,9 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   // 避免上次没处理完的解析记录/核对弹窗残留到下一次导入。
   useEffect(() => {
     if (!open) return;
-    setMode("resume");
     setParsing(false);
     setRecords([]);
     setError("");
-    setJsonText("");
     setReviewKey(null);
     setSavingOne(false);
     pendingFilesRef.current = [];
@@ -265,82 +237,6 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       pendingFilesRef.current = [];
       handleFiles(files);
     }, 0);
-    return false;
-  };
-
-  // JSON 记录 → 统一的待核对行（与简历解析结果共用同一张表格和导入逻辑）
-  const jsonToRecords = (text: string): ParsedTalent[] => {
-    let data: unknown;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error("JSON 格式有误，请检查括号、引号是否成对完整");
-    }
-    const arr = Array.isArray(data) ? data : [data];
-    if (arr.length === 0) throw new Error("JSON 里没有可导入的记录");
-
-    const str = (v: unknown) =>
-      typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim();
-    const num = (v: unknown) => {
-      const n = typeof v === "number" ? v : parseInt(str(v), 10);
-      return Number.isFinite(n) ? n : null;
-    };
-
-    return arr.map((raw) => {
-      const o = (raw ?? {}) as Record<string, unknown>;
-      const skillsRaw = o.skills;
-      return {
-        key: nextKey(),
-        name: str(o.name),
-        phone: str(o.phone),
-        email: str(o.email),
-        age: num(o.age),
-        gender: str(o.gender),
-        education: str(o.education),
-        school: str(o.school),
-        current_company: str(o.current_company),
-        current_title: str(o.current_title),
-        years_experience: num(o.years_experience),
-        city: str(o.city),
-        skills: Array.isArray(skillsRaw)
-          ? skillsRaw.map(str).filter(Boolean).join(", ")
-          : str(skillsRaw),
-        status: STATUS_KEYS.includes(str(o.status)) ? str(o.status) : "active",
-        notes: str(o.notes),
-        fileName: "",
-        file: null,
-      };
-    });
-  };
-
-  const handleJsonParse = () => {
-    setError("");
-    if (!jsonText.trim()) {
-      setError("请先粘贴 JSON 内容，或上传 .json 文件");
-      return;
-    }
-    try {
-      const parsed = jsonToRecords(jsonText);
-      setRecords((prev) => [...prev, ...parsed]);
-      const missingName = parsed.filter((r) => !r.name).length;
-      if (missingName > 0) {
-        message.warning(`已读取 ${parsed.length} 条记录，其中 ${missingName} 条缺少姓名（必填，已标黄），请补全后导入`, 6);
-      } else {
-        message.success(`已读取 ${parsed.length} 条记录，请核对后导入`);
-      }
-      // 读完即清空，避免重复点击造成重复记录
-      setJsonText("");
-      // 与简历模式一致：读进来直接进入逐份核对，只有一条录入路径
-      if (parsed.length > 0) setReviewKey((cur) => cur ?? parsed[0].key);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
-
-  const handleJsonFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (ev) => setJsonText(String(ev.target?.result ?? ""));
-    reader.readAsText(file);
     return false;
   };
 
@@ -482,12 +378,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     { title: "当前职位", dataIndex: "current_title", width: 170, render: (v: string) => v || dash },
     { title: "状态", dataIndex: "status", width: 90, render: (v: string) => STATUS_LABELS[v] || v },
     { title: "来源", key: "parseSource", width: 80, render: (_: any, r: ParsedTalent) => (
-      <Tooltip title={r._ai === true ? "AI 解析" : r._ai === false ? "本地规则解析（AI 失败回退，建议重点核对）" : "JSON 手工导入"}>
-        {r._ai === true
-          ? <Tag color="green" style={{ marginInlineEnd: 0 }}>AI</Tag>
-          : r._ai === false
-            ? <Tag color="orange" style={{ marginInlineEnd: 0 }}>本地</Tag>
-            : <Tag style={{ marginInlineEnd: 0 }}>手工</Tag>}
+      <Tooltip title={r._ai ? "AI 解析" : "本地规则解析（AI 失败回退，建议重点核对）"}>
+        <Tag color={r._ai ? "green" : "orange"} style={{ marginInlineEnd: 0 }}>{r._ai ? "AI" : "本地"}</Tag>
       </Tooltip>
     ) },
     { title: "", key: "action", width: 150, render: (_: any, r: ParsedTalent) => (
@@ -504,60 +396,17 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
 
   return (
     <Modal title="批量导入人才" open={open} onCancel={onClose} width={1100} destroyOnClose footer={null}>
-      <Segmented
-        value={mode}
-        onChange={(v) => { setMode(v as "resume" | "json"); setError(""); }}
-        options={[
-          { label: "📄 简历文件", value: "resume" },
-          { label: "{ } JSON 粘贴", value: "json" },
-        ]}
-        style={{ marginBottom: 16 }}
-      />
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+        上传 PDF 或 Word（.docx）简历，系统自动提取姓名、电话、公司、职位等信息，然后<b>逐份核对</b>：
+        左边看简历原文，右边改字段。点「保存并录入」立刻写入人才库并保存原始简历，不想要的点「移除」。
+        全部处理完自动结束——<b>这是唯一的录入方式</b>，不再有一键批量导入。
+      </Typography.Paragraph>
 
-      {mode === "resume" ? (
-        <>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            上传 PDF 或 Word（.docx）简历，系统自动提取姓名、电话、公司、职位等信息，然后<b>逐份核对</b>：
-            左边看简历原文，右边改字段。点「保存并录入」立刻写入人才库并保存原始简历，不想要的点「移除」。
-            全部处理完自动结束——<b>这是唯一的录入方式</b>，不再有一键批量导入。
-          </Typography.Paragraph>
-
-          <Dragger accept=".pdf,.docx" multiple showUploadList={false} disabled={parsing} beforeUpload={handleBeforeUpload} style={{ marginBottom: 16 }}>
-            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-            <p className="ant-upload-text">点击或拖拽简历文件到此处</p>
-            <p className="ant-upload-hint">支持 .pdf、.docx 格式，可一次上传多份</p>
-          </Dragger>
-        </>
-      ) : (
-        <>
-          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            粘贴 JSON 数组，或上传 <code>.json</code> 文件，适合从其他系统导出后批量迁移。读取后同样进入逐份核对。
-          </Typography.Paragraph>
-
-          <Upload accept=".json" showUploadList={false} beforeUpload={handleJsonFile}>
-            <Button icon={<UploadOutlined />} style={{ marginBottom: 12 }}>上传 JSON 文件</Button>
-          </Upload>
-
-          <Input.TextArea
-            value={jsonText}
-            onChange={(e) => setJsonText(e.target.value)}
-            rows={10}
-            spellCheck={false}
-            placeholder={`在此粘贴 JSON 数组，例如：\n\n${JSON_SAMPLE}`}
-            style={{ fontFamily: "monospace", fontSize: 12 }}
-          />
-
-          <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
-            <Button type="primary" onClick={handleJsonParse} disabled={!jsonText.trim()}>
-              读取到下方列表
-            </Button>
-            <Button onClick={() => setJsonText(JSON_SAMPLE)}>填入示例</Button>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              支持字段：{JSON_FIELD_HINT}
-            </Typography.Text>
-          </div>
-        </>
-      )}
+      <Dragger accept=".pdf,.docx" multiple showUploadList={false} disabled={parsing} beforeUpload={handleBeforeUpload} style={{ marginBottom: 16 }}>
+        <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+        <p className="ant-upload-text">点击或拖拽简历文件到此处</p>
+        <p className="ant-upload-hint">支持 .pdf、.docx 格式，可一次上传多份</p>
+      </Dragger>
 
       {parsing && <Alert message="AI 识别中…" type="info" showIcon style={{ marginTop: 16, marginBottom: 16 }} />}
       {error && <Alert message={error} type="error" showIcon style={{ marginTop: 16, marginBottom: 16 }} />}
@@ -565,7 +414,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       {records.length > 0 && (
         <>
           <Typography.Text strong style={{ display: "block", marginBottom: 8 }}>
-            待导入记录（{records.length} 条，可直接修改后导入）
+            待核对记录（还有 {records.length} 份，字段在核对弹窗里修改）
           </Typography.Text>
           <Table columns={columns} dataSource={records} rowKey="key" size="small" pagination={false} scroll={{ x: scrollX }} />
         </>

@@ -88,7 +88,7 @@ export default function ImportPreviewModal({
     >
       {record && (
         <div style={{ display: "flex", gap: 16, alignItems: "stretch" }}>
-          {/* 左：简历原文。JSON 导入没有文件，整块不渲染，右侧字段区自动占满 */}
+          {/* 左：简历原文。没有文件时整块不渲染，右侧字段区自动占满 */}
           {file && (
           <div style={{ flex: "1 1 55%", minWidth: 0 }}>
             <div style={{ marginBottom: 6, fontSize: 12, color: "#888" }}>
@@ -127,11 +127,9 @@ export default function ImportPreviewModal({
           <div style={{ flex: file ? "1 1 45%" : "1 1 100%", minWidth: 0, overflowY: "auto", maxHeight: "70vh", paddingRight: 4 }}>
             <div style={{ marginBottom: 6, fontSize: 12, color: "#888", display: "flex", alignItems: "center", gap: 8 }}>
               解析字段（可直接修改）
-              {record._ai === true
+              {record._ai
                 ? <Tag color="green" style={{ marginInlineEnd: 0 }}>AI 解析</Tag>
-                : record._ai === false
-                  ? <Tag color="orange" style={{ marginInlineEnd: 0 }}>本地规则解析 · 建议重点核对</Tag>
-                  : <Tag style={{ marginInlineEnd: 0 }}>JSON 手工导入</Tag>}
+                : <Tag color="orange" style={{ marginInlineEnd: 0 }}>本地规则解析 · 建议重点核对</Tag>}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", rowGap: 8, columnGap: 8, alignItems: "center" }}>
               <label style={{ fontSize: 13, color: "#5b6472" }}>姓名</label>
