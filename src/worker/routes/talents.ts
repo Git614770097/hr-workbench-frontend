@@ -125,7 +125,7 @@ talents.get("/duplicates", async (c) => {
     const ph = phones.map(() => "?").join(",");
     // 除基础信息外，带上「判断留哪条」的依据：城市/学历/有无简历，以及关联数据条数
     // （关联越多说明这条是主力记录，保留它意味着更少的迁移与更完整的历史）。
-    // t.* 只用于在服务端算出 filled（哪些字段有值），不下发原值，避免响应体过大。
+    // t.* 只用于在服务端算出 sig（字段指纹），不下发原值，避免响应体过大。
     const rows = await c.env.DB.prepare(
       `SELECT t.*,
               CASE WHEN t.resume_url IS NOT NULL AND TRIM(t.resume_url) != '' THEN 1 ELSE 0 END AS has_resume,
@@ -139,7 +139,7 @@ talents.get("/duplicates", async (c) => {
     let map: Record<string, any[]> = {};
     for (const r of rows.results as any[]) {
       // sig：合并字段里「有值」的键 → 内容指纹。前端据此区分「将补入」与「内容不同」，
-      // 有值的键集合即该记录已填字段，无需再单独下发 filled。
+      // 有值的键集合即该记录已填字段，无需再单独下发字段清单。
       const sig: Record<string, string> = {};
       for (const f of TALENT_MERGE_FIELDS) {
         const v = r[f];
