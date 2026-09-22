@@ -1,4 +1,5 @@
 import type { Talent, DocTemplate } from "../types";
+import { downloadBlob, escapeHtml } from "./file";
 
 // 占位符 → 人才字段映射（支持中文和英文别名）
 const TALENT_PLACEHOLDER_MAP: Record<string, (t: Talent) => string> = {
@@ -307,17 +308,4 @@ export function exportTemplateAsDoc(template: DocTemplate) {
 // 导出模板为 PDF（打印视图，浏览器"另存为 PDF"）
 export function exportTemplateAsPdf(template: DocTemplate) {
   printDoc(template.name, toHtml(template.content));
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }

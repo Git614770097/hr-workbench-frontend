@@ -2,10 +2,9 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { MENU_KEYS } from "../permissions";
+import { genId } from "../helpers";
 
 const roles = new Hono<{ Bindings: Env }>();
-
-function genId(): string { return crypto.randomUUID(); }
 
 interface RoleRow {
   id: string;

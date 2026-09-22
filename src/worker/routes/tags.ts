@@ -1,10 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { genId } from "../helpers";
 
 const tags = new Hono<{ Bindings: Env }>();
-
-function genId(): string { return crypto.randomUUID(); }
 
 // ---- 标签列表 ----
 // 管理员：看所有标签；普通用户：只看自己的

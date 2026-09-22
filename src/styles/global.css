@@ -120,10 +120,6 @@ body {
 }
 .auth-form-header { margin-bottom: 1.8rem; }
 .auth-form-header h4 { margin-bottom: 0.3rem; }
-.auth-header { text-align: center; margin-bottom: 1.5rem; }
-.auth-logo { font-size: 2.5rem; display: block; margin-bottom: 0.5rem; }
-.auth-header h1 { font-size: 1.3rem; margin-bottom: 0.3rem; }
-.auth-header p { color: #888; font-size: 0.9rem; }
 .auth-switch {
   text-align: center; margin-top: 1.2rem; font-size: 0.8rem; color: #aaa;
 }
@@ -160,43 +156,12 @@ body {
 }
 .captcha-refresh:hover { color: #3b82f6; }
 .captcha-refresh.spinning { animation: captcha-spin 0.6s linear infinite; }
-@keyframes captcha-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 768px) {
   .auth-brand { display: none; }
   .auth-card { width: 100%; min-height: auto; }
   .auth-form { padding: 2rem 1.5rem; }
 }
-
-/* 人才卡片 */
-.talent-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1rem;
-}
-.talent-card {
-  background: #fff; border-radius: 10px; padding: 1.2rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06); transition: box-shadow 0.15s;
-  cursor: pointer; border: 1px solid #f0f0f0;
-}
-.talent-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-.talent-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-.talent-name { font-size: 1.05rem; font-weight: 600; color: #1a1a2e; }
-.talent-field { display: flex; gap: 0.5rem; font-size: 0.85rem; margin-bottom: 0.3rem; }
-.talent-field .field-label { color: #999; min-width: 3rem; }
-.talent-skills { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.5rem; }
-.talent-card-footer {
-  display: flex; gap: 0.3rem; border-top: 1px solid #f5f5f5;
-  padding-top: 0.6rem; margin-top: 0.6rem;
-}
-
-/* 沟通记录 */
-.comm-item {
-  border-left: 3px solid #3b82f6; padding: 0.6rem 0.8rem;
-  background: #fafafa; border-radius: 0 6px 6px 0; margin-bottom: 0.75rem;
-}
-.comm-header { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.comm-date { color: #aaa; font-size: 0.78rem; margin-left: auto; }
-.comm-content { margin-top: 0.4rem; font-size: 0.88rem; color: #444; }
 
 /* 详情页 */
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
@@ -274,30 +239,8 @@ body {
 .rich-text-editor .ql-picker.ql-header .ql-picker-item[data-value="3"]::before { content: "标题三"; }
 
 /* 风险预警看板 */
-.risk-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; margin-bottom: 1.1rem; }
-.risk-stat {
-  position: relative; background: #fff; border: 1px solid #f0f0f0; border-radius: 10px;
-  padding: 0.85rem 1.1rem 0.85rem 1.35rem; cursor: pointer; overflow: hidden;
-  transition: box-shadow 0.15s, transform 0.15s, border-color 0.15s;
-}
-.risk-stat:hover { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.09); transform: translateY(-1px); }
-.risk-stat.active { border-color: currentColor; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1); }
-.risk-stat-bar {
-  position: absolute; left: 0; top: 13px; bottom: 13px; width: 4px;
-  border-radius: 0 4px 4px 0; background: currentColor;
-}
-.risk-stat-value { font-size: 1.85rem; font-weight: 700; line-height: 1.15; color: currentColor; }
-.risk-stat-label { font-size: 0.78rem; color: #8c8c8c; margin-top: 0.2rem; }
-.risk-stat-total { color: #595959; }
-.risk-stat-total .risk-stat-value { color: #262626; }
 
 /* 表格行分色（红黄绿） */
-.risk-table .ant-table-tbody > tr.risk-row-red > td { background: #fff7f6; }
-.risk-table .ant-table-tbody > tr.risk-row-red:hover > td { background: #fff1f0; }
-.risk-table .ant-table-tbody > tr.risk-row-yellow > td { background: #fffdf5; }
-.risk-table .ant-table-tbody > tr.risk-row-yellow:hover > td { background: #fffbe6; }
-.risk-table .ant-table-tbody > tr.risk-row-green > td { background: #fafff7; }
-.risk-table .ant-table-tbody > tr.risk-row-green:hover > td { background: #f6ffed; }
 
 /* 侧栏风险角标 */
 .sidebar-nav .nav-badge {
@@ -307,34 +250,9 @@ body {
 }
 
 /* 按级别分组的三栏看板 */
-.risk-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
-.risk-board-col { border-radius: 10px; border: 1px solid #f0f0f0; overflow: hidden; background: #fafafa; }
-.risk-board-body { max-height: 58vh; overflow-y: auto; padding: 0.1rem 0 0.4rem; }
-.risk-board-head {
-  padding: 0.6rem 0.9rem; font-size: 0.85rem; font-weight: 600;
-  display: flex; align-items: center; gap: 0.4rem;
-}
-.risk-board-card {
-  margin: 0.5rem 0.6rem; padding: 0.6rem 0.75rem; border-radius: 8px;
-  background: #fff; border: 1px solid #f0f0f0; border-left-width: 3px;
-  transition: box-shadow 0.15s;
-}
-.risk-board-card:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08); }
-.risk-board-card-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
-.risk-board-card-name { font-size: 0.9rem; font-weight: 600; color: #1a1a2e; text-decoration: none; }
-.risk-board-card-meta { font-size: 0.76rem; color: #999; margin-top: 0.25rem; }
 
-@media (max-width: 900px) {
-  .risk-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .risk-board { grid-template-columns: 1fr; }
-}
 
 /* 详情页关键日期 */
-.date-cell { display: flex; align-items: center; gap: 0.4rem; }
-.date-cell .date-dot {
-  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-}
-.date-cell .date-countdown { font-size: 0.75rem; }
 
 /* 文档内容预览（模板查看 / 生成结果，渲染富文本 HTML） */
 .doc-preview {
@@ -371,33 +289,10 @@ html[data-theme="dark"] .topbar-collapse { color: #b0b6c0; }
 html[data-theme="dark"] .main-content { background: #141414; }
 
 /* 暗黑模式下内容卡片/列表底色跟随（人才卡、风险卡、文档预览等） */
-html[data-theme="dark"] .talent-card,
-html[data-theme="dark"] .risk-stat,
-html[data-theme="dark"] .risk-board-col,
-html[data-theme="dark"] .risk-board-card,
 html[data-theme="dark"] .doc-preview,
 html[data-theme="dark"] .resume-doc-preview,
-html[data-theme="dark"] .comm-item {
-  background: #1f1f1f; border-color: #303030; color: #e5e7eb;
-}
-html[data-theme="dark"] .talent-name,
-html[data-theme="dark"] .risk-board-card-name { color: #e5e7eb; }
-html[data-theme="dark"] .talent-field .field-label,
-html[data-theme="dark"] .risk-stat-label,
-html[data-theme="dark"] .risk-board-card-meta,
-html[data-theme="dark"] .comm-date { color: #8c8c8c; }
-html[data-theme="dark"] .comm-content { color: #b0b6c0; }
-html[data-theme="dark"] .risk-stat-total .risk-stat-value { color: #e5e7eb; }
-html[data-theme="dark"] .talent-card-footer,
-html[data-theme="dark"] .talent-card { border-color: #303030; }
 
 /* 暗黑模式下风险表格分色（保持可读的深色底） */
-html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-red > td { background: #2a1a1a; }
-html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-red:hover > td { background: #3a1f1f; }
-html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-yellow > td { background: #2a2415; }
-html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-yellow:hover > td { background: #3a3020; }
-html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green > td { background: #18251a; }
-html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green:hover > td { background: #203020; }
 
 /* ===== 弹窗表单：label 与控件横向排列（全站统一约定）=====
    约定：所有「新增/编辑」弹窗内的表单，label 固定在左侧、控件在右侧，
@@ -558,7 +453,6 @@ html[data-theme="dark"] .risk-table .ant-table-tbody > tr.risk-row-green:hover >
 .task-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
 
 /* ===== 岗位卡片 ===== */
-.job-stat-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
 .job-meta { font-size: 0.8rem; color: #4b5563; line-height: 1.7; }
 
 @media (max-width: 900px) {

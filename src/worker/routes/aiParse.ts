@@ -22,7 +22,6 @@ interface ParsedResume {
   years_experience: number | null;
   city: string;
   skills: string[];
-  birth_date: string;
 }
 
 const EMPTY: ParsedResume = {
@@ -38,7 +37,6 @@ const EMPTY: ParsedResume = {
   years_experience: null,
   city: "",
   skills: [],
-  birth_date: "",
 };
 
 // 把 AI 返回的 JSON 里可能出现的字符串数字/数组做归一化
@@ -102,7 +100,6 @@ async function callDeepSeek(apiKey: string, resumeText: string): Promise<Record<
 - years_experience: 工作年限（整数，没有则 null）
 - city: 现居城市（只要城市名，如"北京"，不要带"市"字）
 - skills: 技能列表（字符串数组，提取技术栈/工具/专业技能关键词）
-- birth_date: 出生日期，格式 YYYY-MM-DD（没有则空字符串）
 
 要求：
 1. 简历里确实没有的字段，一律用 null（字符串字段用空字符串 ""，数字字段用 null），不要臆造。
@@ -164,7 +161,6 @@ function normalizeAiResult(raw: Record<string, unknown>): ParsedResume {
     years_experience: normNum(raw.years_experience),
     city: sanitizeField("city", normStr(raw.city).replace(/[市省县区]$/, "")),
     skills: sanitizeSkills(normSkills(raw.skills)),
-    birth_date: normStr(raw.birth_date).match(/^\d{4}-\d{2}-\d{2}/)?.[0] || "",
   };
 }
 

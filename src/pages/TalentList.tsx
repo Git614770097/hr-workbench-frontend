@@ -38,30 +38,31 @@ const EMPTY_FILTERS: Filters = {
   years: null, city: "", title: "", status: "", owner_id: "",
 };
 
+// 搜索条件 → 查询参数。列表查询与导出共用一份，
+// 避免两处各写一遍导致「导出的数据和列表看到的不一致」。
+function buildFilterParams(f: Filters): Record<string, string | number> {
+  const params: Record<string, string | number> = {};
+  if (f.name) params.name = f.name;
+  if (f.phone) params.phone = f.phone;
+  if (f.email) params.email = f.email;
+  if (f.age != null) params.age = f.age;
+  if (f.education) params.education = f.education;
+  if (f.school) params.school = f.school;
+  if (f.years != null) params.years = f.years;
+  if (f.city) params.city = f.city;
+  if (f.title) params.title = f.title;
+  if (f.status) params.status = f.status;
+  if (f.owner_id) params.owner_id = f.owner_id;
+  return params;
+}
+
 // 收起时展示的字段数（默认展开一行 4 个）
 const COLLAPSED_COUNT = 4;
 
 // 列表每页条数
 const PAGE_SIZE = 10;
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
+import { escapeHtml, downloadBlob } from "../utils/file";
 
 function dateStamp(): string {
   const d = new Date();
@@ -99,18 +100,7 @@ export default function TalentList() {
   const fetchTalents = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, string | number> = { page, limit: PAGE_SIZE };
-      if (applied.name) params.name = applied.name;
-      if (applied.phone) params.phone = applied.phone;
-      if (applied.email) params.email = applied.email;
-      if (applied.age != null) params.age = applied.age;
-      if (applied.education) params.education = applied.education;
-      if (applied.school) params.school = applied.school;
-      if (applied.years != null) params.years = applied.years;
-      if (applied.city) params.city = applied.city;
-      if (applied.title) params.title = applied.title;
-      if (applied.status) params.status = applied.status;
-      if (applied.owner_id) params.owner_id = applied.owner_id;
+      const params: Record<string, string | number> = { page, limit: PAGE_SIZE, ...buildFilterParams(applied) };
       const res = await api.getTalents(params);
       setTalents(res.items);
       setTotal(res.total);
@@ -169,26 +159,9 @@ export default function TalentList() {
     }
   };
 
-  // ---- 导出：构建当前筛选参数（复用列表查询条件）----
-  const buildFilterParams = (): Record<string, string | number> => {
-    const params: Record<string, string | number> = {};
-    if (applied.name) params.name = applied.name;
-    if (applied.phone) params.phone = applied.phone;
-    if (applied.email) params.email = applied.email;
-    if (applied.age != null) params.age = applied.age;
-    if (applied.education) params.education = applied.education;
-    if (applied.school) params.school = applied.school;
-    if (applied.years != null) params.years = applied.years;
-    if (applied.city) params.city = applied.city;
-    if (applied.title) params.title = applied.title;
-    if (applied.status) params.status = applied.status;
-    if (applied.owner_id) params.owner_id = applied.owner_id;
-    return params;
-  };
-
   // 拉取当前筛选条件下的全量数据（用于导出）
   const fetchAllForExport = async (): Promise<Talent[]> => {
-    const params = { ...buildFilterParams(), page: 1, limit: 10000 };
+    const params = { ...buildFilterParams(applied), page: 1, limit: 10000 };
     const res = await api.getTalents(params);
     return res.items;
   };
@@ -300,7 +273,7 @@ export default function TalentList() {
     message.success(`正在导出 ${record.name} 的${typeLabel}简历`);
   };
 
-  // ---- 搜索字段定义（label 左 + 控件右，一行 3 个）----
+  // ---- 搜索字段定义（label 左 + 控件右，一行 4 个）----
   const controlStyle: React.CSSProperties = { width: "100%" };
   const fieldDefs: { key: string; label: string; control: React.ReactNode }[] = [
     { key: "name", label: "姓名", control: <Input style={controlStyle} placeholder="请输入姓名" value={draft.name} onChange={(e) => setField("name", e.target.value)} onPressEnter={handleSearch} allowClear /> },
@@ -391,7 +364,7 @@ export default function TalentList() {
 
   return (
     <div>
-      {/* 顶部搜索区域：label 左 + 控件右，一行 3 个，超过一行可展开/收起 */}
+      {/* 顶部搜索区域：label 左 + 控件右，一行 4 个，超过一行可展开/收起 */}
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px 24px" }}>
           {visibleDefs.map((d) => (
@@ -449,7 +422,7 @@ export default function TalentList() {
         <div className="export-print-area" dangerouslySetInnerHTML={{ __html: buildExportHtml(printData) }} />
       )}
 
-      {/* 批量导入弹窗 */}
+      {/* 导入弹窗（上传 → 逐份核对 → 保存即写入人才库） */}
       <ImportModal
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}

@@ -1,10 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { genId } from "../helpers";
 
 const tasks = new Hono<{ Bindings: Env }>();
-
-function genId(): string { return crypto.randomUUID(); }
 
 // 以中国时区（UTC+8）取今天 YYYY-MM-DD，全站统一的日期基准
 function todayYmd(): string {

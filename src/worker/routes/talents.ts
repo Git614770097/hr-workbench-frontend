@@ -3,10 +3,17 @@ import { getCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { MERGE_FIELDS as TALENT_MERGE_FIELDS } from "../../types";
+import { genId } from "../helpers";
 
 const talents = new Hono<{ Bindings: Env }>();
 
-function genId(): string { return crypto.randomUUID(); }
+/** 日期字段只接受 YYYY-MM-DD（或带时间的 ISO），其余一律置 NULL，避免脏数据入库。
+ *  新增与批量导入共用，别在两处各写一份。 */
+function dateOrNull(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const m = v.trim().match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
 
 // 合并预览用的字段指纹：只比较内容是否相同，不下发原值（避免把整份简历信息重复下发一遍）。
 // 归一化后做 FNV-1a 32 位哈希；同一组内手机号必然相同，因此该字段不会误报差异。
@@ -274,7 +281,7 @@ talents.post("/", async (c) => {
   const id = genId();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
   await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, resume_url, notes, birth_date, contract_end, probation_end, resignation_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.resume_url || null, body.notes || null, body.birth_date || null, body.contract_end || null, body.probation_end || null, body.resignation_date || null).run();
+    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date)).run();
 
   if (body.tag_ids && body.tag_ids.length > 0) {
     for (const tagId of body.tag_ids) {
@@ -456,12 +463,6 @@ talents.post("/import", async (c) => {
   const items = await c.req.json<any[]>();
   let count = 0;
   const created: { id: string; name: string }[] = [];
-  // 日期字段只接受 YYYY-MM-DD（或带时间的 ISO），其余一律置 NULL，避免脏数据入库
-  const dateOrNull = (v: unknown): string | null => {
-    if (typeof v !== "string") return null;
-    const m = v.trim().match(/^(\d{4}-\d{2}-\d{2})/);
-    return m ? m[1] : null;
-  };
   for (const item of items) {
     const id = genId();
     const skills = item.skills ? JSON.stringify(item.skills) : null;

@@ -1,10 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { genId } from "../helpers";
 
 const communications = new Hono<{ Bindings: Env }>();
-
-function genId(): string { return crypto.randomUUID(); }
 
 // ---- 获取某人才的沟通记录 ----
 // 管理员：可看任何人才的记录；普通用户：只能看自己创建的人才的记录

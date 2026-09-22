@@ -1,10 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { genId } from "../helpers";
 
 const jobs = new Hono<{ Bindings: Env }>();
-
-function genId(): string { return crypto.randomUUID(); }
 
 // 岗位字段白名单（动态拼 SET 用，避免把未传字段覆盖为 null）
 const JOB_FIELDS = [

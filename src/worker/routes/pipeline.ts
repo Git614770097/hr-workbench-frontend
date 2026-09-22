@@ -1,10 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { genId } from "../helpers";
 
 const pipeline = new Hono<{ Bindings: Env }>();
-
-function genId(): string { return crypto.randomUUID(); }
 
 // 阶段定义与前端 types.ts 的 PIPELINE_STAGES 保持一致
 const STAGES = ["screening", "interview1", "interview2", "offer", "hired", "rejected", "withdrawn"] as const;

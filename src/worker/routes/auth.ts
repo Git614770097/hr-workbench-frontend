@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { setCookie, getCookie } from "hono/cookie";
 import type { Env } from "../index";
+import { genId } from "../helpers";
 
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -11,7 +12,6 @@ async function hashPassword(password: string): Promise<string> {
   return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function genId(): string { return crypto.randomUUID(); }
 function genToken(): string { return crypto.randomUUID() + crypto.randomUUID(); }
 
 // ---- 图文验证码 ----

@@ -4,7 +4,7 @@ import {
 } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import type { Talent, Tag } from "../types";
+import type { Tag } from "../types";
 import { STATUS_LABELS, EDUCATION_OPTIONS } from "../types";
 
 interface Props {
