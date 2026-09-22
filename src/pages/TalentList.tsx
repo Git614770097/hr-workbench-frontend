@@ -7,7 +7,7 @@ import {
 import {
   DeleteOutlined, ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
-  FileWordOutlined, TagsOutlined, WarningOutlined,
+  FileWordOutlined, WarningOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -15,7 +15,6 @@ import type { Talent, User } from "../types";
 import { STATUS_LABELS, STATUS_COLORS, EDUCATION_OPTIONS } from "../types";
 import ImportModal from "../components/ImportModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
-import TagManagerModal from "../components/TagManagerModal";
 import DuplicateTalentsModal from "../components/DuplicateTalentsModal";
 
 // 搜索条件（draft = 编辑中，applied = 已生效）
@@ -82,8 +81,6 @@ export default function TalentList() {
 
   // 弹窗状态
   const [importModalOpen, setImportModalOpen] = useState(false);
-  // 标签管理弹窗（低频配置，收进人才库工具栏）
-  const [tagManagerOpen, setTagManagerOpen] = useState(false);
   // 疑似重复检测弹窗
   const [dupModalOpen, setDupModalOpen] = useState(false);
   const [previewTalent, setPreviewTalent] = useState<Talent | null>(null);
@@ -384,7 +381,6 @@ export default function TalentList() {
             两者形成一条对齐的右侧操作区，不要另起一行。 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <Space>
-            <Button icon={<TagsOutlined />} onClick={() => setTagManagerOpen(true)}>标签管理</Button>
             <Button icon={<WarningOutlined />} onClick={() => setDupModalOpen(true)}>疑似重复</Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
             <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
@@ -428,9 +424,6 @@ export default function TalentList() {
         onClose={() => setImportModalOpen(false)}
         onSuccess={refreshAfterImport}
       />
-
-      {/* 标签管理弹窗（低频配置项，从工具栏入口打开，不占侧栏菜单） */}
-      <TagManagerModal open={tagManagerOpen} onClose={() => setTagManagerOpen(false)} />
 
       {/* 疑似重复人才检测（按手机号分组，可一键合并） */}
       <DuplicateTalentsModal open={dupModalOpen} onClose={() => setDupModalOpen(false)} onMerged={refreshAfterImport} />

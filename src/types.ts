@@ -25,10 +25,8 @@ export interface UserRow {
 }
 
 // 菜单权限 key（与后端 src/worker/permissions.ts 保持一致）
-// 注：标签管理已降级为人才库页内入口，不再是独立菜单，故不在此列——
-//     它的访问权限跟随「人才库管理」（talents）。
 export type MenuKey =
-  | "talents" | "pipeline" | "jobs" | "tasks" | "templates" | "users";
+  | "talents" | "pipeline" | "jobs" | "tasks" | "templates" | "profiles" | "users";
 
 export const MENU_PERMISSIONS: { key: MenuKey; label: string }[] = [
   { key: "talents", label: "人才库管理" },
@@ -36,6 +34,7 @@ export const MENU_PERMISSIONS: { key: MenuKey; label: string }[] = [
   { key: "jobs", label: "岗位管理" },
   { key: "tasks", label: "跟进待办" },
   { key: "templates", label: "模板库管理" },
+  { key: "profiles", label: "人物画像" },
   { key: "users", label: "用户管理" },
 ];
 
@@ -44,13 +43,6 @@ export interface Role {
   name: string;
   permissions: string[];
   created_at?: string;
-}
-
-export interface Tag {
-  id: string;
-  name: string;
-  color: string;
-  owner_name?: string;
 }
 
 export interface Talent {
@@ -83,7 +75,6 @@ export interface Talent {
   resignation_date: string | null;
   created_at: string;
   updated_at: string;
-  tags: Tag[];
 }
 
 // 学历选项（筛选 / 表单 / 导入解析共用）
@@ -156,7 +147,6 @@ export interface DuplicateTalentItem {
   /** 1 / 0：是否已上传简历文件 */
   has_resume: number;
   /** 关联数据条数，用于判断留哪条更划算 */
-  tag_count: number;
   comm_count: number;
   job_count: number;
   created_at: string | null;
@@ -188,7 +178,7 @@ export const MERGE_FIELD_LABELS: Record<string, string> = {
 
 /** 关联数据量打分：条数越多说明这条是主力记录，默认保留它 */
 export function duplicateWeight(it: DuplicateTalentItem): number {
-  return (it.job_count || 0) * 3 + (it.comm_count || 0) * 2 + (it.tag_count || 0) + (it.has_resume ? 1 : 0);
+  return (it.job_count || 0) * 3 + (it.comm_count || 0) * 2 + (it.has_resume ? 1 : 0);
 }
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -412,6 +402,126 @@ export const TASK_SOURCE_LABELS: Record<string, string> = {
   manual: "手动创建",
   follow_up: "沟通跟进",
   system: "系统生成",
+};
+
+// ============================================================
+// 智能匹配：多份简历 + 人物画像 → 排序推荐
+// ============================================================
+
+/** 人物画像的级别（初级/中级/高级…），每个级别有独立的年限/学历/技能/城市与市场薪资 */
+export interface MatchProfileLevel {
+  id?: string;
+  name: string;
+  min_years: number | null;
+  max_years: number | null;
+  education: string;
+  city: string;
+  must_skills: string[];
+  nice_skills: string[];
+  requirements: string;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_note: string;
+  sort_order: number;
+}
+
+/** 人物画像（一个职位，可挂多个级别；不分级时 levels 为空数组） */
+export interface MatchProfile {
+  id?: string;
+  name: string;
+  job_title: string;
+  city: string;
+  education: string;
+  min_years: number | null;
+  max_years: number | null;
+  salary_range: string;
+  industry: string;
+  must_skills: string[];
+  nice_skills: string[];
+  requirements: string;
+  jd_raw: string;
+  levels: MatchProfileLevel[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const EMPTY_MATCH_PROFILE: MatchProfile = {
+  name: "",
+  job_title: "",
+  city: "",
+  education: "",
+  min_years: null,
+  max_years: null,
+  salary_range: "",
+  industry: "",
+  must_skills: [],
+  nice_skills: [],
+  requirements: "",
+  jd_raw: "",
+  levels: [],
+};
+
+export const EMPTY_MATCH_LEVEL: MatchProfileLevel = {
+  name: "",
+  min_years: null,
+  max_years: null,
+  education: "",
+  city: "",
+  must_skills: [],
+  nice_skills: [],
+  requirements: "",
+  salary_min: null,
+  salary_max: null,
+  salary_note: "",
+  sort_order: 0,
+};
+
+/** 硬性条件判定（规则算出，不随 AI 波动）。ok 为 null = 无法判定（画像未要求或简历未体现） */
+export interface MatchHardCheck {
+  education: { ok: boolean | null; actual: string; require: string };
+  /** over：实际年限高于画像上限 = 资历偏高（薪资可能不匹配），不是不达标 */
+  years: { ok: boolean | null; actual: number | null; require: string; over?: boolean };
+  city: { ok: boolean | null; actual: string; require: string };
+  must_skills: { hit: string[]; miss: string[] };
+  nice_skills: { hit: string[] };
+}
+
+export interface MatchResult {
+  score: number;
+  verdict: string;
+  summary: string;
+  reasons: string[];
+  gaps: string[];
+  risks: string[];
+  questions: string[];
+  hard: MatchHardCheck;
+  /** ai=AI 语义评分；rule=未配密钥或 AI 失败时的硬性条件估算 */
+  source: "ai" | "rule";
+  /** 级别落位信息（画像分级时返回）：候选人年限落在哪个级别、该级别市场薪资 */
+  level: MatchLevelInfo | null;
+}
+
+/** 评分时的级别落位结果 */
+export interface MatchLevelInfo {
+  name: string;
+  min_years: number | null;
+  max_years: number | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_note: string;
+  /** 低于最低级别 */
+  below: boolean;
+  /** 高于最高级别 */
+  above: boolean;
+  next_level: string | null;
+  gap_years: number | null;
+}
+
+export const VERDICT_COLORS: Record<string, string> = {
+  强烈推荐: "#10b981",
+  推荐: "#3b82f6",
+  可考虑: "#f59e0b",
+  不建议: "#ef4444",
 };
 
 // ---- 人才来源渠道 ----

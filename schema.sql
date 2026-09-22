@@ -119,20 +119,6 @@ CREATE TABLE IF NOT EXISTS talent_tasks (
 );
 
 -- 标签表
-CREATE TABLE IF NOT EXISTS tags (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  color TEXT DEFAULT '#3b82f6',
-  owner_id TEXT NOT NULL REFERENCES users(id)
-);
-
--- 人才-标签关联表
-CREATE TABLE IF NOT EXISTS talent_tags (
-  talent_id TEXT NOT NULL REFERENCES talents(id),
-  tag_id TEXT NOT NULL REFERENCES tags(id),
-  PRIMARY KEY (talent_id, tag_id)
-);
-
 -- 沟通记录表
 CREATE TABLE IF NOT EXISTS communications (
   id TEXT PRIMARY KEY,
@@ -157,12 +143,50 @@ CREATE TABLE IF NOT EXISTS doc_templates (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- 人物画像表（智能匹配：上传简历 + 画像 → 排序推荐）
+CREATE TABLE IF NOT EXISTS match_profiles (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,                 -- 画像名称，如「前端开发工程师」
+  job_title TEXT,                     -- 目标职位
+  city TEXT,                          -- 工作城市
+  education TEXT,                     -- 学历门槛
+  min_years INTEGER,                  -- 经验年限下限
+  max_years INTEGER,                  -- 经验年限上限（NULL 表示不限）
+  salary_range TEXT,                  -- 薪资范围
+  industry TEXT,                      -- 行业背景要求
+  must_skills TEXT,                   -- JSON 数组：必备技能
+  nice_skills TEXT,                   -- JSON 数组：加分技能
+  requirements TEXT,                  -- 其它要求
+  jd_raw TEXT,                        -- 原始 JD 文本
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 人物画像的级别（初级/中级/高级…）：一个画像下挂多个级别，
+-- 每个级别有独立的年限区间、学历、技能、城市，以及对应的市场薪资。
+CREATE TABLE IF NOT EXISTS match_profile_levels (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL REFERENCES match_profiles(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,                -- 级别名，如「初级」「中级」「高级」
+  min_years INTEGER,                 -- 年限下限
+  max_years INTEGER,                 -- 年限上限（NULL = 不设上限）
+  education TEXT,                    -- 学历门槛
+  city TEXT,                         -- 工作城市
+  must_skills TEXT,                  -- JSON 数组：必备技能
+  nice_skills TEXT,                  -- JSON 数组：加分技能
+  requirements TEXT,                 -- 其它要求
+  salary_min INTEGER,                -- 市场薪资下限（月薪，元）
+  salary_max INTEGER,                -- 市场薪资上限（月薪，元）
+  salary_note TEXT,                  -- 薪资说明，如「一线城市」「13 薪」
+  sort_order INTEGER DEFAULT 0,      -- 级别排序（初级在前）
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_talents_owner ON talents(owner_id);
 CREATE INDEX IF NOT EXISTS idx_talents_status ON talents(status);
 CREATE INDEX IF NOT EXISTS idx_communications_talent ON communications(talent_id);
-CREATE INDEX IF NOT EXISTS idx_talent_tags_talent ON talent_tags(talent_id);
-CREATE INDEX IF NOT EXISTS idx_talent_tags_tag ON talent_tags(tag_id);
 CREATE INDEX IF NOT EXISTS idx_doc_templates_category ON doc_templates(category);
 CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
@@ -172,3 +196,5 @@ CREATE INDEX IF NOT EXISTS idx_talent_jobs_stage ON talent_jobs(stage);
 CREATE INDEX IF NOT EXISTS idx_stage_logs_tj ON job_stage_logs(talent_job_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_status ON talent_tasks(owner_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON talent_tasks(due_date);
+CREATE INDEX IF NOT EXISTS idx_match_profiles_owner ON match_profiles(owner_id);
+CREATE INDEX IF NOT EXISTS idx_match_profile_levels_profile ON match_profile_levels(profile_id);

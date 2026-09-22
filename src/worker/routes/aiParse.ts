@@ -3,6 +3,8 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { sanitizeField, sanitizeSkills } from "../../utils/fieldSanity";
 
+import { deepseekJson } from "../ai";
+
 // AI 简历解析接口
 // 前端把简历文本（或文件 base64）发到这里，后端用 DEEPSEEK_API_KEY 调 DeepSeek，
 // 返回结构化字段。Key 存在 Worker secret 里，不暴露给前端，防止盗刷。
@@ -56,33 +58,6 @@ function normSkills(v: unknown): string[] {
   return [];
 }
 
-// 从 AI 返回内容里稳健地抽出 JSON 对象（兼容被 ```json 包裹 / 前后有杂文的情况）
-function extractJson(text: string): Record<string, unknown> | null {
-  // 去掉 markdown 代码块围栏
-  let s = text.trim();
-  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) s = fence[1].trim();
-  // 直接解析
-  try {
-    const obj = JSON.parse(s);
-    if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj as Record<string, unknown>;
-  } catch {
-    /* fallthrough */
-  }
-  // 截取第一个 { 到最后一个 } 之间的内容再解析
-  const start = s.indexOf("{");
-  const end = s.lastIndexOf("}");
-  if (start >= 0 && end > start) {
-    try {
-      const obj = JSON.parse(s.slice(start, end + 1));
-      if (obj && typeof obj === "object") return obj as Record<string, unknown>;
-    } catch {
-      /* fallthrough */
-    }
-  }
-  return null;
-}
-
 // 调用 DeepSeek chat/completions，把简历文本解析为结构化字段
 async function callDeepSeek(apiKey: string, resumeText: string): Promise<Record<string, unknown> | null> {
   const systemPrompt = `你是一名专业的简历信息提取助手。请从用户提供的简历文本中，精准提取以下字段，并以严格的 JSON 对象返回（不要输出任何多余解释，不要用 markdown 代码块）。
@@ -112,34 +87,7 @@ async function callDeepSeek(apiKey: string, resumeText: string): Promise<Record<
 
   const userPrompt = `请解析以下简历文本：\n\n${resumeText.slice(0, 6000)}`;
 
-  const resp = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: 0,
-      response_format: { type: "json_object" },
-    }),
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text();
-    throw new Error(`DeepSeek 调用失败 (${resp.status}): ${body.slice(0, 200)}`);
-  }
-
-  const data = (await resp.json()) as {
-    choices?: { message?: { content?: string } }[];
-  };
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) return null;
-  return extractJson(content);
+  return deepseekJson(apiKey, systemPrompt, userPrompt);
 }
 
 // 把 AI 返回的原始 JSON 归一化成标准 ParsedResume

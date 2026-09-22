@@ -4,7 +4,6 @@ import { logger } from "hono/logger";
 import { getCookie } from "hono/cookie";
 import { authRoutes } from "./routes/auth";
 import { talentRoutes } from "./routes/talents";
-import { tagRoutes } from "./routes/tags";
 import { communicationRoutes } from "./routes/communications";
 import { templateRoutes } from "./routes/templates";
 import { roleRoutes } from "./routes/roles";
@@ -12,6 +11,7 @@ import { jobRoutes } from "./routes/jobs";
 import { pipelineRoutes } from "./routes/pipeline";
 import { taskRoutes } from "./routes/tasks";
 import aiParseRoutes from "./routes/aiParse";
+import matchRoutes from "./routes/match";
 import { parsePermissions } from "./permissions";
 
 export interface Env {
@@ -55,7 +55,7 @@ async function menuGuard(c: any, menuKey: string) {
   return null;
 }
 
-// 人才库 / 模板 / 标签 的路径前缀即菜单 key
+// 人才库 / 模板 的路径前缀即菜单 key
 app.use("/api/talents/*", async (c, next) => {
   const blocked = await menuGuard(c, "talents");
   if (blocked) return blocked;
@@ -63,12 +63,6 @@ app.use("/api/talents/*", async (c, next) => {
 });
 app.use("/api/templates/*", async (c, next) => {
   const blocked = await menuGuard(c, "templates");
-  if (blocked) return blocked;
-  return next();
-});
-// 标签管理已降级为人才库页内弹窗，接口权限跟随人才库（talents）
-app.use("/api/tags/*", async (c, next) => {
-  const blocked = await menuGuard(c, "talents");
   if (blocked) return blocked;
   return next();
 });
@@ -122,6 +116,17 @@ app.use("/api/parse-resume/*", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
+// 智能匹配：独立菜单「人物画像」+ 匹配页，权限跟随 profiles
+app.use("/api/match/*", async (c, next) => {
+  const blocked = await menuGuard(c, "profiles");
+  if (blocked) return blocked;
+  return next();
+});
+app.use("/api/match", async (c, next) => {
+  const blocked = await menuGuard(c, "profiles");
+  if (blocked) return blocked;
+  return next();
+});
 // 角色管理仅 admin（roles 路由内部已校验 admin，这里也拦一层双保险）
 app.use("/api/roles/*", async (c, next) => {
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
@@ -136,7 +141,6 @@ app.use("/api/roles/*", async (c, next) => {
 // ---- API Routes ----
 app.route("/api/auth", authRoutes);
 app.route("/api/talents", talentRoutes);
-app.route("/api/tags", tagRoutes);
 app.route("/api/communications", communicationRoutes);
 app.route("/api/templates", templateRoutes);
 app.route("/api/roles", roleRoutes);
@@ -144,6 +148,7 @@ app.route("/api/jobs", jobRoutes);
 app.route("/api/pipeline", pipelineRoutes);
 app.route("/api/tasks", taskRoutes);
 app.route("/api/parse-resume", aiParseRoutes);
+app.route("/api/match", matchRoutes);
 
 // ---- Health check ----
 app.get("/api/health", (c) =>

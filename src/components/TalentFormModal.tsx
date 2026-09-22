@@ -4,7 +4,6 @@ import {
 } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import type { Tag } from "../types";
 import { STATUS_LABELS, EDUCATION_OPTIONS } from "../types";
 
 interface Props {
@@ -18,7 +17,6 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [tags, setTags] = useState<Tag[]>([]);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const isEdit = !!talentId;
 
@@ -27,14 +25,11 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
     const fetchData = async () => {
       setLoading(true);
       try {
-        const tagRes = await api.getTags();
-        setTags(tagRes);
         if (isEdit && talentId) {
           const t = await api.getTalent(talentId);
           form.setFieldsValue({
             ...t,
             skills: t.skills.join(", "),
-            tag_ids: t.tags.map((tag) => tag.id),
           });
         } else {
           form.resetFields();
@@ -54,7 +49,6 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
         ...values,
         years_experience: values.years_experience ?? undefined,
         skills: values.skills ? values.skills.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
-        tag_ids: values.tag_ids || [],
       };
       let result;
       if (isEdit && talentId) {
@@ -146,21 +140,6 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
               <Input placeholder="逗号分隔，如 Java, Spring" />
             </Form.Item>
           </div>
-          {tags.length > 0 && (
-            <Form.Item name="tag_ids" label="自定义标签">
-              <Select
-                mode="multiple"
-                allowClear
-                placeholder="请选择标签"
-                options={tags.map((t) => ({ label: t.name, value: t.id }))}
-                tagRender={(props) => (
-                  <span style={{ display: "inline-block", padding: "0 8px", fontSize: 12, borderRadius: 4, margin: 2, background: tags.find((t) => t.id === props.value)?.color + "20", color: tags.find((t) => t.id === props.value)?.color }}>
-                    {props.label}
-                  </span>
-                )}
-              />
-            </Form.Item>
-          )}
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={3} placeholder="补充说明…" />
           </Form.Item>

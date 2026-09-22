@@ -117,7 +117,7 @@ export default function DuplicateTalentsModal({ open, onClose, onMerged }: Props
               const recId = recommendedId(g.items);
               const names = Array.from(new Set(g.items.map((it) => (it.name || "").trim()).filter(Boolean)));
               const pv = keep ? previewMerge(keep, sources) : { fillIn: [], conflict: [], resumeDiscarded: false };
-              const moved = sources.reduce((n, s) => n + s.job_count + s.comm_count + s.tag_count, 0);
+              const moved = sources.reduce((n, s) => n + s.job_count + s.comm_count, 0);
               return (
                 <div key={g.phone} style={{ border: "1px solid #f0f0f0", borderRadius: 8, marginBottom: 10, overflow: "hidden" }}>
                   <div style={{ background: "#fafafa", padding: "6px 10px", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
@@ -149,7 +149,7 @@ export default function DuplicateTalentsModal({ open, onClose, onMerged }: Props
                         </span>
                         <span style={{ fontSize: 12, color: "#999", flex: "0 0 auto" }}>
                           {it.has_resume ? <FileTextOutlined title="已上传简历" style={{ marginInlineEnd: 6 }} /> : null}
-                          岗位 {it.job_count} · 沟通 {it.comm_count} · 标签 {it.tag_count}
+                          岗位 {it.job_count} · 沟通 {it.comm_count}
                         </span>
                         {it.status && (
                           <Tag color={STATUS_COLORS[it.status] || "default"} style={{ marginInlineEnd: 0, flex: "0 0 auto" }}>

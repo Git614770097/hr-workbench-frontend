@@ -4,7 +4,7 @@ import {
 } from "antd";
 import mammoth from "mammoth";
 import { EDUCATION_OPTIONS, STATUS_LABELS } from "../types";
-import type { ParsedTalent } from "./ImportModal";
+import type { ParsedTalent } from "../utils/resumeImport";
 
 interface Props {
   record: ParsedTalent | null;

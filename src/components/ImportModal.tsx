@@ -3,138 +3,14 @@ import {
   Modal, Upload, Button, Alert, message, Typography,
 } from "antd";
 import { InboxOutlined } from "@ant-design/icons";
-import mammoth from "mammoth";
 import { api } from "../api";
 import ImportPreviewModal from "./ImportPreviewModal";
 import {
-  extractName, extractPhone, extractEmail, extractAge, extractGender,
-  extractTitle, extractCompany, extractSchool, extractCity, extractSkills,
-  extractYearsExperience, extractPdfLines, normalizeEducation,
-} from "../utils/resumeParser";
-import { sanitizeField, sanitizeSkills } from "../utils/fieldSanity";
+  parseResumeToTalent, recordToData,
+} from "../utils/resumeImport";
+import type { ParsedTalent } from "../utils/resumeImport";
 
 const { Dragger } = Upload;
-
-// PDF.js 本地打包 + 按需动态加载：
-// 1) 不再依赖 CDN，避免国内网络下 jsdelivr 不稳定导致"PDF.js 加载失败"
-// 2) 动态 import 让 pdfjs 单独分包，只在导入简历时才下载，不影响首屏速度
-let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
-
-function loadPdfjs() {
-  if (!pdfjsPromise) {
-    pdfjsPromise = Promise.all([
-      import("pdfjs-dist"),
-      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-    ]).then(([lib, worker]) => {
-      lib.GlobalWorkerOptions.workerSrc = worker.default;
-      return lib;
-    });
-  }
-  return pdfjsPromise;
-}
-
-export interface ParsedTalent {
-  key: string;
-  name: string;
-  phone: string;
-  email: string;
-  age: number | null;
-  gender: string;
-  education: string;
-  school: string;
-  current_company: string;
-  current_title: string;
-  years_experience: number | null;
-  city: string;
-  skills: string;
-  status: string;
-  notes: string;
-  fileName: string;
-  file: File | null;
-  /** 解析来源：true=AI 解析，false=本地规则回退 */
-  _ai?: boolean;
-}
-
-
-// 解析单个文件为文本（PDF 用 pdfjs 按坐标还原行，Word 用 mammoth 提取）
-async function parseFile(file: File): Promise<string> {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".pdf")) {
-    const pdfjsLib = await loadPdfjs();
-    const data = new Uint8Array(await file.arrayBuffer());
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
-    let text = "";
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      text += extractPdfLines(content).join("\n") + "\n";
-    }
-    return text;
-  }
-  if (name.endsWith(".docx")) {
-    const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-    return result.value;
-  }
-  throw new Error(`不支持的文件格式：${file.name}，请上传 PDF 或 Word（.docx）文件`);
-}
-
-// 从纯文本提取人才字段（本地规则引擎，作为兜底）
-// 结果再过一遍 sanitizeField：规则引擎偶有误判（如把城市当姓名），
-// 与 AI 通道用同一套校验，保证两条路径都不会产出"看起来有值"的脏数据。
-function extractTalentLocal(text: string, key: string, fileName: string, file: File | null): ParsedTalent {
-  return {
-    key,
-    name: sanitizeField("name", extractName(text)),
-    phone: extractPhone(text),
-    email: extractEmail(text),
-    age: extractAge(text),
-    gender: extractGender(text),
-    education: normalizeEducation(text),
-    school: sanitizeField("school", extractSchool(text)),
-    current_company: sanitizeField("current_company", extractCompany(text)),
-    current_title: sanitizeField("current_title", extractTitle(text)),
-    years_experience: extractYearsExperience(text),
-    city: sanitizeField("city", extractCity(text)),
-    skills: sanitizeSkills(extractSkills(text).split(/[,，、/]+/)).join(", "),
-    status: "active",
-    notes: "",
-    fileName,
-    file,
-  };
-}
-
-// AI 解析结果 → ParsedTalent（AI 优先，缺失字段用本地规则兜底）
-function extractTalentWithAI(
-  text: string,
-  ai: Awaited<ReturnType<typeof api.parseResume>>,
-  local: ParsedTalent,
-  key: string,
-  fileName: string,
-  file: File | null
-): ParsedTalent {
-  const skills = ai.skills?.length
-    ? ai.skills.join(", ")
-    : local.skills;
-  return {
-    key,
-    name: ai.name || local.name,
-    phone: ai.phone || local.phone,
-    email: ai.email || local.email,
-    age: ai.age ?? local.age,
-    gender: ai.gender || local.gender,
-    education: ai.education || local.education,
-    school: ai.school || local.school,
-    current_company: ai.current_company || local.current_company,
-    current_title: ai.current_title || local.current_title,
-    years_experience: ai.years_experience ?? local.years_experience,
-    city: ai.city || local.city,
-    skills,
-    status: "active",
-    notes: "",
-    fileName,
-    file,
-  };
-}
 
 interface Props {
   open: boolean;
@@ -181,27 +57,9 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     try {
       const parsed: ParsedTalent[] = [];
       for (const file of files) {
-        const text = await parseFile(file);
-        const local = extractTalentLocal(text, nextKey(), file.name, file);
-        // AI 优先解析，失败或超时自动回退到本地规则
-        let result = local;
-        let aiUsed = false;
-        try {
-          const ai = await Promise.race([
-            api.parseResume(text),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("AI 解析超时")), 20000)
-            ),
-          ]);
-          result = extractTalentWithAI(text, ai, local, local.key, file.name, file);
-          aiUsed = true;
-        } catch (err) {
-          // AI 失败（无 key/超时/网络/解析异常）静默回退本地规则
-          console.warn(`AI 解析失败，回退本地规则：${file.name}`, err);
-        }
-        // 标记是否用 AI 解析（用于列表/核对弹窗提示）
-        result._ai = aiUsed;
-        parsed.push(result);
+        // 抽文本 + 本地规则兜底 + AI 解析（失败/超时自动回退），与智能匹配页共用同一套解析
+        const { talent } = await parseResumeToTalent(file, nextKey());
+        parsed.push(talent);
       }
       setRecords((prev) => [...prev, ...parsed]);
       // 简历模式下解析完自动进入逐份核对（从第一份开始）
@@ -246,24 +104,6 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setRecords((prev) => prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
   };
 
-  // 记录 → 导入接口入参
-  const recordToData = (r: ParsedTalent) => ({
-    name: r.name,
-    phone: r.phone || undefined,
-    email: r.email || undefined,
-    age: r.age ?? undefined,
-    gender: r.gender || undefined,
-    education: r.education || undefined,
-    school: r.school || undefined,
-    current_company: r.current_company || undefined,
-    current_title: r.current_title || undefined,
-    years_experience: r.years_experience ?? undefined,
-    city: r.city || undefined,
-    skills: r.skills ? r.skills.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
-    status: r.status || "active",
-    notes: r.notes || undefined,
-  });
-
   // 当前正在核对的记录
   const reviewRecord = records.find((r) => r.key === reviewKey) || null;
   const reviewIndex = reviewRecord ? records.findIndex((r) => r.key === reviewRecord.key) : 0;
@@ -271,7 +111,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   // 逐份核对：保存单条（写入人才库 + 保存原始简历）
   const saveRecord = async (rec: ParsedTalent) => {
     const res = await api.importTalents([recordToData(rec)]);
-    const created = ((res as any).items as { id: string }[] | undefined)?.[0];
+    const created = res.items?.[0];
     if (created && rec.file) {
       try {
         await api.uploadResume(created.id, rec.file);

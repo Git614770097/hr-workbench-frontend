@@ -14,6 +14,7 @@ import {
   DeploymentUnitOutlined,
   SolutionOutlined,
   CarryOutOutlined,
+  UserSwitchOutlined,
 } from "@ant-design/icons";
 import type { User } from "../types";
 import { ROLE_LABELS } from "../types";
@@ -78,9 +79,9 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
     { to: "/pipeline", label: "招聘流程", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
     { to: "/tasks", label: "跟进待办", icon: <CarryOutOutlined />, color: "#f97316", badge: taskBadge, perm: "tasks" },
     // —— 第二梯队：按需查阅与产出 ——
+    { to: "/profiles", label: "人物画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },
     { to: "/templates", label: "模板库管理", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
     // —— 第三梯队：基础配置与系统管理，频率最低 ——
-    // 注：标签管理已降级为「人才库」页内的弹窗入口，不再占侧栏一级菜单
     ...(user.role === "admin" ? [{ to: "/roles", label: "角色管理", icon: <SafetyOutlined />, color: "#f59e0b", perm: "roles" }] : []),
     ...(user.role === "admin" ? [{ to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users" }] : []),
   ].filter((item) => canSee(item.perm));

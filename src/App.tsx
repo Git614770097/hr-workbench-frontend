@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
-import { Spin } from "antd";
+import { Spin, Button, Alert } from "antd";
 import type { User } from "./types";
 import type { ThemeKey } from "./theme";
 import { api } from "./api";
@@ -12,6 +12,10 @@ import Layout from "./components/Layout";
 // 推迟到真正访问对应页面时才下载，降低首屏体积。
 const TalentList = lazy(() => import("./pages/TalentList"));
 const TalentDetail = lazy(() => import("./pages/TalentDetail"));
+// 智能匹配：从人才库工具栏进入，页面内含 pdfjs/mammoth 等重依赖，按需加载
+const Match = lazy(() => import("./pages/Match"));
+// 人物画像：独立的画像分级管理页
+const Profiles = lazy(() => import("./pages/Profiles"));
 const Pipeline = lazy(() => import("./pages/Pipeline"));
 const Jobs = lazy(() => import("./pages/Jobs"));
 const Tasks = lazy(() => import("./pages/Tasks"));
@@ -41,6 +45,9 @@ interface AppProps {
 export default function App({ themeKey, onChangeTheme }: AppProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  // 有 token 但首屏加载失败（典型：D1 冷启动导致 /api/auth/me 查询挂起超时），
+  // 不进登录页、给「重试」入口，避免一直卡在 loading 出不来。
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchUser = useCallback(async () => {
     const token = localStorage.getItem("token");
@@ -48,12 +55,16 @@ export default function App({ themeKey, onChangeTheme }: AppProps) {
       setLoading(false);
       return;
     }
+    setLoadError(null);
     try {
       const res = await api.me();
       setUser(res);
     } catch {
-      localStorage.removeItem("token");
-      setUser(null);
+      // request 内遇到 401 已经清 token 并跳登录；其余（含超时）说明有 token 但请求失败，
+      // 多为 D1 冷启动，留「重试」入口。
+      if (localStorage.getItem("token")) {
+        setLoadError("加载超时或网络异常，系统可能正在启动，请点击重试。");
+      }
     }
     setLoading(false);
   }, []);
@@ -75,6 +86,16 @@ export default function App({ themeKey, onChangeTheme }: AppProps) {
     );
   }
 
+  // 有 token 但首屏加载失败 → 错误提示 + 重试，不再无限转圈
+  if (loadError && localStorage.getItem("token")) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", height: "100vh", gap: 16, padding: 24 }}>
+        <Alert type="warning" showIcon message="加载失败" description={loadError} style={{ maxWidth: 440 }} />
+        <Button type="primary" onClick={() => { setLoading(true); fetchUser(); }}>重试</Button>
+      </div>
+    );
+  }
+
   if (!user) {
     return (
       <Routes>
@@ -91,6 +112,8 @@ export default function App({ themeKey, onChangeTheme }: AppProps) {
           <Route path="/" element={<Navigate to="/talents" replace />} />
           <Route path="/talents" element={<RequirePerm user={user} perm="talents"><TalentList /></RequirePerm>} />
           <Route path="/talents/:id" element={<RequirePerm user={user} perm="talents"><TalentDetail /></RequirePerm>} />
+          <Route path="/match" element={<RequirePerm user={user} perm="profiles"><Match /></RequirePerm>} />
+          <Route path="/profiles" element={<RequirePerm user={user} perm="profiles"><Profiles /></RequirePerm>} />
           <Route path="/pipeline" element={<RequirePerm user={user} perm="pipeline"><Pipeline /></RequirePerm>} />
           <Route path="/jobs" element={<RequirePerm user={user} perm="jobs"><Jobs /></RequirePerm>} />
           <Route path="/tasks" element={<RequirePerm user={user} perm="tasks"><Tasks /></RequirePerm>} />

@@ -49,7 +49,6 @@ talents.get("/", async (c) => {
   const limit = Math.min(parseInt(c.req.query("limit") || "20", 10), 100);
   const status = c.req.query("status");
   const city = c.req.query("city");
-  const tagId = c.req.query("tag_id");
   const ownerId = c.req.query("owner_id");
   // 分字段筛选
   const name = (c.req.query("name") || "").trim();
@@ -87,26 +86,14 @@ talents.get("/", async (c) => {
   if (title) { conditions.push("t.current_title LIKE ?"); params.push(`%${title}%`); }
   if (status) { conditions.push("t.status = ?"); params.push(status); }
   if (city) { conditions.push("t.city LIKE ?"); params.push(`%${city}%`); }
-  if (tagId) { conditions.push("t.id IN (SELECT talent_id FROM talent_tags WHERE tag_id = ?)"); params.push(tagId); }
 
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
   const countResult = await c.env.DB.prepare(`SELECT COUNT(*) as total FROM talents t ${where}`).bind(...params).first<{ total: number }>();
   const rows = await c.env.DB.prepare(`SELECT t.*, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id ${where} ORDER BY t.updated_at DESC LIMIT ? OFFSET ?`).bind(...params, limit, offset).all();
 
-  const talentIds = rows.results.map((r: any) => r.id);
-  let tagsMap: Record<string, any[]> = {};
-  if (talentIds.length > 0) {
-    const placeholders = talentIds.map(() => "?").join(",");
-    const tagRows = await c.env.DB.prepare(`SELECT tt.talent_id, t.id as tag_id, t.name, t.color FROM talent_tags tt JOIN tags t ON tt.tag_id = t.id WHERE tt.talent_id IN (${placeholders})`).bind(...talentIds).all();
-    for (const tr of tagRows.results as any[]) {
-      if (!tagsMap[tr.talent_id]) tagsMap[tr.talent_id] = [];
-      tagsMap[tr.talent_id].push({ id: tr.tag_id, name: tr.name, color: tr.color });
-    }
-  }
-
   const items = rows.results.map((r: any) => ({
-    ...r, skills: r.skills ? JSON.parse(r.skills) : [], tags: tagsMap[r.id] || [],
+    ...r, skills: r.skills ? JSON.parse(r.skills) : [],
   }));
 
   return c.json({ items, total: countResult?.total || 0, page, limit, pages: Math.ceil((countResult?.total || 0) / limit) });
@@ -136,7 +123,6 @@ talents.get("/duplicates", async (c) => {
     const rows = await c.env.DB.prepare(
       `SELECT t.*,
               CASE WHEN t.resume_url IS NOT NULL AND TRIM(t.resume_url) != '' THEN 1 ELSE 0 END AS has_resume,
-              (SELECT COUNT(*) FROM talent_tags x WHERE x.talent_id = t.id) AS tag_count,
               (SELECT COUNT(*) FROM communications cm WHERE cm.talent_id = t.id) AS comm_count,
               (SELECT COUNT(*) FROM talent_jobs tj WHERE tj.talent_id = t.id) AS job_count
        FROM talents t WHERE t.phone IN (${ph}) ${session.role === "admin" ? "" : "AND t.owner_id = ?"}
@@ -159,7 +145,7 @@ talents.get("/duplicates", async (c) => {
         city: r.city, education: r.education, school: r.school,
         status: r.status, created_at: r.created_at, updated_at: r.updated_at,
         has_resume: r.has_resume ? 1 : 0,
-        tag_count: r.tag_count || 0, comm_count: r.comm_count || 0, job_count: r.job_count || 0,
+        comm_count: r.comm_count || 0, job_count: r.job_count || 0,
         sig,
       });
     }
@@ -171,7 +157,7 @@ talents.get("/duplicates", async (c) => {
 
 // ---- 合并重复人才 ----
 // 把 merge_ids 并入 keep_id：字段只补空（不覆盖保留记录已有值）、关联数据（候选-岗位/
-// 标签/沟通记录/待办）迁移到保留记录，最后删除来源记录。整体走 D1 batch 事务，失败即回滚。
+// 沟通记录/待办）迁移到保留记录，最后删除来源记录。整体走 D1 batch 事务，失败即回滚。
 talents.post("/merge", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
@@ -226,9 +212,6 @@ talents.post("/merge", async (c) => {
         keepJobs.add(tj.job_id);
       }
     }
-    // 标签：复制到保留记录（忽略重复）后清掉来源的
-    stmts.push(c.env.DB.prepare("INSERT OR IGNORE INTO talent_tags (talent_id, tag_id) SELECT ?, tag_id FROM talent_tags WHERE talent_id = ?").bind(keepId, s.id));
-    stmts.push(c.env.DB.prepare("DELETE FROM talent_tags WHERE talent_id = ?").bind(s.id));
     // 沟通记录 / 待办 迁移
     stmts.push(c.env.DB.prepare("UPDATE communications SET talent_id = ? WHERE talent_id = ?").bind(keepId, s.id));
     stmts.push(c.env.DB.prepare("UPDATE talent_tasks SET talent_id = ? WHERE talent_id = ?").bind(keepId, s.id));
@@ -268,8 +251,7 @@ talents.get("/:id", async (c) => {
   const row = await c.env.DB.prepare(sql).bind(...params).first();
   if (!row) return c.json({ error: "人才不存在" }, 404);
 
-  const tagRows = await c.env.DB.prepare(`SELECT t.id, t.name, t.color FROM talent_tags tt JOIN tags t ON tt.tag_id = t.id WHERE tt.talent_id = ?`).bind(id).all();
-  return c.json({ ...(row as any), skills: (row as any).skills ? JSON.parse((row as any).skills) : [], tags: tagRows.results });
+  return c.json({ ...(row as any), skills: (row as any).skills ? JSON.parse((row as any).skills) : [] });
 });
 
 // ---- 新增人才 ----
@@ -283,11 +265,6 @@ talents.post("/", async (c) => {
   await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, resume_url, notes, birth_date, contract_end, probation_end, resignation_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date)).run();
 
-  if (body.tag_ids && body.tag_ids.length > 0) {
-    for (const tagId of body.tag_ids) {
-      await c.env.DB.prepare("INSERT OR IGNORE INTO talent_tags (talent_id, tag_id) VALUES (?, ?)").bind(id, tagId).run();
-    }
-  }
   return c.json({ id, ...body });
 });
 
@@ -326,12 +303,6 @@ talents.put("/:id", async (c) => {
   await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), resume_url = COALESCE(?, resume_url), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
     .bind(...scalars, ...dateParams, id).run();
 
-  if (body.tag_ids !== undefined) {
-    await c.env.DB.prepare("DELETE FROM talent_tags WHERE talent_id = ?").bind(id).run();
-    for (const tagId of body.tag_ids) {
-      await c.env.DB.prepare("INSERT OR IGNORE INTO talent_tags (talent_id, tag_id) VALUES (?, ?)").bind(id, tagId).run();
-    }
-  }
   return c.json({ id, ...body });
 });
 
@@ -351,13 +322,11 @@ talents.delete("/:id", async (c) => {
   if (existing.resume_url) await c.env.RESUMES.delete(existing.resume_url);
 
   // 先清所有关联数据，再删人才本体。
-  // talents 被 talent_jobs / talent_tasks / talent_tags / communications 四张表外键引用，
-  // 顺序反了（或漏清某张表）会触发外键约束直接 500 —— 之前只删 tags/communications 且
-  // 排在 talents 之后，属于既有的删除 500 bug。
+  // talents 被 talent_jobs / talent_tasks / communications 三张表外键引用，
+  // 顺序反了（或漏清某张表）会触发外键约束直接 500。
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(id),
     c.env.DB.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(id),
-    c.env.DB.prepare("DELETE FROM talent_tags WHERE talent_id = ?").bind(id),
     c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id),
     // 待办属于用户，不静默删除，只解除与人才的关联
     c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),

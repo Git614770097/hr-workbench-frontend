@@ -157,12 +157,6 @@ export default function TalentDetail() {
             </Card>
           )}
 
-          {talent.tags.length > 0 && (
-            <Card title="自定义标签" style={{ marginBottom: 16 }}>
-              <Space wrap>{talent.tags.map((t) => <Tag key={t.id} color={t.color}>{t.name}</Tag>)}</Space>
-            </Card>
-          )}
-
           {talent.notes && (
             <Card title="备注">
               <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>{talent.notes}</Typography.Paragraph>

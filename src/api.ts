@@ -1,4 +1,4 @@
-import type { User, UserRow, Talent, Tag, Communication, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, Task, TaskSummary, DuplicateGroup } from "./types";
+import type { User, UserRow, Talent, Communication, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, Task, TaskSummary, DuplicateGroup, MatchProfile, MatchResult } from "./types";
 
 const BASE = "/api";
 
@@ -17,7 +17,18 @@ async function request<T>(
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  // 前端超时兜底：D1 冷启动或网络异常时 fetch 可能长时间挂起（无超时），
+  // 会导致首屏 loading 永久转圈、页面出不来。超时后抛错交由上层重试。
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal });
+  } catch {
+    clearTimeout(timer);
+    throw new Error("请求超时或网络异常，请稍后重试");
+  }
+  clearTimeout(timer);
 
   if (res.status === 401) {
     localStorage.removeItem("token");
@@ -123,17 +134,17 @@ export const api = {
       body: JSON.stringify({ keep_id: keepId, merge_ids: mergeIds }),
     }),
 
-  createTalent: (data: Partial<Talent> & { tag_ids?: string[] }) =>
+  createTalent: (data: Partial<Talent>) =>
     request<Talent>("/talents", { method: "POST", body: JSON.stringify(data) }),
 
-  updateTalent: (id: string, data: Partial<Talent> & { tag_ids?: string[] }) =>
+  updateTalent: (id: string, data: Partial<Talent>) =>
     request<Talent>(`/talents/${id}`, { method: "PUT", body: JSON.stringify(data) }),
 
   deleteTalent: (id: string) =>
     request(`/talents/${id}`, { method: "DELETE" }),
 
   importTalents: (data: Partial<Talent>[]) =>
-    request<{ imported: number }>("/talents/import", {
+    request<{ imported: number; items: { id: string; name: string }[] }>("/talents/import", {
       method: "POST",
       body: JSON.stringify(data),
     }),
@@ -160,20 +171,50 @@ export const api = {
     }),
 
   // Resume file upload and preview
+  // 读取人才库里已存的简历文件（智能匹配勾选库内人选时，重新抽取原文做语义比对）
+  // 返回 null 表示这条人才没存简历文件，调用方需回退到「用已录入字段拼文本」
+  fetchResumeFile: async (talentId: string): Promise<{ blob: Blob; name: string } | null> => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/talents/${talentId}/resume`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+        signal: ctrl.signal,
+      });
+    } catch {
+      clearTimeout(timer);
+      throw new Error("简历读取超时，请重试");
+    }
+    clearTimeout(timer);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error("简历文件读取失败");
+    // 文件名只能从 Content-Disposition 拿：解析走 PDF 还是 Word 全靠后缀判断
+    const m = (res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
+    return { blob: await res.blob(), name: m ? decodeURIComponent(m[1]) : "" };
+  },
+
   uploadResume: (talentId: string, file: File) => {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("talent_id", talentId);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000);
     return fetch(`${BASE}/talents/resume`, {
       method: "POST",
       headers: { Authorization: `Bearer ${getToken()}` },
       body: formData,
+      signal: ctrl.signal,
     }).then(async (res) => {
+      clearTimeout(timer);
       if (!res.ok) {
         const err = (await res.json().catch(() => ({ error: "上传失败" }))) as { error?: string };
         throw new Error(err.error || "上传失败");
       }
       return res.json();
+    }, (e) => {
+      clearTimeout(timer);
+      throw e;
     });
   },
 
@@ -186,13 +227,35 @@ export const api = {
   deleteResume: (talentId: string) =>
     request(`/talents/${talentId}/resume`, { method: "DELETE" }),
 
-  // Tags
-  getTags: () => request<(Tag & { talent_count?: number; owner_name?: string })[]>("/tags"),
-  createTag: (data: { name: string; color?: string }) =>
-    request<Tag>("/tags", { method: "POST", body: JSON.stringify(data) }),
-  updateTag: (id: string, data: { name?: string; color?: string }) =>
-    request(`/tags/${id}`, { method: "PUT", body: JSON.stringify(data) }),
-  deleteTag: (id: string) => request(`/tags/${id}`, { method: "DELETE" }),
+  // 智能匹配（简历 + 人物画像 → 排序推荐）
+  generateMatchProfile: (jd: string) =>
+    request<MatchProfile>("/match/parse-profile", {
+      method: "POST",
+      body: JSON.stringify({ jd }),
+    }),
+
+  getMatchProfiles: () => request<MatchProfile[]>("/match/profiles"),
+
+  createMatchProfile: (data: Partial<MatchProfile>) =>
+    request<{ id: string }>("/match/profiles", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateMatchProfile: (id: string, data: Partial<MatchProfile>) =>
+    request<{ id: string }>(`/match/profiles/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteMatchProfile: (id: string) =>
+    request(`/match/profiles/${id}`, { method: "DELETE" }),
+
+  scoreCandidate: (profile: MatchProfile, candidate: { text: string; parsed?: Record<string, unknown> }) =>
+    request<MatchResult>("/match/score", {
+      method: "POST",
+      body: JSON.stringify({ profile, candidate }),
+    }),
 
   // Communications
   getCommunications: (talentId: string) =>
