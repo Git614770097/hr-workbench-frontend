@@ -1,11 +1,12 @@
 import { useState, useRef } from "react";
 import {
-  Modal, Upload, Button, Alert, message, Table, Input, InputNumber, Select, Typography, Segmented,
+  Modal, Upload, Button, Alert, message, Table, Input, InputNumber, Select, Typography, Segmented, Tooltip,
 } from "antd";
-import { InboxOutlined, DeleteOutlined, UploadOutlined } from "@ant-design/icons";
+import { InboxOutlined, DeleteOutlined, UploadOutlined, EyeOutlined } from "@ant-design/icons";
 import mammoth from "mammoth";
 import { api } from "../api";
 import { EDUCATION_OPTIONS, STATUS_LABELS } from "../types";
+import ImportPreviewModal from "./ImportPreviewModal";
 import {
   extractName, extractPhone, extractEmail, extractAge, extractGender,
   extractTitle, extractCompany, extractSchool, extractCity, extractSkills,
@@ -32,7 +33,7 @@ function loadPdfjs() {
   return pdfjsPromise;
 }
 
-interface ParsedTalent {
+export interface ParsedTalent {
   key: string;
   name: string;
   phone: string;
@@ -176,6 +177,10 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   const keySeq = useRef(0);
   const nextKey = () => `row-${keySeq.current++}`;
 
+  // 逐份核对：reviewKey 指向当前正在核对的记录（null 表示未打开）
+  const [reviewKey, setReviewKey] = useState<string | null>(null);
+  const [savingOne, setSavingOne] = useState(false);
+
   const handleFiles = async (files: File[]) => {
     if (parsingRef.current) return;
     parsingRef.current = true;
@@ -207,6 +212,10 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         parsed.push(result);
       }
       setRecords((prev) => [...prev, ...parsed]);
+      // 简历模式下解析完自动进入逐份核对（从第一份开始）
+      if (parsed.length > 0 && parsed[0].file) {
+        setReviewKey((cur) => cur ?? parsed[0].key);
+      }
       // 兜底提示：关键字段（姓名/手机号）未识别出来时提醒用户手动确认
       const missingName = parsed.filter((r) => !r.name).length;
       const missingPhone = parsed.filter((r) => !r.phone).length;
@@ -321,27 +330,80 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setRecords((prev) => prev.filter((r) => r.key !== key));
   };
 
+  // 记录 → 导入接口入参（批量导入与逐份核对共用，避免两处不一致）
+  const recordToData = (r: ParsedTalent) => ({
+    name: r.name,
+    phone: r.phone || undefined,
+    email: r.email || undefined,
+    age: r.age ?? undefined,
+    gender: r.gender || undefined,
+    education: r.education || undefined,
+    school: r.school || undefined,
+    current_company: r.current_company || undefined,
+    current_title: r.current_title || undefined,
+    years_experience: r.years_experience ?? undefined,
+    city: r.city || undefined,
+    skills: r.skills ? r.skills.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
+    status: r.status || "active",
+    notes: r.notes || undefined,
+  });
+
+  // 当前正在核对的记录
+  const reviewRecord = records.find((r) => r.key === reviewKey) || null;
+  const reviewIndex = reviewRecord ? records.findIndex((r) => r.key === reviewRecord.key) : 0;
+
+  // 逐份核对：保存单条（写入人才库 + 保存原始简历）
+  const saveRecord = async (rec: ParsedTalent) => {
+    const res = await api.importTalents([recordToData(rec)]);
+    const created = ((res as any).items as { id: string }[] | undefined)?.[0];
+    if (created && rec.file) {
+      try {
+        await api.uploadResume(created.id, rec.file);
+      } catch (e) {
+        console.error(`上传简历失败: ${rec.fileName}`, e);
+        message.warning("简历文件保存失败，可稍后在人才详情页重新上传");
+      }
+    }
+  };
+
+  // 处理完当前记录后从队列移除，并自动切到下一份（没有则关闭弹窗）
+  const advanceReview = (key: string) => {
+    const idx = records.findIndex((r) => r.key === key);
+    const remaining = records.filter((r) => r.key !== key);
+    const next = remaining.length === 0 ? null : remaining[Math.min(Math.max(idx, 0), remaining.length - 1)];
+    setRecords(remaining);
+    setReviewKey(next ? next.key : null);
+  };
+
+  const handleSaveOne = async () => {
+    const rec = reviewRecord;
+    if (!rec) return;
+    setSavingOne(true);
+    setError("");
+    try {
+      await saveRecord(rec);
+      message.success(`已录入「${rec.name || rec.fileName || "未命名"}」`);
+      onSuccess();
+      advanceReview(rec.key);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    setSavingOne(false);
+  };
+
+  const handleSkipOne = () => {
+    const rec = reviewRecord;
+    if (!rec) return;
+    message.info(`已跳过「${rec.name || rec.fileName || "未命名"}」`);
+    advanceReview(rec.key);
+  };
+
   const handleImport = async () => {
     if (records.length === 0) return;
     setImporting(true);
     setError("");
     try {
-      const data = records.map((r) => ({
-        name: r.name,
-        phone: r.phone || undefined,
-        email: r.email || undefined,
-        age: r.age ?? undefined,
-        gender: r.gender || undefined,
-        education: r.education || undefined,
-        school: r.school || undefined,
-        current_company: r.current_company || undefined,
-        current_title: r.current_title || undefined,
-        years_experience: r.years_experience ?? undefined,
-        city: r.city || undefined,
-        skills: r.skills ? r.skills.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
-        status: r.status || "active",
-        notes: r.notes || undefined,
-      }));
+      const data = records.map(recordToData);
       const res = await api.importTalents(data);
       message.success(`成功导入 ${res.imported} 条人才记录`);
 
@@ -391,7 +453,12 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     { title: "城市", dataIndex: "city", width: 90, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入城市" onChange={(e) => updateRecord(r.key, "city", e.target.value)} /> },
     { title: "技能", dataIndex: "skills", width: 180, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} onChange={(e) => updateRecord(r.key, "skills", e.target.value)} placeholder="技能，逗号分隔" /> },
     { title: "状态", dataIndex: "status", width: 130, render: (v: string, r: ParsedTalent) => <Select size="small" value={v} onChange={(val) => updateRecord(r.key, "status", val)} options={Object.entries(STATUS_LABELS).map(([k, label]) => ({ label, value: k }))} style={{ width: "100%" }} /> },
-    { title: "", key: "action", width: 50, fixed: "right" as const, render: (_: any, r: ParsedTalent) => <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => removeRecord(r.key)} /> },
+    { title: "", key: "action", width: 84, fixed: "right" as const, render: (_: any, r: ParsedTalent) => (
+      <span style={{ display: "inline-flex", gap: 2 }}>
+        <Tooltip title="核对简历"><Button type="text" size="small" icon={<EyeOutlined />} onClick={() => setReviewKey(r.key)} /></Tooltip>
+        <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => removeRecord(r.key)} />
+      </span>
+    ) },
   ];
 
   const scrollX = baseWidth;
@@ -411,7 +478,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       {mode === "resume" ? (
         <>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            上传 PDF 或 Word（.docx）简历文件，系统会自动提取姓名、电话、邮箱、学历、院校、公司、职位、技能、出生日期等信息，核对无误后一键导入。原始简历文件会同时保存，可在人才详情页预览。
+            上传 PDF 或 Word（.docx）简历文件，系统自动提取姓名、电话、邮箱、学历、院校、公司、职位、技能等信息，
+            随后<b>逐份弹出核对</b>：左侧看简历原文，右侧可直接修改解析字段，确认无误点「保存并录入」才会写入人才库，不想要的点「跳过」。原始简历会一并保存，可在人才详情页预览。
           </Typography.Paragraph>
 
           <Dragger accept=".pdf,.docx" multiple showUploadList={false} disabled={parsing} beforeUpload={handleBeforeUpload} style={{ marginBottom: 16 }}>
@@ -465,8 +533,22 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <Button onClick={onClose}>取消</Button>
-        <Button type="primary" onClick={handleImport} loading={importing} disabled={records.length === 0}>确认导入</Button>
+        <Button type="primary" onClick={handleImport} loading={importing} disabled={records.length === 0}>
+          全部导入（剩余 {records.length}）
+        </Button>
       </div>
+
+      {/* 逐份核对弹窗：左侧简历原文，右侧可改字段，保存才录入 */}
+      <ImportPreviewModal
+        record={reviewRecord}
+        index={reviewIndex}
+        total={records.length}
+        saving={savingOne}
+        onChange={(field, value) => { if (reviewRecord) updateRecord(reviewRecord.key, field, value); }}
+        onSave={handleSaveOne}
+        onSkip={handleSkipOne}
+        onClose={() => setReviewKey(null)}
+      />
     </Modal>
   );
 }
