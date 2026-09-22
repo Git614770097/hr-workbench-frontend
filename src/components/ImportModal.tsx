@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Modal, Upload, Button, Alert, message, Table, Input, InputNumber, Select, Typography, Segmented, Tooltip, Tag,
+  Modal, Upload, Button, Alert, message, Table, Input, Typography, Segmented, Tooltip, Tag,
 } from "antd";
 import { InboxOutlined, DeleteOutlined, UploadOutlined, EyeOutlined } from "@ant-design/icons";
 import mammoth from "mammoth";
 import { api } from "../api";
-import { EDUCATION_OPTIONS, STATUS_LABELS } from "../types";
+import { STATUS_LABELS } from "../types";
 import ImportPreviewModal from "./ImportPreviewModal";
 import {
   extractName, extractPhone, extractEmail, extractAge, extractGender,
@@ -172,7 +172,6 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   const [parsing, setParsing] = useState(false);
   const [records, setRecords] = useState<ParsedTalent[]>([]);
   const [error, setError] = useState("");
-  const [importing, setImporting] = useState(false);
   const [jsonText, setJsonText] = useState("");
   const parsingRef = useRef(false);
   // 多文件选择的缓冲：beforeUpload 对每个文件同步调用一次，先用队列收齐，再统一解析
@@ -194,7 +193,6 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setParsing(false);
     setRecords([]);
     setError("");
-    setImporting(false);
     setJsonText("");
     setReviewKey(null);
     setSavingOne(false);
@@ -332,6 +330,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       }
       // 读完即清空，避免重复点击造成重复记录
       setJsonText("");
+      // 与简历模式一致：读进来直接进入逐份核对，只有一条录入路径
+      if (parsed.length > 0) setReviewKey((cur) => cur ?? parsed[0].key);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -449,7 +449,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   const handleSkipOne = () => {
     const rec = reviewRecord;
     if (!rec) return;
-    message.info(`已跳过「${rec.name || rec.fileName || "未命名"}」`);
+    message.info(`已移除「${rec.name || rec.fileName || "未命名"}」`);
     advanceReview(rec.key);
   };
 
@@ -468,67 +468,20 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setReviewKey(records[0].key);
   };
 
-  const handleImport = async () => {
-    if (records.length === 0) return;
-    const missingName = records.filter((r) => !r.name.trim()).length;
-    if (missingName > 0) {
-      message.error(`有 ${missingName} 条缺少姓名（必填），请补全后再导入`);
-      return;
-    }
-    setImporting(true);
-    setError("");
-    try {
-      const data = records.map(recordToData);
-      const res = await api.importTalents(data);
-      message.success(`成功导入 ${res.imported} 条人才记录`);
-
-      // 上传原始简历文件到 R2
-      const createdItems = (res as any).items as { id: string; name: string }[] | undefined;
-      if (createdItems && createdItems.length === records.length) {
-        let uploaded = 0;
-        for (let i = 0; i < createdItems.length; i++) {
-          const rec = records[i];
-          if (rec.file) {
-            try {
-              await api.uploadResume(createdItems[i].id, rec.file);
-              uploaded++;
-            } catch (e) {
-              console.error(`上传简历失败: ${rec.fileName}`, e);
-            }
-          }
-        }
-        if (uploaded > 0) message.success(`${uploaded} 份简历已保存`);
-      }
-
-      setRecords([]);
-      onSuccess();
-      onClose();
-    } catch (err) {
-      setError((err as Error).message);
-    }
-    setImporting(false);
-  };
-
-  // 关键字段（姓名/手机号）缺失时标黄提醒手动填写
-  const missingStyle = (v: string) => (v ? {} : { status: "warning" as const });
-
-  const baseWidth = 1520;
+  // 列表只做进度展示：字段一律在核对弹窗里改，
+  // 避免「表格和弹窗两处都能改、不知道哪个算数」的割裂。
+  const dash = <Typography.Text type="secondary">—</Typography.Text>;
 
   const columns = [
-    { title: "姓名", dataIndex: "name", width: 100, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入姓名" {...missingStyle(v)} onChange={(e) => updateRecord(r.key, "name", e.target.value)} /> },
-    { title: "手机号", dataIndex: "phone", width: 125, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入手机号" {...missingStyle(v)} onChange={(e) => updateRecord(r.key, "phone", e.target.value)} /> },
-    { title: "邮箱", dataIndex: "email", width: 175, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入邮箱" onChange={(e) => updateRecord(r.key, "email", e.target.value)} /> },
-    { title: "年龄", dataIndex: "age", width: 75, render: (v: number | null, r: ParsedTalent) => <InputNumber size="small" min={16} max={80} value={v ?? undefined} placeholder="年龄" onChange={(val) => updateRecord(r.key, "age", val ?? null)} style={{ width: "100%" }} /> },
-    { title: "性别", dataIndex: "gender", width: 85, render: (v: string, r: ParsedTalent) => <Select size="small" value={v || undefined} allowClear placeholder="性别" onChange={(val) => updateRecord(r.key, "gender", val || "")} options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} style={{ width: "100%" }} /> },
-    { title: "学历", dataIndex: "education", width: 110, render: (v: string, r: ParsedTalent) => <Select size="small" value={v || undefined} allowClear placeholder="请选择学历" onChange={(val) => updateRecord(r.key, "education", val || "")} options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} style={{ width: "100%" }} /> },
-    { title: "院校", dataIndex: "school", width: 140, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入院校" onChange={(e) => updateRecord(r.key, "school", e.target.value)} /> },
-    { title: "当前公司", dataIndex: "current_company", width: 140, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入当前公司" onChange={(e) => updateRecord(r.key, "current_company", e.target.value)} /> },
-    { title: "当前职位", dataIndex: "current_title", width: 130, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入当前职位" onChange={(e) => updateRecord(r.key, "current_title", e.target.value)} /> },
-    { title: "年限", dataIndex: "years_experience", width: 75, render: (v: number | null, r: ParsedTalent) => <InputNumber size="small" min={0} value={v ?? undefined} placeholder="年限" onChange={(val) => updateRecord(r.key, "years_experience", val ?? null)} style={{ width: "100%" }} /> },
-    { title: "城市", dataIndex: "city", width: 90, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入城市" onChange={(e) => updateRecord(r.key, "city", e.target.value)} /> },
-    { title: "技能", dataIndex: "skills", width: 180, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} onChange={(e) => updateRecord(r.key, "skills", e.target.value)} placeholder="技能，逗号分隔" /> },
-    { title: "状态", dataIndex: "status", width: 130, render: (v: string, r: ParsedTalent) => <Select size="small" value={v} onChange={(val) => updateRecord(r.key, "status", val)} options={Object.entries(STATUS_LABELS).map(([k, label]) => ({ label, value: k }))} style={{ width: "100%" }} /> },
-    { title: "解析", key: "parseSource", width: 84, render: (_: any, r: ParsedTalent) => (
+    {
+      title: "姓名", dataIndex: "name", width: 110,
+      render: (v: string) => (v ? v : <Typography.Text type="danger">待填写</Typography.Text>),
+    },
+    { title: "手机号", dataIndex: "phone", width: 130, render: (v: string) => v || dash },
+    { title: "当前公司", dataIndex: "current_company", width: 200, render: (v: string) => v || dash },
+    { title: "当前职位", dataIndex: "current_title", width: 170, render: (v: string) => v || dash },
+    { title: "状态", dataIndex: "status", width: 90, render: (v: string) => STATUS_LABELS[v] || v },
+    { title: "来源", key: "parseSource", width: 80, render: (_: any, r: ParsedTalent) => (
       <Tooltip title={r._ai === true ? "AI 解析" : r._ai === false ? "本地规则解析（AI 失败回退，建议重点核对）" : "JSON 手工导入"}>
         {r._ai === true
           ? <Tag color="green" style={{ marginInlineEnd: 0 }}>AI</Tag>
@@ -537,15 +490,17 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
             : <Tag style={{ marginInlineEnd: 0 }}>手工</Tag>}
       </Tooltip>
     ) },
-    { title: "", key: "action", width: 84, fixed: "right" as const, render: (_: any, r: ParsedTalent) => (
+    { title: "", key: "action", width: 150, render: (_: any, r: ParsedTalent) => (
       <span style={{ display: "inline-flex", gap: 2 }}>
-        <Tooltip title="核对简历"><Button type="text" size="small" icon={<EyeOutlined />} onClick={() => setReviewKey(r.key)} /></Tooltip>
-        <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => removeRecord(r.key)} />
+        <Tooltip title="打开核对">
+          <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => setReviewKey(r.key)}>核对</Button>
+        </Tooltip>
+        <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => removeRecord(r.key)}>移除</Button>
       </span>
     ) },
   ];
 
-  const scrollX = baseWidth;
+  const scrollX = 930;
 
   return (
     <Modal title="批量导入人才" open={open} onCancel={onClose} width={1100} destroyOnClose footer={null}>
@@ -562,8 +517,9 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       {mode === "resume" ? (
         <>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            上传 PDF 或 Word（.docx）简历文件，系统自动提取姓名、电话、邮箱、学历、院校、公司、职位、技能等信息，
-            随后<b>逐份弹出核对</b>：左侧看简历原文，右侧可直接修改解析字段，确认无误点「保存并录入」才会写入人才库，不想要的点「跳过」。原始简历会一并保存，可在人才详情页预览。
+            上传 PDF 或 Word（.docx）简历，系统自动提取姓名、电话、公司、职位等信息，然后<b>逐份核对</b>：
+            左边看简历原文，右边改字段。点「保存并录入」立刻写入人才库并保存原始简历，不想要的点「移除」。
+            全部处理完自动结束——<b>这是唯一的录入方式</b>，不再有一键批量导入。
           </Typography.Paragraph>
 
           <Dragger accept=".pdf,.docx" multiple showUploadList={false} disabled={parsing} beforeUpload={handleBeforeUpload} style={{ marginBottom: 16 }}>
@@ -575,7 +531,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       ) : (
         <>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-            粘贴 JSON 数组，或上传 <code>.json</code> 文件，适合从其他系统导出后批量迁移。读取后会进入下方表格，同样可以逐条修改再导入。
+            粘贴 JSON 数组，或上传 <code>.json</code> 文件，适合从其他系统导出后批量迁移。读取后同样进入逐份核对。
           </Typography.Paragraph>
 
           <Upload accept=".json" showUploadList={false} beforeUpload={handleJsonFile}>
@@ -617,11 +573,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <Button onClick={onClose}>取消</Button>
-        <Button onClick={handleImport} loading={importing} disabled={records.length === 0}>
-          全部导入（剩余 {records.length}）
-        </Button>
         <Button type="primary" onClick={continueReview} disabled={records.length === 0}>
-          继续核对（剩余 {records.length}）
+          继续核对（还有 {records.length} 份）
         </Button>
       </div>
 

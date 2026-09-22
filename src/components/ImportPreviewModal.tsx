@@ -66,7 +66,7 @@ export default function ImportPreviewModal({
 
   return (
     <Modal
-      title={record ? `核对简历（第 ${index + 1} / ${total} 份）` : "核对简历"}
+      title={record ? `核对${file ? "简历" : "记录"}（第 ${index + 1} / ${total} ${file ? "份" : "条"}）` : "核对"}
       open={!!record}
       onCancel={onClose}
       width="92%"
@@ -76,11 +76,11 @@ export default function ImportPreviewModal({
       footer={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            确认无误点「保存并录入」即写入人才库并保存原始简历；不想要的点「跳过」。
+            确认无误点「保存并录入」即写入人才库{file ? "并保存原始简历" : ""}；不想要的点「移除」。
           </Typography.Text>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             <Button onClick={onClose}>关闭</Button>
-            <Button danger onClick={onSkip} disabled={saving}>跳过</Button>
+            <Button danger onClick={onSkip} disabled={saving}>移除</Button>
             <Button type="primary" loading={saving} onClick={onSave}>保存并录入</Button>
           </div>
         </div>
@@ -88,14 +88,13 @@ export default function ImportPreviewModal({
     >
       {record && (
         <div style={{ display: "flex", gap: 16, alignItems: "stretch" }}>
-          {/* 左：简历原文 */}
+          {/* 左：简历原文。JSON 导入没有文件，整块不渲染，右侧字段区自动占满 */}
+          {file && (
           <div style={{ flex: "1 1 55%", minWidth: 0 }}>
             <div style={{ marginBottom: 6, fontSize: 12, color: "#888" }}>
               <Tag color="blue" style={{ marginInlineEnd: 6 }}>{record.fileName || "无文件"}</Tag>简历原文
             </div>
-            {!file ? (
-              <Alert type="info" showIcon message="该记录无简历原文（来自 JSON 导入）" />
-            ) : isPdf ? (
+            {isPdf ? (
               pdfUrl ? (
                 <iframe
                   src={pdfUrl}
@@ -122,9 +121,10 @@ export default function ImportPreviewModal({
               <Alert type="warning" showIcon message={`暂不支持预览 ${fname || "该格式"} 文件`} />
             )}
           </div>
+          )}
 
           {/* 右：解析字段（可编辑） */}
-          <div style={{ flex: "1 1 45%", minWidth: 0, overflowY: "auto", maxHeight: "70vh", paddingRight: 4 }}>
+          <div style={{ flex: file ? "1 1 45%" : "1 1 100%", minWidth: 0, overflowY: "auto", maxHeight: "70vh", paddingRight: 4 }}>
             <div style={{ marginBottom: 6, fontSize: 12, color: "#888", display: "flex", alignItems: "center", gap: 8 }}>
               解析字段（可直接修改）
               {record._ai === true
