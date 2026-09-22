@@ -149,6 +149,16 @@ export default function TalentList() {
     setPage(1);
   };
 
+  // 导入/合并之后刷新列表。新记录按 updated_at 倒序排在最前，
+  // 如果当前不在第 1 页，刷新了也看不见，所以一并跳回第 1 页。
+  const refreshAfterImport = useCallback(() => {
+    if (page === 1) {
+      fetchTalents();
+    } else {
+      setPage(1); // page 变化会触发上面的 useEffect 重新拉取
+    }
+  }, [page, fetchTalents]);
+
   const handleDelete = async (id: string, name: string) => {
     try {
       await api.deleteTalent(id);
@@ -443,14 +453,14 @@ export default function TalentList() {
       <ImportModal
         open={importModalOpen}
         onClose={() => setImportModalOpen(false)}
-        onSuccess={fetchTalents}
+        onSuccess={refreshAfterImport}
       />
 
       {/* 标签管理弹窗（低频配置项，从工具栏入口打开，不占侧栏菜单） */}
       <TagManagerModal open={tagManagerOpen} onClose={() => setTagManagerOpen(false)} />
 
       {/* 疑似重复人才检测（按手机号分组，可一键合并） */}
-      <DuplicateTalentsModal open={dupModalOpen} onClose={() => setDupModalOpen(false)} onMerged={fetchTalents} />
+      <DuplicateTalentsModal open={dupModalOpen} onClose={() => setDupModalOpen(false)} onMerged={refreshAfterImport} />
 
       {/* 简历预览弹窗（PDF 原生渲染保留格式；Word 在线转 HTML 查看，不下载） */}
       <ResumePreviewModal talent={previewTalent} onClose={() => setPreviewTalent(null)} />

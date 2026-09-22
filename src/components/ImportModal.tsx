@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Modal, Upload, Button, Alert, message, Table, Typography, Tooltip, Tag,
+  Modal, Upload, Button, Alert, message, Typography,
 } from "antd";
-import { InboxOutlined, DeleteOutlined, EyeOutlined } from "@ant-design/icons";
+import { InboxOutlined } from "@ant-design/icons";
 import mammoth from "mammoth";
 import { api } from "../api";
-import { STATUS_LABELS } from "../types";
 import ImportPreviewModal from "./ImportPreviewModal";
 import {
   extractName, extractPhone, extractEmail, extractAge, extractGender,
@@ -158,6 +157,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   // 逐份核对：reviewKey 指向当前正在核对的记录（null 表示未打开）
   const [reviewKey, setReviewKey] = useState<string | null>(null);
   const [savingOne, setSavingOne] = useState(false);
+  // 本轮已录入份数，用于结束时汇总
+  const savedCount = useRef(0);
 
   // 组件常驻（父级只切换 open），每次打开都从干净状态开始，
   // 避免上次没处理完的解析记录/核对弹窗残留到下一次导入。
@@ -168,6 +169,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setError("");
     setReviewKey(null);
     setSavingOne(false);
+    savedCount.current = 0;
     pendingFilesRef.current = [];
   }, [open]);
 
@@ -244,11 +246,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setRecords((prev) => prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
   };
 
-  const removeRecord = (key: string) => {
-    setRecords((prev) => prev.filter((r) => r.key !== key));
-  };
-
-  // 记录 → 导入接口入参（批量导入与逐份核对共用，避免两处不一致）
+  // 记录 → 导入接口入参
   const recordToData = (r: ParsedTalent) => ({
     name: r.name,
     phone: r.phone || undefined,
@@ -284,14 +282,17 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     }
   };
 
-  // 处理完当前记录后从队列移除并切到下一份；若全部处理完，关闭整个导入弹窗
+  // 处理完当前记录后自动切到下一份；全部处理完则刷新列表并关闭导入弹窗
   const advanceReview = (key: string) => {
     const idx = records.findIndex((r) => r.key === key);
     const remaining = records.filter((r) => r.key !== key);
     if (remaining.length === 0) {
       setRecords([]);
       setReviewKey(null);
-      message.success("已处理完全部简历");
+      message.success(savedCount.current > 0
+        ? `已录入 ${savedCount.current} 份，人才库列表已更新`
+        : "已处理完全部简历");
+      onSuccess();
       onClose();
       return;
     }
@@ -333,8 +334,10 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setError("");
     try {
       await saveRecord(rec);
-      message.success(`已录入「${rec.name || rec.fileName || "未命名"}」（第 ${reviewIndex + 1}/${records.length} 份）`);
+      savedCount.current += 1;
+      // 每录一份就刷新一次人才库列表，而不是等全部处理完
       onSuccess();
+      message.success(`已录入「${rec.name || rec.fileName || "未命名"}」（第 ${reviewIndex + 1}/${records.length} 份），人才库列表已更新`);
       advanceReview(rec.key);
     } catch (err) {
       setError((err as Error).message);
@@ -349,82 +352,47 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     advanceReview(rec.key);
   };
 
-  // 关闭核对弹窗：回到批量列表时明确告知还有几份没核对，
-  // 否则用户面对的只有「全部导入」这一个主按钮，会误以为必须先点它。
+  // 关闭核对弹窗 = 放弃本轮尚未处理的简历（没有中间列表可回退，所以必须问清楚）。
+  // 已录入的已经写库，不受影响。
   const handleCloseReview = () => {
-    setReviewKey(null);
-    if (records.length > 0) {
-      message.info(`还有 ${records.length} 份未核对，点右下角「继续核对」回到核对界面逐份确认后再录入`, 5);
+    const rest = records.length;
+    if (rest === 0) {
+      setReviewKey(null);
+      return;
     }
+    Modal.confirm({
+      title: "放弃剩余简历？",
+      content: `还有 ${rest} 份未处理，关闭后不会写入人才库（已录入的不受影响）。`,
+      okText: "放弃并关闭",
+      cancelText: "继续核对",
+      okButtonProps: { danger: true },
+      onOk: () => {
+        setRecords([]);
+        setReviewKey(null);
+        onClose();
+      },
+    });
   };
-
-  // 继续核对：从第一份未处理的开始
-  const continueReview = () => {
-    if (records.length === 0) return;
-    setReviewKey(records[0].key);
-  };
-
-  // 列表只做进度展示：字段一律在核对弹窗里改，
-  // 避免「表格和弹窗两处都能改、不知道哪个算数」的割裂。
-  const dash = <Typography.Text type="secondary">—</Typography.Text>;
-
-  const columns = [
-    {
-      title: "姓名", dataIndex: "name", width: 110,
-      render: (v: string) => (v ? v : <Typography.Text type="danger">待填写</Typography.Text>),
-    },
-    { title: "手机号", dataIndex: "phone", width: 130, render: (v: string) => v || dash },
-    { title: "当前公司", dataIndex: "current_company", width: 200, render: (v: string) => v || dash },
-    { title: "当前职位", dataIndex: "current_title", width: 170, render: (v: string) => v || dash },
-    { title: "状态", dataIndex: "status", width: 90, render: (v: string) => STATUS_LABELS[v] || v },
-    { title: "来源", key: "parseSource", width: 80, render: (_: any, r: ParsedTalent) => (
-      <Tooltip title={r._ai ? "AI 解析" : "本地规则解析（AI 失败回退，建议重点核对）"}>
-        <Tag color={r._ai ? "green" : "orange"} style={{ marginInlineEnd: 0 }}>{r._ai ? "AI" : "本地"}</Tag>
-      </Tooltip>
-    ) },
-    { title: "", key: "action", width: 150, render: (_: any, r: ParsedTalent) => (
-      <span style={{ display: "inline-flex", gap: 2 }}>
-        <Tooltip title="打开核对">
-          <Button type="text" size="small" icon={<EyeOutlined />} onClick={() => setReviewKey(r.key)}>核对</Button>
-        </Tooltip>
-        <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => removeRecord(r.key)}>移除</Button>
-      </span>
-    ) },
-  ];
-
-  const scrollX = 930;
 
   return (
-    <Modal title="批量导入人才" open={open} onCancel={onClose} width={1100} destroyOnClose footer={null}>
+    <Modal title="导入简历" open={open} onCancel={onClose} width={720} destroyOnClose footer={null}>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-        上传 PDF 或 Word（.docx）简历，系统自动提取姓名、电话、公司、职位等信息，然后<b>逐份核对</b>：
-        左边看简历原文，右边改字段。点「保存并录入」立刻写入人才库并保存原始简历，不想要的点「移除」。
-        全部处理完自动结束——<b>这是唯一的录入方式</b>，不再有一键批量导入。
+        上传 PDF 或 Word（.docx）简历，解析完成后会<b>自动弹出核对窗口</b>：
+        左边看简历原文，右边改字段，点「保存并录入」即写入人才库并更新列表。
+        可一次上传多份，会依次核对。
       </Typography.Paragraph>
 
-      <Dragger accept=".pdf,.docx" multiple showUploadList={false} disabled={parsing} beforeUpload={handleBeforeUpload} style={{ marginBottom: 16 }}>
+      <Dragger accept=".pdf,.docx" multiple showUploadList={false} disabled={parsing} beforeUpload={handleBeforeUpload}>
         <p className="ant-upload-drag-icon"><InboxOutlined /></p>
         <p className="ant-upload-text">点击或拖拽简历文件到此处</p>
         <p className="ant-upload-hint">支持 .pdf、.docx 格式，可一次上传多份</p>
       </Dragger>
 
-      {parsing && <Alert message="AI 识别中…" type="info" showIcon style={{ marginTop: 16, marginBottom: 16 }} />}
+      {parsing && <Alert message="AI 识别中…" type="info" showIcon style={{ marginTop: 16 }} />}
       {error && <Alert message={error} type="error" showIcon style={{ marginTop: 16, marginBottom: 16 }} />}
 
-      {records.length > 0 && (
-        <>
-          <Typography.Text strong style={{ display: "block", marginBottom: 8 }}>
-            待核对记录（还有 {records.length} 份，字段在核对弹窗里修改）
-          </Typography.Text>
-          <Table columns={columns} dataSource={records} rowKey="key" size="small" pagination={false} scroll={{ x: scrollX }} />
-        </>
-      )}
-
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
-        <Button onClick={onClose}>取消</Button>
-        <Button type="primary" onClick={continueReview} disabled={records.length === 0}>
-          继续核对（还有 {records.length} 份）
-        </Button>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+        <Button onClick={onClose}>关闭</Button>
       </div>
 
       {/* 逐份核对弹窗：左侧简历原文，右侧可改字段，保存才录入 */}
