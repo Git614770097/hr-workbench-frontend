@@ -10,7 +10,7 @@ export const MENU_LABELS: Record<MenuKey, string> = {
   jobs: "岗位管理",
   tasks: "跟进待办",
   templates: "模板库管理",
-  profiles: "人物画像",
+  profiles: "人才画像",
   users: "用户管理",
 };
 

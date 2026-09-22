@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS doc_templates (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
--- 人物画像表（智能匹配：上传简历 + 画像 → 排序推荐）
+-- 人才画像表（智能匹配：上传简历 + 画像 → 排序推荐）
 CREATE TABLE IF NOT EXISTS match_profiles (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL REFERENCES users(id),
@@ -163,7 +163,7 @@ CREATE TABLE IF NOT EXISTS match_profiles (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
--- 人物画像的级别（初级/中级/高级…）：一个画像下挂多个级别，
+-- 人才画像的级别（初级/中级/高级…）：一个画像下挂多个级别，
 -- 每个级别有独立的年限区间、学历、技能、城市，以及对应的市场薪资。
 CREATE TABLE IF NOT EXISTS match_profile_levels (
   id TEXT PRIMARY KEY,

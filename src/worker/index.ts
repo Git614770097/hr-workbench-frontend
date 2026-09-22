@@ -116,7 +116,7 @@ app.use("/api/parse-resume/*", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
-// 智能匹配：独立菜单「人物画像」+ 匹配页，权限跟随 profiles
+// 智能匹配：独立菜单「人才画像」+ 匹配页，权限跟随 profiles
 app.use("/api/match/*", async (c, next) => {
   const blocked = await menuGuard(c, "profiles");
   if (blocked) return blocked;

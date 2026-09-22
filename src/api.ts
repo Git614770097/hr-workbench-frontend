@@ -8,7 +8,8 @@ function getToken(): string | null {
 
 async function request<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  timeoutMs = 15000
 ): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -19,8 +20,9 @@ async function request<T>(
 
   // 前端超时兜底：D1 冷启动或网络异常时 fetch 可能长时间挂起（无超时），
   // 会导致首屏 loading 永久转圈、页面出不来。超时后抛错交由上层重试。
+  // AI 类接口（生成画像 / JD / 评分）耗时远超普通查询，单独传更长的 timeoutMs。
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal });
@@ -227,12 +229,24 @@ export const api = {
   deleteResume: (talentId: string) =>
     request(`/talents/${talentId}/resume`, { method: "DELETE" }),
 
-  // 智能匹配（简历 + 人物画像 → 排序推荐）
+  // 智能匹配（简历 + 人才画像 → 排序推荐）
+  // 按职位生成招聘 JD（AI 起草，用户可改后再提炼画像）
+  generateJd: (jobTitle: string, city?: string) =>
+    request<{ jd: string }>(
+      "/match/generate-jd",
+      { method: "POST", body: JSON.stringify({ job_title: jobTitle, city }) },
+      60000
+    ),
+
   generateMatchProfile: (jd: string) =>
-    request<MatchProfile>("/match/parse-profile", {
-      method: "POST",
-      body: JSON.stringify({ jd }),
-    }),
+    request<MatchProfile>(
+      "/match/parse-profile",
+      {
+        method: "POST",
+        body: JSON.stringify({ jd }),
+      },
+      60000
+    ),
 
   getMatchProfiles: () => request<MatchProfile[]>("/match/profiles"),
 
@@ -252,10 +266,14 @@ export const api = {
     request(`/match/profiles/${id}`, { method: "DELETE" }),
 
   scoreCandidate: (profile: MatchProfile, candidate: { text: string; parsed?: Record<string, unknown> }) =>
-    request<MatchResult>("/match/score", {
-      method: "POST",
-      body: JSON.stringify({ profile, candidate }),
-    }),
+    request<MatchResult>(
+      "/match/score",
+      {
+        method: "POST",
+        body: JSON.stringify({ profile, candidate }),
+      },
+      60000
+    ),
 
   // Communications
   getCommunications: (talentId: string) =>
@@ -281,9 +299,10 @@ export const api = {
   getTemplateCategories: () =>
     request<{ items: { category: string; count: number }[] }>("/templates/categories"),
   getTemplate: (id: string) => request<DocTemplate>(`/templates/${id}`),
-  createTemplate: (data: { name: string; category: string; content: string }) =>
+  // scope 由后端裁决：official 仅管理员可写，普通用户提交会被降级为 shared
+  createTemplate: (data: { name: string; category: string; content: string; scope?: string }) =>
     request<{ id: string }>("/templates", { method: "POST", body: JSON.stringify(data) }),
-  updateTemplate: (id: string, data: Partial<{ name: string; category: string; content: string }>) =>
+  updateTemplate: (id: string, data: Partial<{ name: string; category: string; content: string; scope: string }>) =>
     request(`/templates/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteTemplate: (id: string) =>
     request(`/templates/${id}`, { method: "DELETE" }),

@@ -34,7 +34,7 @@ export const MENU_PERMISSIONS: { key: MenuKey; label: string }[] = [
   { key: "jobs", label: "岗位管理" },
   { key: "tasks", label: "跟进待办" },
   { key: "templates", label: "模板库管理" },
-  { key: "profiles", label: "人物画像" },
+  { key: "profiles", label: "人才画像" },
   { key: "users", label: "用户管理" },
 ];
 
@@ -405,10 +405,10 @@ export const TASK_SOURCE_LABELS: Record<string, string> = {
 };
 
 // ============================================================
-// 智能匹配：多份简历 + 人物画像 → 排序推荐
+// 智能匹配：多份简历 + 人才画像 → 排序推荐
 // ============================================================
 
-/** 人物画像的级别（初级/中级/高级…），每个级别有独立的年限/学历/技能/城市与市场薪资 */
+/** 人才画像的级别（初级/中级/高级…），每个级别有独立的年限/学历/技能/城市与市场薪资 */
 export interface MatchProfileLevel {
   id?: string;
   name: string;
@@ -425,7 +425,7 @@ export interface MatchProfileLevel {
   sort_order: number;
 }
 
-/** 人物画像（一个职位，可挂多个级别；不分级时 levels 为空数组） */
+/** 人才画像（一个职位，可挂多个级别；不分级时 levels 为空数组） */
 export interface MatchProfile {
   id?: string;
   name: string;

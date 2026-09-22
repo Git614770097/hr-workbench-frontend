@@ -238,7 +238,7 @@ function effectiveReq(profile: MatchProfile, level: MatchLevel | null): Effectiv
 }
 
 // ---- JD → 结构化画像（含可选分级）----
-const PROFILE_SYSTEM = `你是资深招聘顾问。请把用户给的招聘需求（JD）提炼成结构化「人物画像」，严格返回 JSON 对象，不要输出多余解释。
+const PROFILE_SYSTEM = `你是资深招聘顾问。请把用户给的招聘需求（JD）提炼成结构化「人才画像」，严格返回 JSON 对象，不要输出多余解释。
 
 字段：
 - name: 画像名称，简短，如「前端开发工程师」（15 字以内）
@@ -259,7 +259,7 @@ const PROFILE_SYSTEM = `你是资深招聘顾问。请把用户给的招聘需�
   - city: 该级别城市（可为空字符串）
   - must_skills / nice_skills: 该级别技能（可为空数组，表示沿用整体）
   - requirements: 该级别补充要求（可为空字符串）
-  - salary_min / salary_max: 该级别市场月薪（整数，单位元；没写则 null）
+  - salary_min / salary_max: 该级别市场月薪（整数，单位元；没写则 null）。若 JD 只给了整体薪资区间却分了级别，按级别把该区间合理拆分（初级取下段、中级取中段、高级取上段）。
   - salary_note: 该级别薪资说明（可为空字符串）
   - sort_order: 级别排序（整数，初级=0 起递增）
 
@@ -269,8 +269,25 @@ const PROFILE_SYSTEM = `你是资深招聘顾问。请把用户给的招聘需�
 3. must_skills / nice_skills 的元素必须是简短关键词，不要写句子。
 4. levels 只在 JD 确实区分级别时生成，不要为了凑结构硬造。`;
 
+// ---- 职位 → JD 正文（AI 起草，人工可改后再提炼画像）----
+const JD_SYSTEM = `你是资深招聘 HR，擅长撰写中文招聘 JD。用户会给你一个职位名称，请据此起草一份可直接发布的招聘 JD。
+严格返回 JSON 对象 {"jd": "JD 正文"}，正文里用 \\n 换行，不要输出 markdown 符号或任何额外解释。
+
+正文结构（依次排列）：
+1. 第一行：岗位名称（如「高级前端开发工程师」）
+2. 「岗位职责」：4-6 条，每条以「· 」开头，写该职位真实、具体的工作内容
+3. 「任职要求」：5-6 条，每条以「· 」开头，必须覆盖学历、工作年限、核心技能（具体到技术栈 / 工具 / 方法论关键词）、加分项
+4. 「级别要求」（仅当该职位在市场上确实区分级别时才写，如初级 / 中级 / 高级）：按级别各占一行，写明该级别的年限区间、学历与技能侧重，格式如「初级（1-3 年）：…」
+5. 最后一行：「薪资范围」+ 该职位当前市场行情的月薪区间，格式如「薪资范围：20-35K·13薪」
+
+要求：
+1. 技能关键词必须专业、具体（写 React、TypeScript、Vite，不要写「前端技术」这种空泛词）。
+2. 内容要贴合该职位的真实市场行情与主流要求，不要写成万能模板。
+3. 全文 350-550 字，语气正式简洁。
+4. 不要写公司介绍、福利待遇、联系方式、投递方式。`;
+
 // ---- 候选人评分 ----
-const SCORE_SYSTEM = `你是资深招聘顾问，负责评估候选人与「人物画像」的匹配度。我会给你一份画像（可能含分级级别）和一份候选人简历，请输出严格的 JSON 对象。
+const SCORE_SYSTEM = `你是资深招聘顾问，负责评估候选人与「人才画像」的匹配度。我会给你一份画像（可能含分级级别）和一份候选人简历，请输出严格的 JSON 对象。
 
 输出字段：
 - score: 0-100 的整数。硬性条件（学历/年限/城市/必备技能）不满足要明显扣分；经历与画像越贴合分越高。
@@ -331,7 +348,7 @@ match.post("/parse-profile", async (c) => {
   if (!apiKey) return c.json({ error: "未配置 AI 密钥，无法自动生成画像，请手动填写" }, 500);
 
   try {
-    const raw = await deepseekJson(apiKey, PROFILE_SYSTEM, `请把下面这段招聘需求提炼成人物画像：\n\n${jd.slice(0, 6000)}`);
+    const raw = await deepseekJson(apiKey, PROFILE_SYSTEM, `请把下面这段招聘需求提炼成人才画像：\n\n${jd.slice(0, 6000)}`);
     if (!raw) return c.json({ error: "AI 未能生成有效画像" }, 422);
     const rawLevels = Array.isArray(raw.levels) ? raw.levels : [];
     const levels: MatchLevel[] = rawLevels.map((lv: any, i: number) => ({
@@ -366,6 +383,34 @@ match.post("/parse-profile", async (c) => {
     return c.json(profile);
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "画像生成失败" }, 502);
+  }
+});
+
+// ---- 按职位生成 JD（新建画像第一步：填职位 → AI 起草 JD）----
+match.post("/generate-jd", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const body = await c.req.json<{ job_title?: string; city?: string }>().catch(() => null);
+  const jobTitle = str(body?.job_title);
+  if (!jobTitle) return c.json({ error: "请先填写目标职位" }, 400);
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return c.json({ error: "未配置 AI 密钥，无法自动生成 JD，请手动填写" }, 500);
+
+  const city = str(body?.city);
+  try {
+    const raw = await deepseekJson(
+      apiKey,
+      JD_SYSTEM,
+      `职位名称：${jobTitle.slice(0, 60)}${city ? `\n工作城市：${city.slice(0, 30)}` : ""}`,
+      { temperature: 0.6, maxTokens: 1600 }
+    );
+    const jd = str(raw?.jd) || str(raw?.content) || str(raw?.text);
+    if (!jd) return c.json({ error: "AI 未能生成 JD，请重试" }, 422);
+    return c.json({ jd: jd.slice(0, 4000) });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "JD 生成失败" }, 502);
   }
 });
 
@@ -531,7 +576,7 @@ match.post("/score", async (c) => {
   const body = await c.req.json<{ profile?: MatchProfile; candidate?: { text?: string; parsed?: CandidateParsed } }>().catch(() => null);
   const profile = body?.profile;
   const text = str(body?.candidate?.text);
-  if (!profile) return c.json({ error: "缺少人物画像" }, 400);
+  if (!profile) return c.json({ error: "缺少人才画像" }, 400);
   if (text.length < 10) return c.json({ error: "简历内容为空，无法评估" }, 400);
 
   const parsed: CandidateParsed = body?.candidate?.parsed || {};
@@ -586,7 +631,7 @@ match.post("/score", async (c) => {
     const raw = await deepseekJson(
       apiKey,
       SCORE_SYSTEM,
-      `【人物画像】\n${JSON.stringify(profileBrief, null, 2)}\n\n【候选人简历】\n${text.slice(0, 6000)}`
+      `【人才画像】\n${JSON.stringify(profileBrief, null, 2)}\n\n【候选人简历】\n${text.slice(0, 6000)}`
     );
     if (!raw) throw new Error("AI 未返回有效结果");
     const scoreRaw = numOrNull(raw.score) ?? 0;

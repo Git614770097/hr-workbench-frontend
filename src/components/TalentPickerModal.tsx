@@ -56,13 +56,15 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
     load(1, kw.trim());
   };
 
-  // 支持跨页保留：本页之外的选中项原样保留，本页只留当前勾上的
+  // 支持跨页多选：本页之外的选中项原样保留，本页以当前勾选状态为准。
+  // ⚠️ 不能在这里再用 `!prev.some(...)` 去重：上一行已把本页旧选中清空了，
+  // 再去重会把本页已勾的项一起排掉，表现为"勾新的就把旧的顶掉"（只能选一个）。
   const handleSelectChange = (keys: React.Key[]) => {
     const keySet = new Set(keys.map(String));
     const pageIds = new Set(rows.map((r) => r.id));
     setSelected((prev) => [
       ...prev.filter((t) => !pageIds.has(t.id)),
-      ...rows.filter((r) => keySet.has(r.id) && !prev.some((p) => p.id === r.id)),
+      ...rows.filter((r) => keySet.has(r.id)),
     ]);
   };
 
@@ -77,12 +79,19 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
       footer={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <Typography.Text type="secondary">
-            已选 {selected.length} 人{excludeIds.length > 0 && `（${excludeIds.length} 位已在比选列表中）`}
+            已选 <Typography.Text strong style={{ color: "#1677ff" }}>{selected.length}</Typography.Text> 人
+            <span style={{ marginLeft: 6 }}>· 可勾选多人，跨页选择会保留</span>
+            {excludeIds.length > 0 && `（${excludeIds.length} 位已在比选列表中，不可重复勾选）`}
           </Typography.Text>
           <Space>
+            {selected.length > 0 && (
+              <Button type="link" style={{ paddingInline: 0 }} onClick={() => setSelected([])}>
+                清空已选
+              </Button>
+            )}
             <Button onClick={onCancel}>取消</Button>
             <Button type="primary" disabled={selected.length === 0} onClick={() => onOk(selected)}>
-              加入比选
+              {selected.length > 0 ? `加入比选（${selected.length}）` : "加入比选"}
             </Button>
           </Space>
         </div>
@@ -109,6 +118,19 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
           selectedRowKeys: selected.map((s) => s.id),
           onChange: handleSelectChange,
           getCheckboxProps: (r) => ({ disabled: excludeIds.includes(r.id) }),
+        }}
+        // 点行也能勾选（复选框区域除外，避免与 onChange 重复触发一次）
+        onRow={(r) => {
+          const disabled = excludeIds.includes(r.id);
+          return {
+            onClick: (e) => {
+              if (disabled) return;
+              if ((e.target as HTMLElement).closest(".ant-table-selection-column")) return;
+              const ids = selected.map((s) => s.id);
+              handleSelectChange(ids.includes(r.id) ? ids.filter((x) => x !== r.id) : [...ids, r.id]);
+            },
+            style: { cursor: disabled ? "not-allowed" : "pointer" },
+          };
         }}
         pagination={{
           current: page,

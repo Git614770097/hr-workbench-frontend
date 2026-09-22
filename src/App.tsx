@@ -14,7 +14,7 @@ const TalentList = lazy(() => import("./pages/TalentList"));
 const TalentDetail = lazy(() => import("./pages/TalentDetail"));
 // 智能匹配：从人才库工具栏进入，页面内含 pdfjs/mammoth 等重依赖，按需加载
 const Match = lazy(() => import("./pages/Match"));
-// 人物画像：独立的画像分级管理页
+// 人才画像：独立的画像分级管理页
 const Profiles = lazy(() => import("./pages/Profiles"));
 const Pipeline = lazy(() => import("./pages/Pipeline"));
 const Jobs = lazy(() => import("./pages/Jobs"));

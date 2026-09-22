@@ -1,18 +1,20 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Card, Button, Input, Select, Upload, Space, Tag, message, Modal, Alert,
-  Progress, Typography, Popconfirm, Table,
+  Progress, Typography, Popconfirm, Table, Segmented,
 } from "antd";
 import {
   InboxOutlined, ArrowLeftOutlined, ThunderboltOutlined, DatabaseOutlined,
-  UserSwitchOutlined,
+  UserSwitchOutlined, TrophyOutlined, AppstoreOutlined, ProfileOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
+import { VERDICT_COLORS } from "../types";
 import type { MatchProfile, MatchResult, Talent } from "../types";
 import { parseResumeToTalent, parseResumeFile, recordToData } from "../utils/resumeImport";
 import type { ParsedTalent } from "../utils/resumeImport";
 import MatchResultCard from "../components/MatchResultCard";
+import MatchCompareTable from "../components/MatchCompareTable";
 import TalentPickerModal from "../components/TalentPickerModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 
@@ -79,8 +81,17 @@ export default function Match() {
 
   // ---- 画像 ----
   const [profiles, setProfiles] = useState<MatchProfile[]>([]);
-  const [profileId, setProfileId] = useState<string | undefined>(undefined);
-  const [profile, setProfile] = useState<MatchProfile | null>(null);
+  // 从画像列表点「去匹配」跳过来时，直接用路由 state 初始化选中的画像 id
+  const [profileId, setProfileId] = useState<string | undefined>(
+    () => (location.state as { profileId?: string } | null)?.profileId
+  );
+  // ⚠️ profile 必须由 profiles 派生，不能另存一份 state：
+  // 路由跳转进来时 profiles 还没加载完，find 不到就会把 profile 置为 null，
+  // 而 Select 仍然显示「已选中」→ 用户以为选好了，点「开始匹配」却被拦下（表现为点了没反应）。
+  const profile = useMemo(
+    () => profiles.find((p) => p.id === profileId) ?? null,
+    [profiles, profileId]
+  );
 
   // ---- 候选人 ----
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -95,6 +106,8 @@ export default function Match() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
   const [stale, setStale] = useState(false);
+  // 结果呈现方式：对比表（横向扫视各维度）默认，候选人多时比逐张卡片更好挑
+  const [view, setView] = useState<"compare" | "card">("compare");
 
   // ---- 落地 ----
   const [importingKey, setImportingKey] = useState<string | null>(null);
@@ -114,22 +127,7 @@ export default function Match() {
     loadProfiles();
   }, []);
 
-  // 从画像列表/「去匹配」按钮带过来的 profileId
-  useEffect(() => {
-    const pid = (location.state as { profileId?: string } | null)?.profileId;
-    if (pid) handleSelectProfile(pid);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleSelectProfile = (id?: string) => {
-    setProfileId(id);
-    if (!id) {
-      setProfile(null);
-      return;
-    }
-    const p = profiles.find((x) => x.id === id);
-    if (p) setProfile(p);
-  };
+  const handleSelectProfile = (id?: string) => setProfileId(id);
 
   // ---- 上传并解析简历 ----
   const handleFiles = async (files: File[]) => {
@@ -155,6 +153,18 @@ export default function Match() {
   };
 
   const handleBeforeUpload = (file: File) => {
+    // ⚠️ 不能用 Upload 的 accept 属性来过滤：拖拽时不符合 accept 的文件会被 rc-upload
+    // 静默丢弃（不报错、不解析），用户以为上传成功了，但候选人列表始终为空，
+    // 于是点「开始匹配」毫无反应。所以这里自己校验并给出明确提示。
+    const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
+    if (ext !== "pdf" && ext !== "docx") {
+      message.error(`「${file.name}」格式不支持，请上传 .pdf 或 .docx（.doc 请先另存为 .docx）`);
+      return false;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      message.error(`「${file.name}」超过 20MB，请压缩后再上传`);
+      return false;
+    }
     pendingFilesRef.current.push(file);
     setTimeout(() => {
       if (pendingFilesRef.current.length === 0) return;
@@ -233,7 +243,7 @@ export default function Match() {
   // ---- 逐份评分（串行 + 进度）----
   const handleMatch = async () => {
     if (!profile) {
-      message.warning("请先选择一个画像（没有可在「人物画像」菜单里新建）");
+      message.warning("请先选择一个画像（没有可在「人才画像」菜单里新建）");
       return;
     }
     if (candidates.length === 0) {
@@ -329,7 +339,7 @@ export default function Match() {
             value={profileId}
             onChange={handleSelectProfile}
             allowClear
-            options={profiles.map((p) => ({ label: p.name, value: p.id! }))}
+            options={profiles.map((p) => ({ label: p.job_title || p.name, value: p.id! }))}
           />
           <Button icon={<UserSwitchOutlined />} onClick={() => navigate("/profiles")}>管理画像</Button>
           {profile && profile.levels.length > 0 && (
@@ -365,7 +375,6 @@ export default function Match() {
         }
       >
         <Dragger
-          accept=".pdf,.docx"
           multiple
           showUploadList={false}
           disabled={parsing}
@@ -373,7 +382,9 @@ export default function Match() {
         >
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>
           <p className="ant-upload-text">点击或拖拽简历文件到此处</p>
-          <p className="ant-upload-hint">支持 .pdf、.docx，可一次上传多份；已有的人选从右上角「从人才库添加」</p>
+          <p className="ant-upload-hint">
+            支持 .pdf、.docx（单份 ≤ 20MB），可一次上传多份；已有的人选从右上角「从人才库添加」
+          </p>
         </Dragger>
 
         {parsing && <Alert message="简历解析中…" type="info" showIcon style={{ marginTop: 12 }} />}
@@ -436,17 +447,47 @@ export default function Match() {
         title="③ 匹配结果"
         size="small"
         extra={
-          <Button
-            type="primary"
-            icon={<ThunderboltOutlined />}
-            loading={running}
-            disabled={running || candidates.length === 0}
-            onClick={handleMatch}
-          >
-            开始匹配
-          </Button>
+          <Space>
+            {ranked.length > 1 && (
+              <Segmented
+                size="small"
+                value={view}
+                onChange={(v) => setView(v as "compare" | "card")}
+                options={[
+                  { label: "对比", value: "compare", icon: <AppstoreOutlined /> },
+                  { label: "卡片", value: "card", icon: <ProfileOutlined /> },
+                ]}
+              />
+            )}
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              loading={running}
+              disabled={running}
+              onClick={handleMatch}
+            >
+              开始匹配
+            </Button>
+          </Space>
         }
       >
+        {/* 缺条件时把原因直接摆在页面上：原来按钮被 disabled（候选人为空时）且只在点击时弹 message，
+            用户看不出问题，表现就是「点了没反应」 */}
+        {!running && (!profile || candidates.length === 0) && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            message={
+              !profile && candidates.length === 0
+                ? "还差两步：先在「① 选择画像」里选一个职位画像，再在「② 候选人」里上传简历或从人才库添加"
+                : !profile
+                  ? "还没选画像：请先在「① 选择画像」里选中本次要比对的职位画像"
+                  : "还没有候选人：请在「② 候选人」里上传简历，或点右上角「从人才库添加」"
+            }
+          />
+        )}
+
         {running && (
           <Progress
             percent={progress.total ? Math.round((progress.done / progress.total) * 100) : 0}
@@ -464,28 +505,88 @@ export default function Match() {
           />
         )}
 
-        {ranked.length === 0 && !running && (
+        {ranked.length === 0 && !running && profile && candidates.length > 0 && (
           <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-            {candidates.length === 0
-              ? "先添加候选人（上传简历或从人才库挑选），再点「开始匹配」，结果会按匹配度从高到低排列。"
-              : "点右上角「开始匹配」开始评估。"}
+            点右上角「开始匹配」开始评估，结果会按匹配度从高到低排列。
           </Typography.Paragraph>
         )}
 
-        {ranked.map((cd, i) => (
-          <MatchResultCard
-            key={cd.key}
-            rank={i + 1}
-            talent={cd.talent}
-            result={results[cd.key]}
-            savedId={savedIds[cd.key] || null}
-            importing={importingKey === cd.key}
-            fromLibrary={cd.source === "library"}
-            onViewText={() => setViewing(cd)}
-            onImport={() => handleImport(cd)}
-            onAddToPipeline={() => handleAddToPipeline(cd)}
-          />
-        ))}
+        {/* 结果概览：整体结论一眼可见（各档人数 + 最佳人选） */}
+        {ranked.length > 0 && (
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
+              padding: "10px 14px", marginBottom: 12,
+              background: "linear-gradient(90deg,#fffbeb 0%,#fafafa 60%)",
+              border: "1px solid #f0f0f0", borderRadius: 8,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+              <span style={{ fontSize: 13, color: "#6b7280" }}>共评估</span>
+              <span style={{ fontSize: 20, fontWeight: 700, color: "#111827" }}>{ranked.length}</span>
+              <span style={{ fontSize: 13, color: "#6b7280" }}>位</span>
+            </div>
+            <div style={{ width: 1, height: 22, background: "#e5e7eb" }} />
+            <Space size={[6, 6]} wrap>
+              {["强烈推荐", "推荐", "可考虑", "不建议"].map((v) => {
+                const n = ranked.filter((c) => results[c.key].verdict === v).length;
+                if (!n) return null;
+                return (
+                  <Tag key={v} color={VERDICT_COLORS[v]} style={{ marginInlineEnd: 0 }}>
+                    {v} {n}
+                  </Tag>
+                );
+              })}
+            </Space>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+              <TrophyOutlined style={{ color: "#f59e0b" }} />
+              <span style={{ fontSize: 13, color: "#6b7280" }}>最佳人选</span>
+              <span style={{ fontSize: 14, fontWeight: 600, color: "#111827" }}>
+                {ranked[0].talent.name || ranked[0].fileName}
+              </span>
+              <span
+                style={{
+                  fontSize: 16, fontWeight: 700,
+                  color: VERDICT_COLORS[results[ranked[0].key].verdict] || "#3b82f6",
+                }}
+              >
+                {results[ranked[0].key].score} 分
+              </span>
+            </div>
+          </div>
+        )}
+
+        {ranked.length > 1 && view === "compare" ? (
+          <>
+            <MatchCompareTable
+              items={ranked.map((cd) => ({
+                key: cd.key,
+                talent: cd.talent,
+                result: results[cd.key],
+                fileName: cd.fileName,
+                fromLibrary: cd.source === "library",
+              }))}
+            />
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: "10px 0 0" }}>
+              同一行横向对比各候选人。需要「录入人才库 / 加入招聘流程」或看完整理由时，切到「卡片」视图操作。
+            </Typography.Paragraph>
+          </>
+        ) : (
+          ranked.map((cd, i) => (
+            <MatchResultCard
+              key={cd.key}
+              rank={i + 1}
+              talent={cd.talent}
+              result={results[cd.key]}
+              savedId={savedIds[cd.key] || null}
+              importing={importingKey === cd.key}
+              fromLibrary={cd.source === "library"}
+              onViewText={() => setViewing(cd)}
+              onImport={() => handleImport(cd)}
+              onAddToPipeline={() => handleAddToPipeline(cd)}
+            />
+          ))
+        )}
       </Card>
 
       {/* 比对依据 */}

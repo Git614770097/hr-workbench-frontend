@@ -1,5 +1,5 @@
--- 2026-09-22 智能匹配：人物画像表
--- 用于「上传多份简历 + 人物画像 → 排序推荐」的画像（招聘需求）存储
+-- 2026-09-22 智能匹配：人才画像表
+-- 用于「上传多份简历 + 人才画像 → 排序推荐」的画像（招聘需求）存储
 CREATE TABLE IF NOT EXISTS match_profiles (
   id TEXT PRIMARY KEY,
   owner_id TEXT NOT NULL REFERENCES users(id),
