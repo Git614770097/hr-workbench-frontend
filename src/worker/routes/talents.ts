@@ -127,6 +127,96 @@ talents.get("/duplicates", async (c) => {
   return c.json({ groups, total: groups.length });
 });
 
+// ---- 合并重复人才 ----
+// 把 merge_ids 并入 keep_id：字段只补空（不覆盖保留记录已有值）、关联数据（候选-岗位/
+// 标签/沟通记录/待办）迁移到保留记录，最后删除来源记录。整体走 D1 batch 事务，失败即回滚。
+talents.post("/merge", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const body = await c.req.json<{ keep_id?: string; merge_ids?: string[] }>();
+  const keepId = body.keep_id || "";
+  const mergeIds = (body.merge_ids || []).filter((id) => id && id !== keepId);
+  if (!keepId || mergeIds.length === 0) return c.json({ error: "请指定保留记录与要合并的记录" }, 400);
+
+  const scope = session.role === "admin" ? "" : "AND owner_id = ?";
+  const scopeParams: string[] = session.role === "admin" ? [] : [session.userId];
+
+  const keep = await c.env.DB.prepare(`SELECT * FROM talents WHERE id = ? ${scope}`)
+    .bind(keepId, ...scopeParams).first<Record<string, any>>();
+  if (!keep) return c.json({ error: "保留的人才不存在或无权限" }, 404);
+
+  const ph = mergeIds.map(() => "?").join(",");
+  const srcRes = await c.env.DB.prepare(`SELECT * FROM talents WHERE id IN (${ph}) ${scope}`)
+    .bind(...mergeIds, ...scopeParams).all<Record<string, any>>();
+  const sources = srcRes.results || [];
+  if (sources.length !== mergeIds.length) return c.json({ error: "部分待合并的人才不存在或无权限" }, 400);
+
+  // 字段合并：只补保留记录为空的字段
+  const MERGE_FIELDS = [
+    "phone", "email", "age", "gender", "education", "school", "current_company",
+    "current_title", "years_experience", "city", "skills", "industry",
+    "expected_salary", "expected_city", "notes",
+  ];
+  const isEmpty = (v: unknown) => v === null || v === undefined || v === "";
+  const merged: Record<string, any> = {};
+  for (const f of MERGE_FIELDS) {
+    if (!isEmpty(keep[f])) continue;
+    const hit = sources.find((s) => !isEmpty(s[f]));
+    if (hit) merged[f] = hit[f];
+  }
+  // 简历：保留记录没有时借用来源的 resume_url（其本身就是 KV key，原样引用，不搬文件）
+  if (isEmpty(keep.resume_url)) {
+    const hit = sources.find((s) => !isEmpty(s.resume_url));
+    if (hit) merged.resume_url = hit.resume_url;
+  }
+
+  const keepJobRows = await c.env.DB.prepare("SELECT job_id FROM talent_jobs WHERE talent_id = ?")
+    .bind(keepId).all<{ job_id: string }>();
+  const keepJobs = new Set((keepJobRows.results || []).map((r) => r.job_id));
+
+  const stmts: any[] = [];
+  for (const s of sources) {
+    // 候选-岗位：保留记录已有的岗位则丢弃来源行（连带其阶段日志）；否则迁移
+    const sJobs = await c.env.DB.prepare("SELECT id, job_id FROM talent_jobs WHERE talent_id = ?")
+      .bind(s.id).all<{ id: string; job_id: string }>();
+    for (const tj of (sJobs.results || [])) {
+      if (keepJobs.has(tj.job_id)) {
+        stmts.push(c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id = ?").bind(tj.id));
+        stmts.push(c.env.DB.prepare("DELETE FROM talent_jobs WHERE id = ?").bind(tj.id));
+      } else {
+        stmts.push(c.env.DB.prepare("UPDATE talent_jobs SET talent_id = ?, updated_at = datetime('now') WHERE id = ?").bind(keepId, tj.id));
+        keepJobs.add(tj.job_id);
+      }
+    }
+    // 标签：复制到保留记录（忽略重复）后清掉来源的
+    stmts.push(c.env.DB.prepare("INSERT OR IGNORE INTO talent_tags (talent_id, tag_id) SELECT ?, tag_id FROM talent_tags WHERE talent_id = ?").bind(keepId, s.id));
+    stmts.push(c.env.DB.prepare("DELETE FROM talent_tags WHERE talent_id = ?").bind(s.id));
+    // 沟通记录 / 待办 迁移
+    stmts.push(c.env.DB.prepare("UPDATE communications SET talent_id = ? WHERE talent_id = ?").bind(keepId, s.id));
+    stmts.push(c.env.DB.prepare("UPDATE talent_tasks SET talent_id = ? WHERE talent_id = ?").bind(keepId, s.id));
+  }
+
+  const setFields = Object.keys(merged);
+  if (setFields.length > 0) {
+    const setSql = setFields.map((f) => `${f} = ?`).join(", ");
+    stmts.push(c.env.DB.prepare(`UPDATE talents SET ${setSql}, updated_at = datetime('now') WHERE id = ?`)
+      .bind(...setFields.map((f) => merged[f]), keepId));
+  }
+  stmts.push(c.env.DB.prepare(`DELETE FROM talents WHERE id IN (${ph})`).bind(...mergeIds));
+
+  await c.env.DB.batch(stmts);
+
+  // 清理未被复用的来源简历（KV），保留借用过来的那一份
+  const reusedUrl = merged.resume_url;
+  for (const s of sources) {
+    if (s.resume_url && s.resume_url !== reusedUrl) {
+      try { await c.env.RESUMES.delete(s.resume_url); } catch { /* 忽略清理失败 */ }
+    }
+  }
+
+  return c.json({ ok: true, kept: keepId, merged: mergeIds.length });
+});
+
 // ---- 人才详情 ----
 talents.get("/:id", async (c) => {
   const session = await getSession(c);
@@ -222,9 +312,19 @@ talents.delete("/:id", async (c) => {
   // 顺带清理 KV 中的简历文件
   if (existing.resume_url) await c.env.RESUMES.delete(existing.resume_url);
 
-  await c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id).run();
-  await c.env.DB.prepare("DELETE FROM talent_tags WHERE talent_id = ?").bind(id).run();
-  await c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id).run();
+  // 先清所有关联数据，再删人才本体。
+  // talents 被 talent_jobs / talent_tasks / talent_tags / communications 四张表外键引用，
+  // 顺序反了（或漏清某张表）会触发外键约束直接 500 —— 之前只删 tags/communications 且
+  // 排在 talents 之后，属于既有的删除 500 bug。
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(id),
+    c.env.DB.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM talent_tags WHERE talent_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id),
+    // 待办属于用户，不静默删除，只解除与人才的关联
+    c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id),
+  ]);
   return c.json({ ok: true });
 });
 

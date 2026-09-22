@@ -116,6 +116,13 @@ export const api = {
   getDuplicateTalents: () =>
     request<{ groups: DuplicateGroup[]; total: number }>("/talents/duplicates"),
 
+  // 合并重复人才：把 mergeIds 并入 keepId
+  mergeTalents: (keepId: string, mergeIds: string[]) =>
+    request<{ ok: boolean; kept: string; merged: number }>("/talents/merge", {
+      method: "POST",
+      body: JSON.stringify({ keep_id: keepId, merge_ids: mergeIds }),
+    }),
+
   createTalent: (data: Partial<Talent> & { tag_ids?: string[] }) =>
     request<Talent>("/talents", { method: "POST", body: JSON.stringify(data) }),
 

@@ -449,8 +449,8 @@ export default function TalentList() {
       {/* 标签管理弹窗（低频配置项，从工具栏入口打开，不占侧栏菜单） */}
       <TagManagerModal open={tagManagerOpen} onClose={() => setTagManagerOpen(false)} />
 
-      {/* 疑似重复人才检测（按手机号分组） */}
-      <DuplicateTalentsModal open={dupModalOpen} onClose={() => setDupModalOpen(false)} />
+      {/* 疑似重复人才检测（按手机号分组，可一键合并） */}
+      <DuplicateTalentsModal open={dupModalOpen} onClose={() => setDupModalOpen(false)} onMerged={fetchTalents} />
 
       {/* 简历预览弹窗（PDF 原生渲染保留格式；Word 在线转 HTML 查看，不下载） */}
       <ResumePreviewModal talent={previewTalent} onClose={() => setPreviewTalent(null)} />
