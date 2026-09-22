@@ -141,6 +141,21 @@ export interface PaginatedResponse<T> {
   pages: number;
 }
 
+// 疑似重复：同一手机号下的多条人才记录
+export interface DuplicateTalentItem {
+  id: string;
+  name: string;
+  phone: string;
+  current_title: string | null;
+  current_company: string | null;
+  status: string | null;
+  updated_at: string | null;
+}
+export interface DuplicateGroup {
+  phone: string;
+  items: DuplicateTalentItem[];
+}
+
 export const STATUS_LABELS: Record<string, string> = {
   active: "在职看机会",
   passive: "被动接触",

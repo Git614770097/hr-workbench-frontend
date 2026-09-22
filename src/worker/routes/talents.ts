@@ -95,6 +95,38 @@ talents.get("/", async (c) => {
   return c.json({ items, total: countResult?.total || 0, page, limit, pages: Math.ceil((countResult?.total || 0) / limit) });
 });
 
+// ---- 疑似重复（同手机号多条）----
+// 手机号非空且重复出现的人才分组，用于发现重复录入；数据隔离同列表（admin 看全部）。
+// 注意：必须注册在 /:id 之前，否则会被 /:id 抢先匹配。
+talents.get("/duplicates", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const ownerCond = session.role === "admin" ? "" : "AND owner_id = ?";
+  const ownerParams: string[] = session.role === "admin" ? [] : [session.userId];
+
+  const dupRows = await c.env.DB.prepare(
+    `SELECT phone FROM talents WHERE phone IS NOT NULL AND TRIM(phone) != '' ${ownerCond} GROUP BY phone HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT 100`
+  ).bind(...ownerParams).all<{ phone: string }>();
+
+  const phones = dupRows.results.map((r) => r.phone);
+  let groups: { phone: string; items: any[] }[] = [];
+  if (phones.length > 0) {
+    const ph = phones.map(() => "?").join(",");
+    const rows = await c.env.DB.prepare(
+      `SELECT t.id, t.name, t.phone, t.current_title, t.current_company, t.status, t.updated_at FROM talents t WHERE t.phone IN (${ph}) ${session.role === "admin" ? "" : "AND t.owner_id = ?"} ORDER BY t.phone, t.updated_at DESC`
+    ).bind(...phones, ...ownerParams).all();
+    const map: Record<string, any[]> = {};
+    for (const r of rows.results as any[]) {
+      if (!map[r.phone]) map[r.phone] = [];
+      map[r.phone].push(r);
+    }
+    groups = phones.map((p) => ({ phone: p, items: map[p] || [] })).filter((g) => g.items.length > 1);
+  }
+
+  return c.json({ groups, total: groups.length });
+});
+
 // ---- 人才详情 ----
 talents.get("/:id", async (c) => {
   const session = await getSession(c);

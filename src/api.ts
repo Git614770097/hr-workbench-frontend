@@ -1,4 +1,4 @@
-import type { User, UserRow, Talent, Tag, Communication, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, Task, TaskSummary } from "./types";
+import type { User, UserRow, Talent, Tag, Communication, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, Task, TaskSummary, DuplicateGroup } from "./types";
 
 const BASE = "/api";
 
@@ -111,6 +111,10 @@ export const api = {
   },
 
   getTalent: (id: string) => request<Talent>(`/talents/${id}`),
+
+  // 疑似重复（同手机号多条）
+  getDuplicateTalents: () =>
+    request<{ groups: DuplicateGroup[]; total: number }>("/talents/duplicates"),
 
   createTalent: (data: Partial<Talent> & { tag_ids?: string[] }) =>
     request<Talent>("/talents", { method: "POST", body: JSON.stringify(data) }),
