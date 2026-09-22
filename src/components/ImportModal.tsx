@@ -12,6 +12,7 @@ import {
   extractTitle, extractCompany, extractSchool, extractCity, extractSkills,
   extractYearsExperience, extractPdfLines, normalizeEducation,
 } from "../utils/resumeParser";
+import { sanitizeField, sanitizeSkills } from "../utils/fieldSanity";
 
 const { Dragger } = Upload;
 
@@ -103,21 +104,23 @@ async function parseFile(file: File): Promise<string> {
 }
 
 // 从纯文本提取人才字段（本地规则引擎，作为兜底）
+// 结果再过一遍 sanitizeField：规则引擎偶有误判（如把城市当姓名），
+// 与 AI 通道用同一套校验，保证两条路径都不会产出"看起来有值"的脏数据。
 function extractTalentLocal(text: string, key: string, fileName: string, file: File | null): ParsedTalent {
   return {
     key,
-    name: extractName(text),
+    name: sanitizeField("name", extractName(text)),
     phone: extractPhone(text),
     email: extractEmail(text),
     age: extractAge(text),
     gender: extractGender(text),
     education: normalizeEducation(text),
-    school: extractSchool(text),
-    current_company: extractCompany(text),
-    current_title: extractTitle(text),
+    school: sanitizeField("school", extractSchool(text)),
+    current_company: sanitizeField("current_company", extractCompany(text)),
+    current_title: sanitizeField("current_title", extractTitle(text)),
     years_experience: extractYearsExperience(text),
-    city: extractCity(text),
-    skills: extractSkills(text),
+    city: sanitizeField("city", extractCity(text)),
+    skills: sanitizeSkills(extractSkills(text).split(/[,，、/]+/)).join(", "),
     status: "active",
     notes: "",
     fileName,
@@ -434,7 +437,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setError("");
     try {
       await saveRecord(rec);
-      message.success(`已录入「${rec.name || rec.fileName || "未命名"}」`);
+      message.success(`已录入「${rec.name || rec.fileName || "未命名"}」（第 ${reviewIndex + 1}/${records.length} 份）`);
       onSuccess();
       advanceReview(rec.key);
     } catch (err) {
@@ -448,6 +451,21 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     if (!rec) return;
     message.info(`已跳过「${rec.name || rec.fileName || "未命名"}」`);
     advanceReview(rec.key);
+  };
+
+  // 关闭核对弹窗：回到批量列表时明确告知还有几份没核对，
+  // 否则用户面对的只有「全部导入」这一个主按钮，会误以为必须先点它。
+  const handleCloseReview = () => {
+    setReviewKey(null);
+    if (records.length > 0) {
+      message.info(`还有 ${records.length} 份未核对，点右下角「继续核对」回到核对界面逐份确认后再录入`, 5);
+    }
+  };
+
+  // 继续核对：从第一份未处理的开始
+  const continueReview = () => {
+    if (records.length === 0) return;
+    setReviewKey(records[0].key);
   };
 
   const handleImport = async () => {
@@ -599,8 +617,11 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
         <Button onClick={onClose}>取消</Button>
-        <Button type="primary" onClick={handleImport} loading={importing} disabled={records.length === 0}>
+        <Button onClick={handleImport} loading={importing} disabled={records.length === 0}>
           全部导入（剩余 {records.length}）
+        </Button>
+        <Button type="primary" onClick={continueReview} disabled={records.length === 0}>
+          继续核对（剩余 {records.length}）
         </Button>
       </div>
 
@@ -613,7 +634,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         onChange={(field, value) => { if (reviewRecord) updateRecord(reviewRecord.key, field, value); }}
         onSave={handleSaveOne}
         onSkip={handleSkipOne}
-        onClose={() => setReviewKey(null)}
+        onClose={handleCloseReview}
       />
     </Modal>
   );

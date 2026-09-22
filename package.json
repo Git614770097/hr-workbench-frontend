@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "test:parser": "node scripts/test-resume-parser.mjs",
     "preview": "vite preview",
     "deploy": "wrangler deploy",
     "db:init": "wrangler d1 execute hr-workbench --remote --file=./schema.sql"

@@ -74,6 +74,32 @@ function normalizeText(text: string): string {
 // 姓名
 // ---------------------------------------------------------------------------
 
+// 常见城市（extractCity 依赖其顺序：全文兜底时取第一个命中的）
+const CITIES = [
+  "北京", "上海", "广州", "深圳", "杭州", "成都", "武汉", "南京", "西安", "苏州",
+  "天津", "重庆", "长沙", "青岛", "厦门", "郑州", "合肥", "福州", "济南", "大连",
+  "宁波", "无锡", "佛山", "东莞", "昆明", "沈阳", "哈尔滨", "长春", "石家庄",
+  "南昌", "贵阳", "南宁", "兰州", "太原", "乌鲁木齐", "呼和浩特", "银川", "西宁",
+  "海口", "三亚", "珠海", "惠州", "中山", "泉州", "温州", "嘉兴", "绍兴", "台州",
+  "金华", "常州", "南通", "徐州", "扬州", "烟台", "潍坊", "淄博",
+];
+
+// 省/自治区/直辖市名（含简称）
+const PROVINCES = [
+  "广东", "广西", "江苏", "浙江", "山东", "河南", "河北", "湖南", "湖北", "四川",
+  "福建", "安徽", "江西", "陕西", "山西", "云南", "贵州", "辽宁", "吉林", "黑龙江",
+  "甘肃", "青海", "海南", "新疆", "西藏", "内蒙古", "宁夏", "台湾",
+];
+
+/** 地名（城市/省份）不是姓名。简历头部常出现「现居：广州」或独立一行的城市名，
+ *  而"广州"恰好是 2 个汉字、能通过 NAME_RE，会被误当成姓名。
+ *  也被 src/utils/fieldSanity.ts 复用（校验 AI 返回值）。 */
+export function isPlaceName(s: string): boolean {
+  if (CITIES.includes(s) || PROVINCES.includes(s)) return true;
+  // 带行政区划后缀的短地名，如"佛山市"、"白云区"
+  return s.length <= 4 && /[市省区县州盟旗]$/.test(s);
+}
+
 const NAME_BLACKLIST = new Set([
   "简历", "个人简历", "求职简历", "应聘简历", "我的简历", "电子简历",
   "基本信息", "个人信息", "个人信息表", "个人资料", "基本资料",
@@ -86,6 +112,10 @@ const NAME_BLACKLIST = new Set([
   // 学历词（避免 headLines 扫描时把"本科/硕士"当姓名）
   "博士", "硕士", "本科", "大专", "专科", "中专", "高中", "初中", "小学",
   "研究生", "博士后", "学士", "学历", "学位",
+  // 4 字章节词（NAME_RE 允许 2-4 字，这些短章节词会被误当姓名）
+  "个人优势", "个人评价", "自我介绍", "自我描述", "工作职责", "项目描述",
+  "专业技能", "技能清单", "荣誉奖项", "获奖情况", "校园经历", "实习经历",
+  "培训经历", "兴趣爱好", "工作内容", "项目职责", "教育经历", "工作经历",
 ]);
 
 // 姓名：2-4 个汉字，允许中间点（·）
@@ -97,6 +127,7 @@ function isNameToken(s: string): boolean {
   if (NAME_BLACKLIST.has(s)) return false;
   if (s.includes("简历")) return false;
   if (s.includes("求职") || s.includes("应聘")) return false;
+  if (isPlaceName(s)) return false;
   if (NAME_RE.test(s)) return true;
   if (NAME_RE_DOT.test(s)) return true;
   return false;
@@ -130,14 +161,23 @@ export function extractName(text: string): string {
   if (beforeEmail && isNameToken(beforeEmail[1])) return beforeEmail[1];
 
   // 5. 简历开头几行的独立姓名行（姓名常独占首行或第二行）
-  //    遍历前 10 行（而非 5 行），过滤标题/标签/含数字标点的行，
-  //    且该行不能是常见章节词（如"教育经历"），取第一个合法的纯中文短行。
+  //    遍历前 10 行（而非 5 行），过滤标题/标签/含数字的行，
+  //    且该行不能是常见章节词（如"教育经历"）。
   const headLines = text.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 10);
   for (const line of headLines) {
-    // 跳过含标题词/标签词/数字/标点的行
+    // 跳过含标题词/标签词的行
     if (/(简历|求职|应聘|姓名|名字|电话|手机|邮箱|学历|年龄|性别|学校|院校|公司|职位|岗位|民族|籍贯|住址|地址)/.test(line)) continue;
-    if (/[\d：:、，,；;|｜/\\（）()]/.test(line)) continue;
+    // 含数字的行基本不是姓名行（日期/年限/电话），直接放弃
+    if (/\d/.test(line)) continue;
+    // 含英文的行通常是技能/项目描述（如"熟悉 React / Vue / TypeScript"），
+    // 切段后会得到"熟悉"这类假姓名，整行放弃
+    if (/[A-Za-z]/.test(line)) continue;
+    // 整行就是姓名
     if (isNameToken(line)) return line;
+    // 姓名常和职位/城市写在同一行："刘鹏 - 前端工程师"、"刘鹏 | 广州"、"刘鹏  前端开发"
+    // 整行不匹配时按分隔符切段，取第一段判断。
+    const segs = line.split(/[\s\-—–|｜·]+/).map((s) => s.trim()).filter(Boolean);
+    if (segs.length > 1 && isNameToken(segs[0])) return segs[0];
   }
 
   // 6. 最后兜底：全文首个紧跟"男/女"或"年龄/岁"的中文短词（宽松匹配，同行走）
@@ -281,13 +321,19 @@ export function extractTitle(text: string): string {
 // 公司
 // ---------------------------------------------------------------------------
 
+// 院校名不是公司名。
+// 踩过的坑：教育经历行常写成"2013.8~2017.6\t华南师范大学"，这行既有时间、又含
+// "学校/学院"（恰好在下面的公司特征词表里），且通常排在实习/工作行之前，
+// 于是 current_company 被填成了学校名。这里显式排除。
+const SCHOOL_LIKE_RE = /(大学|学院|学校|中学|小学|职业技术|高等专科|研究生院)/;
+
 export function extractCompany(text: string): string {
   const t = normalizeText(text);
   // 1. 标签式："所在公司/公司名称/公司/任职公司:XXX"
   const label = t.match(/(?:所在公司|任职公司|公司名称|目前公司|当前公司|现公司|就职于|公司)\s*[:：]\s*([^\n\r,，;；]{2,40})/);
   if (label) {
     const s = label[1].trim();
-    if (/(公司|集团|科技|网络|信息|软件|有限|银行|医院|学校|研究院|中心|厂|部)/.test(s) || s.length >= 3) return s;
+    if (/(公司|集团|科技|网络|信息|软件|有限|银行|医院|研究院|中心|厂|部)/.test(s) || s.length >= 3) return s;
   }
   // 2. 时间+公司+职位 结构："2020.03-至今  阿里巴巴  高级Java工程师"
   //    时间行通常含年份/至今等，公司名是时间之后、职位之前的片段
@@ -307,6 +353,7 @@ export function extractCompany(text: string): string {
       if (/^\d{1,2}\s*(?:年|月|岁|经验)$/.test(p)) continue;                          // 年限
       if (TITLE_SUFFIXES.some((s) => p.includes(s))) continue;                         // 职位
       if (/^[\d.\-~至—月年]+$/.test(p)) continue;                                      // 纯时间数字
+      if (SCHOOL_LIKE_RE.test(p)) continue;                                            // 院校（教育经历行）
       candidates.push(p);
     }
     for (const p of candidates) {
@@ -317,7 +364,7 @@ export function extractCompany(text: string): string {
     }
     // 无特征词时，取第一个长度合理的纯中文片段（如"阿里巴巴"）
     for (const p of candidates) {
-      if (/^[\u4e00-\u9fa5（）()]{2,20}$/.test(p)) {
+      if (/^[\u4e00-\u9fa5（）()]{2,20}$/.test(p) && !isPlaceName(p)) {
         return p;
       }
     }
@@ -349,15 +396,6 @@ export function extractSchool(text: string): string {
 // ---------------------------------------------------------------------------
 // 城市
 // ---------------------------------------------------------------------------
-
-const CITIES = [
-  "北京", "上海", "广州", "深圳", "杭州", "成都", "武汉", "南京", "西安", "苏州",
-  "天津", "重庆", "长沙", "青岛", "厦门", "郑州", "合肥", "福州", "济南", "大连",
-  "宁波", "无锡", "佛山", "东莞", "昆明", "沈阳", "哈尔滨", "长春", "石家庄",
-  "南昌", "贵阳", "南宁", "兰州", "太原", "乌鲁木齐", "呼和浩特", "银川", "西宁",
-  "海口", "三亚", "珠海", "惠州", "中山", "泉州", "温州", "嘉兴", "绍兴", "台州",
-  "金华", "常州", "南通", "徐州", "扬州", "烟台", "潍坊", "淄博",
-];
 
 export function extractCity(text: string): string {
   const t = normalizeText(text);

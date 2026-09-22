@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { sanitizeField, sanitizeSkills } from "../../utils/fieldSanity";
 
 // AI 简历解析接口
 // 前端把简历文本（或文件 base64）发到这里，后端用 DEEPSEEK_API_KEY 调 DeepSeek，
@@ -106,7 +107,11 @@ async function callDeepSeek(apiKey: string, resumeText: string): Promise<Record<
 要求：
 1. 简历里确实没有的字段，一律用 null（字符串字段用空字符串 ""，数字字段用 null），不要臆造。
 2. 姓名、手机号务必准确，这是最重要的两个字段。
-3. skills 数组元素要是干净的关键词（如 "Java"、"Spring Boot"、"MySQL"），不要整句。`;
+3. skills 数组元素要是干净的关键词（如 "Java"、"Spring Boot"、"MySQL"），不要整句。
+4. current_company 必须是公司名称。不要填年份、日期、时间段、学校名或学位，
+   例如简历里写"2013.2-至今  广东行致互联科技有限公司"，应填"广东行致互联科技有限公司"而不是"2013"。
+5. name 必须是人的姓名。不要填城市、省份、职位或章节标题。
+6. 一律不要编造：拿不准的字段留空，比填一个错误的答案更有价值。`;
 
   const userPrompt = `请解析以下简历文本：\n\n${resumeText.slice(0, 6000)}`;
 
@@ -141,20 +146,24 @@ async function callDeepSeek(apiKey: string, resumeText: string): Promise<Record<
 }
 
 // 把 AI 返回的原始 JSON 归一化成标准 ParsedResume
+// 关键：对 name / current_company / current_title / school / city 做合理性校验。
+// AI 偶尔会把年份当公司名（线上真实出现过 current_company = "2013"）、把城市当姓名
+// （name = "广州"）。这类值"看起来有值"，核对弹窗不会提示待填，比空值更危险，
+// 因此校验不通过就清空，让问题直接暴露在核对弹窗里。
 function normalizeAiResult(raw: Record<string, unknown>): ParsedResume {
   return {
-    name: normStr(raw.name),
+    name: sanitizeField("name", normStr(raw.name)),
     phone: normStr(raw.phone).replace(/\D/g, ""),
     email: normStr(raw.email).toLowerCase(),
     age: normNum(raw.age),
     gender: normStr(raw.gender) === "女" ? "女" : normStr(raw.gender) === "男" ? "男" : "",
     education: normStr(raw.education),
-    school: normStr(raw.school),
-    current_company: normStr(raw.current_company),
-    current_title: normStr(raw.current_title),
+    school: sanitizeField("school", normStr(raw.school)),
+    current_company: sanitizeField("current_company", normStr(raw.current_company)),
+    current_title: sanitizeField("current_title", normStr(raw.current_title)),
     years_experience: normNum(raw.years_experience),
-    city: normStr(raw.city).replace(/[市省县区]$/, ""),
-    skills: normSkills(raw.skills),
+    city: sanitizeField("city", normStr(raw.city).replace(/[市省县区]$/, "")),
+    skills: sanitizeSkills(normSkills(raw.skills)),
     birth_date: normStr(raw.birth_date).match(/^\d{4}-\d{2}-\d{2}/)?.[0] || "",
   };
 }
