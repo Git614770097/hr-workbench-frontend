@@ -125,7 +125,14 @@ export default function ImportPreviewModal({
 
           {/* 右：解析字段（可编辑） */}
           <div style={{ flex: "1 1 45%", minWidth: 0, overflowY: "auto", maxHeight: "70vh", paddingRight: 4 }}>
-            <div style={{ marginBottom: 6, fontSize: 12, color: "#888" }}>解析字段（可直接修改）</div>
+            <div style={{ marginBottom: 6, fontSize: 12, color: "#888", display: "flex", alignItems: "center", gap: 8 }}>
+              解析字段（可直接修改）
+              {record._ai === true
+                ? <Tag color="green" style={{ marginInlineEnd: 0 }}>AI 解析</Tag>
+                : record._ai === false
+                  ? <Tag color="orange" style={{ marginInlineEnd: 0 }}>本地规则解析 · 建议重点核对</Tag>
+                  : <Tag style={{ marginInlineEnd: 0 }}>JSON 手工导入</Tag>}
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "72px 1fr", rowGap: 8, columnGap: 8, alignItems: "center" }}>
               <label style={{ fontSize: 13, color: "#5b6472" }}>姓名</label>
               <Input size="small" value={record.name} placeholder="请输入姓名" {...missing(record.name)} onChange={(e) => onChange("name", e.target.value)} />

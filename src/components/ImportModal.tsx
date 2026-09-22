@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Modal, Upload, Button, Alert, message, Table, Input, InputNumber, Select, Typography, Segmented, Tooltip,
+  Modal, Upload, Button, Alert, message, Table, Input, InputNumber, Select, Typography, Segmented, Tooltip, Tag,
 } from "antd";
 import { InboxOutlined, DeleteOutlined, UploadOutlined, EyeOutlined } from "@ant-design/icons";
 import mammoth from "mammoth";
@@ -51,6 +51,8 @@ export interface ParsedTalent {
   notes: string;
   fileName: string;
   file: File | null;
+  /** 解析来源：true=AI 解析，false=本地规则回退，undefined=JSON 手工导入 */
+  _ai?: boolean;
 }
 
 // JSON 导入示例（点「填入示例」填充）
@@ -222,8 +224,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
           // AI 失败（无 key/超时/网络/解析异常）静默回退本地规则
           console.warn(`AI 解析失败，回退本地规则：${file.name}`, err);
         }
-        // 标记是否用 AI 解析（用于提示）
-        (result as ParsedTalent & { _ai?: boolean })._ai = aiUsed;
+        // 标记是否用 AI 解析（用于列表/核对弹窗提示）
+        result._ai = aiUsed;
         parsed.push(result);
       }
       setRecords((prev) => [...prev, ...parsed]);
@@ -234,14 +236,16 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       // 兜底提示：关键字段（姓名/手机号）未识别出来时提醒用户手动确认
       const missingName = parsed.filter((r) => !r.name).length;
       const missingPhone = parsed.filter((r) => !r.phone).length;
-      const aiCount = parsed.filter((r) => (r as any)._ai).length;
+      const aiCount = parsed.filter((r) => r._ai).length;
+      const localCount = parsed.length - aiCount;
       const missing: string[] = [];
       if (missingName > 0) missing.push(`${missingName} 条缺少姓名`);
       if (missingPhone > 0) missing.push(`${missingPhone} 条缺少手机号`);
+      const srcNote = `AI ${aiCount} 份 / 本地规则 ${localCount} 份`;
       if (missing.length > 0) {
-        message.warning(`已解析 ${parsed.length} 份简历（AI 解析 ${aiCount} 份），其中 ${missing.join("、")}（已置空并标黄），请手动补充后再导入`, 6);
+        message.warning(`已解析 ${parsed.length} 份简历（${srcNote}），其中 ${missing.join("、")}（已置空并标黄），请逐份核对补充后再录入`, 6);
       } else {
-        message.success(`已解析 ${parsed.length} 份简历（AI 解析 ${aiCount} 份），请核对信息后导入`);
+        message.success(`已解析 ${parsed.length} 份简历（${srcNote}），请逐份核对后录入`);
       }
     } catch (err) {
       setError((err as Error).message);
@@ -506,6 +510,15 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     { title: "城市", dataIndex: "city", width: 90, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} placeholder="请输入城市" onChange={(e) => updateRecord(r.key, "city", e.target.value)} /> },
     { title: "技能", dataIndex: "skills", width: 180, render: (v: string, r: ParsedTalent) => <Input size="small" value={v} onChange={(e) => updateRecord(r.key, "skills", e.target.value)} placeholder="技能，逗号分隔" /> },
     { title: "状态", dataIndex: "status", width: 130, render: (v: string, r: ParsedTalent) => <Select size="small" value={v} onChange={(val) => updateRecord(r.key, "status", val)} options={Object.entries(STATUS_LABELS).map(([k, label]) => ({ label, value: k }))} style={{ width: "100%" }} /> },
+    { title: "解析", key: "parseSource", width: 84, render: (_: any, r: ParsedTalent) => (
+      <Tooltip title={r._ai === true ? "AI 解析" : r._ai === false ? "本地规则解析（AI 失败回退，建议重点核对）" : "JSON 手工导入"}>
+        {r._ai === true
+          ? <Tag color="green" style={{ marginInlineEnd: 0 }}>AI</Tag>
+          : r._ai === false
+            ? <Tag color="orange" style={{ marginInlineEnd: 0 }}>本地</Tag>
+            : <Tag style={{ marginInlineEnd: 0 }}>手工</Tag>}
+      </Tooltip>
+    ) },
     { title: "", key: "action", width: 84, fixed: "right" as const, render: (_: any, r: ParsedTalent) => (
       <span style={{ display: "inline-flex", gap: 2 }}>
         <Tooltip title="核对简历"><Button type="text" size="small" icon={<EyeOutlined />} onClick={() => setReviewKey(r.key)} /></Tooltip>
