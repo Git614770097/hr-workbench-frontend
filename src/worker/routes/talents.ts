@@ -2,10 +2,20 @@ import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { MERGE_FIELDS as TALENT_MERGE_FIELDS } from "../../types";
 
 const talents = new Hono<{ Bindings: Env }>();
 
 function genId(): string { return crypto.randomUUID(); }
+
+// 合并预览用的字段指纹：只比较内容是否相同，不下发原值（避免把整份简历信息重复下发一遍）。
+// 归一化后做 FNV-1a 32 位哈希；同一组内手机号必然相同，因此该字段不会误报差异。
+function fieldSig(v: unknown): string {
+  const s = String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
+  return h.toString(16);
+}
 
 // Base64 <-> ArrayBuffer 转换（用于 KV 存储二进制文件）
 function arrayBufferToBase64(buf: ArrayBuffer): string {
@@ -113,13 +123,38 @@ talents.get("/duplicates", async (c) => {
   let groups: { phone: string; items: any[] }[] = [];
   if (phones.length > 0) {
     const ph = phones.map(() => "?").join(",");
+    // 除基础信息外，带上「判断留哪条」的依据：城市/学历/有无简历，以及关联数据条数
+    // （关联越多说明这条是主力记录，保留它意味着更少的迁移与更完整的历史）。
+    // t.* 只用于在服务端算出 filled（哪些字段有值），不下发原值，避免响应体过大。
     const rows = await c.env.DB.prepare(
-      `SELECT t.id, t.name, t.phone, t.current_title, t.current_company, t.status, t.updated_at FROM talents t WHERE t.phone IN (${ph}) ${session.role === "admin" ? "" : "AND t.owner_id = ?"} ORDER BY t.phone, t.updated_at DESC`
+      `SELECT t.*,
+              CASE WHEN t.resume_url IS NOT NULL AND TRIM(t.resume_url) != '' THEN 1 ELSE 0 END AS has_resume,
+              (SELECT COUNT(*) FROM talent_tags x WHERE x.talent_id = t.id) AS tag_count,
+              (SELECT COUNT(*) FROM communications cm WHERE cm.talent_id = t.id) AS comm_count,
+              (SELECT COUNT(*) FROM talent_jobs tj WHERE tj.talent_id = t.id) AS job_count
+       FROM talents t WHERE t.phone IN (${ph}) ${session.role === "admin" ? "" : "AND t.owner_id = ?"}
+       ORDER BY t.phone, t.updated_at DESC`
     ).bind(...phones, ...ownerParams).all();
-    const map: Record<string, any[]> = {};
+
+    let map: Record<string, any[]> = {};
     for (const r of rows.results as any[]) {
+      // sig：合并字段里「有值」的键 → 内容指纹。前端据此区分「将补入」与「内容不同」，
+      // 有值的键集合即该记录已填字段，无需再单独下发 filled。
+      const sig: Record<string, string> = {};
+      for (const f of TALENT_MERGE_FIELDS) {
+        const v = r[f];
+        if (v !== null && v !== undefined && String(v).trim() !== "") sig[f] = fieldSig(v);
+      }
       if (!map[r.phone]) map[r.phone] = [];
-      map[r.phone].push(r);
+      map[r.phone].push({
+        id: r.id, name: r.name, phone: r.phone, email: r.email,
+        current_title: r.current_title, current_company: r.current_company,
+        city: r.city, education: r.education, school: r.school,
+        status: r.status, created_at: r.created_at, updated_at: r.updated_at,
+        has_resume: r.has_resume ? 1 : 0,
+        tag_count: r.tag_count || 0, comm_count: r.comm_count || 0, job_count: r.job_count || 0,
+        sig,
+      });
     }
     groups = phones.map((p) => ({ phone: p, items: map[p] || [] })).filter((g) => g.items.length > 1);
   }
@@ -151,12 +186,8 @@ talents.post("/merge", async (c) => {
   const sources = srcRes.results || [];
   if (sources.length !== mergeIds.length) return c.json({ error: "部分待合并的人才不存在或无权限" }, 400);
 
-  // 字段合并：只补保留记录为空的字段
-  const MERGE_FIELDS = [
-    "phone", "email", "age", "gender", "education", "school", "current_company",
-    "current_title", "years_experience", "city", "skills", "industry",
-    "expected_salary", "expected_city", "notes",
-  ];
+  // 字段合并：只补保留记录为空的字段（字段清单与前端「合并预览」共用同一份定义）
+  const MERGE_FIELDS = TALENT_MERGE_FIELDS;
   const isEmpty = (v: unknown) => v === null || v === undefined || v === "";
   const merged: Record<string, any> = {};
   for (const f of MERGE_FIELDS) {

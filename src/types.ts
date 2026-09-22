@@ -146,14 +146,49 @@ export interface DuplicateTalentItem {
   id: string;
   name: string;
   phone: string;
+  email: string | null;
   current_title: string | null;
   current_company: string | null;
+  city: string | null;
+  education: string | null;
+  school: string | null;
   status: string | null;
+  /** 1 / 0：是否已上传简历文件 */
+  has_resume: number;
+  /** 关联数据条数，用于判断留哪条更划算 */
+  tag_count: number;
+  comm_count: number;
+  job_count: number;
+  created_at: string | null;
   updated_at: string | null;
+  /** 合并字段中「有值」的键 → 内容指纹。键集合 = 已填字段，
+   *  与其它记录指纹不同 = 内容有差异（合并时会以保留记录为准）。 */
+  sig: Record<string, string>;
 }
 export interface DuplicateGroup {
   phone: string;
   items: DuplicateTalentItem[];
+}
+
+/** 合并重复人才时「只补空、不覆盖」的字段。
+ *  name / status 刻意不参与：姓名不同往往意味着根本不是同一人（需人工判断），
+ *  在招状态是业务流转结果，不能因为合并被回退。 */
+export const MERGE_FIELDS = [
+  "phone", "email", "age", "gender", "education", "school", "current_company",
+  "current_title", "years_experience", "city", "skills", "industry",
+  "expected_salary", "expected_city", "notes",
+] as const;
+
+export const MERGE_FIELD_LABELS: Record<string, string> = {
+  phone: "手机号", email: "邮箱", age: "年龄", gender: "性别", education: "学历",
+  school: "毕业院校", current_company: "当前公司", current_title: "当前职位",
+  years_experience: "工作年限", city: "城市", skills: "技能", industry: "行业",
+  expected_salary: "期望薪资", expected_city: "期望城市", notes: "备注",
+};
+
+/** 关联数据量打分：条数越多说明这条是主力记录，默认保留它 */
+export function duplicateWeight(it: DuplicateTalentItem): number {
+  return (it.job_count || 0) * 3 + (it.comm_count || 0) * 2 + (it.tag_count || 0) + (it.has_resume ? 1 : 0);
 }
 
 export const STATUS_LABELS: Record<string, string> = {
