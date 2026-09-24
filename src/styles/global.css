@@ -546,6 +546,21 @@ html[data-theme="dark"] .resume-doc-preview,
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .task-cal-line-text.is-closed { color: #bfbfbf; text-decoration: line-through; }
+/* 格子里的待办行可点击编辑；悬停行尾出现打勾按钮（仅未完成的条目渲染） */
+.task-cal-line { cursor: pointer; }
+.task-cal-line:hover .task-cal-line-text { color: #1677ff; }
+.task-cal-check {
+  display: none; margin-left: 2px; flex: none;
+  align-items: center; color: #52c41a; font-size: 11px; line-height: 15px;
+}
+.task-cal-line:hover .task-cal-check { display: inline-flex; }
+
+/* 拖拽改期：日历拖放容器与落点高亮 */
+.task-cal-dnd { min-width: 0; }
+.task-cal-dnd .ant-picker-cell.task-drop-target {
+  outline: 2px dashed #1677ff; outline-offset: -3px; border-radius: 8px;
+}
+html[data-theme="dark"] .task-cal-dnd .ant-picker-cell.task-drop-target { outline-color: #3b82f6; }
 
 .task-cal-dots {
   display: inline-flex; align-items: center; gap: 3px; position: relative; z-index: 1;

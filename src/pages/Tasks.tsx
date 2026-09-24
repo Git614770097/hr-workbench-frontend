@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type DragEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Card, Button, Space, Tag, Input, Select, Checkbox, Popconfirm, message,
@@ -7,7 +7,7 @@ import {
 import type { CalendarProps } from "antd";
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, ClockCircleOutlined,
-  CheckCircleOutlined, MoreOutlined, LinkOutlined, UserOutlined,
+  CheckCircleOutlined, CheckOutlined, MoreOutlined, LinkOutlined, UserOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -169,6 +169,43 @@ export default function Tasks() {
     }
   };
 
+  // ===== 拖拽改期：从右侧列表拖待办到日历格子松手即改期 =====
+  // 高亮与落点解析都用 DOM class 操作，避免 dragover 高频触发导致重渲。
+  const dndRef = useRef<HTMLDivElement>(null);
+  const clearDropTarget = () => {
+    dndRef.current?.querySelector(".task-drop-target")?.classList.remove("task-drop-target");
+  };
+  const onCalDragOver = (e: DragEvent<HTMLDivElement>) => {
+    const cell = (e.target as HTMLElement).closest(".ant-picker-cell");
+    if (!(cell instanceof HTMLElement) || !dndRef.current?.contains(cell)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    clearDropTarget();
+    cell.classList.add("task-drop-target");
+  };
+  const onCalDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (!dndRef.current?.contains(e.relatedTarget as Node | null)) clearDropTarget();
+  };
+  const onCalDrop = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    clearDropTarget();
+    const id = e.dataTransfer.getData("text/plain");
+    // 落点优先取自内容区的 data-ymd；落在日期数字上时向上找格子再取其内的 data-ymd
+    const el = e.target as HTMLElement;
+    const host = el.closest<HTMLElement>("[data-ymd]")
+      || el.closest(".ant-picker-cell")?.querySelector<HTMLElement>("[data-ymd]");
+    const ymd = host?.getAttribute("data-ymd") || "";
+    const t = tasks.find((x) => x.id === id);
+    if (!t || !/^\d{4}-\d{2}-\d{2}$/.test(ymd) || t.due_date === ymd) return;
+    try {
+      await api.updateTask(t.id, { due_date: ymd });
+      message.success(`「${t.title.slice(0, 12)}${t.title.length > 12 ? "…" : ""}」已改期至 ${dayjs(ymd).format("M月D日")}`);
+      fetchTasks();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
   const moreMenu = (t: Task): MenuProps["items"] => [
     { key: "edit", label: "编辑待办", icon: <EditOutlined /> },
     {
@@ -218,7 +255,7 @@ export default function Tasks() {
     const k = dayKind(ymd);
     const list = byDate[ymd] || [];
     return (
-      <div className="task-cal-cell">
+      <div className="task-cal-cell" data-ymd={ymd}>
         {k.kind !== "workday" && (
           <>
             {/* 整格同色色块（铺满格子，数字与角标浮在其上） */}
@@ -237,9 +274,23 @@ export default function Tasks() {
             {list.slice(0, CAL_LINE_MAX).map((t) => {
               const closed = t.status !== "pending";
               return (
-                <div key={t.id} className="task-cal-line" title={t.title}>
+                <div
+                  key={t.id}
+                  className="task-cal-line"
+                  title={`${t.title}（点击编辑）`}
+                  onClick={(e) => { e.stopPropagation(); openEdit(t); }}
+                >
                   <i className={`task-cal-dot p-${prioOf(t.priority)}${closed ? " is-closed" : ""}`} />
                   <span className={`task-cal-line-text${closed ? " is-closed" : ""}`}>{t.title}</span>
+                  {!closed && (
+                    <span
+                      className="task-cal-check"
+                      title="标记完成"
+                      onClick={(e) => { e.stopPropagation(); toggleDone(t); }}
+                    >
+                      <CheckOutlined />
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -269,6 +320,13 @@ export default function Tasks() {
     <div
       key={t.id}
       className={`task-item${t.overdue ? " is-overdue" : ""}${t.due_today ? " is-today" : ""}${t.status === "done" ? " is-done" : ""}`}
+      draggable
+      title="拖到左侧日历可改期"
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", t.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragEnd={clearDropTarget}
     >
       <Checkbox
         checked={t.status === "done"}
@@ -345,16 +403,24 @@ export default function Tasks() {
               {knownYears().length > 0 && `（已内置：${knownYears().join("、")} 年）`}
             </div>
           )}
-          <Calendar
-            className="task-calendar"
-            // 非受控：选中态交给组件内部，翻月不会受外部 value 干扰
-            defaultValue={dayjs()}
-            onSelect={(d, info) => {
-              if (info.source === "date") setSelected(d.format("YYYY-MM-DD"));
-            }}
-            onPanelChange={(d) => setViewMonth(d.startOf("month"))}
-            cellRender={cellRender}
-          />
+          <div
+            className="task-cal-dnd"
+            ref={dndRef}
+            onDragOver={onCalDragOver}
+            onDragLeave={onCalDragLeave}
+            onDrop={onCalDrop}
+          >
+            <Calendar
+              className="task-calendar"
+              // 非受控：选中态交给组件内部，翻月不会受外部 value 干扰
+              defaultValue={dayjs()}
+              onSelect={(d, info) => {
+                if (info.source === "date") setSelected(d.format("YYYY-MM-DD"));
+              }}
+              onPanelChange={(d) => setViewMonth(d.startOf("month"))}
+              cellRender={cellRender}
+            />
+          </div>
         </Card>
 
         {/* ===== 选中日期的待办 ===== */}
