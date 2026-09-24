@@ -389,25 +389,23 @@ export default function TalentList() {
         />
       )}
 
-      {/* 顶部搜索区域：label 左 + 控件右，一行 4 个，超过一行可展开/收起 */}
-      <Card style={{ marginBottom: 16 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px 24px" }}>
+      {/* 顶部搜索区域：label 左 + 控件右，一行 4 个，超过一行可展开/收起（复用 search-card 约定类） */}
+      <Card className="search-card" style={{ marginBottom: 16 }}>
+        <div className="search-grid">
           {visibleDefs.map((d) => (
-            <div key={d.key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 44, flexShrink: 0, textAlign: "right", fontSize: 13, color: "#666" }}>
-                {d.label}
-              </span>
-              <div style={{ flex: 1, minWidth: 0 }}>{d.control}</div>
+            <div key={d.key} className="search-field">
+              <span className="search-label">{d.label}</span>
+              <div className="search-control">{d.control}</div>
             </div>
           ))}
         </div>
       </Card>
 
-      <Card>
+      <Card className="list-card">
         {/* 布局约定（全站统一）：搜索 Card 只放搜索字段（label 左 / 控件右，一行 4 个）；
             顶部工具行左侧是「导入/导出」等数据操作，右侧是「展开收起 / 重置 / 查询」，
             两者形成一条对齐的右侧操作区，不要另起一行。 */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div className="toolbar">
           <Space>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
             <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
@@ -432,6 +430,7 @@ export default function TalentList() {
           </Space>
         </div>
         <Table
+          className="profiles-table"
           columns={columns}
           dataSource={talents}
           rowKey="id"

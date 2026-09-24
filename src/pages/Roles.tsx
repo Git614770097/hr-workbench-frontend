@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Checkbox } from "antd";
+import { Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Checkbox, Typography } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import type { Role } from "../types";
@@ -80,7 +80,7 @@ export default function Roles() {
             const def = MENU_PERMISSIONS.find((m) => m.key === p);
             return def ? <Tag key={p} color="blue">{def.label}</Tag> : null;
           })}
-          {perms.length === 0 && <span style={{ color: "#999" }}>无任何菜单</span>}
+          {perms.length === 0 && <Typography.Text type="secondary">无任何菜单</Typography.Text>}
         </Space>
       ),
     },
@@ -106,9 +106,11 @@ export default function Roles() {
       </div>
 
       <Card>
-        <Table columns={columns} dataSource={roles} rowKey="id" loading={loading} pagination={false} />
-        <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-          说明：管理员拥有全部菜单权限，不受角色限制；「用户管理」仅管理员可见，普通角色即使勾选也不会生效。
+        <Table className="profiles-table" columns={columns} dataSource={roles} rowKey="id" loading={loading} pagination={false} />
+        <div style={{ marginTop: 12, fontSize: 12 }}>
+          <Typography.Text type="secondary">
+            说明：管理员拥有全部菜单权限，不受角色限制；「用户管理」仅管理员可见，普通角色即使勾选也不会生效。
+          </Typography.Text>
         </div>
       </Card>
 

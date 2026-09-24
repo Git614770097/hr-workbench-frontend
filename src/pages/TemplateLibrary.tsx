@@ -198,7 +198,7 @@ export default function TemplateLibrary() {
             style={{ width: 260 }}
             placeholder="请输入模板名称或内容关键词"
             allowClear
-            prefix={<SearchOutlined style={{ color: "#bbb" }} />}
+            prefix={<SearchOutlined />}
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onPressEnter={() => { setPage(1); setAppliedKeyword(keyword); }}

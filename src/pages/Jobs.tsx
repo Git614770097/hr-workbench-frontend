@@ -231,10 +231,10 @@ export default function Jobs() {
 
   return (
     <div>
-      <Card style={{ marginBottom: 16 }}>
+      <Card className="search-card" style={{ marginBottom: 16 }}>
         {/* 布局约定（全站统一）：搜索 Card 只放字段（label 左 / 控件右，一行 4 个）；
             筛选条件超过 4 个时自动换行，不另起按钮行。 */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px 24px" }}>
+        <div className="search-grid">
           <Field label="岗位">
             <Input
               placeholder="岗位名称 / 部门 / 职责" value={draftQ}
@@ -267,10 +267,10 @@ export default function Jobs() {
         </div>
       </Card>
 
-      <Card>
+      <Card className="list-card">
         {/* 布局约定（全站统一）：查询区的「重置/查询」与工具栏的「新增」放在同一列、
             同一条竖线上，用 grid 的透明占位格把按钮推到第 4 列，形成对齐的右侧操作区。 */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div className="toolbar">
           <Space>
             <Button
               type="primary" icon={<PlusOutlined />}
@@ -289,6 +289,7 @@ export default function Jobs() {
         </div>
 
         <Table
+          className="profiles-table"
           columns={columns}
           dataSource={jobs}
           rowKey="id"
@@ -415,11 +416,9 @@ export default function Jobs() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <span style={{ width: 52, flexShrink: 0, textAlign: "right", fontSize: 13, color: "#666" }}>
-        {label}
-      </span>
-      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+    <div className="search-field">
+      <span className="search-label">{label}</span>
+      <div className="search-control">{children}</div>
     </div>
   );
 }

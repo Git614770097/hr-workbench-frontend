@@ -180,22 +180,29 @@ export default function Pipeline() {
 
   return (
     <div>
-      {/* 顶部统计 + 操作 */}
+      {/* 顶部统计 + 操作（统计复用 page-head 的 stat 体系，语义色由 CSS 类接管、暗色自动适配） */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        <Space size="large" wrap>
-          <span style={{ fontSize: 13, color: "#666" }}>
-            进行中 <b style={{ fontSize: 18, color: "#3b82f6" }}>{stats.active}</b> 人
-          </span>
-          <span style={{ fontSize: 13, color: "#666" }}>
-            已入职 <b style={{ fontSize: 18, color: "#10b981" }}>{stats.hired}</b> 人
-          </span>
-          <span style={{ fontSize: 13, color: "#666" }}>
-            已淘汰 <b style={{ fontSize: 18, color: "#ef4444" }}>{stats.rejected}</b> 人
-          </span>
-          <span style={{ fontSize: 13, color: "#666" }}>
-            流程内合计 <b style={{ fontSize: 18, color: "#262626" }}>{stats.total}</b> 人
-          </span>
-        </Space>
+        <div className="page-stats">
+          <div className="stat">
+            <span className="stat-num">{stats.active}</span>
+            <span className="stat-label">进行中</span>
+          </div>
+          <span className="stat-sep" />
+          <div className="stat">
+            <span className="stat-num is-good">{stats.hired}</span>
+            <span className="stat-label">已入职</span>
+          </div>
+          <span className="stat-sep" />
+          <div className="stat">
+            <span className="stat-num is-bad">{stats.rejected}</span>
+            <span className="stat-label">已淘汰</span>
+          </div>
+          <span className="stat-sep" />
+          <div className="stat">
+            <span className="stat-num is-neutral">{stats.total}</span>
+            <span className="stat-label">流程内合计</span>
+          </div>
+        </div>
         <Space>
           <Segmented
             value={view}
@@ -213,10 +220,11 @@ export default function Pipeline() {
       </div>
 
       {/* 筛选条 */}
-      <Card style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px 24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={labelStyle}>岗位</span>
+      <Card className="search-card" style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
+        <div className="search-grid">
+          <div className="search-field">
+            <span className="search-label">岗位</span>
+            <div className="search-control">
             <Select
               style={{ width: "100%" }} allowClear placeholder="全部岗位"
               value={jobFilter || undefined}
@@ -228,9 +236,11 @@ export default function Pipeline() {
               showSearch
               optionFilterProp="label"
             />
+            </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={labelStyle}>候选人</span>
+          <div className="search-field">
+            <span className="search-label">候选人</span>
+            <div className="search-control">
             <Input
               style={{ width: "100%" }} placeholder="姓名 / 职位 / 公司"
               value={draftQ}
@@ -238,16 +248,19 @@ export default function Pipeline() {
               onPressEnter={() => setAppliedQ(draftQ)}
               allowClear
             />
+            </div>
           </div>
           {isAdmin && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={labelStyle}>创建人</span>
+            <div className="search-field">
+              <span className="search-label">创建人</span>
+              <div className="search-control">
               <Select
                 style={{ width: "100%" }} allowClear placeholder="全部"
                 value={ownerFilter || undefined}
                 onChange={(v) => setOwnerFilter(v || "")}
                 options={users.map((u) => ({ label: u.name, value: u.id }))}
               />
+              </div>
             </div>
           )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
@@ -475,7 +488,3 @@ export default function Pipeline() {
     </div>
   );
 }
-
-const labelStyle: React.CSSProperties = {
-  width: 48, flexShrink: 0, textAlign: "right", fontSize: 13, color: "#666",
-};

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Card, Button, Select, Space, Row, Col, Empty, Spin, Tooltip, message } from "antd";
+import { Card, Button, Select, Space, Row, Col, Empty, Spin, Tooltip, message, Typography } from "antd";
 import {
   ReloadOutlined, SearchOutlined, FunnelPlotOutlined,
   ThunderboltOutlined, RiseOutlined, ClockCircleOutlined, TeamOutlined,
@@ -8,8 +8,6 @@ import {
 import { api } from "../api";
 import type { FunnelResponse, FunnelStayItem, Job, User } from "../types";
 import FunnelChartView, { levelColor } from "../components/FunnelChart";
-
-const labelStyle: React.CSSProperties = { flexShrink: 0, fontSize: 13, color: "#8c8c8c" };
 
 // 周期指标的配色（与漏斗同一套柔和色系，暗色模式取亮档）
 // 顺序即流程顺序：入库→首面 / 首面→Offer / Offer→入职 / 全流程
@@ -151,17 +149,19 @@ export default function Funnel() {
     <div className="funnel-page">
       {/* 筛选 */}
       <Card
+        className="search-card"
         style={{ marginBottom: 16 }}
         styles={{ body: { padding: 16 } }}
         extra={
           updatedAt ? (
-            <span style={{ fontSize: 12, color: "#8c8c8c" }}>更新于 {updatedAt}</span>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>更新于 {updatedAt}</Typography.Text>
           ) : null
         }
       >
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px 24px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={labelStyle}>岗位</span>
+        <div className="search-grid">
+          <div className="search-field">
+            <span className="search-label">岗位</span>
+            <div className="search-control">
             <Select
               style={{ width: "100%" }} allowClear placeholder="全部岗位"
               value={draftJob || undefined}
@@ -173,19 +173,23 @@ export default function Funnel() {
               showSearch
               optionFilterProp="label"
             />
+            </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={labelStyle}>时间范围</span>
+          <div className="search-field">
+            <span className="search-label">时间范围</span>
+            <div className="search-control">
             <Select
               style={{ width: "100%" }}
               value={draftDays}
               onChange={(v) => setDraftDays(v)}
               options={TIME_RANGES}
             />
+            </div>
           </div>
           {isAdmin && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={labelStyle}>创建人</span>
+            <div className="search-field">
+              <span className="search-label">创建人</span>
+              <div className="search-control">
               <Select
                 style={{ width: "100%" }} allowClear placeholder="全部"
                 value={draftOwner || undefined}
@@ -194,6 +198,7 @@ export default function Funnel() {
                 showSearch
                 optionFilterProp="label"
               />
+              </div>
             </div>
           )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>

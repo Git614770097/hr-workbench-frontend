@@ -688,6 +688,13 @@ html[data-theme="dark"] .task-undated-head { color: #b0b6c0; }
 }
 .stat-label { font-size: 0.72rem; color: #8c8c8c; margin-top: 0.25rem; }
 .stat-sep { width: 1px; height: 28px; background: #eef0f3; }
+/* 语义色修饰：亮色保留语义、暗色用亮档，避免内联硬编码在暗色下不可读 */
+.stat-num.is-good { color: #10b981; }
+.stat-num.is-bad { color: #ef4444; }
+.stat-num.is-neutral { color: #1f2937; }
+html[data-theme="dark"] .stat-num.is-good { color: #34d399; }
+html[data-theme="dark"] .stat-num.is-bad { color: #f87171; }
+html[data-theme="dark"] .stat-num.is-neutral { color: #e5e7eb; }
 
 /* ===== 人才画像页 ===== */
 .profiles-page .search-card { border: 1px solid #eef0f3; }
