@@ -319,15 +319,30 @@ export interface FunnelStayItem {
   count: number;
 }
 
+/** 一段周期的分布统计（天）。平均值易被个别长尾拉偏，需配合 p50/p90 看 */
+export interface CycleStat {
+  avg: number | null;
+  p50: number | null;  // 中位数
+  p90: number | null;  // 90 分位，代表长尾
+  max: number | null;  // 最长
+  min: number | null;  // 最短
+  n: number;           // 样本数
+}
+
+/** 全流程耗时构成：同一批「完整链路入职者」的三段平均耗时，s1+s2+s3 = 该批人的全流程周期 */
+export interface FunnelSegments {
+  s1: number | null;  // 入库 → 首面
+  s2: number | null;  // 首面 → Offer
+  s3: number | null;  // Offer → 入职
+  n: number;
+}
+
 export interface FunnelCycles {
-  tti: number | null;        // 简历入库 → 首次面试（天）
-  to_offer: number | null;   // 首次面试 → Offer（天）
-  to_hire: number | null;    // Offer → 入职（天）
-  total: number | null;      // 入库 → 入职（天）
-  tti_n: number;
-  to_offer_n: number;
-  to_hire_n: number;
-  total_n: number;
+  tti: CycleStat;        // 简历入库 → 首次面试
+  to_offer: CycleStat;   // 首次面试 → Offer
+  to_hire: CycleStat;    // Offer → 入职
+  total: CycleStat;      // 入库 → 入职
+  segments: FunnelSegments;
 }
 
 export interface FunnelSummary {

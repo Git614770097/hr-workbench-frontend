@@ -272,11 +272,16 @@ pipeline.get("/funnel", async (c) => {
     stageStay[cd.current_stage].push(toDays(now - since));
   }
 
-  // ---- 周期指标（只对有完整链路的人计算）----
+  // ---- 周期指标 ----
+  // tti/toOffer/toHire/total：各自独立取「到过首尾两端」的样本（尽量大的样本量）
+  // segments：只取三段齐全的入职者，保证 s1+s2+s3 === total，用于耗时构成条
   const tti: number[] = [];      // 简历入库 → 首次进入面试（interview1）
   const toOffer: number[] = [];  // 首次面试 → Offer
   const toHire: number[] = [];   // Offer → 入职
   const total: number[] = [];    // 入库 → 入职
+  const seg1: number[] = [];     // 入库 → 首面（仅完整链路入职者）
+  const seg2: number[] = [];     // 首面 → Offer（同上）
+  const seg3: number[] = [];     // Offer → 入职（同上）
 
   for (const cd of cands) {
     const start = parseSqlTime(cd.talent_created_at) ?? parseSqlTime(cd.entered_at);
@@ -288,10 +293,42 @@ pipeline.get("/funnel", async (c) => {
     if (iv != null && of != null && of >= iv) toOffer.push(toDays(of - iv));
     if (of != null && hi != null && hi >= of) toHire.push(toDays(hi - of));
     if (start != null && hi != null && hi >= start) total.push(toDays(hi - start));
+
+    // 完整链路：入库 → 首面 → Offer → 入职，四段时间点齐全且时序递增
+    if (start != null && iv != null && of != null && hi != null &&
+        start <= iv && iv <= of && of <= hi) {
+      seg1.push(toDays(iv - start));
+      seg2.push(toDays(of - iv));
+      seg3.push(toDays(hi - of));
+    }
   }
 
+  const r1 = (v: number) => Math.round(v * 10) / 10;
   const avg = (arr: number[]) =>
-    arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
+    arr.length ? r1(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+
+  // 线性插值分位数（已排序数组）
+  const quantile = (sorted: number[], q: number): number | null => {
+    if (!sorted.length) return null;
+    const pos = (sorted.length - 1) * q;
+    const lo = Math.floor(pos);
+    const hi = Math.ceil(pos);
+    return lo === hi ? r1(sorted[lo]) : r1(sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo));
+  };
+
+  // 一段周期的统计分布：平均值易被长尾拉偏，故一并给出中位数 / P90 / 极值
+  const stat = (arr: number[]) => {
+    if (!arr.length) return { avg: null, p50: null, p90: null, max: null, min: null, n: 0 };
+    const sorted = [...arr].sort((a, b) => a - b);
+    return {
+      avg: avg(arr),
+      p50: quantile(sorted, 0.5),
+      p90: quantile(sorted, 0.9),
+      max: r1(sorted[sorted.length - 1]),
+      min: r1(sorted[0]),
+      n: arr.length,
+    };
+  };
 
   // ---- 汇总卡片 ----
   const first = counts["screening"] || cands.length;
@@ -309,14 +346,17 @@ pipeline.get("/funnel", async (c) => {
       count: stageStay[s].length,
     })),
     cycles: {
-      tti: avg(tti),
-      to_offer: avg(toOffer),
-      to_hire: avg(toHire),
-      total: avg(total),
-      tti_n: tti.length,
-      to_offer_n: toOffer.length,
-      to_hire_n: toHire.length,
-      total_n: total.length,
+      tti: stat(tti),
+      to_offer: stat(toOffer),
+      to_hire: stat(toHire),
+      total: stat(total),
+      // 耗时构成：同一批完整链路入职者的三段耗时，三者之和 = 该批人的全流程周期
+      segments: {
+        s1: avg(seg1),
+        s2: avg(seg2),
+        s3: avg(seg3),
+        n: seg1.length,
+      },
     },
     summary: {
       total: cands.length,
