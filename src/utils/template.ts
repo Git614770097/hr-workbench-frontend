@@ -1,27 +1,4 @@
-import type { Talent, DocTemplate } from "../types";
-import { downloadBlob, escapeHtml } from "./file";
-
-// 占位符 → 人才字段映射（支持中文和英文别名）
-const TALENT_PLACEHOLDER_MAP: Record<string, (t: Talent) => string> = {
-  "姓名": (t) => t.name,
-  "手机号": (t) => t.phone || "",
-  "电话": (t) => t.phone || "",
-  "邮箱": (t) => t.email || "",
-  "年龄": (t) => (t.age != null ? String(t.age) : ""),
-  "学历": (t) => t.education || "",
-  "院校": (t) => t.school || "",
-  "毕业院校": (t) => t.school || "",
-  "公司": (t) => t.current_company || "",
-  "当前公司": (t) => t.current_company || "",
-  "职位": (t) => t.current_title || "",
-  "当前职位": (t) => t.current_title || "",
-  "工作年限": (t) => (t.years_experience != null ? `${t.years_experience}年` : ""),
-  "城市": (t) => t.city || "",
-  "所在城市": (t) => t.city || "",
-  "期望薪资": (t) => t.expected_salary || "",
-  "期望城市": (t) => t.expected_city || "",
-  "行业": (t) => t.industry || "",
-};
+import { escapeHtml } from "./file";
 
 // ---------- HTML / 纯文本互转 ----------
 
@@ -30,7 +7,7 @@ export function looksLikeHtml(content: string): boolean {
   return /<\/?(p|div|span|br|h[1-6]|ul|ol|li|table|strong|em|u|s|blockquote)[\s>]/i.test(content);
 }
 
-// 去掉 HTML 标签，得到纯文本（用于提取占位符、统计等）
+// 去掉 HTML 标签，得到纯文本（用于内容校验、统计等）
 export function stripHtml(html: string): string {
   const div = document.createElement("div");
   div.innerHTML = html;
@@ -46,97 +23,7 @@ export function toHtml(content: string): string {
     .join("");
 }
 
-// ---------- 占位符 ----------
-
-// 提取模板中所有占位符（去重，保持出现顺序；自动忽略 HTML 标签）
-export function extractPlaceholders(content: string): string[] {
-  const text = looksLikeHtml(content) ? stripHtml(content) : content;
-  const found: string[] = [];
-  const re = /\{\{([^{}]+)\}\}/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const key = m[1].trim();
-    if (key && !found.includes(key)) found.push(key);
-  }
-  return found;
-}
-
-// 判断占位符能否由人才信息自动填充
-export function isAutoFillable(key: string): boolean {
-  return key in TALENT_PLACEHOLDER_MAP || key === "日期" || key === "今天日期";
-}
-
-// 返回每个占位符当前的解析值，供「套用生成」弹窗做填充核对与手动覆盖。
-// auto=true 表示该值由人才档案/日期自动得出（未被手动覆盖）；auto=false 表示手动填写或仍为空。
-export function getPlaceholderValues(
-  content: string,
-  talent: Talent | null,
-  manualValues: Record<string, string>
-): { key: string; value: string; auto: boolean }[] {
-  return extractPlaceholders(content).map((key) => {
-    if (manualValues[key] !== undefined) return { key, value: manualValues[key] || "", auto: false };
-    let value = "";
-    if (talent && key in TALENT_PLACEHOLDER_MAP) {
-      value = TALENT_PLACEHOLDER_MAP[key](talent);
-    } else if (key === "日期" || key === "今天日期") {
-      value = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
-    }
-    return { key, value, auto: !!value };
-  });
-}
-
-function resolvePlaceholderValue(
-  key: string,
-  talent: Talent | null,
-  manualValues: Record<string, string>
-): string {
-  let value = "";
-  if (talent && key in TALENT_PLACEHOLDER_MAP) {
-    value = TALENT_PLACEHOLDER_MAP[key](talent);
-  } else if (key === "日期" || key === "今天日期") {
-    value = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" });
-  }
-  if (manualValues[key] !== undefined) value = manualValues[key];
-  return value;
-}
-
-// 在 HTML 的文本节点内替换占位符（不破坏标签结构，替换值按纯文本注入，安全）
-function replaceInHtml(html: string, values: Map<string, string>): string {
-  const container = document.createElement("div");
-  container.innerHTML = html;
-  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-  const nodes: Text[] = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode as Text);
-  for (const node of nodes) {
-    if (!node.data.includes("{{")) continue;
-    let text = node.data;
-    for (const [key, value] of values) {
-      text = text.split(`{{${key}}}`).join(value);
-    }
-    node.data = text;
-  }
-  return container.innerHTML;
-}
-
-// 用人才信息 + 手动补充值替换占位符，返回替换后的 HTML 和仍未填充的占位符
-export function fillTemplate(
-  content: string,
-  talent: Talent | null,
-  manualValues: Record<string, string>
-): { html: string; missing: string[] } {
-  const keys = extractPlaceholders(content);
-  const missing: string[] = [];
-  const values = new Map<string, string>();
-  for (const key of keys) {
-    const value = resolvePlaceholderValue(key, talent, manualValues);
-    if (!value) missing.push(key);
-    // 未填的占位符保留醒目标记，方便用户发现
-    values.set(key, value || `【${key}】`);
-  }
-  return { html: replaceInHtml(toHtml(content), values), missing };
-}
-
-// ---------- 导出 / 打印 ----------
+// ---------- 一键整理格式 ----------
 
 // 一键整理富文本格式（保守清理，不动用户的字体/颜色/对齐设置）：
 // 1. 清除导入残留的背景高亮
@@ -267,45 +154,4 @@ export function smartTidyHtml(html: string): string {
   });
 
   return c.innerHTML;
-}
-
-const DOC_ENVELOPE_STYLE = `
-  body { font-family: "SimSun", "宋体", serif; font-size: 14pt; line-height: 2; max-width: 700px; margin: 40px auto; color: #000; }
-  p { margin: 0.35em 0; }
-  h1, h2, h3 { line-height: 1.5; }
-  ul, ol { padding-left: 2em; }
-  table { border-collapse: collapse; width: 100%; }
-  td, th { border: 1px solid #999; padding: 4px 8px; }
-`;
-
-// 导出为 Word（.doc，HTML 兼容格式，保留富文本排版，Word/WPS 可直接打开编辑）
-export function exportAsWord(docName: string, htmlContent: string) {
-  const html = `<!DOCTYPE html>
-<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word">
-<head><meta charset="utf-8"><title>${escapeHtml(docName)}</title>
-<style>${DOC_ENVELOPE_STYLE}</style></head>
-<body>${htmlContent}</body></html>`;
-  const blob = new Blob(["﻿", html], { type: "application/msword;charset=utf-8" });
-  downloadBlob(blob, `${docName}.doc`);
-}
-
-// 打印 / 另存 PDF（打开新窗口调用浏览器打印）
-export function printDoc(docName: string, htmlContent: string) {
-  const win = window.open("", "_blank");
-  if (!win) return;
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(docName)}</title>
-<style>${DOC_ENVELOPE_STYLE}</style>
-</head><body>${htmlContent}
-<script>window.onload = function(){ window.print(); }<\/script></body></html>`);
-  win.document.close();
-}
-
-// 导出模板原文为 .doc（保留排版与占位符标记）
-export function exportTemplateAsDoc(template: DocTemplate) {
-  exportAsWord(template.name, toHtml(template.content));
-}
-
-// 导出模板为 PDF（打印视图，浏览器"另存为 PDF"）
-export function exportTemplateAsPdf(template: DocTemplate) {
-  printDoc(template.name, toHtml(template.content));
 }

@@ -1,12 +1,13 @@
 // 菜单权限定义与校验工具（后端 + 前端共享语义，后端这份独立）
 // 菜单 key 与前端 MENU_PERMISSIONS 保持一致
 
-export const MENU_KEYS = ["talents", "pipeline", "jobs", "tasks", "templates", "profiles", "users"] as const;
+export const MENU_KEYS = ["talents", "pipeline", "funnel", "jobs", "tasks", "templates", "profiles", "users"] as const;
 export type MenuKey = (typeof MENU_KEYS)[number];
 
 export const MENU_LABELS: Record<MenuKey, string> = {
   talents: "人才库管理",
   pipeline: "招聘流程",
+  funnel: "招聘漏斗",
   jobs: "岗位管理",
   tasks: "跟进待办",
   templates: "模板库管理",

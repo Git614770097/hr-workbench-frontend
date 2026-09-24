@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { getSession } from "./auth";
-import { MERGE_FIELDS as TALENT_MERGE_FIELDS } from "../../types";
 import { genId } from "../helpers";
 
 const talents = new Hono<{ Bindings: Env }>();
@@ -13,15 +12,6 @@ function dateOrNull(v: unknown): string | null {
   if (typeof v !== "string") return null;
   const m = v.trim().match(/^(\d{4}-\d{2}-\d{2})/);
   return m ? m[1] : null;
-}
-
-// 合并预览用的字段指纹：只比较内容是否相同，不下发原值（避免把整份简历信息重复下发一遍）。
-// 归一化后做 FNV-1a 32 位哈希；同一组内手机号必然相同，因此该字段不会误报差异。
-function fieldSig(v: unknown): string {
-  const s = String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
-  return h.toString(16);
 }
 
 // Base64 <-> ArrayBuffer 转换（用于 KV 存储二进制文件）
@@ -97,145 +87,6 @@ talents.get("/", async (c) => {
   }));
 
   return c.json({ items, total: countResult?.total || 0, page, limit, pages: Math.ceil((countResult?.total || 0) / limit) });
-});
-
-// ---- 疑似重复（同手机号多条）----
-// 手机号非空且重复出现的人才分组，用于发现重复录入；数据隔离同列表（admin 看全部）。
-// 注意：必须注册在 /:id 之前，否则会被 /:id 抢先匹配。
-talents.get("/duplicates", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
-
-  const ownerCond = session.role === "admin" ? "" : "AND owner_id = ?";
-  const ownerParams: string[] = session.role === "admin" ? [] : [session.userId];
-
-  const dupRows = await c.env.DB.prepare(
-    `SELECT phone FROM talents WHERE phone IS NOT NULL AND TRIM(phone) != '' ${ownerCond} GROUP BY phone HAVING COUNT(*) > 1 ORDER BY COUNT(*) DESC LIMIT 100`
-  ).bind(...ownerParams).all<{ phone: string }>();
-
-  const phones = dupRows.results.map((r) => r.phone);
-  let groups: { phone: string; items: any[] }[] = [];
-  if (phones.length > 0) {
-    const ph = phones.map(() => "?").join(",");
-    // 除基础信息外，带上「判断留哪条」的依据：城市/学历/有无简历，以及关联数据条数
-    // （关联越多说明这条是主力记录，保留它意味着更少的迁移与更完整的历史）。
-    // t.* 只用于在服务端算出 sig（字段指纹），不下发原值，避免响应体过大。
-    const rows = await c.env.DB.prepare(
-      `SELECT t.*,
-              CASE WHEN t.resume_url IS NOT NULL AND TRIM(t.resume_url) != '' THEN 1 ELSE 0 END AS has_resume,
-              (SELECT COUNT(*) FROM communications cm WHERE cm.talent_id = t.id) AS comm_count,
-              (SELECT COUNT(*) FROM talent_jobs tj WHERE tj.talent_id = t.id) AS job_count
-       FROM talents t WHERE t.phone IN (${ph}) ${session.role === "admin" ? "" : "AND t.owner_id = ?"}
-       ORDER BY t.phone, t.updated_at DESC`
-    ).bind(...phones, ...ownerParams).all();
-
-    let map: Record<string, any[]> = {};
-    for (const r of rows.results as any[]) {
-      // sig：合并字段里「有值」的键 → 内容指纹。前端据此区分「将补入」与「内容不同」，
-      // 有值的键集合即该记录已填字段，无需再单独下发字段清单。
-      const sig: Record<string, string> = {};
-      for (const f of TALENT_MERGE_FIELDS) {
-        const v = r[f];
-        if (v !== null && v !== undefined && String(v).trim() !== "") sig[f] = fieldSig(v);
-      }
-      if (!map[r.phone]) map[r.phone] = [];
-      map[r.phone].push({
-        id: r.id, name: r.name, phone: r.phone, email: r.email,
-        current_title: r.current_title, current_company: r.current_company,
-        city: r.city, education: r.education, school: r.school,
-        status: r.status, created_at: r.created_at, updated_at: r.updated_at,
-        has_resume: r.has_resume ? 1 : 0,
-        comm_count: r.comm_count || 0, job_count: r.job_count || 0,
-        sig,
-      });
-    }
-    groups = phones.map((p) => ({ phone: p, items: map[p] || [] })).filter((g) => g.items.length > 1);
-  }
-
-  return c.json({ groups, total: groups.length });
-});
-
-// ---- 合并重复人才 ----
-// 把 merge_ids 并入 keep_id：字段只补空（不覆盖保留记录已有值）、关联数据（候选-岗位/
-// 沟通记录/待办）迁移到保留记录，最后删除来源记录。整体走 D1 batch 事务，失败即回滚。
-talents.post("/merge", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
-  const body = await c.req.json<{ keep_id?: string; merge_ids?: string[] }>();
-  const keepId = body.keep_id || "";
-  const mergeIds = (body.merge_ids || []).filter((id) => id && id !== keepId);
-  if (!keepId || mergeIds.length === 0) return c.json({ error: "请指定保留记录与要合并的记录" }, 400);
-
-  const scope = session.role === "admin" ? "" : "AND owner_id = ?";
-  const scopeParams: string[] = session.role === "admin" ? [] : [session.userId];
-
-  const keep = await c.env.DB.prepare(`SELECT * FROM talents WHERE id = ? ${scope}`)
-    .bind(keepId, ...scopeParams).first<Record<string, any>>();
-  if (!keep) return c.json({ error: "保留的人才不存在或无权限" }, 404);
-
-  const ph = mergeIds.map(() => "?").join(",");
-  const srcRes = await c.env.DB.prepare(`SELECT * FROM talents WHERE id IN (${ph}) ${scope}`)
-    .bind(...mergeIds, ...scopeParams).all<Record<string, any>>();
-  const sources = srcRes.results || [];
-  if (sources.length !== mergeIds.length) return c.json({ error: "部分待合并的人才不存在或无权限" }, 400);
-
-  // 字段合并：只补保留记录为空的字段（字段清单与前端「合并预览」共用同一份定义）
-  const MERGE_FIELDS = TALENT_MERGE_FIELDS;
-  const isEmpty = (v: unknown) => v === null || v === undefined || v === "";
-  const merged: Record<string, any> = {};
-  for (const f of MERGE_FIELDS) {
-    if (!isEmpty(keep[f])) continue;
-    const hit = sources.find((s) => !isEmpty(s[f]));
-    if (hit) merged[f] = hit[f];
-  }
-  // 简历：保留记录没有时借用来源的 resume_url（其本身就是 KV key，原样引用，不搬文件）
-  if (isEmpty(keep.resume_url)) {
-    const hit = sources.find((s) => !isEmpty(s.resume_url));
-    if (hit) merged.resume_url = hit.resume_url;
-  }
-
-  const keepJobRows = await c.env.DB.prepare("SELECT job_id FROM talent_jobs WHERE talent_id = ?")
-    .bind(keepId).all<{ job_id: string }>();
-  const keepJobs = new Set((keepJobRows.results || []).map((r) => r.job_id));
-
-  const stmts: any[] = [];
-  for (const s of sources) {
-    // 候选-岗位：保留记录已有的岗位则丢弃来源行（连带其阶段日志）；否则迁移
-    const sJobs = await c.env.DB.prepare("SELECT id, job_id FROM talent_jobs WHERE talent_id = ?")
-      .bind(s.id).all<{ id: string; job_id: string }>();
-    for (const tj of (sJobs.results || [])) {
-      if (keepJobs.has(tj.job_id)) {
-        stmts.push(c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id = ?").bind(tj.id));
-        stmts.push(c.env.DB.prepare("DELETE FROM talent_jobs WHERE id = ?").bind(tj.id));
-      } else {
-        stmts.push(c.env.DB.prepare("UPDATE talent_jobs SET talent_id = ?, updated_at = datetime('now') WHERE id = ?").bind(keepId, tj.id));
-        keepJobs.add(tj.job_id);
-      }
-    }
-    // 沟通记录 / 待办 迁移
-    stmts.push(c.env.DB.prepare("UPDATE communications SET talent_id = ? WHERE talent_id = ?").bind(keepId, s.id));
-    stmts.push(c.env.DB.prepare("UPDATE talent_tasks SET talent_id = ? WHERE talent_id = ?").bind(keepId, s.id));
-  }
-
-  const setFields = Object.keys(merged);
-  if (setFields.length > 0) {
-    const setSql = setFields.map((f) => `${f} = ?`).join(", ");
-    stmts.push(c.env.DB.prepare(`UPDATE talents SET ${setSql}, updated_at = datetime('now') WHERE id = ?`)
-      .bind(...setFields.map((f) => merged[f]), keepId));
-  }
-  stmts.push(c.env.DB.prepare(`DELETE FROM talents WHERE id IN (${ph})`).bind(...mergeIds));
-
-  await c.env.DB.batch(stmts);
-
-  // 清理未被复用的来源简历（KV），保留借用过来的那一份
-  const reusedUrl = merged.resume_url;
-  for (const s of sources) {
-    if (s.resume_url && s.resume_url !== reusedUrl) {
-      try { await c.env.RESUMES.delete(s.resume_url); } catch { /* 忽略清理失败 */ }
-    }
-  }
-
-  return c.json({ ok: true, kept: keepId, merged: mergeIds.length });
 });
 
 // ---- 人才详情 ----

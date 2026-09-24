@@ -12,6 +12,17 @@ type Stage = (typeof STAGES)[number];
 // 终态：不再计入「进行中」
 const TERMINAL: Stage[] = ["hired", "rejected", "withdrawn"];
 
+// 阶段展示元信息（与前端 types.ts 的 PIPELINE_STAGES 保持一致）
+const STAGE_LABELS: Record<Stage, { label: string; color: string }> = {
+  screening:  { label: "简历筛选", color: "#0ea5e9" },
+  interview1: { label: "初试",     color: "#6366f1" },
+  interview2: { label: "复试",     color: "#8b5cf6" },
+  offer:      { label: "Offer",    color: "#f59e0b" },
+  hired:      { label: "已入职",   color: "#10b981" },
+  rejected:   { label: "已淘汰",   color: "#ef4444" },
+  withdrawn:  { label: "已放弃",   color: "#94a3b8" },
+};
+
 // ---- 看板：按阶段返回候选人 ----
 // 查询参数：job_id（可选，不传=全部岗位）、owner_id（可选，管理员用）、q（姓名搜索）
 pipeline.get("/", async (c) => {
@@ -113,6 +124,210 @@ pipeline.get("/stale", async (c) => {
     .sort((a, b) => b.days_stale - a.days_stale);
 
   return c.json({ items, total: items.length });
+});
+
+// ============================================================
+// 招聘漏斗（funnel）
+// 口径说明：阶段人数采用「曾到达」口径 —— 只要 job_stage_logs 里出现过
+// to_stage = 该阶段的记录，就计入该阶段人数。这样即便候选人后续被淘汰/
+// 放弃，也仍然计入漏斗上层，漏斗才单调递减。
+// 注意：本路由必须注册在任何 /:linkId 之前。
+// ============================================================
+
+// 漏斗主线（不含终态分支）
+const FUNNEL_ORDER: Stage[] = ["screening", "interview1", "interview2", "offer", "hired"];
+
+// 把毫秒差转成「天」（保留 1 位小数）
+function toDays(ms: number): number {
+  return Math.max(0, Math.round((ms / 86400000) * 10) / 10);
+}
+
+// 解析 D1 的 datetime('now') 字符串（UTC，无时区后缀）→ 毫秒
+function parseSqlTime(s: string | null | undefined): number | null {
+  if (!s) return null;
+  const t = new Date(s.includes("T") || s.includes("Z") ? s : s.replace(" ", "T") + "Z").getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+pipeline.get("/funnel", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const jobId = c.req.query("job_id");
+  const ownerId = c.req.query("owner_id");
+  const days = Number(c.req.query("days") || 0); // 0 = 全部时间
+
+  // 权限：非 admin 只看自己的人才
+  const conds: string[] = [];
+  const params: (string | number)[] = [];
+  if (session.role !== "admin") {
+    conds.push("t.owner_id = ?");
+    params.push(session.userId);
+  } else if (ownerId) {
+    conds.push("t.owner_id = ?");
+    params.push(ownerId);
+  }
+  if (jobId) { conds.push("tj.job_id = ?"); params.push(jobId); }
+  if (days > 0) {
+    conds.push("tj.created_at >= datetime('now', ?)");
+    params.push(`-${days} days`);
+  }
+  const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
+
+  // 一次查出所有候选人的全部流转日志（含 join 出来的岗位/人才信息）
+  const rows = await c.env.DB.prepare(`
+    SELECT tj.id AS link_id, tj.stage AS current_stage, tj.created_at AS entered_at,
+           t.id AS talent_id, t.name, t.created_at AS talent_created_at, t.source,
+           j.id AS job_id, j.title AS job_title,
+           l.from_stage, l.to_stage, l.created_at AS log_at
+    FROM talent_jobs tj
+    JOIN talents t ON tj.talent_id = t.id
+    LEFT JOIN jobs j ON tj.job_id = j.id
+    LEFT JOIN job_stage_logs l ON l.talent_job_id = tj.id
+    ${where}
+    ORDER BY tj.id, l.created_at ASC
+  `).bind(...params).all();
+
+  // ---- 按候选人聚合 ----
+  interface Cand {
+    link_id: string;
+    current_stage: string;
+    entered_at: string | null;
+    talent_id: string;
+    name: string;
+    talent_created_at: string | null;
+    source: string | null;
+    job_id: string | null;
+    job_title: string | null;
+    reached: Set<Stage>;
+    firstEnter: Record<string, number>; // 首次到达某阶段的时间
+    lastLogAt: number;
+  }
+  const map = new Map<string, Cand>();
+  for (const r of rows.results as any[]) {
+    let cd = map.get(r.link_id);
+    if (!cd) {
+      cd = {
+        link_id: r.link_id,
+        current_stage: r.current_stage,
+        entered_at: r.entered_at,
+        talent_id: r.talent_id,
+        name: r.name,
+        talent_created_at: r.talent_created_at,
+        source: r.source,
+        job_id: r.job_id,
+        job_title: r.job_title,
+        reached: new Set<Stage>(),
+        firstEnter: {},
+        lastLogAt: 0,
+      };
+      map.set(r.link_id, cd);
+    }
+    if (r.to_stage) {
+      const st = r.to_stage as Stage;
+      cd.reached.add(st);
+      const ts = parseSqlTime(r.log_at);
+      if (ts != null) {
+        if (cd.firstEnter[st] == null || ts < cd.firstEnter[st]) cd.firstEnter[st] = ts;
+        if (ts > cd.lastLogAt) cd.lastLogAt = ts;
+      }
+    }
+  }
+  const cands = [...map.values()];
+
+  // ---- 各阶段人数与转化率 ----
+  const counts: Record<string, number> = {};
+  for (const s of FUNNEL_ORDER) {
+    counts[s] = cands.filter((cd) => cd.reached.has(s)).length;
+  }
+
+  const stages = FUNNEL_ORDER.map((s, i) => {
+    const meta = STAGE_LABELS[s];
+    const count = counts[s];
+    const prev = i === 0 ? count : counts[FUNNEL_ORDER[i - 1]];
+    const rate = i === 0 ? (count > 0 ? 1 : 0) : (prev > 0 ? count / prev : 0);
+    const drop = i === 0 ? 0 : Math.max(0, prev - count);
+    return {
+      key: s,
+      label: meta.label,
+      color: meta.color,
+      count,
+      prev_count: prev,
+      rate: Math.round(rate * 1000) / 1000, // 相对上一级转化率
+      overall_rate: counts[FUNNEL_ORDER[0]] > 0
+        ? Math.round((count / counts[FUNNEL_ORDER[0]]) * 1000) / 1000
+        : 0,
+      drop,
+    };
+  });
+
+  // ---- 平均停留天数（当前阶段）：用最后一条日志时间近似 ----
+  const now = Date.now();
+  const stageStay: Record<string, number[]> = {};
+  for (const s of FUNNEL_ORDER) stageStay[s] = [];
+  for (const cd of cands) {
+    if (!FUNNEL_ORDER.includes(cd.current_stage as Stage)) continue;
+    // 优先用「首次到达当前阶段」的时间，缺失则回退到最后一条日志
+    const since = cd.firstEnter[cd.current_stage] ?? cd.lastLogAt ?? parseSqlTime(cd.entered_at) ?? now;
+    stageStay[cd.current_stage].push(toDays(now - since));
+  }
+
+  // ---- 周期指标（只对有完整链路的人计算）----
+  const tti: number[] = [];      // 简历入库 → 首次进入面试（interview1）
+  const toOffer: number[] = [];  // 首次面试 → Offer
+  const toHire: number[] = [];   // Offer → 入职
+  const total: number[] = [];    // 入库 → 入职
+
+  for (const cd of cands) {
+    const start = parseSqlTime(cd.talent_created_at) ?? parseSqlTime(cd.entered_at);
+    const iv = cd.firstEnter["interview1"];
+    const of = cd.firstEnter["offer"];
+    const hi = cd.firstEnter["hired"];
+
+    if (start != null && iv != null && iv >= start) tti.push(toDays(iv - start));
+    if (iv != null && of != null && of >= iv) toOffer.push(toDays(of - iv));
+    if (of != null && hi != null && hi >= of) toHire.push(toDays(hi - of));
+    if (start != null && hi != null && hi >= start) total.push(toDays(hi - start));
+  }
+
+  const avg = (arr: number[]) =>
+    arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
+
+  // ---- 汇总卡片 ----
+  const first = counts["screening"] || cands.length;
+  const hired = counts["hired"];
+  const rejected = cands.filter((cd) => cd.reached.has("rejected")).length;
+  const withdrawn = cands.filter((cd) => cd.reached.has("withdrawn")).length;
+  const inProgress = cands.filter((cd) => !TERMINAL.includes(cd.current_stage as Stage)).length;
+
+  return c.json({
+    stages,
+    stage_stay: FUNNEL_ORDER.map((s) => ({
+      key: s,
+      label: STAGE_LABELS[s].label,
+      avg_days: avg(stageStay[s]),
+      count: stageStay[s].length,
+    })),
+    cycles: {
+      tti: avg(tti),
+      to_offer: avg(toOffer),
+      to_hire: avg(toHire),
+      total: avg(total),
+      tti_n: tti.length,
+      to_offer_n: toOffer.length,
+      to_hire_n: toHire.length,
+      total_n: total.length,
+    },
+    summary: {
+      total: cands.length,
+      entered: first,
+      in_progress: inProgress,
+      hired,
+      rejected,
+      withdrawn,
+      overall_rate: first > 0 ? Math.round((hired / first) * 1000) / 1000 : 0,
+    },
+  });
 });
 
 // ---- 把人才加入岗位（创建候选人关联）----

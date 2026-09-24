@@ -7,7 +7,7 @@ import {
 import {
   DeleteOutlined, ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
-  FileWordOutlined, WarningOutlined,
+  FileWordOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -15,26 +15,21 @@ import type { Talent, User } from "../types";
 import { STATUS_LABELS, STATUS_COLORS, EDUCATION_OPTIONS } from "../types";
 import ImportModal from "../components/ImportModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
-import DuplicateTalentsModal from "../components/DuplicateTalentsModal";
 
 // 搜索条件（draft = 编辑中，applied = 已生效）
 interface Filters {
   name: string;
   phone: string;
-  email: string;
-  age: number | null;
   education: string;
-  school: string;
   years: number | null;
-  city: string;
   title: string;
   status: string;
   owner_id: string;
 }
 
 const EMPTY_FILTERS: Filters = {
-  name: "", phone: "", email: "", age: null, education: "", school: "",
-  years: null, city: "", title: "", status: "", owner_id: "",
+  name: "", phone: "", education: "",
+  years: null, title: "", status: "", owner_id: "",
 };
 
 // 搜索条件 → 查询参数。列表查询与导出共用一份，
@@ -43,12 +38,8 @@ function buildFilterParams(f: Filters): Record<string, string | number> {
   const params: Record<string, string | number> = {};
   if (f.name) params.name = f.name;
   if (f.phone) params.phone = f.phone;
-  if (f.email) params.email = f.email;
-  if (f.age != null) params.age = f.age;
   if (f.education) params.education = f.education;
-  if (f.school) params.school = f.school;
   if (f.years != null) params.years = f.years;
-  if (f.city) params.city = f.city;
   if (f.title) params.title = f.title;
   if (f.status) params.status = f.status;
   if (f.owner_id) params.owner_id = f.owner_id;
@@ -81,8 +72,6 @@ export default function TalentList() {
 
   // 弹窗状态
   const [importModalOpen, setImportModalOpen] = useState(false);
-  // 疑似重复检测弹窗
-  const [dupModalOpen, setDupModalOpen] = useState(false);
   const [previewTalent, setPreviewTalent] = useState<Talent | null>(null);
 
   // 导出状态
@@ -276,12 +265,8 @@ export default function TalentList() {
     { key: "name", label: "姓名", control: <Input style={controlStyle} placeholder="请输入姓名" value={draft.name} onChange={(e) => setField("name", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "title", label: "职位", control: <Input style={controlStyle} placeholder="请输入职位" value={draft.title} onChange={(e) => setField("title", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "years", label: "年限", control: <InputNumber style={controlStyle} value={draft.years} onChange={(v) => setField("years", v ?? null)} min={0} max={50} placeholder="请输入年限" /> },
-    { key: "age", label: "年龄", control: <InputNumber style={controlStyle} value={draft.age} onChange={(v) => setField("age", v ?? null)} min={16} max={80} placeholder="请输入年龄" /> },
     { key: "education", label: "学历", control: <Select style={controlStyle} value={draft.education || undefined} onChange={(v) => setField("education", v || "")} allowClear placeholder="请选择学历" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} /> },
-    { key: "city", label: "城市", control: <Input style={controlStyle} placeholder="请输入城市" value={draft.city} onChange={(e) => setField("city", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    { key: "school", label: "院校", control: <Input style={controlStyle} placeholder="请输入院校" value={draft.school} onChange={(e) => setField("school", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    { key: "email", label: "邮箱", control: <Input style={controlStyle} placeholder="请输入邮箱" value={draft.email} onChange={(e) => setField("email", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "status", label: "状态", control: <Select style={controlStyle} value={draft.status || undefined} onChange={(v) => setField("status", v || "")} allowClear placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} /> },
     ...(isAdmin && users.length > 0
       ? [{ key: "owner_id", label: "创建人", control: <Select style={controlStyle} value={draft.owner_id || undefined} onChange={(v) => setField("owner_id", v || "")} allowClear placeholder="请选择创建人" options={users.map((u) => ({ label: u.name, value: u.id }))} /> }]
@@ -381,7 +366,6 @@ export default function TalentList() {
             两者形成一条对齐的右侧操作区，不要另起一行。 */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <Space>
-            <Button icon={<WarningOutlined />} onClick={() => setDupModalOpen(true)}>疑似重复</Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
             <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
               <Button icon={<ExportOutlined />} loading={exporting}>导出</Button>
@@ -424,9 +408,6 @@ export default function TalentList() {
         onClose={() => setImportModalOpen(false)}
         onSuccess={refreshAfterImport}
       />
-
-      {/* 疑似重复人才检测（按手机号分组，可一键合并） */}
-      <DuplicateTalentsModal open={dupModalOpen} onClose={() => setDupModalOpen(false)} onMerged={refreshAfterImport} />
 
       {/* 简历预览弹窗（PDF 原生渲染保留格式；Word 在线转 HTML 查看，不下载） */}
       <ResumePreviewModal talent={previewTalent} onClose={() => setPreviewTalent(null)} />

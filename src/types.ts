@@ -26,11 +26,12 @@ export interface UserRow {
 
 // 菜单权限 key（与后端 src/worker/permissions.ts 保持一致）
 export type MenuKey =
-  | "talents" | "pipeline" | "jobs" | "tasks" | "templates" | "profiles" | "users";
+  | "talents" | "pipeline" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "users";
 
 export const MENU_PERMISSIONS: { key: MenuKey; label: string }[] = [
   { key: "talents", label: "人才库管理" },
   { key: "pipeline", label: "招聘流程" },
+  { key: "funnel", label: "招聘漏斗" },
   { key: "jobs", label: "岗位管理" },
   { key: "tasks", label: "跟进待办" },
   { key: "templates", label: "模板库管理" },
@@ -82,18 +83,6 @@ export const EDUCATION_OPTIONS = [
   "高中及以下", "中专", "大专", "本科", "硕士", "博士", "MBA/EMBA", "其他",
 ];
 
-export interface Communication {
-  id: string;
-  talent_id: string;
-  user_id: string;
-  user_name?: string;
-  type: string;
-  content: string | null;
-  rating: number | null;
-  follow_up_date: string | null;
-  created_at: string;
-}
-
 export interface DocTemplate {
   id: string;
   owner_id: string;
@@ -132,55 +121,6 @@ export interface PaginatedResponse<T> {
   pages: number;
 }
 
-// 疑似重复：同一手机号下的多条人才记录
-export interface DuplicateTalentItem {
-  id: string;
-  name: string;
-  phone: string;
-  email: string | null;
-  current_title: string | null;
-  current_company: string | null;
-  city: string | null;
-  education: string | null;
-  school: string | null;
-  status: string | null;
-  /** 1 / 0：是否已上传简历文件 */
-  has_resume: number;
-  /** 关联数据条数，用于判断留哪条更划算 */
-  comm_count: number;
-  job_count: number;
-  created_at: string | null;
-  updated_at: string | null;
-  /** 合并字段中「有值」的键 → 内容指纹。键集合 = 已填字段，
-   *  与其它记录指纹不同 = 内容有差异（合并时会以保留记录为准）。 */
-  sig: Record<string, string>;
-}
-export interface DuplicateGroup {
-  phone: string;
-  items: DuplicateTalentItem[];
-}
-
-/** 合并重复人才时「只补空、不覆盖」的字段。
- *  name / status 刻意不参与：姓名不同往往意味着根本不是同一人（需人工判断），
- *  在招状态是业务流转结果，不能因为合并被回退。 */
-export const MERGE_FIELDS = [
-  "phone", "email", "age", "gender", "education", "school", "current_company",
-  "current_title", "years_experience", "city", "skills", "industry",
-  "expected_salary", "expected_city", "notes",
-] as const;
-
-export const MERGE_FIELD_LABELS: Record<string, string> = {
-  phone: "手机号", email: "邮箱", age: "年龄", gender: "性别", education: "学历",
-  school: "毕业院校", current_company: "当前公司", current_title: "当前职位",
-  years_experience: "工作年限", city: "城市", skills: "技能", industry: "行业",
-  expected_salary: "期望薪资", expected_city: "期望城市", notes: "备注",
-};
-
-/** 关联数据量打分：条数越多说明这条是主力记录，默认保留它 */
-export function duplicateWeight(it: DuplicateTalentItem): number {
-  return (it.job_count || 0) * 3 + (it.comm_count || 0) * 2 + (it.has_resume ? 1 : 0);
-}
-
 export const STATUS_LABELS: Record<string, string> = {
   active: "在职看机会",
   passive: "被动接触",
@@ -193,14 +133,6 @@ export const STATUS_COLORS: Record<string, string> = {
   passive: "#f59e0b",
   placed: "#3b82f6",
   do_not_contact: "#ef4444",
-};
-
-export const COMM_TYPES: Record<string, string> = {
-  call: "电话",
-  wechat: "微信",
-  interview: "面试",
-  email: "邮件",
-  other: "其他",
 };
 
 export const ROLE_LABELS: Record<string, string> = {
@@ -367,6 +299,54 @@ export interface StageLog {
   created_at: string;
 }
 
+// ---- 招聘漏斗 ----
+// 阶段人数采用「曾到达」口径：日志里出现过即计入，漏斗因此单调递减
+export interface FunnelStageItem {
+  key: Stage;
+  label: string;
+  color: string;
+  count: number;         // 该阶段人数
+  prev_count: number;    // 上一阶段人数（首级 = 自身）
+  rate: number;          // 相对上一级转化率（0~1）
+  overall_rate: number;  // 相对漏斗顶层转化率（0~1）
+  drop: number;          // 相对上一级流失人数
+}
+
+export interface FunnelStayItem {
+  key: Stage;
+  label: string;
+  avg_days: number | null;  // 平均停留天数（当前仍在阶段内的人）
+  count: number;
+}
+
+export interface FunnelCycles {
+  tti: number | null;        // 简历入库 → 首次面试（天）
+  to_offer: number | null;   // 首次面试 → Offer（天）
+  to_hire: number | null;    // Offer → 入职（天）
+  total: number | null;      // 入库 → 入职（天）
+  tti_n: number;
+  to_offer_n: number;
+  to_hire_n: number;
+  total_n: number;
+}
+
+export interface FunnelSummary {
+  total: number;        // 进入流程的候选人总数（人·岗位）
+  entered: number;      // 进入简历筛选的人数
+  in_progress: number;  // 进行中
+  hired: number;
+  rejected: number;
+  withdrawn: number;
+  overall_rate: number; // 整体转化率（入职 / 进入流程）
+}
+
+export interface FunnelResponse {
+  stages: FunnelStageItem[];
+  stage_stay: FunnelStayItem[];
+  cycles: FunnelCycles;
+  summary: FunnelSummary;
+}
+
 // ---- 跟进待办 ----
 export type TaskStatus = "pending" | "done" | "cancelled";
 
@@ -408,24 +388,7 @@ export const TASK_SOURCE_LABELS: Record<string, string> = {
 // 智能匹配：多份简历 + 人才画像 → 排序推荐
 // ============================================================
 
-/** 人才画像的级别（初级/中级/高级…），每个级别有独立的年限/学历/技能/城市与市场薪资 */
-export interface MatchProfileLevel {
-  id?: string;
-  name: string;
-  min_years: number | null;
-  max_years: number | null;
-  education: string;
-  city: string;
-  must_skills: string[];
-  nice_skills: string[];
-  requirements: string;
-  salary_min: number | null;
-  salary_max: number | null;
-  salary_note: string;
-  sort_order: number;
-}
-
-/** 人才画像（一个职位，可挂多个级别；不分级时 levels 为空数组） */
+/** 人才画像（一个职位一份整体要求；不再按级别分档） */
 export interface MatchProfile {
   id?: string;
   name: string;
@@ -440,7 +403,6 @@ export interface MatchProfile {
   nice_skills: string[];
   requirements: string;
   jd_raw: string;
-  levels: MatchProfileLevel[];
   created_at?: string;
   updated_at?: string;
 }
@@ -458,22 +420,6 @@ export const EMPTY_MATCH_PROFILE: MatchProfile = {
   nice_skills: [],
   requirements: "",
   jd_raw: "",
-  levels: [],
-};
-
-export const EMPTY_MATCH_LEVEL: MatchProfileLevel = {
-  name: "",
-  min_years: null,
-  max_years: null,
-  education: "",
-  city: "",
-  must_skills: [],
-  nice_skills: [],
-  requirements: "",
-  salary_min: null,
-  salary_max: null,
-  salary_note: "",
-  sort_order: 0,
 };
 
 /** 硬性条件判定（规则算出，不随 AI 波动）。ok 为 null = 无法判定（画像未要求或简历未体现） */
@@ -497,24 +443,6 @@ export interface MatchResult {
   hard: MatchHardCheck;
   /** ai=AI 语义评分；rule=未配密钥或 AI 失败时的硬性条件估算 */
   source: "ai" | "rule";
-  /** 级别落位信息（画像分级时返回）：候选人年限落在哪个级别、该级别市场薪资 */
-  level: MatchLevelInfo | null;
-}
-
-/** 评分时的级别落位结果 */
-export interface MatchLevelInfo {
-  name: string;
-  min_years: number | null;
-  max_years: number | null;
-  salary_min: number | null;
-  salary_max: number | null;
-  salary_note: string;
-  /** 低于最低级别 */
-  below: boolean;
-  /** 高于最高级别 */
-  above: boolean;
-  next_level: string | null;
-  gap_years: number | null;
 }
 
 export const VERDICT_COLORS: Record<string, string> = {

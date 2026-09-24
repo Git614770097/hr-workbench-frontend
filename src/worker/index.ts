@@ -4,7 +4,6 @@ import { logger } from "hono/logger";
 import { getCookie } from "hono/cookie";
 import { authRoutes } from "./routes/auth";
 import { talentRoutes } from "./routes/talents";
-import { communicationRoutes } from "./routes/communications";
 import { templateRoutes } from "./routes/templates";
 import { roleRoutes } from "./routes/roles";
 import { jobRoutes } from "./routes/jobs";
@@ -88,6 +87,10 @@ app.use("/api/pipeline", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
+// 招聘漏斗：与「招聘流程」同源数据，但页面是独立菜单。
+// 只统计、不修改数据，因此不额外要求 funnel 权限 ——
+// 有 pipeline 权限即可查看（避免存量角色看不到数据）。
+// 注：路由为 /api/pipeline/funnel，已被上面 /api/pipeline/* 覆盖。
 // 跟进待办
 app.use("/api/tasks/*", async (c, next) => {
   const blocked = await menuGuard(c, "tasks");
@@ -141,7 +144,6 @@ app.use("/api/roles/*", async (c, next) => {
 // ---- API Routes ----
 app.route("/api/auth", authRoutes);
 app.route("/api/talents", talentRoutes);
-app.route("/api/communications", communicationRoutes);
 app.route("/api/templates", templateRoutes);
 app.route("/api/roles", roleRoutes);
 app.route("/api/jobs", jobRoutes);

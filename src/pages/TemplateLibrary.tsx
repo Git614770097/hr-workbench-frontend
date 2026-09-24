@@ -1,32 +1,17 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Card, Input, Select, Button, Tag, Typography, Modal, Form,
-  message, Popconfirm, Upload, Tooltip, Table, Tabs, Dropdown, Space,
+  message, Popconfirm, Tooltip, Table, Tabs,
 } from "antd";
-import type { MenuProps } from "antd";
 import {
   PlusOutlined, SearchOutlined, FileTextOutlined, EditOutlined,
-  DeleteOutlined, DownloadOutlined, EyeOutlined, ThunderboltOutlined,
-  ImportOutlined, ReloadOutlined, CopyOutlined,
-  FileWordOutlined, FilePdfOutlined, FormatPainterOutlined,
+  DeleteOutlined, EyeOutlined, ReloadOutlined, CopyOutlined,
 } from "@ant-design/icons";
-import mammoth from "mammoth";
 import { api } from "../api";
 import type { DocTemplate, User } from "../types";
 import { TEMPLATE_CATEGORIES, SCOPE_LABELS, SCOPE_COLORS } from "../types";
-import { extractPlaceholders, exportTemplateAsDoc, exportTemplateAsPdf, toHtml, stripHtml, smartTidyHtml } from "../utils/template";
-import { parseDocFile } from "../utils/docImport";
-import GenerateDocModal from "../components/GenerateDocModal";
+import { toHtml, stripHtml, smartTidyHtml } from "../utils/template";
 import RichTextEditor from "../components/RichTextEditor";
-
-/** 批量一键格式化的预览行：before=当前内容，after=重排后内容 */
-interface TidyRow {
-  id: string;
-  name: string;
-  before: string;
-  after: string;
-  changed: boolean;
-}
 
 export default function TemplateLibrary() {
   const [templates, setTemplates] = useState<DocTemplate[]>([]);
@@ -42,7 +27,6 @@ export default function TemplateLibrary() {
   const [editTarget, setEditTarget] = useState<DocTemplate | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [viewTarget, setViewTarget] = useState<DocTemplate | null>(null);
-  const [generateTarget, setGenerateTarget] = useState<DocTemplate | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
 
@@ -121,55 +105,6 @@ export default function TemplateLibrary() {
     }
   };
 
-  // 导出菜单（Word / PDF）
-  const exportMenuItems: MenuProps["items"] = [
-    { key: "word", label: "导出 Word", icon: <FileWordOutlined /> },
-    { key: "pdf", label: "导出 PDF", icon: <FilePdfOutlined /> },
-  ];
-  const onExportMenuClick = (t: DocTemplate): MenuProps["onClick"] => ({ key }) => {
-    if (key === "word") exportTemplateAsDoc(t);
-    else if (key === "pdf") exportTemplateAsPdf(t);
-  };
-
-  // 导入：.docx 保留排版转 HTML；.doc 按形态解析（HTML 型保留排版，RTF/二进制型提取文字）；.txt 按段落转换
-  const handleImportFile = async (file: File) => {
-    const name = file.name.toLowerCase();
-    try {
-      let html = "";
-      let hint: string | null = null;
-      if (name.endsWith(".docx")) {
-        const result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
-        html = result.value;
-      } else if (name.endsWith(".doc")) {
-        const result = await parseDocFile(file);
-        html = result.html;
-        if (result.mode === "text") hint = "旧版二进制 .doc 已按纯文本提取，可用「一键整理格式」自动排版";
-      } else if (name.endsWith(".txt")) {
-        html = toHtml(await file.text());
-      } else {
-        message.error("仅支持 .doc / .docx / .txt 文件");
-        return false;
-      }
-      if (!stripHtml(html).trim()) {
-        message.error("未能从文件中提取到文字内容");
-        return false;
-      }
-      setEditTarget(null);
-      form.setFieldsValue({
-        name: file.name.replace(/\.(docx?|txt)$/i, ""),
-        category: "证明文档",
-        content: html,
-        scope: "shared",
-      });
-      setEditOpen(true);
-      if (hint) message.info(hint, 5);
-      else message.success("已提取文件内容，可在编辑器中调整后保存");
-    } catch {
-      message.error("文件解析失败");
-    }
-    return false;
-  };
-
   // 一键整理格式：按中文文档惯例自动排版，先预览，用户选择采用或放弃
   const [tidyPreview, setTidyPreview] = useState<string | null>(null);
   const handleSmartTidy = () => {
@@ -186,61 +121,6 @@ export default function TemplateLibrary() {
       message.success("已采用整理后的排版，可继续微调");
     }
     setTidyPreview(null);
-  };
-
-  // ---- 批量一键格式化（列表页直接对勾选的模板重排，先整体预览再决定是否写入）----
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [tidyBatch, setTidyBatch] = useState<TidyRow[] | null>(null);
-  const [applying, setApplying] = useState(false);
-
-  const handleTidyBatch = () => {
-    const targets = templates.filter((t) => selectedIds.includes(t.id));
-    if (targets.length === 0) {
-      message.warning("请先勾选需要格式化的模板");
-      return;
-    }
-    setTidyBatch(
-      targets.map((t) => {
-        const before = toHtml(t.content);
-        const after = smartTidyHtml(before);
-        return { id: t.id, name: t.name, before, after, changed: after !== before };
-      })
-    );
-  };
-
-  const applyTidyBatch = async () => {
-    const rows = tidyBatch || [];
-    const changed = rows.filter((r) => r.changed);
-    if (changed.length === 0) {
-      message.info("所选模板的排版已经是规范的，无需调整");
-      setTidyBatch(null);
-      return;
-    }
-    setApplying(true);
-    let ok = 0;
-    let fail = 0;
-    for (const r of changed) {
-      const t = templates.find((x) => x.id === r.id);
-      if (!t) continue;
-      try {
-        // 传完整字段：后端 PUT 是 COALESCE 语义，缺字段会被绑成 undefined
-        await api.updateTemplate(r.id, {
-          name: t.name,
-          category: t.category,
-          content: r.after,
-          scope: t.scope,
-        });
-        ok += 1;
-      } catch {
-        fail += 1;
-      }
-    }
-    setApplying(false);
-    setTidyBatch(null);
-    setSelectedIds([]);
-    fetchTemplates();
-    if (fail > 0) message.warning(`已格式化 ${ok} 个模板，${fail} 个失败（可能没有修改权限）`);
-    else message.success(`已格式化 ${ok} 个模板`);
   };
 
   const columns = [
@@ -271,24 +151,6 @@ export default function TemplateLibrary() {
       render: (v: string) => <Tag color={SCOPE_COLORS[v] || "default"}>{SCOPE_LABELS[v] || "共享"}</Tag>,
     },
     {
-      title: "占位符",
-      dataIndex: "content",
-      key: "placeholders",
-      width: 240,
-      render: (content: string) => {
-        const keys = extractPlaceholders(content);
-        if (keys.length === 0) return <Typography.Text type="secondary" style={{ fontSize: 12 }}>无</Typography.Text>;
-        return (
-          <span>
-            {keys.slice(0, 3).map((k) => (
-              <Tag key={k} style={{ fontSize: 11, marginInlineEnd: 4 }}>{`{{${k}}}`}</Tag>
-            ))}
-            {keys.length > 3 && <Typography.Text type="secondary" style={{ fontSize: 12 }}>+{keys.length - 3}</Typography.Text>}
-          </span>
-        );
-      },
-    },
-    {
       title: "来源",
       dataIndex: "owner_name",
       key: "owner",
@@ -306,16 +168,10 @@ export default function TemplateLibrary() {
     {
       title: "操作",
       key: "actions",
-      width: 250,
+      width: 140,
       render: (_: any, t: DocTemplate) => (
         <span style={{ display: "inline-flex", gap: 4 }}>
-          <Button type="primary" size="small" icon={<ThunderboltOutlined />} onClick={() => setGenerateTarget(t)}>套用生成</Button>
           <Tooltip title="查看"><Button size="small" icon={<EyeOutlined />} onClick={() => setViewTarget(t)} /></Tooltip>
-          <Tooltip title="导出模板">
-            <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick(t) }} trigger={["click"]}>
-              <Button size="small" icon={<DownloadOutlined />} />
-            </Dropdown>
-          </Tooltip>
           {canModify(t) ? (
             <>
               <Tooltip title="编辑"><Button size="small" icon={<EditOutlined />} onClick={() => openEdit(t)} /></Tooltip>
@@ -350,14 +206,6 @@ export default function TemplateLibrary() {
           <Button type="primary" icon={<SearchOutlined />} onClick={() => { setPage(1); setAppliedKeyword(keyword); }}>搜索</Button>
           <Button icon={<ReloadOutlined />} onClick={() => { setKeyword(""); setAppliedKeyword(""); setCategory(""); setPage(1); }}>重置</Button>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-            <Tooltip title="勾选下方模板后可批量重排（标题居中、条款加粗、正文首行缩进、落款右对齐）">
-              <Button icon={<FormatPainterOutlined />} onClick={handleTidyBatch}>
-                一键格式化{selectedIds.length > 0 ? `（${selectedIds.length}）` : ""}
-              </Button>
-            </Tooltip>
-            <Upload accept=".doc,.docx,.txt" showUploadList={false} beforeUpload={handleImportFile}>
-              <Button icon={<ImportOutlined />}>导入模板</Button>
-            </Upload>
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建模板</Button>
           </div>
         </div>
@@ -381,12 +229,6 @@ export default function TemplateLibrary() {
           dataSource={templates}
           loading={loading}
           size="middle"
-          // 官方模板仅管理员可改，非管理员这些行不可勾选（勾了也会被后端拒绝）
-          rowSelection={{
-            selectedRowKeys: selectedIds,
-            onChange: (keys) => setSelectedIds(keys as string[]),
-            getCheckboxProps: (t) => ({ disabled: !canModify(t) }),
-          }}
           pagination={{
             current: page,
             pageSize,
@@ -397,7 +239,7 @@ export default function TemplateLibrary() {
             onShowSizeChange: (_current, size) => { setPageSize(size); setPage(1); },
             showTotal: (t) => `共 ${t} 个模板`,
           }}
-          locale={{ emptyText: "暂无模板，点击右上角新建或导入" }}
+          locale={{ emptyText: "暂无模板，点击右上角新建" }}
         />
       </Card>
 
@@ -437,9 +279,9 @@ export default function TemplateLibrary() {
             name="content"
             label="模板内容"
             extra={
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: -4 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: -4 }}>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  用 {"{{占位符}}"} 标记可变内容，如 {"{{姓名}}"}、{"{{公司}}"}、{"{{日期}}"}；支持字体/字号/颜色等排版
+                  支持字体 / 字号 / 颜色等排版
                 </Typography.Text>
                 <Button type="link" size="small" style={{ padding: 0, flexShrink: 0 }} onClick={handleSmartTidy}>
                   一键整理格式
@@ -453,7 +295,7 @@ export default function TemplateLibrary() {
                   : Promise.reject(new Error("请输入模板内容")),
             }]}
           >
-            <RichTextEditor placeholder="在此输入模板正文…支持 {{姓名}} {{手机号}} {{公司}} {{职位}} {{日期}} 等占位符" />
+            <RichTextEditor placeholder="在此输入模板正文…" />
           </Form.Item>
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Button onClick={() => setEditOpen(false)}>取消</Button>
@@ -468,14 +310,7 @@ export default function TemplateLibrary() {
         open={!!viewTarget}
         onCancel={() => setViewTarget(null)}
         width={820}
-        footer={
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick(viewTarget!) }} trigger={["click"]}>
-              <Button icon={<DownloadOutlined />}>导出模板</Button>
-            </Dropdown>
-            <Button type="primary" icon={<ThunderboltOutlined />} onClick={() => { setGenerateTarget(viewTarget); setViewTarget(null); }}>套用生成</Button>
-          </div>
-        }
+        footer={null}
       >
         {viewTarget && (
           <div>
@@ -521,72 +356,6 @@ export default function TemplateLibrary() {
           />
         )}
       </Modal>
-
-      {/* 批量一键格式化：逐条左右对比预览（当前 / 格式化后） */}
-      <Modal
-        title="一键格式化 - 效果预览"
-        open={!!tidyBatch}
-        onCancel={() => setTidyBatch(null)}
-        width={1000}
-        destroyOnClose
-        footer={
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              共 {tidyBatch?.length || 0} 个，其中 {tidyBatch?.filter((r) => r.changed).length || 0} 个有变化
-            </Typography.Text>
-            <Space>
-              <Button onClick={() => setTidyBatch(null)}>取消</Button>
-              <Button type="primary" loading={applying} onClick={applyTidyBatch}>
-                应用格式化
-              </Button>
-            </Space>
-          </div>
-        }
-      >
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
-          按中文文档惯例重排：标题居中加粗、条款标题加粗、正文宋体四号并首行缩进、落款右对齐。
-          只有左右不一致的模板会被写入（会同时更新「更新时间」）。
-        </Typography.Paragraph>
-        <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
-          {(tidyBatch || []).map((r) => (
-            <div
-              key={r.id}
-              style={{ marginBottom: 14, border: "1px solid #f0f0f0", borderRadius: 8, overflow: "hidden" }}
-            >
-              <div
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "7px 12px", background: "#fafafa", borderBottom: "1px solid #f0f0f0",
-                }}
-              >
-                <Typography.Text strong ellipsis style={{ maxWidth: 620 }}>{r.name}</Typography.Text>
-                {r.changed ? <Tag color="orange">将更新</Tag> : <Tag>已是规范排版</Tag>}
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
-                <div style={{ padding: "10px 12px", borderRight: "1px dashed #e5e7eb" }}>
-                  <div style={{ fontSize: 12, color: "#9ca3af", marginBottom: 6 }}>当前排版</div>
-                  <div
-                    className="doc-preview"
-                    style={{ maxHeight: 200, overflowY: "auto" }}
-                    dangerouslySetInnerHTML={{ __html: r.before }}
-                  />
-                </div>
-                <div style={{ padding: "10px 12px", background: "#f6ffed" }}>
-                  <div style={{ fontSize: 12, color: "#389e0d", marginBottom: 6 }}>格式化后</div>
-                  <div
-                    className="doc-preview"
-                    style={{ maxHeight: 200, overflowY: "auto" }}
-                    dangerouslySetInnerHTML={{ __html: r.after }}
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </Modal>
-
-      {/* 套用生成弹窗 */}
-      <GenerateDocModal template={generateTarget} onClose={() => setGenerateTarget(null)} />
     </div>
   );
 }

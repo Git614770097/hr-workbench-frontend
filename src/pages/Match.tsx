@@ -2,11 +2,11 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Card, Button, Input, Select, Upload, Space, Tag, message, Modal, Alert,
-  Progress, Typography, Popconfirm, Table, Segmented,
+  Progress, Typography, Popconfirm, Table,
 } from "antd";
 import {
   InboxOutlined, ArrowLeftOutlined, ThunderboltOutlined, DatabaseOutlined,
-  UserSwitchOutlined, TrophyOutlined, AppstoreOutlined, ProfileOutlined,
+  UserSwitchOutlined, TrophyOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import { VERDICT_COLORS } from "../types";
@@ -14,7 +14,6 @@ import type { MatchProfile, MatchResult, Talent } from "../types";
 import { parseResumeToTalent, parseResumeFile, recordToData } from "../utils/resumeImport";
 import type { ParsedTalent } from "../utils/resumeImport";
 import MatchResultCard from "../components/MatchResultCard";
-import MatchCompareTable from "../components/MatchCompareTable";
 import TalentPickerModal from "../components/TalentPickerModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 
@@ -106,8 +105,6 @@ export default function Match() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
   const [stale, setStale] = useState(false);
-  // 结果呈现方式：对比表（横向扫视各维度）默认，候选人多时比逐张卡片更好挑
-  const [view, setView] = useState<"compare" | "card">("compare");
 
   // ---- 落地 ----
   const [importingKey, setImportingKey] = useState<string | null>(null);
@@ -335,29 +332,21 @@ export default function Match() {
         <Space wrap>
           <Select
             style={{ width: 360 }}
-            placeholder="选用一个职位画像（含分级）"
+            placeholder="选用一个职位画像"
             value={profileId}
             onChange={handleSelectProfile}
             allowClear
             options={profiles.map((p) => ({ label: p.job_title || p.name, value: p.id! }))}
           />
           <Button icon={<UserSwitchOutlined />} onClick={() => navigate("/profiles")}>管理画像</Button>
-          {profile && profile.levels.length > 0 && (
-            <Space size={4} wrap>
-              <Typography.Text type="secondary">级别：</Typography.Text>
-              {profile.levels.map((lv) => (
-                <Tag key={lv.name + lv.sort_order} color="blue">{lv.name}</Tag>
-              ))}
-            </Space>
-          )}
         </Space>
         {profile && (
           <Typography.Paragraph type="secondary" style={{ margin: "8px 0 0", fontSize: 13 }}>
             {[
               profile.job_title && `职位 ${profile.job_title}`,
               profile.city && `城市 ${profile.city}`,
-              profile.industry && `行业 ${profile.industry}`,
-              profile.levels.length > 0 ? `${profile.levels.length} 个级别` : "单一画像（不分级）",
+              profile.education && `学历 ${profile.education}`,
+              profile.jd_raw ? "已填招聘需求" : "无招聘需求",
             ].filter(Boolean).join(" · ")}
           </Typography.Paragraph>
         )}
@@ -447,28 +436,15 @@ export default function Match() {
         title="③ 匹配结果"
         size="small"
         extra={
-          <Space>
-            {ranked.length > 1 && (
-              <Segmented
-                size="small"
-                value={view}
-                onChange={(v) => setView(v as "compare" | "card")}
-                options={[
-                  { label: "对比", value: "compare", icon: <AppstoreOutlined /> },
-                  { label: "卡片", value: "card", icon: <ProfileOutlined /> },
-                ]}
-              />
-            )}
-            <Button
-              type="primary"
-              icon={<ThunderboltOutlined />}
-              loading={running}
-              disabled={running}
-              onClick={handleMatch}
-            >
-              开始匹配
-            </Button>
-          </Space>
+          <Button
+            type="primary"
+            icon={<ThunderboltOutlined />}
+            loading={running}
+            disabled={running}
+            onClick={handleMatch}
+          >
+            开始匹配
+          </Button>
         }
       >
         {/* 缺条件时把原因直接摆在页面上：原来按钮被 disabled（候选人为空时）且只在点击时弹 message，
@@ -556,37 +532,20 @@ export default function Match() {
           </div>
         )}
 
-        {ranked.length > 1 && view === "compare" ? (
-          <>
-            <MatchCompareTable
-              items={ranked.map((cd) => ({
-                key: cd.key,
-                talent: cd.talent,
-                result: results[cd.key],
-                fileName: cd.fileName,
-                fromLibrary: cd.source === "library",
-              }))}
-            />
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: "10px 0 0" }}>
-              同一行横向对比各候选人。需要「录入人才库 / 加入招聘流程」或看完整理由时，切到「卡片」视图操作。
-            </Typography.Paragraph>
-          </>
-        ) : (
-          ranked.map((cd, i) => (
-            <MatchResultCard
-              key={cd.key}
-              rank={i + 1}
-              talent={cd.talent}
-              result={results[cd.key]}
-              savedId={savedIds[cd.key] || null}
-              importing={importingKey === cd.key}
-              fromLibrary={cd.source === "library"}
-              onViewText={() => setViewing(cd)}
-              onImport={() => handleImport(cd)}
-              onAddToPipeline={() => handleAddToPipeline(cd)}
-            />
-          ))
-        )}
+        {ranked.map((cd, i) => (
+          <MatchResultCard
+            key={cd.key}
+            rank={i + 1}
+            talent={cd.talent}
+            result={results[cd.key]}
+            savedId={savedIds[cd.key] || null}
+            importing={importingKey === cd.key}
+            fromLibrary={cd.source === "library"}
+            onViewText={() => setViewing(cd)}
+            onImport={() => handleImport(cd)}
+            onAddToPipeline={() => handleAddToPipeline(cd)}
+          />
+        ))}
       </Card>
 
       {/* 比对依据 */}

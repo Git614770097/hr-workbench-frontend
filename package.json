@@ -16,6 +16,7 @@
     "@ant-design/icons": "^5.5.0",
     "antd": "^5.22.0",
     "dayjs": "^1.11.23",
+    "echarts": "^6.1.0",
     "hono": "^4.6.0",
     "mammoth": "^1.8.0",
     "pdfjs-dist": "^4.7.76",

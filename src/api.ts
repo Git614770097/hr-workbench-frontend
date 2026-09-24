@@ -1,4 +1,4 @@
-import type { User, UserRow, Talent, Communication, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, Task, TaskSummary, DuplicateGroup, MatchProfile, MatchResult } from "./types";
+import type { User, UserRow, Talent, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult } from "./types";
 
 const BASE = "/api";
 
@@ -124,17 +124,6 @@ export const api = {
   },
 
   getTalent: (id: string) => request<Talent>(`/talents/${id}`),
-
-  // 疑似重复（同手机号多条）
-  getDuplicateTalents: () =>
-    request<{ groups: DuplicateGroup[]; total: number }>("/talents/duplicates"),
-
-  // 合并重复人才：把 mergeIds 并入 keepId
-  mergeTalents: (keepId: string, mergeIds: string[]) =>
-    request<{ ok: boolean; kept: string; merged: number }>("/talents/merge", {
-      method: "POST",
-      body: JSON.stringify({ keep_id: keepId, merge_ids: mergeIds }),
-    }),
 
   createTalent: (data: Partial<Talent>) =>
     request<Talent>("/talents", { method: "POST", body: JSON.stringify(data) }),
@@ -275,17 +264,6 @@ export const api = {
       60000
     ),
 
-  // Communications
-  getCommunications: (talentId: string) =>
-    request<Communication[]>(`/communications/talent/${talentId}`),
-  createCommunication: (data: Partial<Communication>) =>
-    request<Communication>("/communications", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
-  deleteCommunication: (id: string) =>
-    request(`/communications/${id}`, { method: "DELETE" }),
-
   // Doc templates
   getTemplates: (params: { category?: string; q?: string; page?: number; limit?: number }) => {
     const qs = new URLSearchParams();
@@ -351,6 +329,16 @@ export const api = {
     request(`/pipeline/${linkId}`, { method: "DELETE" }),
   getStaleCandidates: () =>
     request<{ items: (PipelineCard & { days_stale: number })[]; total: number }>("/pipeline/stale"),
+
+  // ---- 招聘漏斗 ----
+  getFunnel: (params: { job_id?: string; owner_id?: string; days?: number } = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params)
+        .filter(([, v]) => v !== undefined && v !== null && v !== "" && v !== 0)
+        .map(([k, v]) => [k, String(v)]) as [string, string][]
+    ).toString();
+    return request<FunnelResponse>(`/pipeline/funnel${qs ? `?${qs}` : ""}`);
+  },
 
   // ---- 跟进待办 ----
   getTasks: (params: { scope?: string; talent_id?: string; priority?: string; owner_id?: string } = {}) => {

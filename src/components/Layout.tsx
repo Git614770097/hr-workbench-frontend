@@ -12,6 +12,7 @@ import {
   CheckOutlined,
   SafetyOutlined,
   DeploymentUnitOutlined,
+  FunnelPlotOutlined,
   SolutionOutlined,
   CarryOutOutlined,
   UserSwitchOutlined,
@@ -77,6 +78,7 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
     { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
     { to: "/jobs", label: "岗位管理", icon: <SolutionOutlined />, color: "#6366f1", perm: "jobs" },
     { to: "/pipeline", label: "招聘流程", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
+    { to: "/funnel", label: "招聘漏斗", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
     { to: "/tasks", label: "跟进待办", icon: <CarryOutOutlined />, color: "#f97316", badge: taskBadge, perm: "tasks" },
     // —— 第二梯队：按需查阅与产出 ——
     { to: "/profiles", label: "人才画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },

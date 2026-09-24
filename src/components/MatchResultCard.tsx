@@ -180,26 +180,6 @@ export default function MatchResultCard({
           </div>
           <Space size={[6, 6]} wrap>
             <Tag color={color} style={{ marginInlineEnd: 0, fontWeight: 600, fontSize: 13 }}>{result.verdict}</Tag>
-            {result.level && (
-              <Tag color="geekblue" style={{ marginInlineEnd: 0 }}>落位「{result.level.name}」</Tag>
-            )}
-            {result.level && (result.level.salary_min != null || result.level.salary_max != null) && (
-              <Tooltip title={`该级别市场薪资${result.level.salary_note ? `（${result.level.salary_note}）` : ""}`}>
-                <Tag color="gold" style={{ marginInlineEnd: 0 }}>
-                  {Math.round((result.level.salary_min ?? 0) / 1000)}K-
-                  {Math.round((result.level.salary_max ?? result.level.salary_min ?? 0) / 1000)}K
-                </Tag>
-              </Tooltip>
-            )}
-            {result.level && (result.level.min_years != null || result.level.max_years != null) && (
-              <span style={{ fontSize: 12, color: "#6b7280" }}>
-                该级别 {result.level.min_years ?? 0}~{result.level.max_years ?? "不限"} 年
-              </span>
-            )}
-            {result.level?.below && result.level.gap_years != null && (
-              <Tag color="orange" style={{ marginInlineEnd: 0 }}>低于「{result.level.name}」{result.level.gap_years} 年</Tag>
-            )}
-            {result.level?.above && <Tag color="cyan" style={{ marginInlineEnd: 0 }}>超出最高级别</Tag>}
             {result.source === "rule" && (
               <Tooltip title="未配置 AI 密钥或 AI 调用失败，分数按硬性条件估算">
                 <Tag style={{ marginInlineEnd: 0 }}>规则估算</Tag>

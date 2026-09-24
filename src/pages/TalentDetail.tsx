@@ -2,26 +2,20 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Card, Descriptions, Tag, Button, Space, Typography, Empty, Spin,
-  Timeline, Rate, Form, Input, Select, DatePicker, message, Popconfirm,
-  Upload,
+  message, Popconfirm, Upload,
 } from "antd";
-import { EditOutlined, DeleteOutlined, PlusOutlined, ArrowLeftOutlined, FilePdfOutlined, UploadOutlined } from "@ant-design/icons";
+import { EditOutlined, DeleteOutlined, ArrowLeftOutlined, FilePdfOutlined, UploadOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import type { Talent, Communication, User } from "../types";
-import { STATUS_LABELS, STATUS_COLORS, COMM_TYPES } from "../types";
+import type { Talent, User } from "../types";
+import { STATUS_LABELS, STATUS_COLORS } from "../types";
 import TalentFormModal from "../components/TalentFormModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
-
-const { TextArea } = Input;
 
 export default function TalentDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [talent, setTalent] = useState<Talent | null>(null);
-  const [comms, setComms] = useState<Communication[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCommForm, setShowCommForm] = useState(false);
-  const [commForm] = Form.useForm();
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -34,12 +28,7 @@ export default function TalentDetail() {
   const fetchData = async () => {
     if (!id) return;
     try {
-      const [t, c] = await Promise.all([
-        api.getTalent(id),
-        api.getCommunications(id),
-      ]);
-      setTalent(t);
-      setComms(c);
+      setTalent(await api.getTalent(id));
     } catch (err) {
       console.error(err);
     }
@@ -47,33 +36,6 @@ export default function TalentDetail() {
   };
 
   useEffect(() => { fetchData(); }, [id]);
-
-  const handleAddComm = async (values: any) => {
-    if (!id) return;
-    try {
-      await api.createCommunication({
-        talent_id: id, type: values.type, content: values.content,
-        rating: values.rating || undefined,
-        follow_up_date: values.follow_up_date ? values.follow_up_date.format("YYYY-MM-DD") : undefined,
-      });
-      commForm.resetFields();
-      setShowCommForm(false);
-      message.success("沟通记录已添加");
-      fetchData();
-    } catch (err) {
-      message.error((err as Error).message);
-    }
-  };
-
-  const handleDeleteComm = async (commId: string) => {
-    try {
-      await api.deleteCommunication(commId);
-      message.success("已删除");
-      fetchData();
-    } catch (err) {
-      message.error((err as Error).message);
-    }
-  };
 
   const handleDeleteTalent = async () => {
     if (!talent) return;
@@ -190,56 +152,6 @@ export default function TalentDetail() {
               </div>
             ) : (
               <Empty description="暂无简历文件，请上传" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            )}
-          </Card>
-
-          <Card
-            title="沟通记录"
-            extra={
-              <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setShowCommForm(!showCommForm)}>
-                {showCommForm ? "取消" : "添加记录"}
-              </Button>
-            }
-          >
-            {showCommForm && (
-              <Form form={commForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleAddComm} style={{ marginBottom: 16, padding: 16, background: "#fafafa", borderRadius: 8 }}>
-                <div className="form-grid">
-                  <Form.Item name="type" label="类型" rules={[{ required: true }]} initialValue="call">
-                    <Select placeholder="请选择沟通类型" options={Object.entries(COMM_TYPES).map(([k, v]) => ({ label: v, value: k }))} />
-                  </Form.Item>
-                  <Form.Item name="rating" label="评分"><Rate /></Form.Item>
-                </div>
-                <Form.Item name="follow_up_date" label="跟进提醒"><DatePicker style={{ width: "100%" }} placeholder="请选择跟进日期" /></Form.Item>
-                <Form.Item name="content" label="沟通内容"><TextArea rows={3} placeholder="记录沟通要点…" /></Form.Item>
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <Button type="primary" htmlType="submit">保存记录</Button>
-                </div>
-              </Form>
-            )}
-
-            {comms.length === 0 ? (
-              <Empty description="暂无沟通记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <Timeline
-                items={comms.map((comm) => ({
-                  color: "blue",
-                  children: (
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-                        <Tag color="blue">{COMM_TYPES[comm.type] || comm.type}</Tag>
-                        {comm.rating != null && comm.rating > 0 && <Rate disabled value={comm.rating} style={{ fontSize: 12 }} />}
-                        {isAdmin && comm.user_name && <Tag style={{ fontSize: 11 }}>{comm.user_name}</Tag>}
-                        <span style={{ color: "#aaa", fontSize: "0.78rem", marginLeft: "auto" }}>{new Date(comm.created_at).toLocaleString("zh-CN")}</span>
-                        <Popconfirm title="确认删除？" onConfirm={() => handleDeleteComm(comm.id)}>
-                          <Button type="link" size="small" danger>删除</Button>
-                        </Popconfirm>
-                      </div>
-                      {comm.content && <div style={{ marginTop: "0.4rem", fontSize: "0.88rem", color: "#444" }}>{comm.content}</div>}
-                      {comm.follow_up_date && <Tag color="orange" style={{ marginTop: 4 }}>📅 跟进：{comm.follow_up_date}</Tag>}
-                    </div>
-                  ),
-                }))}
-              />
             )}
           </Card>
         </div>

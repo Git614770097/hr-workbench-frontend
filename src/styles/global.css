@@ -488,3 +488,163 @@ html[data-theme="dark"] .job-meta { color: #b0b6c0; }
   .export-print-area th, .export-print-area td { border: 1px solid #333; padding: 6px 8px; text-align: left; }
   .export-print-area th { background: #f5f5f5; }
 }
+
+/* ===== 通用：页面头（标题 + 描述 + 右侧统计）=====
+   各列表页可复用，给页面一个清晰的「头」，避免内容直接顶到顶栏。 */
+.page-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; padding: 0.25rem 0.1rem 1.1rem;
+  border-bottom: 1px solid #eef0f3; margin-bottom: 1rem;
+}
+.page-head-main { min-width: 0; }
+.page-title { font-size: 1.25rem; font-weight: 700; color: #1f2937; line-height: 1.2; margin: 0; }
+.page-desc { font-size: 0.82rem; color: #8c8c8c; margin: 0.3rem 0 0; line-height: 1.5; }
+.page-stats { display: flex; align-items: center; gap: 0.9rem; flex-shrink: 0; }
+.stat { display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.stat-num {
+  font-size: 1.55rem; font-weight: 700; color: #3b82f6;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+}
+.stat-label { font-size: 0.72rem; color: #8c8c8c; margin-top: 0.25rem; }
+.stat-sep { width: 1px; height: 28px; background: #eef0f3; }
+
+/* ===== 人才画像页 ===== */
+.profiles-page .search-card { border: 1px solid #eef0f3; }
+.profiles-page .search-card .ant-card-body { padding: 1rem 1.1rem; }
+.search-grid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem 1.5rem;
+}
+.search-field { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.search-label {
+  flex: 0 0 auto; width: 56px; text-align: right;
+  font-size: 0.82rem; color: #5b6472; white-space: nowrap;
+}
+.search-control { flex: 1; min-width: 0; }
+
+.profiles-page .list-card { border: 1px solid #eef0f3; }
+.profiles-page .list-card .ant-card-body { padding: 1rem 1.1rem; }
+.toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+/* 表格层次：表头加粗 + 底色 + 底部主线；行 hover 左侧主色条 + 浅蓝底；
+   薪资等宽数字，避免不同行金额宽度跳。 */
+.profiles-table .ant-table-thead > tr > th {
+  background: #fafbfc; font-weight: 600; color: #5b6472;
+  border-bottom: 2px solid #e3e7ee;
+}
+.profiles-table .ant-table-thead > tr > th .ant-table-column-sorter { color: #bfbfbf; }
+.profiles-table .ant-table-tbody > tr > td { border-bottom: 1px solid #f3f4f7; }
+.profiles-table .ant-table-tbody > tr.ant-table-row:hover > td { background: #f0f7ff; }
+.profiles-table .ant-table-tbody > tr.ant-table-row:hover > td:first-child {
+  box-shadow: inset 3px 0 0 #3b82f6;
+}
+.profiles-table .ant-table-tbody > tr.ant-table-row {
+  transition: background 0.15s ease;
+}
+/* 目标职位列（fixed left）：链接权重更高一点 */
+.profiles-table .ant-table-tbody > tr > td:first-child a { font-size: 0.9rem; }
+.salary-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+/* 分页条与表格间距 */
+.profiles-table .ant-table-pagination { margin-top: 0.75rem; }
+
+/* 暗色模式适配 */
+html[data-theme="dark"] .page-title { color: #e5e7eb; }
+html[data-theme="dark"] .page-desc { color: #9ca3af; }
+html[data-theme="dark"] .page-head { border-bottom-color: #303030; }
+html[data-theme="dark"] .stat-num { color: var(--color-primary, #3b82f6); }
+html[data-theme="dark"] .stat-label { color: #9ca3af; }
+html[data-theme="dark"] .stat-sep { background: #303030; }
+html[data-theme="dark"] .profiles-page .search-card,
+html[data-theme="dark"] .profiles-page .list-card { border-color: #303030; background: #1f1f1f; }
+html[data-theme="dark"] .search-label { color: #b0b6c0; }
+html[data-theme="dark"] .profiles-table .ant-table-thead > tr > th {
+  background: #262626; color: #b0b6c0; border-bottom-color: #3a3a3a;
+}
+html[data-theme="dark"] .profiles-table .ant-table-tbody > tr > td { border-bottom-color: #2a2a2a; }
+html[data-theme="dark"] .profiles-table .ant-table-tbody > tr.ant-table-row:hover > td { background: #1e2733; }
+html[data-theme="dark"] .profiles-table .ant-table-tbody > tr.ant-table-row:hover > td:first-child {
+  box-shadow: inset 3px 0 0 var(--color-primary, #3b82f6);
+}
+
+/* ===== 招聘漏斗页 ===== */
+.funnel-canvas { position: relative; width: 100%; }
+
+/* 漏斗右侧注释列：等分 flex 行，中心与 ECharts 各级中心对齐（偏差 <1px） */
+.funnel-notes {
+  position: absolute; right: 0;
+  display: flex; flex-direction: column;
+  pointer-events: none;   /* 不遮挡漏斗的悬停高亮 */
+  overflow: hidden;
+}
+.funnel-note {
+  flex: 1 1 0; min-height: 0;
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: flex-end;
+}
+.funnel-note-main {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 12px; line-height: 1.2; white-space: nowrap;
+}
+.funnel-note-rate {
+  color: #10b981; font-weight: 600;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+}
+.funnel-note-rate.is-low { color: #ef4444; }
+.funnel-note-drop { color: #fa8c16; font-size: 11px; }
+.funnel-note-base { color: #bfbfbf; }
+.funnel-note-sub {
+  color: #a8adb5; font-size: 11px; line-height: 1.3;
+  margin-top: 2px; white-space: nowrap;
+}
+.funnel-note-sub.is-slow { color: #fa541c; }
+
+.funnel-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0; display: inline-block;
+}
+
+.funnel-branches {
+  display: flex; align-items: center; gap: 22px;
+  margin-top: 18px; padding-top: 14px;
+  border-top: 1px dashed #eef0f3;
+  font-size: 0.82rem; color: #595959; flex-wrap: wrap;
+}
+.funnel-branch { display: flex; align-items: center; gap: 6px; }
+.funnel-branch-tip { color: #a8adb5; font-size: 0.76rem; }
+
+/* 周期 KPI 卡 */
+.funnel-kpi-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+}
+.funnel-kpi { border: 1px solid #eef0f3; }
+.funnel-kpi-head {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 0.8rem; color: #8c8c8c; margin-bottom: 8px;
+}
+.funnel-kpi-value {
+  font-size: 1.5rem; font-weight: 700; line-height: 1.1;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+}
+.funnel-kpi-foot { font-size: 0.74rem; color: #a8adb5; margin-top: 7px; }
+
+/* 暗色模式 */
+html[data-theme="dark"] .funnel-note-rate { color: #52c41a; }
+html[data-theme="dark"] .funnel-note-rate.is-low { color: #ff7875; }
+html[data-theme="dark"] .funnel-note-drop { color: #ffa940; }
+html[data-theme="dark"] .funnel-note-base { color: #6b7280; }
+html[data-theme="dark"] .funnel-note-sub { color: #8c8c8c; }
+html[data-theme="dark"] .funnel-note-sub.is-slow { color: #ff7a45; }
+html[data-theme="dark"] .funnel-branches { border-top-color: #303030; color: #b0b6c0; }
+html[data-theme="dark"] .funnel-kpi { border-color: #303030; background: #1f1f1f; }
+html[data-theme="dark"] .funnel-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15); }
+
+/* 窄屏堆叠 */
+@media (max-width: 900px) {
+  .funnel-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}

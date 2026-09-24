@@ -17,6 +17,7 @@ const Match = lazy(() => import("./pages/Match"));
 // 人才画像：独立的画像分级管理页
 const Profiles = lazy(() => import("./pages/Profiles"));
 const Pipeline = lazy(() => import("./pages/Pipeline"));
+const Funnel = lazy(() => import("./pages/Funnel"));
 const Jobs = lazy(() => import("./pages/Jobs"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const Users = lazy(() => import("./pages/Users"));
@@ -115,6 +116,7 @@ export default function App({ themeKey, onChangeTheme }: AppProps) {
           <Route path="/match" element={<RequirePerm user={user} perm="profiles"><Match /></RequirePerm>} />
           <Route path="/profiles" element={<RequirePerm user={user} perm="profiles"><Profiles /></RequirePerm>} />
           <Route path="/pipeline" element={<RequirePerm user={user} perm="pipeline"><Pipeline /></RequirePerm>} />
+          <Route path="/funnel" element={<RequirePerm user={user} perm="funnel"><Funnel /></RequirePerm>} />
           <Route path="/jobs" element={<RequirePerm user={user} perm="jobs"><Jobs /></RequirePerm>} />
           <Route path="/tasks" element={<RequirePerm user={user} perm="tasks"><Tasks /></RequirePerm>} />
           <Route path="/templates" element={<RequirePerm user={user} perm="templates"><TemplateLibrary /></RequirePerm>} />
