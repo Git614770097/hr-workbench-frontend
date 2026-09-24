@@ -1,19 +1,56 @@
-import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Card, Button, Space, Tag, Input, Select, Checkbox, Popconfirm, message,
-  Modal, Form, DatePicker, Segmented, Empty, Spin, Badge, Tooltip, Dropdown,
+  Modal, Form, DatePicker, Segmented, Empty, Spin, Tooltip, Dropdown, Calendar,
 } from "antd";
+import type { CalendarProps } from "antd";
 import {
-  PlusOutlined, ReloadOutlined, DeleteOutlined, EditOutlined, ClockCircleOutlined,
+  PlusOutlined, DeleteOutlined, EditOutlined, ClockCircleOutlined,
   CheckCircleOutlined, MoreOutlined, LinkOutlined, UserOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
+import type { Dayjs } from "dayjs";
 import type { MenuProps } from "antd";
 import { api } from "../api";
 import type { Task, User } from "../types";
 import { PRIORITY_LABELS, PRIORITY_COLORS, TASK_SOURCE_LABELS } from "../types";
-import { useSearchParams } from "react-router-dom";
+import { dayInfo, hasHolidayData, knownYears } from "../utils/holidays";
+
+const todayYmd = () => dayjs().format("YYYY-MM-DD");
+
+/** 日期类型 → 展示文案与配色 */
+const DAY_TYPE_TEXT: Record<string, { label: string; color: string }> = {
+  holiday: { label: "法定节假日", color: "#cf1322" },
+  makeup: { label: "调休上班", color: "#595959" },
+  weekend: { label: "周末", color: "#8c8c8c" },
+  workday: { label: "工作日", color: "#595959" },
+};
+
+// 日历格子的角标类型：今天（今/蓝）> 法定节假日（休/红）> 补班（班/灰）> 周末（休/浅灰）
+type DayKind = "today" | "holiday" | "makeup" | "weekend" | "workday";
+
+const dayKind = (ymd: string): { kind: DayKind; text: string; name?: string } => {
+  if (ymd === todayYmd()) return { kind: "today", text: "今" };
+  const d = dayInfo(ymd);
+  if (d.type === "holiday") return { kind: "holiday", text: "休", name: d.name };
+  if (d.type === "makeup") return { kind: "makeup", text: "班" };
+  if (d.type === "weekend") return { kind: "weekend", text: "休" };
+  return { kind: "workday", text: "" };
+};
+
+const KIND_TITLE: Record<Exclude<DayKind, "workday">, string> = {
+  today: "今天",
+  holiday: "法定节假日",
+  makeup: "调休上班（需上班）",
+  weekend: "周末",
+};
+
+/** 日历格子内最多展示几条待办（一条一行），超出折叠为「+N 项」 */
+const CAL_LINE_MAX = 2;
+
+/** 优先级归一化：后端是自由字符串，非预期值一律按「中」处理 */
+const prioOf = (p: string) => (p === "high" ? "high" : p === "low" ? "low" : "normal");
 
 export default function Tasks() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -21,13 +58,14 @@ export default function Tasks() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [scope, setScope] = useState<"todo" | "done" | "all">("todo");
-  const [priorityFilter, setPriorityFilter] = useState("");
-  const [ownerFilter, setOwnerFilter] = useState("");
+  const [scope, setScope] = useState<"todo" | "done" | "all">("all");
   const [summary, setSummary] = useState({ pending: 0, overdue: 0, today: 0 });
-  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [talents, setTalents] = useState<{ id: string; name: string }[]>([]);
   const [jobs, setJobs] = useState<{ id: string; title: string }[]>([]);
+
+  // 日历状态：viewMonth 控制显示哪个月，selected 为选中日期（null = 看未指定日期）
+  const [viewMonth, setViewMonth] = useState<Dayjs>(() => dayjs().startOf("month"));
+  const [selected, setSelected] = useState<string | null>(todayYmd());
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Task | null>(null);
@@ -43,9 +81,7 @@ export default function Tasks() {
     setLoading(true);
     try {
       const res = await api.getTasks({
-        scope: scope === "all" ? "all" : scope,
-        priority: priorityFilter || undefined,
-        owner_id: ownerFilter || undefined,
+        scope,
         talent_id: talentFilter || undefined,
       });
       setTasks(res.items);
@@ -55,22 +91,36 @@ export default function Tasks() {
       message.error((err as Error).message);
     }
     setLoading(false);
-  }, [scope, priorityFilter, ownerFilter, talentFilter]);
+  }, [scope, talentFilter]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
   useEffect(() => {
-    if (isAdmin) api.getUsers().then(setUsers).catch(() => {});
     api.getTalents({ page: 1, limit: 500 })
       .then((r) => setTalents(r.items.map((t) => ({ id: t.id, name: t.name }))))
       .catch(() => {});
     api.getJobOptions().then((r) => setJobs(r.map((j) => ({ id: j.id, title: j.title })))).catch(() => {});
-  }, [isAdmin]);
+  }, []);
 
-  const openCreate = () => {
+  // 按到期日分组（日历格子用）；无到期日的单独放一组
+  const byDate = useMemo(() => {
+    const m: Record<string, Task[]> = {};
+    for (const t of tasks) {
+      if (!t.due_date) continue;
+      (m[t.due_date] = m[t.due_date] || []).push(t);
+    }
+    return m;
+  }, [tasks]);
+  const undated = useMemo(() => tasks.filter((t) => !t.due_date), [tasks]);
+
+  const openCreate = (ymd?: string | null) => {
     setEditing(null);
     form.resetFields();
-    form.setFieldsValue({ priority: "normal", talent_id: talentFilter || undefined });
+    form.setFieldsValue({
+      priority: "normal",
+      talent_id: talentFilter || undefined,
+      due_date: ymd ? dayjs(ymd) : null,
+    });
     setModalOpen(true);
   };
 
@@ -160,136 +210,234 @@ export default function Tasks() {
     return "#8c8c8c";
   };
 
-  return (
-    <div>
-      {/* 顶部统计 */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
-        <Space size="large" wrap>
-          <span style={{ fontSize: 13, color: "#666" }}>
-            待办 <b style={{ fontSize: 18, color: "#3b82f6" }}>{summary.pending}</b> 项
-          </span>
-          <span style={{ fontSize: 13, color: "#666" }}>
-            逾期 <b style={{ fontSize: 18, color: "#ff4d4f" }}>{summary.overdue}</b> 项
-          </span>
-          <span style={{ fontSize: 13, color: "#666" }}>
-            今日到期 <b style={{ fontSize: 18, color: "#faad14" }}>{summary.today}</b> 项
-          </span>
-        </Space>
-        <Space>
-          <Segmented
-            value={scope}
-            onChange={(v) => setScope(v as "todo" | "done" | "all")}
-            options={[
-              { label: "待办中", value: "todo" },
-              { label: "已完成", value: "done" },
-              { label: "全部", value: "all" },
-            ]}
-          />
-          <Button icon={<ReloadOutlined />} onClick={fetchTasks} loading={loading}>刷新</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建待办</Button>
-        </Space>
-      </div>
-
-      {/* 筛选 */}
-      {(talentFilter || isAdmin) && (
-        <Card style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
-          <Space wrap>
-            {talentFilter && (
-              <Tag
-                closable
-                color="blue"
-                onClose={() => { searchParams.delete("talent_id"); setSearchParams(searchParams); }}
-              >
-                仅看该人才的待办
-              </Tag>
-            )}
-            <span style={{ fontSize: 13, color: "#666" }}>优先级</span>
-            <Select
-              style={{ width: 120 }} allowClear placeholder="全部"
-              value={priorityFilter || undefined} onChange={(v) => setPriorityFilter(v || "")}
-              options={Object.entries(PRIORITY_LABELS).map(([k, v]) => ({ label: v, value: k }))}
-            />
-            {isAdmin && (
-              <>
-                <span style={{ fontSize: 13, color: "#666" }}>负责人</span>
-                <Select
-                  style={{ width: 140 }} allowClear placeholder="全部"
-                  value={ownerFilter || undefined} onChange={(v) => setOwnerFilter(v || "")}
-                  options={users.map((u) => ({ label: u.name, value: u.id }))}
-                />
-              </>
-            )}
-          </Space>
-        </Card>
-      )}
-
-      {loading ? (
-        <div style={{ textAlign: "center", padding: "4rem" }}><Spin size="large" /></div>
-      ) : tasks.length === 0 ? (
-        <Card>
-          <Empty
-            description={
-              scope === "todo"
-                ? "没有待处理的跟进事项，可以歇一歇"
-                : "没有符合条件的待办"
-            }
-          />
-        </Card>
-      ) : (
-        <div>
-          {tasks.map((t) => (
-            <div
-              key={t.id}
-              className={`task-item${t.overdue ? " is-overdue" : ""}${t.due_today ? " is-today" : ""}${t.status === "done" ? " is-done" : ""}`}
+  // 日历格子内容：antd 会把返回值放进日期数字下方的内容区，
+  // 这里只返回标记本身，不能再带上 info.originNode（否则日期数字会渲染两遍）。
+  const cellRender: CalendarProps<Dayjs>["cellRender"] = (current, info) => {
+    if (info.type !== "date") return info.originNode;
+    const ymd = current.format("YYYY-MM-DD");
+    const k = dayKind(ymd);
+    const list = byDate[ymd] || [];
+    return (
+      <div className="task-cal-cell">
+        {k.kind !== "workday" && (
+          <>
+            {/* 整格同色色块（铺满格子，数字与角标浮在其上） */}
+            <span className={`task-cal-flag is-${k.kind}`} />
+            <span
+              className={`task-cal-corner is-${k.kind}`}
+              title={k.kind === "holiday" && k.name ? `${k.name}（${KIND_TITLE.holiday}）` : KIND_TITLE[k.kind]}
             >
-              <Checkbox
-                checked={t.status === "done"}
-                onChange={() => toggleDone(t)}
-                style={{ marginTop: 3 }}
-              />
-              <div className="task-main">
-                <div className="task-title">{t.title}</div>
-                <div className="task-meta">
-                  <span style={{ color: dueColor(t), fontWeight: t.overdue || t.due_today ? 600 : 400 }}>
-                    <ClockCircleOutlined /> {dueText(t)}
-                  </span>
-                  <Tag color={PRIORITY_COLORS[t.priority] || "default"} style={{ marginInlineEnd: 0 }}>
-                    {PRIORITY_LABELS[t.priority] || t.priority}
-                  </Tag>
-                  {t.talent_id && (
-                    <Link to={`/talents/${t.talent_id}`} style={{ color: "#3b82f6" }}>
-                      <UserOutlined /> {t.talent_name || "关联人才"}
-                    </Link>
-                  )}
-                  {t.job_title && (
-                    <span><LinkOutlined /> {t.job_title}</span>
-                  )}
-                  {t.status === "cancelled" && <Tag style={{ marginInlineEnd: 0 }}>已取消</Tag>}
-                  {t.status === "done" && <Tag color="green" style={{ marginInlineEnd: 0 }}>已完成</Tag>}
-                  <span style={{ color: "#c2c6cc" }}>
-                    {TASK_SOURCE_LABELS[t.source] || t.source}
-                    {isAdmin && t.owner_name ? ` · ${t.owner_name}` : ""}
-                  </span>
+              {k.text}
+            </span>
+          </>
+        )}
+        {list.length > 0 && (
+          <div className="task-cal-lines">
+            {/* 一条待办一行；超过 CAL_LINE_MAX 行后折叠为「+N 项」，避免撑高整行格子 */}
+            {list.slice(0, CAL_LINE_MAX).map((t) => {
+              const closed = t.status !== "pending";
+              return (
+                <div key={t.id} className="task-cal-line" title={t.title}>
+                  <i className={`task-cal-dot p-${prioOf(t.priority)}${closed ? " is-closed" : ""}`} />
+                  <span className={`task-cal-line-text${closed ? " is-closed" : ""}`}>{t.title}</span>
                 </div>
-                {t.content && <div className="task-content">{t.content}</div>}
+              );
+            })}
+            {list.length > CAL_LINE_MAX && (
+              <div
+                className="task-cal-more"
+                title={list.slice(CAL_LINE_MAX).map((t) => t.title).join("、")}
+              >
+                +{list.length - CAL_LINE_MAX} 项
               </div>
-              <div className="task-actions">
-                {t.status !== "done" && (
-                  <Tooltip title="标记完成">
-                    <Button type="text" size="small" icon={<CheckCircleOutlined />} onClick={() => toggleDone(t)} />
-                  </Tooltip>
-                )}
-                <Dropdown
-                  menu={{ items: moreMenu(t), onClick: ({ key }) => onMoreClick(t, key) }}
-                  trigger={["click"]}
-                >
-                  <Button type="text" size="small" icon={<MoreOutlined />} />
-                </Dropdown>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const selectedDate = selected ? dayjs(selected) : null;
+  const selectedInfo = selected ? dayInfo(selected) : null;
+  // selected 为 null 表示正在看「未指定日期」那一组
+  const selectedTasks = selected ? byDate[selected] || [] : undated;
+  const viewYear = viewMonth.year();
+  const missingHoliday = !hasHolidayData(viewYear);
+
+  // 单条待办的渲染（日历右侧列表与「未指定日期」分组共用）
+  const renderTask = (t: Task) => (
+    <div
+      key={t.id}
+      className={`task-item${t.overdue ? " is-overdue" : ""}${t.due_today ? " is-today" : ""}${t.status === "done" ? " is-done" : ""}`}
+    >
+      <Checkbox
+        checked={t.status === "done"}
+        onChange={() => toggleDone(t)}
+        style={{ marginTop: 3 }}
+      />
+      <div className="task-main">
+        <div className="task-title">{t.title}</div>
+        <div className="task-meta">
+          <span style={{ color: dueColor(t), fontWeight: t.overdue || t.due_today ? 600 : 400 }}>
+            <ClockCircleOutlined /> {dueText(t)}
+          </span>
+          <Tag color={PRIORITY_COLORS[t.priority] || "default"} style={{ marginInlineEnd: 0 }}>
+            {PRIORITY_LABELS[t.priority] || t.priority}
+          </Tag>
+          {t.talent_id && (
+            <Link to={`/talents/${t.talent_id}`} style={{ color: "#3b82f6" }}>
+              <UserOutlined /> {t.talent_name || "关联人才"}
+            </Link>
+          )}
+          {t.job_title && (
+            <span><LinkOutlined /> {t.job_title}</span>
+          )}
+          {t.status === "cancelled" && <Tag style={{ marginInlineEnd: 0 }}>已取消</Tag>}
+          {t.status === "done" && <Tag color="green" style={{ marginInlineEnd: 0 }}>已完成</Tag>}
+          <span style={{ color: "#c2c6cc" }}>
+            {TASK_SOURCE_LABELS[t.source] || t.source}
+            {isAdmin && t.owner_name ? ` · ${t.owner_name}` : ""}
+          </span>
+        </div>
+        {t.content && <div className="task-content">{t.content}</div>}
+      </div>
+      <div className="task-actions">
+        {t.status !== "done" && (
+          <Tooltip title="标记完成">
+            <Button type="text" size="small" icon={<CheckCircleOutlined />} onClick={() => toggleDone(t)} />
+          </Tooltip>
+        )}
+        <Dropdown
+          menu={{ items: moreMenu(t), onClick: ({ key }) => onMoreClick(t, key) }}
+          trigger={["click"]}
+        >
+          <Button type="text" size="small" icon={<MoreOutlined />} />
+        </Dropdown>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="tasks-page">
+      <div className="tasks-layout">
+        {/* ===== 日历 ===== */}
+        <Card
+          className="task-calendar-card"
+          styles={{ body: { padding: "12px 16px 16px" } }}
+          extra={
+            <Space size={12} wrap style={{ fontSize: 12, color: "#8c8c8c" }}>
+              <Space size={4}>
+                <span className="task-cal-badge is-today">今</span>
+                <span className="task-cal-badge is-holiday">休</span>
+                <span className="task-cal-badge is-makeup">班</span>
+              </Space>
+              <Space size={8}>
+                <span className="task-legend"><i className="task-cal-dot p-high" />高</span>
+                <span className="task-legend"><i className="task-cal-dot p-normal" />中</span>
+                <span className="task-legend"><i className="task-cal-dot p-low" />低</span>
+              </Space>
+            </Space>
+          }
+        >
+          {missingHoliday && (
+            <div className="task-cal-tip">
+              未内置 {viewYear} 年节假日安排，当前节假日标记仅按周六周日判断
+              {knownYears().length > 0 && `（已内置：${knownYears().join("、")} 年）`}
+            </div>
+          )}
+          <Calendar
+            className="task-calendar"
+            // 非受控：选中态交给组件内部，翻月不会受外部 value 干扰
+            defaultValue={dayjs()}
+            onSelect={(d, info) => {
+              if (info.source === "date") setSelected(d.format("YYYY-MM-DD"));
+            }}
+            onPanelChange={(d) => setViewMonth(d.startOf("month"))}
+            cellRender={cellRender}
+          />
+        </Card>
+
+        {/* ===== 选中日期的待办 ===== */}
+        <Card
+          className="task-day-card"
+          styles={{ body: { padding: "14px 16px" } }}
+          title={
+            <Space size={8}>
+              <span>
+                {selectedDate ? selectedDate.format("M 月 D 日 dddd") : "未指定日期"}
+              </span>
+              {selected === todayYmd() && <span className="task-cal-badge is-today">今</span>}
+              {selectedInfo && (
+                <span style={{ fontSize: 12, color: DAY_TYPE_TEXT[selectedInfo.type].color }}>
+                  {selectedInfo.type === "holiday"
+                    ? `${DAY_TYPE_TEXT.holiday.label} · ${selectedInfo.name}`
+                    : DAY_TYPE_TEXT[selectedInfo.type].label}
+                </span>
+              )}
+            </Space>
+          }
+          extra={
+            <Button
+              type="link"
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={() => openCreate(selected)}
+            >
+              {selected ? "在这天新建" : "新建"}
+            </Button>
+          }
+        >
+          {loading ? (
+            <div style={{ textAlign: "center", padding: "3rem" }}><Spin /></div>
+          ) : selectedTasks.length > 0 ? (
+            <div>{selectedTasks.map(renderTask)}</div>
+          ) : (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={selected ? "这一天没有待办" : "没有未指定日期的待办"}
+            />
+          )}
+
+          {/* 未指定日期的待办：单独一个入口，避免它们无处安放 */}
+          {selected !== null && undated.length > 0 && (
+            <div className="task-undated">
+              <div className="task-undated-head">
+                <span>未指定日期 · {undated.length} 项</span>
+                <Button type="link" size="small" onClick={() => setSelected(null)}>查看</Button>
               </div>
             </div>
-          ))}
+          )}
+        </Card>
+      </div>
+
+      {/* 右下角悬浮卡：统计 + 视图切换，常驻显示 */}
+      <div className="task-fab-card">
+        <div className="task-fab-stats">
+          <div><b style={{ color: "#3b82f6" }}>{summary.pending}</b><span>待办</span></div>
+          <div><b style={{ color: "#ff4d4f" }}>{summary.overdue}</b><span>逾期</span></div>
+          <div><b style={{ color: "#faad14" }}>{summary.today}</b><span>今日到期</span></div>
         </div>
-      )}
+        <Segmented
+          block
+          value={scope}
+          onChange={(v) => setScope(v as "todo" | "done" | "all")}
+          options={[
+            { label: "待办中", value: "todo" },
+            { label: "已完成", value: "done" },
+            { label: "全部", value: "all" },
+          ]}
+        />
+        {talentFilter && (
+          <Tag
+            closable
+            color="blue"
+            style={{ marginTop: 10, marginRight: 0 }}
+            onClose={() => { searchParams.delete("talent_id"); setSearchParams(searchParams); }}
+          >
+            仅看该人才的待办
+          </Tag>
+        )}
+      </div>
 
       {/* 新建 / 编辑待办 */}
       <Modal

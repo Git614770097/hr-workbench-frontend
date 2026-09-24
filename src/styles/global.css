@@ -452,6 +452,144 @@ html[data-theme="dark"] .resume-doc-preview,
 .task-content { font-size: 0.82rem; color: #4b5563; margin-top: 0.3rem; line-height: 1.55; }
 .task-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
 
+/* ===== 待办日历 ===== */
+.tasks-layout {
+  display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 16px; align-items: start;
+}
+@media (max-width: 1200px) {
+  .tasks-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+.task-cal-tip {
+  font-size: 12px; color: #a8adb5; line-height: 1.6;
+  padding: 6px 10px; margin-bottom: 8px;
+  background: #fafafa; border-radius: 6px;
+}
+
+/* 日历格子标记：antd 已渲染日期数字，这里的内容排在数字下方的内容区。
+   色块与角标都用绝对定位铺到整个格子上，因此需要 cell-inner 作为定位父级。
+   注：antd 5 的样式是运行时注入 <style>（在打包 CSS 之后），同特异性会被它反压，
+   所以下面覆盖 antd 的规则都写成 .ant-picker-calendar.task-calendar ... 多层前缀来提高特异性。 */
+.ant-picker-calendar.task-calendar .ant-picker-cell .ant-picker-cell-inner { position: relative; }
+/* antd 的 full 日历面板是 text-align:end，日期数字会靠右；这里改回左上角 */
+.task-calendar .ant-picker-calendar-date-value {
+  position: relative; z-index: 1; text-align: left;
+}
+/* 内容区默认固定 86px 且 overflow-y:auto，会撑高整月日历；改为自适应 + 最小高度 */
+.ant-picker-calendar.task-calendar .ant-picker-cell .ant-picker-calendar-date-content {
+  height: auto; min-height: 52px; overflow: visible;
+}
+/* 注意：这里不能给 .task-cal-cell 设 position:relative，
+   否则色块/角标只会相对「内容区」定位，铺不满整个格子。 */
+
+/* 网格线：antd 默认只有每格顶部一条 2px 横线，且格子带 4px 左右外边距，线是断开的。
+   做法：容器补「上 + 左」，每个格子贡献「右 + 下」，四边闭合且相邻线不会叠成 2px。 */
+.ant-picker-calendar.task-calendar .ant-picker-panel .ant-picker-body {
+  padding: 0;
+  border-top: 1px solid #f0f0f0;
+  border-left: 1px solid #f0f0f0;
+}
+/* 星期表头：antd 默认靠右，与左上角的日期数字不对齐，一并改到左侧 */
+.ant-picker-calendar.task-calendar .ant-picker-panel .ant-picker-body thead th {
+  text-align: left; padding-inline: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.ant-picker-calendar.task-calendar .ant-picker-cell .ant-picker-calendar-date {
+  margin: 0; border-top: 0;
+  border-right: 1px solid #f0f0f0;
+  border-bottom: 1px solid #f0f0f0;
+}
+/* antd 给「今天」那条边框整体染蓝（border-color 作用于四边），会让网格线变色，这里改回网格灰 */
+.ant-picker-calendar.task-calendar .ant-picker-cell .ant-picker-calendar-date-today {
+  border-color: #f0f0f0;
+}
+
+/* 整格同色色块 */
+.task-cal-flag {
+  position: absolute; inset: 2px; border-radius: 6px; z-index: 0; pointer-events: none;
+}
+/* 右上角角标（今 / 休 / 班） */
+.task-cal-corner {
+  position: absolute; top: 3px; right: 3px; z-index: 2;
+  font-size: 10px; line-height: 14px; padding: 0 4px; border-radius: 3px;
+  color: #fff; white-space: nowrap;
+}
+.task-cal-badge {
+  display: inline-block; font-size: 10px; line-height: 14px;
+  padding: 0 4px; border-radius: 3px; color: #fff; white-space: nowrap;
+}
+.task-cal-corner.is-today, .task-cal-badge.is-today { background: #1677ff; }
+.task-cal-corner.is-holiday, .task-cal-badge.is-holiday { background: #ff4d4f; }
+.task-cal-corner.is-makeup, .task-cal-badge.is-makeup { background: #8c8c8c; }
+.task-cal-corner.is-weekend, .task-cal-badge.is-weekend { background: #bfbfbf; }
+
+.task-cal-flag.is-today { background: #e6f4ff; }
+.task-cal-flag.is-holiday { background: #fff1f0; }
+.task-cal-flag.is-makeup { background: #f0f0f0; }
+.task-cal-flag.is-weekend { background: #fafafa; }
+
+/* 当日待办：一条一行，标题超出一格宽度自动省略 */
+.task-cal-lines {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; gap: 2px; padding-top: 1px;
+}
+.task-cal-line {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 10px; line-height: 15px; color: #595959; max-width: 100%;
+}
+/* 折叠提示：与标题左对齐（圆点 6px + 间距 4px） */
+.task-cal-more {
+  font-size: 10px; line-height: 13px; color: #a8adb5; padding-left: 10px;
+}
+.task-cal-line-text {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.task-cal-line-text.is-closed { color: #bfbfbf; text-decoration: line-through; }
+
+.task-cal-dots {
+  display: inline-flex; align-items: center; gap: 3px; position: relative; z-index: 1;
+}
+.task-cal-dot {
+  width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0;
+}
+.task-cal-dot.p-high { background: #ff4d4f; }
+.task-cal-dot.p-normal { background: #1677ff; }
+.task-cal-dot.p-low { background: #bfbfbf; }
+.task-cal-dot.is-closed { background: transparent; box-shadow: inset 0 0 0 1px #bfbfbf; }
+.task-cal-dots em { font-style: normal; font-size: 10px; color: #a8adb5; }
+
+.task-legend {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #8c8c8c;
+}
+
+/* ===== 待办页右下角悬浮卡：统计 + 视图切换，常驻显示 ===== */
+.task-fab-card {
+  position: fixed; right: 24px; bottom: 24px; z-index: 520;
+  width: 280px; padding: 12px 14px 14px;
+  background: #fff; border: 1px solid #eef0f3; border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
+}
+.task-fab-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.task-fab-stats > div {
+  background: #f8f9fb; border-radius: 8px; padding: 7px 0 8px; text-align: center;
+}
+.task-fab-stats b { display: block; font-size: 20px; line-height: 26px; }
+.task-fab-stats span { font-size: 11px; color: #8c8c8c; }
+.task-fab-card .ant-segmented { margin-top: 10px; }
+html[data-theme="dark"] .task-fab-card {
+  background: #1f1f1f; border-color: #303030;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+html[data-theme="dark"] .task-fab-stats > div { background: #262626; }
+
+/* 未指定日期的待办 */
+.task-undated { margin-top: 14px; padding-top: 12px; border-top: 1px dashed #eef0f3; }
+.task-undated-head {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; color: #595959;
+}
+
 /* ===== 岗位卡片 ===== */
 .job-meta { font-size: 0.8rem; color: #4b5563; line-height: 1.7; }
 
@@ -473,6 +611,31 @@ html[data-theme="dark"] .task-item.is-today { background: #2a2415; }
 html[data-theme="dark"] .task-title { color: #e5e7eb; }
 html[data-theme="dark"] .task-content { color: #b0b6c0; }
 html[data-theme="dark"] .job-meta { color: #b0b6c0; }
+html[data-theme="dark"] .task-cal-tip { background: #1f1f1f; color: #8c8c8c; }
+html[data-theme="dark"] .task-cal-corner.is-today, html[data-theme="dark"] .task-cal-badge.is-today { background: #0958d9; }
+html[data-theme="dark"] .task-cal-corner.is-holiday, html[data-theme="dark"] .task-cal-badge.is-holiday { background: #a8071a; }
+html[data-theme="dark"] .task-cal-corner.is-makeup, html[data-theme="dark"] .task-cal-badge.is-makeup { background: #595959; }
+html[data-theme="dark"] .task-cal-corner.is-weekend, html[data-theme="dark"] .task-cal-badge.is-weekend { background: #434343; }
+html[data-theme="dark"] .task-cal-flag.is-today { background: #111d2e; }
+html[data-theme="dark"] .task-cal-flag.is-holiday { background: #2a1618; }
+html[data-theme="dark"] .task-cal-flag.is-makeup { background: #262626; }
+html[data-theme="dark"] .task-cal-flag.is-weekend { background: #1f1f1f; }
+html[data-theme="dark"] .task-cal-line { color: #b0b6c0; }
+html[data-theme="dark"] .task-cal-more { color: #6b7280; }
+/* 网格线暗色：容器补的边 + 每格贡献的右/下边 */
+html[data-theme="dark"] .ant-picker-calendar.task-calendar .ant-picker-panel .ant-picker-body { border-color: #303030; }
+html[data-theme="dark"] .ant-picker-calendar.task-calendar .ant-picker-panel .ant-picker-body thead th { border-bottom-color: #303030; }
+html[data-theme="dark"] .ant-picker-calendar.task-calendar .ant-picker-cell .ant-picker-calendar-date,
+html[data-theme="dark"] .ant-picker-calendar.task-calendar .ant-picker-cell .ant-picker-calendar-date-today {
+  border-right-color: #303030; border-bottom-color: #303030;
+}
+html[data-theme="dark"] .task-cal-line-text.is-closed { color: #6b7280; }
+html[data-theme="dark"] .task-cal-dot.p-high { background: #ff7875; }
+html[data-theme="dark"] .task-cal-dot.p-normal { background: #69b1ff; }
+html[data-theme="dark"] .task-cal-dot.p-low { background: #595959; }
+html[data-theme="dark"] .task-cal-dot.is-closed { box-shadow: inset 0 0 0 1px #595959; }
+html[data-theme="dark"] .task-undated { border-top-color: #303030; }
+html[data-theme="dark"] .task-undated-head { color: #b0b6c0; }
 
 @media print {
   body * { visibility: hidden; }
@@ -573,7 +736,22 @@ html[data-theme="dark"] .profiles-table .ant-table-tbody > tr.ant-table-row:hove
 }
 
 /* ===== 招聘漏斗页 ===== */
-.funnel-canvas { position: relative; width: 100%; }
+/* 限宽居中：宽屏下不让漏斗被拉扁（宽高比失控），900px 内比例最协调 */
+.funnel-canvas { position: relative; width: 100%; max-width: 900px; margin: 0 auto; }
+
+/* 漏斗左侧阶段名列：等分 flex 行，与右侧注释列同构（中心对齐各级） */
+.funnel-labels {
+  position: absolute; left: 0;
+  display: flex; flex-direction: column;
+  pointer-events: none;
+}
+.funnel-label {
+  flex: 1;
+  display: flex; align-items: center; justify-content: flex-end;
+  padding-right: 10px;
+  font-size: 13px; font-weight: 500; color: #374151;
+  white-space: nowrap;
+}
 
 /* 漏斗右侧注释列：等分 flex 行，中心与 ECharts 各级中心对齐（偏差 <1px） */
 .funnel-notes {
@@ -622,18 +800,102 @@ html[data-theme="dark"] .profiles-table .ant-table-tbody > tr.ant-table-row:hove
 .funnel-kpi-grid {
   display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
 }
-.funnel-kpi { border: 1px solid #eef0f3; }
+/* 右侧窄栏：改 2 列 */
+.funnel-kpi-grid.is-narrow { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+
+/* 阶段转化分析（右侧窄栏，纵向进度条比表格更合适） */
+.funnel-analysis { display: flex; flex-direction: column; gap: 14px; }
+.funnel-analysis-head {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 6px;
+}
+.funnel-analysis-name { font-size: 13px; font-weight: 500; color: #374151; flex: 1; }
+.funnel-analysis-count { font-size: 13px; font-weight: 600; color: #1f2937; }
+.funnel-analysis-bar {
+  height: 6px; border-radius: 3px; background: #f0f2f5; overflow: hidden;
+}
+.funnel-analysis-fill {
+  height: 100%; border-radius: 3px;
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.funnel-analysis-meta {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 6px; font-size: 12px;
+}
+.funnel-analysis-cum { color: #8c8c8c; }
+.funnel-kpi {
+  border: 1px solid #eef0f3; border-radius: 8px;
+  padding: 12px 14px; background: #fcfcfd;
+}
 .funnel-kpi-head {
   display: flex; align-items: center; gap: 7px;
   font-size: 0.8rem; color: #8c8c8c; margin-bottom: 8px;
 }
+.funnel-kpi-title { flex: 1; }
 .funnel-kpi-value {
   font-size: 1.5rem; font-weight: 700; line-height: 1.1;
   font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
 }
+.funnel-kpi-dist {
+  font-size: 0.74rem; color: #595959; margin-top: 6px;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+}
+.funnel-kpi-sep { margin: 0 5px; color: #d9d9d9; }
 .funnel-kpi-foot { font-size: 0.74rem; color: #a8adb5; margin-top: 7px; }
+.funnel-kpi-warn {
+  margin-left: 5px; padding: 0 5px; border-radius: 3px;
+  background: #fff7e6; color: #d46b08; font-size: 10px;
+}
+
+/* 全流程耗时构成条 */
+.funnel-cycle-split { margin-bottom: 18px; }
+.funnel-cycle-split-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; font-size: 0.8rem; color: #8c8c8c; margin-bottom: 8px;
+}
+.funnel-cycle-split-sum { font-size: 0.74rem; color: #a8adb5; white-space: nowrap; }
+.funnel-cycle-bar { display: flex; gap: 2px; height: 10px; margin-bottom: 9px; }
+.funnel-cycle-seg {
+  height: 100%; border-radius: 3px; min-width: 3px;
+  transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.funnel-cycle-legend {
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  font-size: 11.5px; color: #8c8c8c;
+}
+.funnel-cycle-legend-item {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+}
+.funnel-cycle-legend-item b {
+  color: #374151; font-weight: 600; margin: 0 1px;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+}
+.funnel-cycle-legend-item em { font-style: normal; color: #bfbfbf; }
+.funnel-cycle-empty { font-size: 12px; color: #bfbfbf; line-height: 1.6; padding: 2px 0; }
+
+/* 结论卡顶部的总览数据（原页面头统计，窄栏下自动折行） */
+.funnel-summary {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(66px, 1fr));
+  gap: 10px; padding-bottom: 13px; margin-bottom: 12px;
+  border-bottom: 1px dashed #eef0f3;
+}
+.funnel-summary-item { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.funnel-summary-num {
+  font-size: 1.2rem; font-weight: 700; color: #3b82f6; line-height: 1.1;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+}
+.funnel-summary-label { font-size: 0.72rem; color: #8c8c8c; white-space: nowrap; }
+
+/* 周期健康度标签 */
+.funnel-health {
+  padding: 0 6px; border-radius: 9px; font-size: 11px; line-height: 17px;
+  font-weight: 500; flex-shrink: 0;
+}
+.funnel-health.is-fast { background: #f6ffed; color: #389e0d; }
+.funnel-health.is-ok { background: #e6f4ff; color: #0958d9; }
+.funnel-health.is-slow { background: #fff2e8; color: #d4380d; }
 
 /* 暗色模式 */
+html[data-theme="dark"] .funnel-label { color: #d1d5db; }
 html[data-theme="dark"] .funnel-note-rate { color: #52c41a; }
 html[data-theme="dark"] .funnel-note-rate.is-low { color: #ff7875; }
 html[data-theme="dark"] .funnel-note-drop { color: #ffa940; }
@@ -643,6 +905,19 @@ html[data-theme="dark"] .funnel-note-sub.is-slow { color: #ff7a45; }
 html[data-theme="dark"] .funnel-branches { border-top-color: #303030; color: #b0b6c0; }
 html[data-theme="dark"] .funnel-kpi { border-color: #303030; background: #1f1f1f; }
 html[data-theme="dark"] .funnel-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15); }
+html[data-theme="dark"] .funnel-analysis-name { color: #d1d5db; }
+html[data-theme="dark"] .funnel-analysis-count { color: #e5e7eb; }
+html[data-theme="dark"] .funnel-analysis-bar { background: #2b2b2b; }
+html[data-theme="dark"] .funnel-cycle-legend-item b { color: #e5e7eb; }
+html[data-theme="dark"] .funnel-cycle-legend-item em { color: #6b7280; }
+html[data-theme="dark"] .funnel-cycle-empty { color: #6b7280; }
+html[data-theme="dark"] .funnel-summary { border-bottom-color: #303030; }
+html[data-theme="dark"] .funnel-kpi-dist { color: #b0b6c0; }
+html[data-theme="dark"] .funnel-kpi-sep { color: #434343; }
+html[data-theme="dark"] .funnel-kpi-warn { background: #3a2a12; color: #ffa940; }
+html[data-theme="dark"] .funnel-health.is-fast { background: #162312; color: #73d13d; }
+html[data-theme="dark"] .funnel-health.is-ok { background: #111d2e; color: #69b1ff; }
+html[data-theme="dark"] .funnel-health.is-slow { background: #2b1611; color: #ff7a45; }
 
 /* 窄屏堆叠 */
 @media (max-width: 900px) {
