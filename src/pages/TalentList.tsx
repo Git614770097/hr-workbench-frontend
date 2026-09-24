@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
-  Popconfirm, message, Dropdown, Alert, Modal, Tooltip,
+  Popconfirm, message, Dropdown, Alert, Modal,
 } from "antd";
 import {
   ImportOutlined, FilePdfOutlined, ExportOutlined,
@@ -350,12 +350,8 @@ export default function TalentList() {
           <Button type="link" size="small" onClick={() => setEditId(record.id)}>编辑</Button>
           {record.resume_url && (
             <>
-              <Tooltip title="预览简历">
-                <Button type="link" size="small" icon={<FilePdfOutlined />} onClick={() => setPreviewTalent(record)} />
-              </Tooltip>
-              <Tooltip title="导出简历">
-                <Button type="link" size="small" icon={<ExportOutlined />} onClick={() => handleExportResume(record)} />
-              </Tooltip>
+              <Button type="link" size="small" onClick={() => setPreviewTalent(record)}>预览</Button>
+              <Button type="link" size="small" onClick={() => handleExportResume(record)}>导出</Button>
             </>
           )}
           <Popconfirm title="确认删除？所有关联数据将被清除。" onConfirm={() => handleDelete(record.id, record.name)}>

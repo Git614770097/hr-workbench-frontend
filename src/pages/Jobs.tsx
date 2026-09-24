@@ -7,7 +7,7 @@ import {
 import {
   PlusOutlined, SearchOutlined, ReloadOutlined,
   TeamOutlined, PlayCircleOutlined, PauseCircleOutlined, StopOutlined,
-  SwapOutlined, CheckOutlined, ThunderboltOutlined,
+  CheckOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -189,26 +189,19 @@ export default function Jobs() {
       render: (v: string) => v || "—",
     }] : []),
     {
-      title: "操作", key: "action", width: 205, fixed: "right" as const,
+      title: "操作", key: "action", width: 240, fixed: "right" as const,
       render: (_: any, r: Job) => (
         <Space size={2}>
           <Button type="link" size="small" onClick={() => { setPresetJobId(r.id); setAddOpen(true); }}>
             添加候选人
           </Button>
-          <Tooltip title="生成画像：带着岗位信息去建匹配画像">
-            <Button
-              type="link" size="small" icon={<ThunderboltOutlined />}
-              onClick={() => navigate(`/profiles?job_id=${r.id}`)}
-            />
-          </Tooltip>
+          <Button type="link" size="small" onClick={() => navigate(`/profiles?job_id=${r.id}`)}>生成画像</Button>
           <Button type="link" size="small" onClick={() => { setEditingId(r.id); setFormOpen(true); }}>编辑</Button>
           <Dropdown
             menu={{ items: statusMenu(r), onClick: ({ key }) => quickStatus(r, key), selectable: true, selectedKeys: [r.status] }}
             trigger={["click"]}
           >
-            <Tooltip title="切换状态">
-              <Button type="link" size="small" icon={<SwapOutlined />} />
-            </Tooltip>
+            <Button type="link" size="small">切换状态</Button>
           </Dropdown>
           <Popconfirm
             title="确认删除该岗位？"

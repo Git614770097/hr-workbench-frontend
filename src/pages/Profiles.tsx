@@ -357,7 +357,7 @@ export default function Profiles() {
       fixed: "right" as const,
       render: (_: unknown, r: MatchProfile) => (
         <Space size={4}>
-          <Button size="small" icon={<ThunderboltOutlined />} onClick={() => navigate("/match", { state: { profileId: r.id } })}>
+          <Button size="small" onClick={() => navigate("/match", { state: { profileId: r.id } })}>
             去匹配
           </Button>
           <Button type="link" size="small" onClick={() => openEdit(r)}>编辑</Button>
