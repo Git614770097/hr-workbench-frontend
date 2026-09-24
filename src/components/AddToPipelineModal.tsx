@@ -10,16 +10,21 @@ interface Props {
   presetJobId?: string | null;
   /** 预选中的人才（从人才详情页「加入岗位」进入时使用） */
   presetTalentId?: string | null;
+  /** 批量模式：人才库多选后整批加入同一岗位（传入时忽略 presetTalentId） */
+  presetTalentIds?: string[];
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function AddToPipelineModal({ open, presetJobId, presetTalentId, onClose, onSuccess }: Props) {
+export default function AddToPipelineModal({ open, presetJobId, presetTalentId, presetTalentIds, onClose, onSuccess }: Props) {
   const [form] = Form.useForm();
   const [talents, setTalents] = useState<Talent[]>([]);
   const [jobs, setJobs] = useState<Pick<Job, "id" | "title" | "department" | "status">[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // 批量模式：人才已在外部选定，弹窗里只选岗位/阶段/备注
+  const batchIds = presetTalentIds && presetTalentIds.length > 0 ? presetTalentIds : null;
 
   useEffect(() => {
     if (!open) return;
@@ -48,10 +53,20 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
   }, [open, presetJobId, presetTalentId]);
 
   const handleSubmit = async (values: { talent_id: string; job_id: string; stage: string; notes?: string }) => {
+    if (!values.job_id) return;
     setSaving(true);
     try {
-      const res = await api.addToPipeline(values);
-      message.success(`「${res.talent_name}」已加入「${res.job_title}」的招聘流程`);
+      if (batchIds) {
+        const res = await api.batchAddToPipeline({
+          talent_ids: batchIds, job_id: values.job_id,
+          stage: values.stage, notes: values.notes,
+        });
+        const skip = res.skipped > 0 ? `，${res.skipped} 人已在流程中自动跳过` : "";
+        message.success(`已把 ${res.added} 人加入「${res.job_title}」${skip}`);
+      } else {
+        const res = await api.addToPipeline(values);
+        message.success(`「${res.talent_name}」已加入「${res.job_title}」的招聘流程`);
+      }
       form.resetFields();
       onSuccess();
       onClose();
@@ -82,18 +97,35 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
         />
       ) : (
         <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSubmit} initialValues={{ stage: "screening" }}>
-          <Form.Item name="talent_id" label="人才" rules={[{ required: true, message: "请选择人才" }]}>
-            <Select
-              showSearch
-              placeholder="搜索并选择人才（姓名 / 职位 / 公司）"
-              loading={loading}
-              optionFilterProp="label"
-              options={talents.map((t) => ({
-                label: `${t.name}${t.current_title ? ` · ${t.current_title}` : ""}${t.current_company ? ` @ ${t.current_company}` : ""}`,
-                value: t.id,
-              }))}
-            />
-          </Form.Item>
+          {batchIds ? (
+            <Form.Item label="已选人才">
+              <div>
+                <span style={{ fontWeight: 600, marginRight: 8 }}>{batchIds.length} 人</span>
+                {(() => {
+                  const sel = talents.filter((t) => batchIds.includes(t.id));
+                  const shown = sel.slice(0, 8).map((t) => t.name);
+                  return (
+                    <span style={{ color: "#8c8c8c", fontSize: 12 }}>
+                      {shown.join("、")}{sel.length > 8 ? ` 等 ${sel.length} 人` : ""}
+                    </span>
+                  );
+                })()}
+              </div>
+            </Form.Item>
+          ) : (
+            <Form.Item name="talent_id" label="人才" rules={[{ required: true, message: "请选择人才" }]}>
+              <Select
+                showSearch
+                placeholder="搜索并选择人才（姓名 / 职位 / 公司）"
+                loading={loading}
+                optionFilterProp="label"
+                options={talents.map((t) => ({
+                  label: `${t.name}${t.current_title ? ` · ${t.current_title}` : ""}${t.current_company ? ` @ ${t.current_company}` : ""}`,
+                  value: t.id,
+                }))}
+              />
+            </Form.Item>
+          )}
 
           <Form.Item name="job_id" label="应聘岗位" rules={[{ required: true, message: "请选择岗位" }]}>
             <Select
@@ -125,7 +157,9 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Button onClick={onClose}>取消</Button>
-            <Button type="primary" htmlType="submit" loading={saving}>加入流程</Button>
+            <Button type="primary" htmlType="submit" loading={saving}>
+              {batchIds ? `加入流程（${batchIds.length} 人）` : "加入流程"}
+            </Button>
           </div>
         </Form>
       )}

@@ -433,6 +433,8 @@ html[data-theme="dark"] .resume-doc-preview,
   border-top: 1px solid #f4f5f7;
 }
 .pipe-card-stale { font-size: 0.72rem; }
+/* 停留超时（≥14 天）卡片整卡预警：浅红描边 + 浅红底 */
+.pipe-card.pipe-card-stalehot { border-color: #ffccc7; background: #fff1f0; }
 .pipe-empty { text-align: center; color: #c2c6cc; font-size: 0.76rem; padding: 1.4rem 0; }
 
 /* ===== 待办列表 ===== */
@@ -620,6 +622,7 @@ html[data-theme="dark"] .pipe-card:hover { border-color: #3f3f3f; }
 html[data-theme="dark"] .pipe-card-name { color: #e5e7eb; }
 html[data-theme="dark"] .pipe-card-sub { color: #9ca3af; }
 html[data-theme="dark"] .pipe-card-foot { border-top-color: #303030; }
+html[data-theme="dark"] .pipe-card.pipe-card-stalehot { border-color: #5c2626; background: #2a1a1a; }
 html[data-theme="dark"] .task-item { background: #1f1f1f; border-color: #303030; }
 html[data-theme="dark"] .task-item.is-overdue { background: #2a1a1a; }
 html[data-theme="dark"] .task-item.is-today { background: #2a2415; }

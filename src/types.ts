@@ -394,6 +394,43 @@ export interface FunnelResponse {
   stage_stay: FunnelStayItem[];
   cycles: FunnelCycles;
   summary: FunnelSummary;
+  /** 渠道效果：按人才来源统计「进入流程→入职」（口径与人·岗位一致） */
+  sources: FunnelSourceItem[];
+  /** 淘汰原因分布：流转日志备注按【原因】前缀归类 */
+  reject_reasons: FunnelRejectReason[];
+}
+
+export interface FunnelSourceItem {
+  source: string;
+  entered: number;  // 进入流程的投递数
+  hired: number;    // 曾到达「已入职」的投递数
+  rate: number;     // 入职转化率（0~1）
+}
+
+export interface FunnelRejectReason {
+  reason: string;
+  count: number;
+}
+
+/** 淘汰标准原因：拖入「已淘汰」时必选，以【原因】前缀存入流转日志备注，供漏斗页统计分布 */
+export const REJECT_REASONS = [
+  "薪资不匹配", "能力不达标", "经验不符", "稳定性存疑",
+  "文化/团队匹配", "候选人放弃", "企业侧暂停", "其他",
+];
+
+// ---- 合规到期提醒（合同 / 试用期）----
+export interface ComplianceItem {
+  talent_id: string;
+  name: string;
+  date: string;       // 到期日 YYYY-MM-DD
+  days_left: number;  // 负数 = 已过期
+  type: "contract" | "probation";
+}
+
+export interface ComplianceResponse {
+  items: ComplianceItem[];
+  contract_count: number;
+  probation_count: number;
 }
 
 // ---- 跟进待办 ----

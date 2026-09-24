@@ -468,6 +468,72 @@ export default function Funnel() {
           </Card>
 
           </Col>
+
+          {/* ===== 渠道效果：各来源「进入流程 → 入职」转化 ===== */}
+          {data!.sources.length > 0 && (
+            <Col xs={24} xl={14}>
+              <Card
+                title={<Space><TeamOutlined />渠道效果</Space>}
+                styles={{ body: { padding: "16px 18px" } }}
+                extra={
+                  <Tooltip title="按人才来源统计进入流程与入职转化；同一人才投多个岗位按投递记录分别计入，与漏斗口径一致。来源在人才库「来源渠道」字段维护">
+                    <span style={{ fontSize: 12, color: "#8c8c8c" }}>口径说明</span>
+                  </Tooltip>
+                }
+              >
+                {data!.sources.map((src) => (
+                  <div key={src.source} style={{ marginBottom: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{src.source}</span>
+                      <span style={{ fontSize: 12, color: "#8c8c8c" }}>
+                        进入 <b style={{ color: "#262626" }}>{src.entered}</b>
+                        <span style={{ margin: "0 4px" }}>·</span>
+                        入职 <b style={{ color: "#10b981" }}>{src.hired}</b>
+                        <span style={{ margin: "0 4px" }}>·</span>
+                        <b style={{ color: src.rate >= 0.3 ? "#10b981" : src.rate > 0 ? "#d48806" : "#8c8c8c" }}>{pct(src.rate)}</b>
+                      </span>
+                    </div>
+                    <div className="funnel-analysis-bar">
+                      <div
+                        className="funnel-analysis-fill"
+                        style={{ width: `${Math.max(2, src.rate * 100)}%`, background: "#10b981" }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </Card>
+            </Col>
+          )}
+
+          {/* ===== 淘汰原因分布：反哺 JD 与画像修正 ===== */}
+          {data!.reject_reasons.length > 0 && (
+            <Col xs={24} xl={10}>
+              <Card
+                title="淘汰原因分布"
+                styles={{ body: { padding: "16px 18px" } }}
+                extra={
+                  <Tooltip title="看板把候选人拖入「已淘汰」时选择的标准原因，自动按流转日志汇总；高频原因可用于修正 JD 与画像">
+                    <span style={{ fontSize: 12, color: "#8c8c8c" }}>说明</span>
+                  </Tooltip>
+                }
+              >
+                {data!.reject_reasons.map((r, i) => (
+                  <div key={r.reason} style={{ marginBottom: i === data!.reject_reasons.length - 1 ? 0 : 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                      <span>{r.reason}</span>
+                      <b style={{ color: "#ef4444" }}>{r.count} 人</b>
+                    </div>
+                    <div className="funnel-analysis-bar">
+                      <div
+                        className="funnel-analysis-fill"
+                        style={{ width: `${Math.max(3, (r.count / data!.reject_reasons[0].count) * 100)}%`, background: "#ef4444" }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </Card>
+            </Col>
+          )}
         </Row>
       )}
     </div>

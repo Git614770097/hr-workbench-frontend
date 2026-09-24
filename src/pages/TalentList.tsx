@@ -2,20 +2,21 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
-  Popconfirm, message, Dropdown,
+  Popconfirm, message, Dropdown, Alert, Modal,
 } from "antd";
 import {
   DeleteOutlined, EditOutlined, ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
-  FileWordOutlined,
+  FileWordOutlined, TeamOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
-import type { Talent, User } from "../types";
+import type { Talent, User, ComplianceItem, ComplianceResponse } from "../types";
 import { STATUS_LABELS, STATUS_COLORS, EDUCATION_OPTIONS } from "../types";
 import ImportModal from "../components/ImportModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
 import TalentFormModal from "../components/TalentFormModal";
+import AddToPipelineModal from "../components/AddToPipelineModal";
 
 // 搜索条件（draft = 编辑中，applied = 已生效）
 interface Filters {
@@ -76,6 +77,14 @@ export default function TalentList() {
   const [previewTalent, setPreviewTalent] = useState<Talent | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
 
+  // 批量加入招聘流程：受控多选（跨页保留选中）+ 弹窗
+  const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
+  const [batchOpen, setBatchOpen] = useState(false);
+
+  // 合规到期提醒：合同 / 试用期 30 天内到期
+  const [compliance, setCompliance] = useState<ComplianceResponse | null>(null);
+  const [complianceOpen, setComplianceOpen] = useState(false);
+
   // 导出状态
   const [exporting, setExporting] = useState(false);
   const [printData, setPrintData] = useState<Talent[] | null>(null);
@@ -107,6 +116,11 @@ export default function TalentList() {
       api.getUsers().then((u) => setUsers(u)).catch(() => {});
     }
   }, [isAdmin]);
+
+  // 合规到期：加载失败静默（只是提醒，不阻塞列表）
+  useEffect(() => {
+    api.getTalentCompliance().then(setCompliance).catch(() => {});
+  }, []);
 
   // 登录后从 /auth/me 获取用户信息存入 localStorage
   useEffect(() => {
@@ -277,6 +291,15 @@ export default function TalentList() {
 
   const visibleDefs = expanded ? fieldDefs : fieldDefs.slice(0, COLLAPSED_COUNT);
 
+  // 受控多选：跨页保留非本页选中，本页按新 keys 重建（全站统一写法，勿加 some 去重）
+  const pageKeySet = new Set<React.Key>(talents.map((t) => t.id));
+  const rowSelection = {
+    selectedRowKeys: selectedKeys,
+    onChange: (keys: React.Key[]) => {
+      setSelectedKeys([...selectedKeys.filter((k) => !pageKeySet.has(k)), ...keys]);
+    },
+  };
+
   const columns = [
     {
       title: "姓名",
@@ -353,6 +376,19 @@ export default function TalentList() {
 
   return (
     <div>
+      {/* 合规到期提醒：轻量 Alert + 名单弹窗（不做成独立看板） */}
+      {compliance && compliance.items.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={`合规到期提醒：30 天内合同到期 ${compliance.contract_count} 人、试用期到期 ${compliance.probation_count} 人`}
+          action={
+            <Button size="small" onClick={() => setComplianceOpen(true)}>查看名单</Button>
+          }
+        />
+      )}
+
       {/* 顶部搜索区域：label 左 + 控件右，一行 4 个，超过一行可展开/收起 */}
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px 24px" }}>
@@ -377,6 +413,13 @@ export default function TalentList() {
             <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
               <Button icon={<ExportOutlined />} loading={exporting}>导出</Button>
             </Dropdown>
+            <Button
+              icon={<TeamOutlined />}
+              disabled={selectedKeys.length === 0}
+              onClick={() => setBatchOpen(true)}
+            >
+              加入流程{selectedKeys.length > 0 ? `（${selectedKeys.length} 人）` : ""}
+            </Button>
           </Space>
           <Space>
             {fieldDefs.length > COLLAPSED_COUNT && (
@@ -393,6 +436,7 @@ export default function TalentList() {
           dataSource={talents}
           rowKey="id"
           loading={loading}
+          rowSelection={rowSelection}
           scroll={{ x: 1500 }}
           pagination={{
             current: page,
@@ -426,6 +470,61 @@ export default function TalentList() {
         onClose={() => setEditId(null)}
         onSuccess={fetchTalents}
       />
+
+      {/* 批量加入招聘流程：勾选人才 → 选岗位 → 一次挂入（已在流程中的自动跳过） */}
+      <AddToPipelineModal
+        open={batchOpen}
+        presetTalentIds={selectedKeys.map(String)}
+        onClose={() => setBatchOpen(false)}
+        onSuccess={() => {
+          setSelectedKeys([]);
+          fetchTalents();
+        }}
+      />
+
+      {/* 合规到期名单：30 天内合同 / 试用期到期（含已过期），点姓名进详情 */}
+      <Modal
+        title="合规到期名单（30 天内 · 含已过期）"
+        open={complianceOpen}
+        onCancel={() => setComplianceOpen(false)}
+        footer={null}
+        width={560}
+      >
+        <Table
+          size="small"
+          rowKey={(r) => `${r.type}-${r.talent_id}`}
+          dataSource={compliance?.items || []}
+          pagination={false}
+          scroll={{ y: 380 }}
+          columns={[
+            {
+              title: "姓名", dataIndex: "name",
+              render: (v: string, r: ComplianceItem) => (
+                <Link to={`/talents/${r.talent_id}`} style={{ fontWeight: 600 }}>{v}</Link>
+              ),
+            },
+            {
+              title: "类型", dataIndex: "type", width: 110,
+              render: (v: string) => (
+                <Tag color={v === "contract" ? "orange" : "blue"}>
+                  {v === "contract" ? "合同到期" : "试用期到期"}
+                </Tag>
+              ),
+            },
+            { title: "到期日", dataIndex: "due_date", width: 110 },
+            {
+              title: "剩余", dataIndex: "days_left", width: 110,
+              render: (v: number) => v < 0 ? (
+                <span style={{ color: "#ff4d4f" }}>已过期 {-v} 天</span>
+              ) : v <= 7 ? (
+                <span style={{ color: "#fa8c16" }}>仅剩 {v} 天</span>
+              ) : (
+                `剩 ${v} 天`
+              ),
+            },
+          ]}
+        />
+      </Modal>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult, ComplianceResponse } from "./types";
 
 const BASE = "/api";
 
@@ -218,6 +218,10 @@ export const api = {
   deleteResume: (talentId: string) =>
     request(`/talents/${talentId}/resume`, { method: "DELETE" }),
 
+  // 合规到期扫描：合同 / 试用期 30 天内到期（含已过期未更新）
+  getTalentCompliance: () =>
+    request<ComplianceResponse>("/talents/compliance"),
+
   // 智能匹配（简历 + 人才画像 → 排序推荐）
   // 按职位生成招聘 JD（AI 起草，用户可改后再提炼画像）
   generateJd: (jobTitle: string, city?: string) =>
@@ -319,10 +323,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
-  updateStage: (linkId: string, stage: string, remark?: string) =>
-    request<{ ok: boolean; stage: string }>(`/pipeline/${linkId}/stage`, {
+  // 批量加入：人才库多选 → 一次挂到同一岗位；已在流程中的人自动跳过
+  batchAddToPipeline: (data: { talent_ids: string[]; job_id: string; stage?: string; notes?: string }) =>
+    request<{ added: number; skipped: number; added_names: string[]; skipped_names: string[]; job_title: string }>(
+      "/pipeline/batch",
+      { method: "POST", body: JSON.stringify(data) }
+    ),
+  // 淘汰时传 rejectReason：标准原因以【】前缀拼进流转备注，供漏斗分布统计；
+  // 流转到 hired 时后端自动联动人才状态并生成试用期跟进待办，task_created 表示本次新建了待办
+  updateStage: (linkId: string, stage: string, remark?: string, rejectReason?: string) =>
+    request<{ ok: boolean; stage: string; task_created?: boolean }>(`/pipeline/${linkId}/stage`, {
       method: "PUT",
-      body: JSON.stringify({ stage, remark }),
+      body: JSON.stringify({ stage, remark, reject_reason: rejectReason }),
     }),
   getStageLogs: (linkId: string) => request<StageLog[]>(`/pipeline/${linkId}/logs`),
   removeFromPipeline: (linkId: string) =>

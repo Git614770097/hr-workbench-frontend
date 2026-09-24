@@ -4,7 +4,7 @@ import {
 } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import { STATUS_LABELS, EDUCATION_OPTIONS } from "../types";
+import { STATUS_LABELS, EDUCATION_OPTIONS, SOURCE_OPTIONS } from "../types";
 
 interface Props {
   open: boolean;
@@ -136,9 +136,13 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
             <Form.Item name="status" label="状态">
               <Select placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
             </Form.Item>
+            <Form.Item name="source" label="来源渠道">
+              <Select allowClear showSearch placeholder="请选择来源渠道" options={SOURCE_OPTIONS.map((s) => ({ label: s, value: s }))} />
+            </Form.Item>
             <Form.Item name="skills" label="技能">
               <Input placeholder="逗号分隔，如 Java, Spring" />
             </Form.Item>
+            <div className="form-row-filler" />
           </div>
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={3} placeholder="补充说明…" />

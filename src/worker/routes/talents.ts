@@ -89,6 +89,39 @@ talents.get("/", async (c) => {
   return c.json({ items, total: countResult?.total || 0, page, limit, pages: Math.ceil((countResult?.total || 0) / limit) });
 });
 
+// ---- 合规到期扫描：合同 / 试用期 30 天内到期（含已过期未更新）----
+// 静态路由必须注册在 GET /:id 之前，否则 "compliance" 会被当成人才 id。
+talents.get("/compliance", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  // 两个 SELECT 各自做 owner 隔离（UNION ALL 前后各绑定一次）
+  const ownerCond = session.role !== "admin" ? " AND t.owner_id = ?" : "";
+  const params: string[] = session.role !== "admin" ? [session.userId, session.userId] : [];
+
+  const sql = `
+    SELECT t.id AS talent_id, t.name, t.contract_end AS due_date,
+           CAST(julianday(t.contract_end) - julianday(date('now')) AS INTEGER) AS days_left,
+           'contract' AS type
+      FROM talents t
+     WHERE t.contract_end IS NOT NULL AND t.contract_end <= date('now', '+30 day')${ownerCond}
+    UNION ALL
+    SELECT t.id, t.name, t.probation_end,
+           CAST(julianday(t.probation_end) - julianday(date('now')) AS INTEGER),
+           'probation'
+      FROM talents t
+     WHERE t.probation_end IS NOT NULL AND t.probation_end <= date('now', '+30 day')${ownerCond}
+    ORDER BY days_left ASC
+    LIMIT 100`;
+
+  const rows = (await c.env.DB.prepare(sql).bind(...params).all<any>()).results;
+  return c.json({
+    items: rows,
+    contract_count: rows.filter((r) => r.type === "contract").length,
+    probation_count: rows.filter((r) => r.type === "probation").length,
+  });
+});
+
 // ---- 人才详情（聚合：本体 + 相关待办 + 投递进程 + 阶段日志）----
 talents.get("/:id", async (c) => {
   const session = await getSession(c);
@@ -149,8 +182,8 @@ talents.post("/", async (c) => {
   const body = await c.req.json<any>();
   const id = genId();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
-  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, resume_url, notes, birth_date, contract_end, probation_end, resignation_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date)).run();
+  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.source || null, body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date)).run();
 
   return c.json({ id, ...body });
 });
@@ -185,9 +218,9 @@ talents.put("/:id", async (c) => {
     body.name, body.phone, body.email, body.age, body.gender, body.education,
     body.school, body.current_company, body.current_title, body.years_experience,
     body.city, skills, body.industry, body.expected_salary, body.expected_city,
-    body.status, body.resume_url, body.notes,
+    body.status, body.source, body.resume_url, body.notes,
   ].map((v) => (v === undefined ? null : v));
-  await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), resume_url = COALESCE(?, resume_url), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
+  await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), source = COALESCE(?, source), resume_url = COALESCE(?, resume_url), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
     .bind(...scalars, ...dateParams, id).run();
 
   return c.json({ id, ...body });
@@ -322,8 +355,8 @@ talents.post("/import", async (c) => {
   for (const item of items) {
     const id = genId();
     const skills = item.skills ? JSON.stringify(item.skills) : null;
-    await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, resume_url, notes, birth_date, contract_end, probation_end, resignation_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, session.userId, item.name || "", item.phone || null, item.email || null, item.age ?? null, item.gender || null, item.education || null, item.school || null, item.current_company || null, item.current_title || null, item.years_experience || null, item.city || null, skills, item.industry || null, item.expected_salary || null, item.expected_city || null, item.status || "active", item.resume_url || null, item.notes || null, dateOrNull(item.birth_date), dateOrNull(item.contract_end), dateOrNull(item.probation_end), dateOrNull(item.resignation_date)).run();
+    await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(id, session.userId, item.name || "", item.phone || null, item.email || null, item.age ?? null, item.gender || null, item.education || null, item.school || null, item.current_company || null, item.current_title || null, item.years_experience || null, item.city || null, skills, item.industry || null, item.expected_salary || null, item.expected_city || null, item.status || "active", item.source || null, item.resume_url || null, item.notes || null, dateOrNull(item.birth_date), dateOrNull(item.contract_end), dateOrNull(item.probation_end), dateOrNull(item.resignation_date)).run();
     count++;
     created.push({ id, name: item.name || "" });
   }

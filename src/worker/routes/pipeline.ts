@@ -179,7 +179,7 @@ pipeline.get("/funnel", async (c) => {
     SELECT tj.id AS link_id, tj.stage AS current_stage, tj.created_at AS entered_at,
            t.id AS talent_id, t.name, t.created_at AS talent_created_at, t.source,
            j.id AS job_id, j.title AS job_title,
-           l.from_stage, l.to_stage, l.created_at AS log_at
+           l.from_stage, l.to_stage, l.remark, l.created_at AS log_at
     FROM talent_jobs tj
     JOIN talents t ON tj.talent_id = t.id
     LEFT JOIN jobs j ON tj.job_id = j.id
@@ -204,7 +204,10 @@ pipeline.get("/funnel", async (c) => {
     lastLogAt: number;
   }
   const map = new Map<string, Cand>();
+  // 淘汰原因：流转到 rejected 的日志备注按【原因】前缀归类（看板淘汰弹窗写入）
+  const rejectRemarks: string[] = [];
   for (const r of rows.results as any[]) {
+    if (r.to_stage === "rejected" && r.remark) rejectRemarks.push(r.remark);
     let cd = map.get(r.link_id);
     if (!cd) {
       cd = {
@@ -337,6 +340,34 @@ pipeline.get("/funnel", async (c) => {
   const withdrawn = cands.filter((cd) => cd.reached.has("withdrawn")).length;
   const inProgress = cands.filter((cd) => !TERMINAL.includes(cd.current_stage as Stage)).length;
 
+  // ---- 渠道效果：按人才来源分组（口径与人·岗位一致，同人才多岗分别计）----
+  const srcMap: Record<string, { entered: number; hired: number }> = {};
+  for (const cd of cands) {
+    const key = (cd.source || "").trim() || "未记录";
+    (srcMap[key] ||= { entered: 0, hired: 0 });
+    srcMap[key].entered++;
+    if (cd.reached.has("hired")) srcMap[key].hired++;
+  }
+  const sources = Object.entries(srcMap)
+    .map(([source, v]) => ({
+      source,
+      entered: v.entered,
+      hired: v.hired,
+      rate: v.entered > 0 ? Math.round((v.hired / v.entered) * 1000) / 1000 : 0,
+    }))
+    .sort((a, b) => b.entered - a.entered);
+
+  // ---- 淘汰原因分布 ----
+  const reasonMap: Record<string, number> = {};
+  for (const rm of rejectRemarks) {
+    const m = rm.match(/^【(.+?)】/);
+    const key = m ? m[1] : "未分类";
+    reasonMap[key] = (reasonMap[key] || 0) + 1;
+  }
+  const reject_reasons = Object.entries(reasonMap)
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
+
   return c.json({
     stages,
     stage_stay: FUNNEL_ORDER.map((s) => ({
@@ -367,6 +398,8 @@ pipeline.get("/funnel", async (c) => {
       withdrawn,
       overall_rate: first > 0 ? Math.round((hired / first) * 1000) / 1000 : 0,
     },
+    sources,
+    reject_reasons,
   });
 });
 
@@ -410,18 +443,81 @@ pipeline.post("/", async (c) => {
   return c.json({ id, talent_name: talent.name, job_title: job.title, stage });
 });
 
+// ---- 批量把人才加入岗位（人才库多选 → 一次挂到同一岗位）----
+pipeline.post("/batch", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const body = await c.req.json<{ talent_ids?: string[]; job_id?: string; stage?: Stage; notes?: string }>();
+  const ids = [...new Set((body.talent_ids || []).filter(Boolean))];
+  if (ids.length === 0 || !body.job_id) return c.json({ error: "人才与岗位均为必填" }, 400);
+  if (ids.length > 50) return c.json({ error: "一次最多批量加入 50 人" }, 400);
+
+  // 岗位权限：普通用户只能操作自己的岗位
+  let jSql = "SELECT id, title FROM jobs WHERE id = ?";
+  const jParams: string[] = [body.job_id];
+  if (session.role !== "admin") { jSql += " AND owner_id = ?"; jParams.push(session.userId); }
+  const job = await c.env.DB.prepare(jSql).bind(...jParams).first<{ id: string; title: string }>();
+  if (!job) return c.json({ error: "岗位不存在或无权限" }, 404);
+
+  const stage: Stage = STAGES.includes(body.stage as Stage) ? (body.stage as Stage) : "screening";
+
+  // 人才权限 + 查重：已在该岗位流程里的人自动跳过
+  const ph = ids.map(() => "?").join(",");
+  let tSql = `SELECT id, name FROM talents WHERE id IN (${ph})`;
+  const tParams: string[] = [...ids];
+  if (session.role !== "admin") { tSql += " AND owner_id = ?"; tParams.push(session.userId); }
+  const talents = (await c.env.DB.prepare(tSql).bind(...tParams).all<{ id: string; name: string }>()).results;
+  if (talents.length === 0) return c.json({ error: "所选人才不存在或无权限" }, 404);
+
+  const dupRows = (await c.env.DB.prepare(
+    `SELECT talent_id FROM talent_jobs WHERE job_id = ? AND talent_id IN (${talents.map(() => "?").join(",")})`
+  ).bind(body.job_id, ...talents.map((t) => t.id)).all<{ talent_id: string }>()).results;
+  const dupSet = new Set(dupRows.map((r) => r.talent_id));
+
+  const added = talents.filter((t) => !dupSet.has(t.id));
+  if (added.length === 0) {
+    return c.json({
+      added: 0, skipped: talents.length, job_title: job.title,
+      added_names: [], skipped_names: talents.map((t) => t.name),
+    });
+  }
+
+  // 一个事务写入：talent_jobs + 首条流转日志 + 人才全局阶段同步
+  const stmts = added.flatMap((t) => {
+    const id = genId();
+    return [
+      c.env.DB.prepare("INSERT INTO talent_jobs (id, talent_id, job_id, stage, notes) VALUES (?, ?, ?, ?, ?)")
+        .bind(id, t.id, body.job_id, stage, body.notes || null),
+      c.env.DB.prepare("INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, NULL, ?, ?, ?)")
+        .bind(genId(), id, stage, session.userId, "加入招聘流程"),
+      c.env.DB.prepare("UPDATE talents SET stage = CASE WHEN stage IN ('new','archived') OR stage IS NULL THEN ? ELSE stage END, updated_at = datetime('now') WHERE id = ?")
+        .bind(stage, t.id),
+    ];
+  });
+  await c.env.DB.batch(stmts);
+
+  return c.json({
+    added: added.length,
+    skipped: talents.length - added.length,
+    job_title: job.title,
+    added_names: added.map((t) => t.name),
+    skipped_names: talents.filter((t) => dupSet.has(t.id)).map((t) => t.name),
+  });
+});
+
 // ---- 切换候选人阶段（看板拖拽 / 下拉）----
 pipeline.put("/:linkId/stage", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const linkId = c.req.param("linkId");
-  const body = await c.req.json<{ stage?: string; remark?: string; rating?: number }>();
+  const body = await c.req.json<{ stage?: string; remark?: string; rating?: number; reject_reason?: string }>();
   if (!body.stage || !STAGES.includes(body.stage as Stage)) return c.json({ error: "阶段值不合法" }, 400);
 
   // 权限校验
   const link = await c.env.DB.prepare(`
-    SELECT tj.id, tj.stage as old_stage, tj.talent_id, tj.job_id, t.owner_id
+    SELECT tj.id, tj.stage as old_stage, tj.talent_id, tj.job_id, t.name as talent_name, t.owner_id
     FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
   `).bind(linkId).first<any>();
   if (!link) return c.json({ error: "候选人记录不存在" }, 404);
@@ -430,19 +526,44 @@ pipeline.put("/:linkId/stage", async (c) => {
   }
   if (link.old_stage === body.stage) return c.json({ ok: true, stage: body.stage });
 
+  // 淘汰原因结构化：标准原因以【原因】前缀拼进备注，漏斗页据此统计分布
+  let remark = body.remark || "";
+  if (body.stage === "rejected" && body.reject_reason) {
+    remark = `【${body.reject_reason}】${remark}`;
+  }
+
   await c.env.DB.prepare("UPDATE talent_jobs SET stage = ?, rating = COALESCE(?, rating), updated_at = datetime('now') WHERE id = ?")
     .bind(body.stage, body.rating ?? null, linkId).run();
 
   await c.env.DB.prepare("INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(genId(), linkId, link.old_stage, body.stage, session.userId, body.remark || null).run();
+    .bind(genId(), linkId, link.old_stage, body.stage, session.userId, remark || null).run();
 
-  // 阶段推进到「已入职」时，同步人才全局状态为 placed（已入职）
+  // 阶段推进到「已入职」时：联动人才全局状态为 placed（已入职），
+  // 并生成一条「试用期跟进」待办（防重：同人才已有未完成的同前缀待办则跳过）
+  let taskCreated = false;
   if (body.stage === "hired") {
     await c.env.DB.prepare("UPDATE talents SET status = 'placed', stage = 'hired', updated_at = datetime('now') WHERE id = ?")
       .bind(link.talent_id).run();
+
+    const dupTask = await c.env.DB.prepare(
+      "SELECT id FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND title LIKE '试用期跟进%'"
+    ).bind(link.talent_id).first();
+    if (!dupTask) {
+      const due = new Date(Date.now() + 90 * 86400000);
+      const p = (n: number) => String(n).padStart(2, "0");
+      await c.env.DB.prepare(
+        "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
+      ).bind(
+        genId(), link.owner_id, link.talent_id, link.job_id,
+        `试用期跟进：${link.talent_name}`,
+        "候选人已入职，关注试用期表现与融入情况，到期前完成转正评估。",
+        `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`
+      ).run();
+      taskCreated = true;
+    }
   }
 
-  return c.json({ ok: true, stage: body.stage });
+  return c.json({ ok: true, stage: body.stage, task_created: taskCreated });
 });
 
 // ---- 阶段流转历史 ----

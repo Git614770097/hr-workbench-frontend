@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Button, Select, Input, Space, Tag, Dropdown, message, Empty,
-  Segmented, Spin, Tooltip, Modal, Timeline, Rate, Descriptions,
+  Segmented, Spin, Tooltip, Modal, Timeline, Rate, Descriptions, Alert,
 } from "antd";
 import {
   ReloadOutlined, SearchOutlined, UserAddOutlined, MoreOutlined,
@@ -13,7 +13,7 @@ import type { MenuProps } from "antd";
 import { api } from "../api";
 import type { PipelineCard, PipelineResponse, Stage, StageLog, Talent, User, Job } from "../types";
 import {
-  PIPELINE_STAGES, STAGE_META, SOURCE_OPTIONS, PRIORITY_LABELS,
+  PIPELINE_STAGES, STAGE_META, SOURCE_OPTIONS, PRIORITY_LABELS, REJECT_REASONS,
 } from "../types";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 
@@ -42,6 +42,10 @@ export default function Pipeline() {
   const [logModal, setLogModal] = useState<{ open: boolean; title: string; logs: StageLog[]; loading: boolean }>({
     open: false, title: "", logs: [], loading: false,
   });
+  // 淘汰原因弹窗：拖入「已淘汰」先选标准原因（受控 state，不依赖 Form 取值）
+  const [rejectModal, setRejectModal] = useState<{ linkId: string; talentName: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectNote, setRejectNote] = useState("");
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -77,9 +81,35 @@ export default function Pipeline() {
       columns[s].some((c) => c.link_id === linkId)
     );
     if (fromStage === toStage) return;
+    // 淘汰前必须选标准原因：结构化记录用于漏斗「淘汰原因分布」，反哺 JD 与画像修正
+    if (toStage === "rejected") {
+      setRejectReason("");
+      setRejectNote("");
+      setRejectModal({ linkId, talentName });
+      return;
+    }
     try {
-      await api.updateStage(linkId, toStage);
-      message.success(`「${talentName}」已流转到「${STAGE_META[toStage].label}」`);
+      const res = await api.updateStage(linkId, toStage);
+      if (toStage === "hired") {
+        message.success(
+          `「${talentName}」已入职，人才状态已同步为「已入职」${res.task_created ? "，并生成试用期跟进待办" : ""}`
+        );
+      } else {
+        message.success(`「${talentName}」已流转到「${STAGE_META[toStage].label}」`);
+      }
+      fetchPipeline();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
+  // 确认淘汰：带标准原因写入流转日志
+  const confirmReject = async () => {
+    if (!rejectModal || !rejectReason) return;
+    try {
+      await api.updateStage(rejectModal.linkId, "rejected", rejectNote || undefined, rejectReason);
+      message.success(`「${rejectModal.talentName}」已淘汰（${rejectReason}）`);
+      setRejectModal(null);
       fetchPipeline();
     } catch (err) {
       message.error((err as Error).message);
@@ -270,10 +300,14 @@ export default function Pipeline() {
                   {list.length === 0 ? (
                     <div className="pipe-empty">拖拽卡片到此</div>
                   ) : (
-                    list.map((card) => (
+                    list.map((card) => {
+                      // 停留预警分级：≥7 天黄色、≥14 天红色（仅非终态阶段）
+                      const stale14 = card.days_in_stage >= 14 && !STAGE_META[card.stage]?.terminal;
+                      const stale7 = card.days_in_stage >= 7 && !STAGE_META[card.stage]?.terminal;
+                      return (
                       <div
                         key={card.link_id}
-                        className={`pipe-card${dragging === card.link_id ? " dragging" : ""}`}
+                        className={`pipe-card${dragging === card.link_id ? " dragging" : ""}${stale14 ? " pipe-card-stalehot" : ""}`}
                         draggable
                         onDragStart={() => setDragging(card.link_id)}
                         onDragEnd={() => { setDragging(null); setDropTarget(null); }}
@@ -314,10 +348,10 @@ export default function Pipeline() {
                         </div>
 
                         <div className="pipe-card-foot">
-                          {card.days_in_stage >= 7 && !STAGE_META[card.stage]?.terminal ? (
-                            <Tooltip title={`已在本阶段停留 ${card.days_in_stage} 天，建议尽快推进`}>
-                              <span className="pipe-card-stale" style={{ color: "#fa541c" }}>
-                                <ClockCircleOutlined /> 停留 {card.days_in_stage} 天
+                          {stale7 ? (
+                            <Tooltip title={`已在本阶段停留 ${card.days_in_stage} 天，${stale14 ? "超过 14 天，请立即推进、约面或释放" : "建议尽快推进"}`}>
+                              <span style={{ fontSize: "0.72rem", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 3, color: stale14 ? "#ff4d4f" : "#d48806" }}>
+                                <ClockCircleOutlined /> {stale14 ? "停留超时" : "停留偏久"} {card.days_in_stage} 天
                               </span>
                             </Tooltip>
                           ) : (
@@ -349,7 +383,8 @@ export default function Pipeline() {
                           </Space>
                         </div>
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -403,6 +438,39 @@ export default function Pipeline() {
             }))}
           />
         )}
+      </Modal>
+
+      {/* 淘汰原因：拖入「已淘汰」时先记录标准原因（受控 state，供漏斗分布统计） */}
+      <Modal
+        title={`淘汰原因 · ${rejectModal?.talentName || ""}`}
+        open={!!rejectModal}
+        onOk={confirmReject}
+        onCancel={() => setRejectModal(null)}
+        okText="确认淘汰"
+        okButtonProps={{ danger: true, disabled: !rejectReason }}
+        cancelText="取消"
+        width={480}
+      >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="标准原因会进入漏斗「淘汰原因分布」，用于复盘 JD 与画像；补充说明仅供团队参考。"
+        />
+        <Select
+          placeholder="选择淘汰原因（必选）"
+          style={{ width: "100%" }}
+          value={rejectReason || undefined}
+          onChange={(v) => setRejectReason(v || "")}
+          options={REJECT_REASONS.map((r) => ({ label: r, value: r }))}
+        />
+        <Input.TextArea
+          rows={2}
+          style={{ marginTop: 12 }}
+          placeholder="补充说明（选填）：如面试反馈细节、谈薪分歧点…"
+          value={rejectNote}
+          onChange={(e) => setRejectNote(e.target.value)}
+        />
       </Modal>
     </div>
   );
