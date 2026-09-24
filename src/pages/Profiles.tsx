@@ -86,7 +86,7 @@ export default function Profiles() {
   // 目标职位的受控值：不依赖 form.getFieldValue 取「AI 生成 JD」的入参
   const [jobTitleState, setJobTitleState] = useState("");
   // 「AI 生成 JD」的常驻状态提示（不依赖 3 秒即消失的 message，弹窗里一定能看到）
-  const [jdHint, setJdHint] = useState<{ type: "loading" | "success" | "error" | "warning"; text: string } | null>(null);
+  const [jdHint, setJdHint] = useState<{ type: "info" | "loading" | "success" | "error" | "warning"; text: string } | null>(null);
   const inputRef = useRef<InputRef>(null);
   const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS);
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
@@ -106,6 +106,29 @@ export default function Profiles() {
 
   useEffect(() => {
     load();
+  }, []);
+
+  // 岗位页「生成画像」跳转入口：URL 带 job_id 时自动打开新建画像并带入岗位信息。
+  // 参数用完立即从地址栏抹掉，避免刷新后重复弹窗。
+  useEffect(() => {
+    const jobId = new URLSearchParams(window.location.search).get("job_id");
+    if (!jobId) return;
+    window.history.replaceState({}, "", window.location.pathname);
+    api.getJob(jobId).then((job) => {
+      setEditing(null);
+      setJd("");
+      setGenJd(false);
+      setJobTitleState(job.title || "");
+      setJdHint({ type: "info", text: `已带入岗位「${job.title}」${job.city ? `（${job.city}）` : ""}，可点「AI 生成 JD」起草，也可直接粘贴 JD` });
+      setFields({ ...EMPTY_FIELDS, city: job.city || "" });
+      form.resetFields();
+      form.setFieldsValue({ job_title: job.title || "" });
+      setOpen(true);
+    }).catch(() => {
+      message.warning("未找到该岗位，已按普通新建画像打开");
+      openCreate();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setField = <K extends keyof Filters>(key: K, value: Filters[K]) =>
@@ -170,7 +193,7 @@ export default function Profiles() {
     setGenJd(true);
     setJdHint({ type: "loading", text: `正在为「${jobTitle}」起草招聘 JD（约 5 秒）…` });
     try {
-      const r = await api.generateJd(jobTitle);
+      const r = await api.generateJd(jobTitle, fields.city || undefined);
       const text = (r.jd || "").trim();
       if (!text) {
         setJdHint({ type: "error", text: "AI 返回了空内容，请重试" });

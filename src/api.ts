@@ -1,4 +1,4 @@
-import type { User, UserRow, Talent, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult } from "./types";
 
 const BASE = "/api";
 
@@ -123,7 +123,7 @@ export const api = {
     return request<PaginatedResponse<Talent>>(`/talents?${qs}`);
   },
 
-  getTalent: (id: string) => request<Talent>(`/talents/${id}`),
+  getTalent: (id: string) => request<TalentDetailData>(`/talents/${id}`),
 
   createTalent: (data: Partial<Talent>) =>
     request<Talent>("/talents", { method: "POST", body: JSON.stringify(data) }),

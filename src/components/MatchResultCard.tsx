@@ -1,6 +1,6 @@
 import { Tag, Progress, Button, Space, Tooltip, Empty } from "antd";
 import {
-  TrophyOutlined, FileTextOutlined, UserAddOutlined, SendOutlined,
+  TrophyOutlined, FileTextOutlined, UserAddOutlined, SendOutlined, CalendarOutlined,
   CheckCircleFilled, CloseCircleFilled, QuestionCircleFilled, ExclamationCircleFilled,
 } from "@ant-design/icons";
 import { VERDICT_COLORS } from "../types";
@@ -18,6 +18,8 @@ interface Props {
   onViewText: () => void;
   onImport: () => void;
   onAddToPipeline: () => void;
+  /** 一键生成面试跟进待办（预填该人才 + 匹配结论，3 天后到期） */
+  onCreateTask: () => void;
 }
 
 /** 结论 → 头部渐变的底色（越靠前越醒目，一眼区分档次） */
@@ -110,7 +112,7 @@ function Panel({
 
 // 单个候选人的匹配结果卡片：分数 + 硬指标命中 + 理由/差距/风险 + 落地操作
 export default function MatchResultCard({
-  rank, talent, result, savedId, importing, fromLibrary, onViewText, onImport, onAddToPipeline,
+  rank, talent, result, savedId, importing, fromLibrary, onViewText, onImport, onAddToPipeline, onCreateTask,
 }: Props) {
   const { hard } = result;
   const color = VERDICT_COLORS[result.verdict] || "#3b82f6";
@@ -300,6 +302,15 @@ export default function MatchResultCard({
             onClick={onAddToPipeline}
           >
             加入招聘流程
+          </Button>
+          <Button
+            size="small"
+            icon={<CalendarOutlined />}
+            disabled={!savedId}
+            title={savedId ? "预填该人才与匹配结论，3 天后到期" : "请先录入人才库，再生成面试待办"}
+            onClick={onCreateTask}
+          >
+            生成面试待办
           </Button>
           <span style={{ color: "#9ca3af", fontSize: 12, marginLeft: "auto" }}>
             {fromLibrary

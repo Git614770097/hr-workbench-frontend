@@ -89,7 +89,7 @@ talents.get("/", async (c) => {
   return c.json({ items, total: countResult?.total || 0, page, limit, pages: Math.ceil((countResult?.total || 0) / limit) });
 });
 
-// ---- 人才详情 ----
+// ---- 人才详情（聚合：本体 + 相关待办 + 投递进程 + 阶段日志）----
 talents.get("/:id", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
@@ -102,7 +102,43 @@ talents.get("/:id", async (c) => {
   const row = await c.env.DB.prepare(sql).bind(...params).first();
   if (!row) return c.json({ error: "人才不存在" }, 404);
 
-  return c.json({ ...(row as any), skills: (row as any).skills ? JSON.parse((row as any).skills) : [] });
+  // 相关待办：待办属于创建人，非管理员只看自己创建的；管理员看该人才关联的全部。
+  // 已取消的不展示；待办中在前（打勾不往后翻），组内按到期日升序、无到期日靠后。
+  let taskSql =
+    "SELECT k.*, k2.name as owner_name FROM talent_tasks k JOIN users k2 ON k.owner_id = k2.id WHERE k.talent_id = ? AND k.status != 'cancelled'";
+  const taskParams: string[] = [id];
+  if (session.role !== "admin") { taskSql += " AND k.owner_id = ?"; taskParams.push(session.userId); }
+  taskSql += " ORDER BY k.status = 'done' ASC, k.due_date IS NULL, k.due_date ASC LIMIT 50";
+  const tasks = (await c.env.DB.prepare(taskSql).bind(...taskParams).all()).results;
+
+  // 投递进程：人才本体已做过归属校验，其投递记录随人才可见（与 pipeline 路由口径一致）
+  const pipeline = (
+    await c.env.DB.prepare(
+      `SELECT tj.id, tj.job_id, tj.stage, tj.rating, tj.notes, tj.created_at, tj.updated_at,
+              j.title as job_title, j.department as job_department, j.city as job_city
+         FROM talent_jobs tj JOIN jobs j ON tj.job_id = j.id
+        WHERE tj.talent_id = ? ORDER BY tj.updated_at DESC`
+    ).bind(id).all()
+  ).results;
+
+  // 阶段流转日志：覆盖该人才全部投递，按时间正序，前端按投递分组
+  const stageLogs = (
+    await c.env.DB.prepare(
+      `SELECT l.id, l.talent_job_id, l.from_stage, l.to_stage, l.remark, l.created_at,
+              u.name as user_name
+         FROM job_stage_logs l LEFT JOIN users u ON l.user_id = u.id
+        WHERE l.talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)
+        ORDER BY l.created_at ASC`
+    ).bind(id).all()
+  ).results;
+
+  return c.json({
+    ...(row as any),
+    skills: (row as any).skills ? JSON.parse((row as any).skills) : [],
+    tasks,
+    pipeline,
+    stage_logs: stageLogs,
+  });
 });
 
 // ---- 新增人才 ----

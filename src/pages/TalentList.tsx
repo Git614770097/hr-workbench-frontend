@@ -5,7 +5,7 @@ import {
   Popconfirm, message, Dropdown,
 } from "antd";
 import {
-  DeleteOutlined, ImportOutlined, FilePdfOutlined, ExportOutlined,
+  DeleteOutlined, EditOutlined, ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
   FileWordOutlined,
 } from "@ant-design/icons";
@@ -15,6 +15,7 @@ import type { Talent, User } from "../types";
 import { STATUS_LABELS, STATUS_COLORS, EDUCATION_OPTIONS } from "../types";
 import ImportModal from "../components/ImportModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
+import TalentFormModal from "../components/TalentFormModal";
 
 // 搜索条件（draft = 编辑中，applied = 已生效）
 interface Filters {
@@ -73,6 +74,7 @@ export default function TalentList() {
   // 弹窗状态
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [previewTalent, setPreviewTalent] = useState<Talent | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
 
   // 导出状态
   const [exporting, setExporting] = useState(false);
@@ -318,10 +320,15 @@ export default function TalentList() {
     {
       title: "操作",
       key: "action",
-      width: 150,
+      width: 190,
       fixed: "right" as const,
       render: (_: any, record: Talent) => (
         <Space size="small">
+          <Button
+            type="link" size="small" icon={<EditOutlined />}
+            title="编辑"
+            onClick={() => setEditId(record.id)}
+          />
           {record.resume_url && (
             <>
               <Button
@@ -411,6 +418,14 @@ export default function TalentList() {
 
       {/* 简历预览弹窗（PDF 原生渲染保留格式；Word 在线转 HTML 查看，不下载） */}
       <ResumePreviewModal talent={previewTalent} onClose={() => setPreviewTalent(null)} />
+
+      {/* 行内编辑：不跳详情页，改完即刷新列表 */}
+      <TalentFormModal
+        open={!!editId}
+        talentId={editId}
+        onClose={() => setEditId(null)}
+        onSuccess={fetchTalents}
+      />
     </div>
   );
 }

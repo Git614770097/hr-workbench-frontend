@@ -313,6 +313,39 @@ export default function Match() {
     setPipelineTalentId(id);
   };
 
+  // 一键生成面试跟进待办：预填该人才 + 匹配结论/建议追问，3 天后到期
+  const handleCreateTask = async (cd: Candidate) => {
+    const talentId = savedIds[cd.key];
+    if (!talentId) {
+      message.info("请先「录入人才库」，再生成面试待办");
+      return;
+    }
+    const r = results[cd.key];
+    const name = cd.talent.name || "候选人";
+    const parts: string[] = [];
+    if (r) {
+      parts.push(`匹配结论：${r.score} 分（${r.verdict}）`);
+      if (r.summary) parts.push(r.summary);
+      if (r.questions?.length) parts.push(`建议追问：\n- ${r.questions.join("\n- ")}`);
+    }
+    const d = new Date(Date.now() + 3 * 86400000);
+    const p = (n: number) => String(n).padStart(2, "0");
+    const due = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    try {
+      await api.createTask({
+        talent_id: talentId,
+        title: `面试跟进：${name}`,
+        content: parts.join("\n") || null,
+        due_date: due,
+        priority: "normal",
+        source: "system",
+      });
+      message.success(`已生成「${name}」的面试待办（${due} 到期），可在「跟进待办」查看`);
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
   const ranked = candidates
     .filter((c) => results[c.key])
     .sort((a, b) => results[b.key].score - results[a.key].score);
@@ -544,6 +577,7 @@ export default function Match() {
             onViewText={() => setViewing(cd)}
             onImport={() => handleImport(cd)}
             onAddToPipeline={() => handleAddToPipeline(cd)}
+            onCreateTask={() => handleCreateTask(cd)}
           />
         ))}
       </Card>

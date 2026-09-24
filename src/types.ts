@@ -299,6 +299,40 @@ export interface StageLog {
   created_at: string;
 }
 
+// ---- 人才详情聚合（GET /talents/:id 返回本体 + 以下三组关联数据）----
+
+/** 该人才的岗位投递记录（talent_jobs + 岗位信息） */
+export interface TalentPipelineItem {
+  id: string;              // talent_jobs 主键（link_id）
+  job_id: string;
+  stage: Stage;
+  rating: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  job_title: string;
+  job_department: string | null;
+  job_city: string | null;
+}
+
+/** 投递的阶段流转日志（按 talent_job_id 关联到上面的投递记录） */
+export interface TalentStageLog {
+  id: string;
+  talent_job_id: string;
+  from_stage: Stage | null;
+  to_stage: Stage;
+  remark: string | null;
+  created_at: string;
+  user_name: string | null;
+}
+
+/** 人才详情聚合返回 */
+export interface TalentDetailData extends Talent {
+  tasks: Task[];
+  pipeline: TalentPipelineItem[];
+  stage_logs: TalentStageLog[];
+}
+
 // ---- 招聘漏斗 ----
 // 阶段人数采用「曾到达」口径：日志里出现过即计入，漏斗因此单调递减
 export interface FunnelStageItem {

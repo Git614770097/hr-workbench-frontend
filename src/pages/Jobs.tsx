@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Button, Space, Tag, Input, Select, Popconfirm, message, Tooltip,
   Progress, Modal, Empty, Spin, Badge, Dropdown,
@@ -7,7 +7,7 @@ import {
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined,
   TeamOutlined, PlayCircleOutlined, PauseCircleOutlined, StopOutlined,
-  SwapOutlined, CheckOutlined,
+  SwapOutlined, CheckOutlined, ThunderboltOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -22,6 +22,7 @@ import AddToPipelineModal from "../components/AddToPipelineModal";
 const PAGE_SIZE = 10;
 
 export default function Jobs() {
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -188,9 +189,15 @@ export default function Jobs() {
       render: (v: string) => v || "—",
     }] : []),
     {
-      title: "操作", key: "action", width: 170, fixed: "right" as const,
+      title: "操作", key: "action", width: 210, fixed: "right" as const,
       render: (_: any, r: Job) => (
         <Space size={2}>
+          <Tooltip title="生成画像：带着岗位信息去建匹配画像">
+            <Button
+              type="link" size="small" icon={<ThunderboltOutlined />}
+              onClick={() => navigate(`/profiles?job_id=${r.id}`)}
+            />
+          </Tooltip>
           <Tooltip title="添加候选人">
             <Button
               type="link" size="small" icon={<TeamOutlined />}
