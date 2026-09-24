@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Card, Button, Select, Space, Row, Col, Empty, Spin, Tooltip, message, Typography } from "antd";
+import { Card, Button, Select, Space, Row, Col, Empty, Spin, Tooltip, message } from "antd";
 import {
   ReloadOutlined, SearchOutlined, FunnelPlotOutlined,
   ThunderboltOutlined, RiseOutlined, ClockCircleOutlined, TeamOutlined,
@@ -55,15 +55,11 @@ const dayText = (v: number | null) => (v == null ? "—" : `${v} 天`);
 const numText = (v: number | null) => (v == null ? "—" : `${v}`);
 const r1 = (v: number) => Math.round(v * 10) / 10;
 // 时间戳（本地）
-const nowText = () =>
-  new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-
 export default function Funnel() {
   const [data, setData] = useState<FunnelResponse | null>(null);
   const [jobs, setJobs] = useState<Pick<Job, "id" | "title" | "status">[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [updatedAt, setUpdatedAt] = useState("");
 
   // 已应用的条件（点「查询」才生效）
   const [jobFilter, setJobFilter] = useState("");
@@ -102,7 +98,6 @@ export default function Funnel() {
         days: daysFilter || undefined,
       });
       setData(res);
-      setUpdatedAt(nowText());
     } catch (err) {
       message.error((err as Error).message);
     }
@@ -148,16 +143,7 @@ export default function Funnel() {
   return (
     <div className="funnel-page">
       {/* 筛选 */}
-      <Card
-        className="search-card"
-        style={{ marginBottom: 16 }}
-        styles={{ body: { padding: 16 } }}
-        extra={
-          updatedAt ? (
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>更新于 {updatedAt}</Typography.Text>
-          ) : null
-        }
-      >
+      <Card className="search-card" style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
         <div className="search-grid">
           <div className="search-field">
             <span className="search-label">岗位</span>
