@@ -5,7 +5,7 @@ import {
   Progress, Modal, Empty, Spin, Badge, Dropdown,
 } from "antd";
 import {
-  PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined,
+  PlusOutlined, SearchOutlined, ReloadOutlined,
   TeamOutlined, PlayCircleOutlined, PauseCircleOutlined, StopOutlined,
   SwapOutlined, CheckOutlined, ThunderboltOutlined,
 } from "@ant-design/icons";
@@ -189,24 +189,19 @@ export default function Jobs() {
       render: (v: string) => v || "—",
     }] : []),
     {
-      title: "操作", key: "action", width: 210, fixed: "right" as const,
+      title: "操作", key: "action", width: 205, fixed: "right" as const,
       render: (_: any, r: Job) => (
         <Space size={2}>
+          <Button type="link" size="small" onClick={() => { setPresetJobId(r.id); setAddOpen(true); }}>
+            添加候选人
+          </Button>
           <Tooltip title="生成画像：带着岗位信息去建匹配画像">
             <Button
               type="link" size="small" icon={<ThunderboltOutlined />}
               onClick={() => navigate(`/profiles?job_id=${r.id}`)}
             />
           </Tooltip>
-          <Tooltip title="添加候选人">
-            <Button
-              type="link" size="small" icon={<TeamOutlined />}
-              onClick={() => { setPresetJobId(r.id); setAddOpen(true); }}
-            />
-          </Tooltip>
-          <Tooltip title="编辑">
-            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => { setEditingId(r.id); setFormOpen(true); }} />
-          </Tooltip>
+          <Button type="link" size="small" onClick={() => { setEditingId(r.id); setFormOpen(true); }}>编辑</Button>
           <Dropdown
             menu={{ items: statusMenu(r), onClick: ({ key }) => quickStatus(r, key), selectable: true, selectedKeys: [r.status] }}
             trigger={["click"]}
@@ -220,9 +215,7 @@ export default function Jobs() {
             description="岗位下的候选人关联会被清除，人才档案保留。"
             onConfirm={() => handleDelete(r)}
           >
-            <Tooltip title="删除">
-              <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-            </Tooltip>
+            <Button type="link" size="small" danger>删除</Button>
           </Popconfirm>
         </Space>
       ),

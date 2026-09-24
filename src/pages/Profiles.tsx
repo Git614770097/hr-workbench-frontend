@@ -5,7 +5,7 @@ import {
 } from "antd";
 import type { InputRef } from "antd";
 import {
-  PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined,
+  PlusOutlined, ThunderboltOutlined,
   SearchOutlined, ReloadOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
@@ -353,16 +353,16 @@ export default function Profiles() {
     {
       title: "操作",
       key: "actions",
-      width: 200,
+      width: 190,
       fixed: "right" as const,
       render: (_: unknown, r: MatchProfile) => (
         <Space size={4}>
           <Button size="small" icon={<ThunderboltOutlined />} onClick={() => navigate("/match", { state: { profileId: r.id } })}>
             去匹配
           </Button>
-          <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} />
+          <Button type="link" size="small" onClick={() => openEdit(r)}>编辑</Button>
           <Popconfirm title="删除这个画像？" okText="删除" cancelText="取消" onConfirm={() => handleDelete(r)}>
-            <Button size="small" danger icon={<DeleteOutlined />} />
+            <Button type="link" size="small" danger>删除</Button>
           </Popconfirm>
         </Space>
       ),

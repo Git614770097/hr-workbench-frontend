@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
-  Popconfirm, message, Dropdown, Alert, Modal,
+  Popconfirm, message, Dropdown, Alert, Modal, Tooltip,
 } from "antd";
 import {
-  DeleteOutlined, EditOutlined, ImportOutlined, FilePdfOutlined, ExportOutlined,
+  ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
   FileWordOutlined, TeamOutlined,
 } from "@ant-design/icons";
@@ -343,31 +343,23 @@ export default function TalentList() {
     {
       title: "操作",
       key: "action",
-      width: 190,
+      width: 170,
       fixed: "right" as const,
       render: (_: any, record: Talent) => (
         <Space size="small">
-          <Button
-            type="link" size="small" icon={<EditOutlined />}
-            title="编辑"
-            onClick={() => setEditId(record.id)}
-          />
+          <Button type="link" size="small" onClick={() => setEditId(record.id)}>编辑</Button>
           {record.resume_url && (
             <>
-              <Button
-                type="link" size="small" icon={<FilePdfOutlined />}
-                title="预览简历"
-                onClick={() => setPreviewTalent(record)}
-              />
-              <Button
-                type="link" size="small" icon={<ExportOutlined />}
-                title="导出简历"
-                onClick={() => handleExportResume(record)}
-              />
+              <Tooltip title="预览简历">
+                <Button type="link" size="small" icon={<FilePdfOutlined />} onClick={() => setPreviewTalent(record)} />
+              </Tooltip>
+              <Tooltip title="导出简历">
+                <Button type="link" size="small" icon={<ExportOutlined />} onClick={() => handleExportResume(record)} />
+              </Tooltip>
             </>
           )}
           <Popconfirm title="确认删除？所有关联数据将被清除。" onConfirm={() => handleDelete(record.id, record.name)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} title="删除" />
+            <Button type="link" size="small" danger>删除</Button>
           </Popconfirm>
         </Space>
       ),

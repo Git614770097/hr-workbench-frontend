@@ -3,7 +3,7 @@ import {
   Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Tooltip, Select, Alert, Badge,
 } from "antd";
 import {
-  PlusOutlined, DeleteOutlined, KeyOutlined, SafetyOutlined, UserAddOutlined, CheckOutlined, StopOutlined,
+  PlusOutlined, KeyOutlined, UserAddOutlined, CheckOutlined, StopOutlined,
   ClockCircleOutlined, LockOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
@@ -293,19 +293,15 @@ export default function Users() {
     {
       title: "操作",
       key: "action",
-      width: 220,
+      width: 200,
       render: (_: unknown, record: UserRow) => (
         <Space>
-          <Tooltip title="重置密码">
-            <Button type="link" size="small" icon={<KeyOutlined />} onClick={() => { setShowReset(record.id); resetForm.resetFields(); }} />
-          </Tooltip>
+          <Button type="link" size="small" onClick={() => { setShowReset(record.id); resetForm.resetFields(); }}>重置密码</Button>
           {record.role !== "admin" && (
             <>
-              <Tooltip title="分配角色">
-                <Button type="link" size="small" icon={<SafetyOutlined />} onClick={() => { setAssigning(record); assignForm.setFieldsValue({ role_id: record.role_id }); }}>分配角色</Button>
-              </Tooltip>
+              <Button type="link" size="small" onClick={() => { setAssigning(record); assignForm.setFieldsValue({ role_id: record.role_id }); }}>分配角色</Button>
               <Popconfirm title="确认删除？该用户的所有数据将被清除。" onConfirm={() => handleDelete(record.id, record.name)}>
-                <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                <Button type="link" size="small" danger>删除</Button>
               </Popconfirm>
             </>
           )}

@@ -4,8 +4,7 @@ import {
   message, Popconfirm, Tooltip, Table, Tabs,
 } from "antd";
 import {
-  PlusOutlined, SearchOutlined, FileTextOutlined, EditOutlined,
-  DeleteOutlined, EyeOutlined, ReloadOutlined, CopyOutlined,
+  PlusOutlined, SearchOutlined, FileTextOutlined, ReloadOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { DocTemplate, User } from "../types";
@@ -168,20 +167,20 @@ export default function TemplateLibrary() {
     {
       title: "操作",
       key: "actions",
-      width: 140,
+      width: 170,
       render: (_: any, t: DocTemplate) => (
-        <span style={{ display: "inline-flex", gap: 4 }}>
-          <Tooltip title="查看"><Button size="small" icon={<EyeOutlined />} onClick={() => setViewTarget(t)} /></Tooltip>
+        <span style={{ display: "inline-flex", gap: 6 }}>
+          <Button type="link" size="small" onClick={() => setViewTarget(t)}>查看</Button>
           {canModify(t) ? (
             <>
-              <Tooltip title="编辑"><Button size="small" icon={<EditOutlined />} onClick={() => openEdit(t)} /></Tooltip>
+              <Button type="link" size="small" onClick={() => openEdit(t)}>编辑</Button>
               <Popconfirm title="确认删除该模板？" onConfirm={() => handleDelete(t)}>
-                <Tooltip title="删除"><Button size="small" danger icon={<DeleteOutlined />} /></Tooltip>
+                <Button type="link" size="small" danger>删除</Button>
               </Popconfirm>
             </>
           ) : (
             <Tooltip title="复制为我的个人模板后可自由修改">
-              <Button size="small" icon={<CopyOutlined />} onClick={() => handleDuplicate(t)} />
+              <Button type="link" size="small" onClick={() => handleDuplicate(t)}>复制</Button>
             </Tooltip>
           )}
         </span>

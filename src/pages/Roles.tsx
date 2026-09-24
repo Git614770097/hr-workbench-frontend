@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Checkbox, Typography } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { PlusOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import type { Role } from "../types";
 import { MENU_PERMISSIONS } from "../types";
@@ -90,9 +90,9 @@ export default function Roles() {
       width: 160,
       render: (_: unknown, record: Role) => (
         <Space>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>编辑</Button>
+          <Button type="link" size="small" onClick={() => openEdit(record)}>编辑</Button>
           <Popconfirm title={`确认删除角色「${record.name}」？`} onConfirm={() => handleDelete(record)}>
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+            <Button type="link" size="small" danger>删除</Button>
           </Popconfirm>
         </Space>
       ),
