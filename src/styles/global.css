@@ -768,81 +768,6 @@ html[data-theme="dark"] .profiles-table .ant-table-tbody > tr.ant-table-row:hove
 /* 限宽居中：宽屏下不让漏斗被拉扁（宽高比失控），900px 内比例最协调 */
 .funnel-canvas { position: relative; width: 100%; max-width: 900px; margin: 0 auto; }
 
-/* 漏斗底座：底部椭圆阴影，让倒三角「立」在卡面上（伪 3D）。
-   漏斗水平中心因左右留白不等（90/126px）整体偏左 18px，底座随之偏移。 */
-.funnel-canvas::after {
-  content: ""; position: absolute;
-  left: calc(50% - 18px); bottom: 8px; transform: translateX(-50%);
-  width: 34%; height: 12px; border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(15,23,42,0.16), transparent 70%);
-  pointer-events: none;
-}
-html[data-theme="dark"] .funnel-canvas::after {
-  background: radial-gradient(ellipse at center, rgba(0,0,0,0.55), transparent 70%);
-}
-
-/* 左右注释行淡入：与漏斗层错开入场呼应（ECharts delay 110ms/层，CSS 同步错开） */
-@keyframes funnelRowIn { from { opacity: 0; } to { opacity: 1; } }
-.funnel-label, .funnel-note { animation: funnelRowIn 0.45s ease both; }
-.funnel-label:nth-child(2), .funnel-note:nth-child(2) { animation-delay: 0.11s; }
-.funnel-label:nth-child(3), .funnel-note:nth-child(3) { animation-delay: 0.22s; }
-.funnel-label:nth-child(4), .funnel-note:nth-child(4) { animation-delay: 0.33s; }
-.funnel-label:nth-child(5), .funnel-note:nth-child(5) { animation-delay: 0.44s; }
-.funnel-label:nth-child(n+6), .funnel-note:nth-child(n+6) { animation-delay: 0.55s; }
-
-/* 悬停联动高亮：漏斗层 hover → 左侧阶段名右移变色、右侧注释行浅底 */
-.funnel-label { transition: color 0.18s ease, transform 0.18s ease; }
-.funnel-label.is-active {
-  color: #2563eb; font-weight: 700; transform: translateX(-3px);
-}
-.funnel-note { transition: background 0.18s ease; border-radius: 6px; }
-.funnel-note.is-active { background: rgba(59, 130, 246, 0.09); }
-html[data-theme="dark"] .funnel-label.is-active { color: #60a5fa; }
-html[data-theme="dark"] .funnel-note.is-active { background: rgba(96, 165, 250, 0.14); }
-
-/* 漏斗左侧阶段名列：等分 flex 行，与右侧注释列同构（中心对齐各级） */
-.funnel-labels {
-  position: absolute; left: 0;
-  display: flex; flex-direction: column;
-  pointer-events: none;
-}
-.funnel-label {
-  flex: 1;
-  display: flex; align-items: center; justify-content: flex-end;
-  padding-right: 10px;
-  font-size: 13px; font-weight: 500; color: #374151;
-  white-space: nowrap;
-}
-
-/* 漏斗右侧注释列：等分 flex 行，中心与 ECharts 各级中心对齐（偏差 <1px） */
-.funnel-notes {
-  position: absolute; right: 0;
-  display: flex; flex-direction: column;
-  pointer-events: none;   /* 不遮挡漏斗的悬停高亮 */
-  overflow: hidden;
-}
-.funnel-note {
-  flex: 1 1 0; min-height: 0;
-  display: flex; flex-direction: column;
-  justify-content: center; align-items: flex-end;
-}
-.funnel-note-main {
-  display: flex; align-items: baseline; gap: 6px;
-  font-size: 12px; line-height: 1.2; white-space: nowrap;
-}
-.funnel-note-rate {
-  color: #10b981; font-weight: 600;
-  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
-}
-.funnel-note-rate.is-low { color: #ef4444; }
-.funnel-note-drop { color: #fa8c16; font-size: 11px; }
-.funnel-note-base { color: #bfbfbf; }
-.funnel-note-sub {
-  color: #a8adb5; font-size: 11px; line-height: 1.3;
-  margin-top: 2px; white-space: nowrap;
-}
-.funnel-note-sub.is-slow { color: #fa541c; }
-
 .funnel-dot {
   width: 8px; height: 8px; border-radius: 50%;
   flex-shrink: 0; display: inline-block;
@@ -956,13 +881,6 @@ html[data-theme="dark"] .funnel-note.is-active { background: rgba(96, 165, 250, 
 .funnel-health.is-slow { background: #fff2e8; color: #d4380d; }
 
 /* 暗色模式 */
-html[data-theme="dark"] .funnel-label { color: #d1d5db; }
-html[data-theme="dark"] .funnel-note-rate { color: #52c41a; }
-html[data-theme="dark"] .funnel-note-rate.is-low { color: #ff7875; }
-html[data-theme="dark"] .funnel-note-drop { color: #ffa940; }
-html[data-theme="dark"] .funnel-note-base { color: #6b7280; }
-html[data-theme="dark"] .funnel-note-sub { color: #8c8c8c; }
-html[data-theme="dark"] .funnel-note-sub.is-slow { color: #ff7a45; }
 html[data-theme="dark"] .funnel-branches { border-top-color: #303030; color: #b0b6c0; }
 html[data-theme="dark"] .funnel-kpi { border-color: #303030; background: #1f1f1f; }
 html[data-theme="dark"] .funnel-dot { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15); }
