@@ -429,6 +429,15 @@ export default function Tasks() {
           styles={{ body: { padding: "14px 16px" } }}
           title={
             <Space size={8}>
+              <Button
+                type="link"
+                size="small"
+                icon={<PlusOutlined />}
+                style={{ paddingInline: 0 }}
+                onClick={() => openCreate(selected)}
+              >
+                新建待办
+              </Button>
               <span>
                 {selectedDate ? selectedDate.format("M 月 D 日 dddd") : "未指定日期"}
               </span>
@@ -441,16 +450,6 @@ export default function Tasks() {
                 </span>
               )}
             </Space>
-          }
-          extra={
-            <Button
-              type="link"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={() => openCreate(selected)}
-            >
-              {selected ? "在这天新建" : "新建"}
-            </Button>
           }
         >
           {loading ? (
