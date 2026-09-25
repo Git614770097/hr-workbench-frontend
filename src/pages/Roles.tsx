@@ -89,7 +89,7 @@ export default function Roles() {
       key: "action",
       width: 160,
       render: (_: unknown, record: Role) => (
-        <Space>
+        <Space size={4}>
           <Button type="link" size="small" onClick={() => openEdit(record)}>编辑</Button>
           <Popconfirm title={`确认删除角色「${record.name}」？`} onConfirm={() => handleDelete(record)}>
             <Button type="link" size="small" danger>删除</Button>

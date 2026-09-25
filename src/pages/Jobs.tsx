@@ -191,7 +191,7 @@ export default function Jobs() {
     {
       title: "操作", key: "action", width: 240, fixed: "right" as const,
       render: (_: any, r: Job) => (
-        <Space size={2}>
+        <Space size={4}>
           <Button type="link" size="small" onClick={() => { setPresetJobId(r.id); setAddOpen(true); }}>
             添加候选人
           </Button>

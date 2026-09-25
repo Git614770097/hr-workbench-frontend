@@ -169,7 +169,7 @@ export default function TemplateLibrary() {
       key: "actions",
       width: 170,
       render: (_: any, t: DocTemplate) => (
-        <span style={{ display: "inline-flex", gap: 6 }}>
+        <span style={{ display: "inline-flex", gap: 4 }}>
           <Button type="link" size="small" onClick={() => setViewTarget(t)}>查看</Button>
           {canModify(t) ? (
             <>

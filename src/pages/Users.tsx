@@ -163,7 +163,7 @@ export default function Users() {
 
   /** 待审批区块的行内操作：通过 / 拒绝 */
   const pendingActions = (record: UserRow) => (
-    <Space>
+    <Space size={4}>
       <Button
         type="primary"
         size="small"
@@ -207,7 +207,7 @@ export default function Users() {
 
   /** 待处理重置申请的行内操作：设置新密码 / 忽略 */
   const resetActions = (record: UserRow) => (
-    <Space>
+    <Space size={4}>
       <Button
         type="primary"
         size="small"

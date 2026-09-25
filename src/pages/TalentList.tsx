@@ -346,7 +346,7 @@ export default function TalentList() {
       width: 170,
       fixed: "right" as const,
       render: (_: any, record: Talent) => (
-        <Space size="small">
+        <Space size={4}>
           <Button type="link" size="small" onClick={() => setEditId(record.id)}>编辑</Button>
           {record.resume_url && (
             <>

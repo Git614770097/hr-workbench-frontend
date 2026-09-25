@@ -717,6 +717,10 @@ html[data-theme="dark"] .stat-num.is-neutral { color: #e5e7eb; }
   margin-bottom: 0.75rem;
 }
 
+/* 操作列紧凑化：antd link 按钮默认左右 7px 内边距让按钮间观感很空，
+   表格单元格内压到 4px（双类选择器提特异性，压过 antd 运行时注入的同名规则）。 */
+.ant-table-cell .ant-btn-link { padding-inline: 4px; }
+
 /* 表格层次：表头加粗 + 底色 + 底部主线；行 hover 左侧主色条 + 浅蓝底；
    薪资等宽数字，避免不同行金额宽度跳。 */
 .profiles-table .ant-table-thead > tr > th {
