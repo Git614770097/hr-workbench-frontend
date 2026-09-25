@@ -6,12 +6,13 @@ import {
 } from "antd";
 import {
   SearchOutlined, ReloadOutlined, BellOutlined, CalculatorOutlined,
-  UserAddOutlined, UserDeleteOutlined, SafetyCertificateOutlined,
+  UserAddOutlined, UserDeleteOutlined, SafetyCertificateOutlined, InfoCircleOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { SocialItem } from "../types";
 import { SI_STATUS_LABELS, SI_STATUS_COLORS, STATUS_LABELS } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
+import { useDismissible } from "../hooks/useDismissible";
 
 /** 待办动作推导（与后端 socialTaskStmts 同口径）：onboarded=已入职、si=参保状态 */
 function deriveAction(r: SocialItem): "add" | "stop" | null {
@@ -264,6 +265,7 @@ export default function Social() {
   const [actionFilter, setActionFilter] = useState("all");
   const [editing, setEditing] = useState<SocialItem | null>(null);
   const [taxOpen, setTaxOpen] = useState(false);
+  const intro = useDismissible("social.intro");
 
   const fetchList = useCallback(async (keyword: string) => {
     setLoading(true);
@@ -380,10 +382,13 @@ export default function Social() {
         </div>
       </div>
 
-      <Alert
-        type="info" showIcon style={{ marginBottom: 16 }}
-        message="标记「已入职」或填了入职日期、但未参保的人才 → 自动生成「社保增员」待办；填了离职日期且仍在缴 → 生成「社保减员」待办。基数与比例由你按参保地政策填写，系统不维护费率规则库。"
-      />
+      {!intro.dismissed && (
+        <Alert
+          type="info" showIcon closable style={{ marginBottom: 16 }}
+          message="标记「已入职」或填了入职日期、但未参保的人才 → 自动生成「社保增员」待办；填了离职日期且仍在缴 → 生成「社保减员」待办。基数与比例由你按参保地政策填写，系统不维护费率规则库。"
+          onClose={intro.dismiss}
+        />
+      )}
 
       {/* 搜索 + 工具行 */}
       <Card className="search-card" style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
@@ -419,6 +424,9 @@ export default function Social() {
             <div className="search-control" />
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+            {intro.dismissed && (
+              <Button icon={<InfoCircleOutlined />} onClick={intro.restore}>说明</Button>
+            )}
             <Button icon={<CalculatorOutlined />} onClick={() => setTaxOpen(true)}>个税计算器</Button>
             <Button icon={<BellOutlined />} onClick={manualSync}>同步提醒</Button>
             <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setActionFilter("all"); fetchList(""); }}>重置</Button>

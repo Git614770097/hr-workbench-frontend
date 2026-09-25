@@ -4,13 +4,14 @@ import {
   Card, Table, Input, Select, Button, Space, Tag, DatePicker, Modal,
   Form, message, Alert, Upload, Popconfirm, Typography,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined, PlusOutlined, UserOutlined, FileTextOutlined, ExclamationCircleOutlined, FileProtectOutlined, HourglassOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined, PlusOutlined, UserOutlined, FileTextOutlined, ExclamationCircleOutlined, FileProtectOutlined, HourglassOutlined, InfoCircleOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
 import type { ContractItem, ContractFile, Talent } from "../types";
 import { STATUS_LABELS } from "../types";
 import { extractContractText } from "../utils/contractFile";
 import AnimatedNumber from "../components/AnimatedNumber";
+import { useDismissible } from "../hooks/useDismissible";
 
 // 日期快捷预设（从今天起算）：试用期按月、合同按年。
 // 三个弹窗（新增合同 / 合同文件 / 编辑日期）共用，保证体验一致。
@@ -504,6 +505,7 @@ export default function Contracts() {
   const [fileTalent, setFileTalent] = useState<ContractItem | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [form] = Form.useForm();
+  const intro = useDismissible("contracts.intro");
 
   const fetchList = useCallback(async (keyword: string) => {
     setLoading(true);
@@ -650,12 +652,16 @@ export default function Contracts() {
         </div>
       </div>
 
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="合同 / 试用期到期前 30 天（含已过期未处理）会自动在「跟进待办」生成高优先级提醒；编辑日期后提醒自动更新，清空日期则自动取消提醒。"
-      />
+      {!intro.dismissed && (
+        <Alert
+          type="info"
+          showIcon
+          closable
+          style={{ marginBottom: 16 }}
+          message="合同 / 试用期到期前 30 天（含已过期未处理）会自动在「跟进待办」生成高优先级提醒；编辑日期后提醒自动更新，清空日期则自动取消提醒。"
+          onClose={intro.dismiss}
+        />
+      )}
 
       {/* 搜索：姓名关键词 + 到期状态筛选 */}
       <Card className="search-card" style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
@@ -688,6 +694,9 @@ export default function Contracts() {
             <div className="search-control" />
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+            {intro.dismissed && (
+              <Button icon={<InfoCircleOutlined />} onClick={intro.restore}>说明</Button>
+            )}
             <Button icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>新增合同</Button>
             <Button icon={<BellOutlined />} onClick={manualSync}>同步提醒</Button>
             <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setRangeFilter("all"); fetchList(""); }}>重置</Button>
