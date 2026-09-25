@@ -3,6 +3,7 @@ import { getCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { genId } from "../helpers";
+import { deepseekJson } from "../ai";
 
 const talents = new Hono<{ Bindings: Env }>();
 
@@ -213,6 +214,173 @@ talents.post("/contracts/sync-tasks", async (c) => {
   return c.json({ checked: talentsRows.length, created, updated, cancelled });
 });
 
+// ---- 合同文件：上传（含 AI 日期识别）/ 列表 / 下载 / 删除 ----
+// 文件本体存 KV（复用 RESUMES 命名空间，contract: 前缀与简历隔离），
+// 元数据存 D1 contract_files。文本抽取在前端完成（pdfjs/mammoth，与简历导入同链路），
+// 后端只负责：存文件 → 调 DeepSeek 从文本抽日期 → 返回识别结果。
+// 识别结果仅作记录与预填，档案日期以 talents.contract_end / probation_end 为准。
+
+const CONTRACT_EXTRACT_SYSTEM = `你是一份劳动合同的信息提取助手。请从合同文本中提取以下两个日期，并以严格的 JSON 对象返回（不要输出任何解释，不要 markdown 代码块）：
+- contract_end: 劳动合同到期日。固定期限合同一般写作「本合同自 X 年 X 月 X 日起至 Y 年 Y 月 Y 日止」，取终止日期 Y，格式 YYYY-MM-DD。无固定期限合同（无终止日期）返回 null。
+- probation_end: 试用期到期日。若合同写了试用期时长和起始日，请推算（如 2025 年 3 月 1 日起试用 3 个月，试用期为 2025-03-01 至 2025-05-31，取 2025-05-31）；没有试用期信息返回 null。
+注意：
+1. 文本中若出现多份合同或续签条款，以最后（最新）一份合同的日期为准。
+2. 拿不准就返回 null，绝不要编造日期。
+3. 只返回 {"contract_end": "YYYY-MM-DD" 或 null, "probation_end": "YYYY-MM-DD" 或 null}`;
+
+/** AI 返回的日期 → 合法 YYYY-MM-DD（2000-2100 年区间），脏值一律置 null */
+function contractDateOrNull(v: unknown): string | null {
+  const d = dateOrNull(v);
+  if (!d) return null;
+  const y = parseInt(d.slice(0, 4), 10);
+  return y >= 2000 && y <= 2100 ? d : null;
+}
+
+function normContractDates(raw: Record<string, unknown> | null) {
+  if (!raw) return null;
+  const contract_end = contractDateOrNull(raw.contract_end);
+  const probation_end = contractDateOrNull(raw.probation_end);
+  if (!contract_end && !probation_end) return null;
+  return { contract_end, probation_end };
+}
+
+type ContractFileRow = {
+  id: string; talent_id: string; filename: string; mime: string; size: number;
+  kv_key: string; extracted_contract_end: string | null; extracted_probation_end: string | null;
+  applied: number; created_at: string;
+};
+
+// 上传合同文件：multipart（file + talent_id + text 可选）
+talents.post("/contracts/files", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const formData = await c.req.formData();
+  const file = formData.get("file") as File | null;
+  const talentId = formData.get("talent_id") as string | null;
+  const text = ((formData.get("text") as string | null) || "").trim();
+  if (!file || !talentId) return c.json({ error: "缺少文件或人才ID" }, 400);
+
+  // 权限检查 + 取人才姓名
+  let checkSql = "SELECT id, owner_id, name FROM talents WHERE id = ?";
+  const checkParams: string[] = [talentId];
+  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  const talent = await c.env.DB.prepare(checkSql).bind(...checkParams).first<{ id: string; owner_id: string; name: string }>();
+  if (!talent) return c.json({ error: "人才不存在" }, 404);
+
+  const ext = file.name.split(".").pop()?.toLowerCase() || "";
+  if (!["pdf", "docx", "doc"].includes(ext)) {
+    return c.json({ error: "仅支持 PDF 或 Word（.docx/.doc）文件" }, 400);
+  }
+  // KV 单值上限 25MB（与简历文件一致）
+  if (file.size > 25 * 1024 * 1024) return c.json({ error: "文件过大，最大支持 25MB" }, 400);
+
+  // 文件本体 → KV；元数据 → D1
+  const mime = file.type || (ext === "pdf" ? "application/pdf" : "application/octet-stream");
+  const kvKey = `contract:${talentId}:${crypto.randomUUID()}.${ext}`;
+  await c.env.RESUMES.put(kvKey, JSON.stringify({
+    data: arrayBufferToBase64(await file.arrayBuffer()),
+    name: file.name,
+    type: mime,
+  }));
+
+  const fileId = genId();
+  await c.env.DB.prepare(
+    `INSERT INTO contract_files (id, owner_id, talent_id, filename, mime, size, kv_key) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).bind(fileId, session.userId, talentId, file.name, mime, file.size, kvKey).run();
+
+  // AI 识别日期：失败不阻断上传（文件已存好，日期可手动填）
+  let extracted: { contract_end: string | null; probation_end: string | null } | null = null;
+  let warning: string | null = null;
+  if (text.length >= 10) {
+    try {
+      const raw = await deepseekJson(
+        c.env.DEEPSEEK_API_KEY!,
+        CONTRACT_EXTRACT_SYSTEM,
+        `请解析以下劳动合同文本（${talent.name}）：\n\n${text.slice(0, 6000)}`,
+        { maxTokens: 200 }
+      );
+      extracted = normContractDates(raw);
+      if (!extracted) warning = "AI 未能从文件中识别出日期，请手动填写";
+    } catch {
+      warning = "AI 识别失败，请手动填写日期";
+    }
+  } else {
+    warning = "文件没有可提取的文字（可能是扫描件），请手动填写日期";
+  }
+
+  if (extracted) {
+    await c.env.DB.prepare(`UPDATE contract_files SET extracted_contract_end = ?, extracted_probation_end = ? WHERE id = ?`)
+      .bind(extracted.contract_end, extracted.probation_end, fileId).run();
+  }
+
+  const row = await c.env.DB.prepare(`SELECT id, talent_id, filename, mime, size, kv_key, extracted_contract_end, extracted_probation_end, applied, created_at FROM contract_files WHERE id = ?`)
+    .bind(fileId).first<ContractFileRow>();
+  return c.json({ file: row, extracted, warning });
+});
+
+// 合同文件列表（按人才）
+talents.get("/contracts/files", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const talentId = (c.req.query("talent_id") || "").trim();
+  if (!talentId) return c.json({ error: "缺少 talent_id" }, 400);
+
+  let sql = `SELECT id, talent_id, filename, mime, size, extracted_contract_end, extracted_probation_end, applied, created_at FROM contract_files WHERE talent_id = ?`;
+  const params: string[] = [talentId];
+  if (session.role !== "admin") { sql += ` AND owner_id = ?`; params.push(session.userId); }
+  sql += ` ORDER BY created_at DESC LIMIT 50`;
+
+  const rows = (await c.env.DB.prepare(sql).bind(...params).all<ContractFileRow>()).results;
+  return c.json(rows);
+});
+
+// 合同文件下载/预览（支持 query token，便于 <a>/iframe 直接打开）
+talents.get("/contracts/files/:id/file", async (c) => {
+  const token = c.req.query("token") || getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  if (!token) return c.json({ error: "未登录" }, 401);
+  const sessionStr = await c.env.SESSIONS.get(token);
+  if (!sessionStr) return c.json({ error: "未登录" }, 401);
+  const session = JSON.parse(sessionStr) as { userId: string; role: string };
+
+  const id = c.req.param("id");
+  let sql = "SELECT id, filename, mime, kv_key, owner_id FROM contract_files WHERE id = ?";
+  const params: string[] = [id];
+  if (session.role !== "admin") { sql += " AND owner_id = ?"; params.push(session.userId); }
+  const row = await c.env.DB.prepare(sql).bind(...params).first<{ filename: string; mime: string; kv_key: string }>();
+  if (!row) return c.json({ error: "合同文件不存在" }, 404);
+
+  const stored = await c.env.RESUMES.get(row.kv_key);
+  if (!stored) return c.json({ error: "合同文件不存在" }, 404);
+
+  const meta = JSON.parse(stored) as { data: string; name: string; type: string };
+  const bytes = base64ToArrayBuffer(meta.data);
+
+  const isDownload = c.req.query("download") === "1";
+  const headers = new Headers();
+  headers.set("Content-Type", meta.type || row.mime || "application/octet-stream");
+  headers.set("Content-Disposition", `${isDownload ? "attachment" : "inline"}; filename="${encodeURIComponent(row.filename)}"`);
+  return new Response(bytes, { headers });
+});
+
+// 删除合同文件（KV 本体 + D1 元数据一并清理）
+talents.delete("/contracts/files/:id", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const id = c.req.param("id");
+  let sql = "SELECT id, kv_key FROM contract_files WHERE id = ?";
+  const params: string[] = [id];
+  if (session.role !== "admin") { sql += " AND owner_id = ?"; params.push(session.userId); }
+  const row = await c.env.DB.prepare(sql).bind(...params).first<{ id: string; kv_key: string }>();
+  if (!row) return c.json({ error: "合同文件不存在" }, 404);
+
+  await c.env.RESUMES.delete(row.kv_key);
+  await c.env.DB.prepare("DELETE FROM contract_files WHERE id = ?").bind(id).run();
+  return c.json({ ok: true });
+});
+
 // ---- 人才详情（聚合：本体 + 相关待办 + 投递进程 + 阶段日志）----
 talents.get("/:id", async (c) => {
   const session = await getSession(c);
@@ -342,6 +510,12 @@ talents.delete("/:id", async (c) => {
   // 顺带清理 KV 中的简历文件
   if (existing.resume_url) await c.env.RESUMES.delete(existing.resume_url);
 
+  // 顺带清理 KV 中的合同文件本体（元数据在下面 batch 里删）
+  const contractFileKeys = (await c.env.DB.prepare(
+    "SELECT kv_key FROM contract_files WHERE talent_id = ?"
+  ).bind(id).all<{ kv_key: string }>()).results;
+  for (const f of contractFileKeys) await c.env.RESUMES.delete(f.kv_key);
+
   // 先清所有关联数据，再删人才本体。
   // talents 被 talent_jobs / talent_tasks / communications 三张表外键引用，
   // 顺序反了（或漏清某张表）会触发外键约束直接 500。
@@ -351,6 +525,7 @@ talents.delete("/:id", async (c) => {
     c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id),
     // 待办属于用户，不静默删除，只解除与人才的关联
     c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(id),
     c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id),
   ]);
   return c.json({ ok: true });

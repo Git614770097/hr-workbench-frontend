@@ -183,6 +183,22 @@ CREATE TABLE IF NOT EXISTS match_profile_levels (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- 合同文件：原件存 KV（contract: 前缀），元数据存 D1。
+-- extracted_* 为 AI 识别的日期（仅作记录，档案日期以 talents 表为准）。
+CREATE TABLE IF NOT EXISTS contract_files (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  talent_id TEXT NOT NULL,
+  filename TEXT NOT NULL,
+  mime TEXT NOT NULL DEFAULT 'application/pdf',
+  size INTEGER NOT NULL DEFAULT 0,
+  kv_key TEXT NOT NULL,
+  extracted_contract_end TEXT,
+  extracted_probation_end TEXT,
+  applied INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_talents_owner ON talents(owner_id);
 CREATE INDEX IF NOT EXISTS idx_talents_status ON talents(status);
@@ -198,3 +214,4 @@ CREATE INDEX IF NOT EXISTS idx_tasks_owner_status ON talent_tasks(owner_id, stat
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON talent_tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_match_profiles_owner ON match_profiles(owner_id);
 CREATE INDEX IF NOT EXISTS idx_match_profile_levels_profile ON match_profile_levels(profile_id);
+CREATE INDEX IF NOT EXISTS idx_contract_files_talent ON contract_files(talent_id);

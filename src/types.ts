@@ -451,6 +451,25 @@ export interface ContractSyncResult {
   cancelled: number;
 }
 
+// 合同文件（原件存 KV，元数据 + AI 识别日期存 D1）
+export interface ContractFile {
+  id: string;
+  talent_id: string;
+  filename: string;
+  mime: string;
+  size: number;
+  extracted_contract_end: string | null;
+  extracted_probation_end: string | null;
+  applied: number;
+  created_at: string;
+}
+
+export interface ContractUploadResult {
+  file: ContractFile;
+  extracted: { contract_end: string | null; probation_end: string | null } | null;
+  warning: string | null;
+}
+
 // ---- 跟进待办 ----
 export type TaskStatus = "pending" | "done" | "cancelled";
 

@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, Select, Button, Space, Tag, DatePicker, Modal,
-  Form, message, Alert,
+  Form, message, Alert, Upload, Popconfirm, Typography,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, BellOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
-import type { ContractItem } from "../types";
+import type { ContractItem, ContractFile } from "../types";
 import { STATUS_LABELS } from "../types";
+import { extractContractText } from "../utils/contractFile";
 
 /** 剩余天数：两侧都用 UTC 午夜基准相减，无时区跨日问题 */
 function daysUntil(dateStr: string | null): number | null {
@@ -39,6 +40,194 @@ function DateWithTag({ date }: { date: string | null }) {
   );
 }
 
+/** 文件大小展示 */
+function fmtSize(n: number) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** 合同文件弹窗：上传原件（AI 自动识别日期 → 核对 → 应用到档案）+ 已传文件管理 */
+function ContractFilesModal({
+  talent, onClose, onApplied,
+}: {
+  talent: ContractItem | null;
+  onClose: () => void;
+  onApplied: () => void;
+}) {
+  const [files, setFiles] = useState<ContractFile[]>([]);
+  const [listLoading, setListLoading] = useState(false);
+  const [reading, setReading] = useState(false);      // 正在本地抽取文本
+  const [uploading, setUploading] = useState(false);  // 正在上传 + AI 识别
+  const [applying, setApplying] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [form] = Form.useForm();
+
+  const fetchFiles = useCallback(async (talentId: string) => {
+    setListLoading(true);
+    try {
+      setFiles(await api.getContractFiles(talentId));
+    } catch (e: any) {
+      message.error(e?.message || "文件列表加载失败");
+    } finally {
+      setListLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!talent) return;
+    setWarning(null);
+    form.resetFields();
+    fetchFiles(talent.id);
+  }, [talent, fetchFiles, form]);
+
+  const handleUpload = async (file: File) => {
+    if (!talent) return;
+    setReading(true);
+    let text = "";
+    try {
+      text = await extractContractText(file);
+    } catch (e: any) {
+      message.warning(e?.message || "文件内容读取失败");
+    } finally {
+      setReading(false);
+    }
+    setUploading(true);
+    try {
+      const r = await api.uploadContractFile(talent.id, file, text);
+      setWarning(r.warning);
+      form.setFieldsValue({
+        contract_end: r.extracted?.contract_end ? dayjs(r.extracted.contract_end) : null,
+        probation_end: r.extracted?.probation_end ? dayjs(r.extracted.probation_end) : null,
+      });
+      if (r.extracted) message.success("上传成功，AI 已识别出日期，请核对后应用到档案");
+      else message.info("文件已上传，未能自动识别日期，可手动填写后应用");
+      fetchFiles(talent.id);
+    } catch (e: any) {
+      message.error(e?.message || "上传失败");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // 识别结果（或手动改过）→ 写入人才档案；PUT 后端会即时同步到期提醒待办
+  const handleApply = async () => {
+    if (!talent) return;
+    const values = await form.validateFields();
+    setApplying(true);
+    try {
+      await api.updateTalent(talent.id, {
+        contract_end: values.contract_end ? values.contract_end.format("YYYY-MM-DD") : null,
+        probation_end: values.probation_end ? values.probation_end.format("YYYY-MM-DD") : null,
+      });
+      message.success("合同日期已应用到档案，到期提醒待办已同步");
+      onApplied();
+    } catch (e: any) {
+      message.error(e?.message || "应用失败");
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await api.deleteContractFile(id);
+      if (talent) fetchFiles(talent.id);
+    } catch (e: any) {
+      message.error(e?.message || "删除失败");
+    }
+  };
+
+  const fileColumns = [
+    {
+      title: "文件名", dataIndex: "filename", key: "filename", ellipsis: true,
+      render: (v: string, r: ContractFile) => (
+        <a href={api.getContractFileUrl(r.id)} target="_blank" rel="noreferrer">{v}</a>
+      ),
+    },
+    { title: "大小", dataIndex: "size", key: "size", width: 90, render: (v: number) => fmtSize(v) },
+    {
+      title: "AI 识别", key: "extracted", width: 220,
+      render: (_: unknown, r: ContractFile) => {
+        const parts: string[] = [];
+        if (r.extracted_contract_end) parts.push(`合同 ${r.extracted_contract_end}`);
+        if (r.extracted_probation_end) parts.push(`试用期 ${r.extracted_probation_end}`);
+        return parts.length
+          ? <Typography.Text type="secondary">{parts.join("，")}</Typography.Text>
+          : <Typography.Text type="secondary">未识别</Typography.Text>;
+      },
+    },
+    { title: "上传时间", dataIndex: "created_at", key: "created_at", width: 160, render: (v: string) => (v || "").replace("T", " ").slice(0, 16) },
+    {
+      title: "操作", key: "action", width: 110,
+      render: (_: unknown, r: ContractFile) => (
+        <Space size={4}>
+          <a href={api.getContractFileUrl(r.id, true)}>下载</a>
+          <Popconfirm title="确定删除该合同文件？" onConfirm={() => handleDelete(r.id)}>
+            <Button type="link" size="small" danger style={{ paddingInline: 4 }}>删除</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <Modal
+      title={`合同文件 — ${talent?.name || ""}`}
+      open={!!talent}
+      onCancel={onClose}
+      footer={null}
+      width={720}
+      destroyOnClose
+    >
+      <Upload.Dragger
+        accept=".pdf,.docx"
+        showUploadList={false}
+        disabled={reading || uploading}
+        beforeUpload={(f) => { handleUpload(f as unknown as File); return false; }}
+        style={{ marginTop: 16 }}
+      >
+        <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+        <p className="ant-upload-text">
+          {reading ? "正在读取文件内容…" : uploading ? "上传中，AI 识别日期…" : "点击或拖拽合同文件到这里上传"}
+        </p>
+        <p className="ant-upload-hint">支持 PDF / Word（.docx），上传后自动识别合同到期日与试用期到期日</p>
+      </Upload.Dragger>
+
+      {(reading || uploading || warning) && (
+        <Alert
+          style={{ marginTop: 12 }}
+          type={warning ? "warning" : "info"}
+          showIcon
+          message={reading ? "正在读取文件内容…" : uploading ? "正在上传并识别日期…" : warning || ""}
+        />
+      )}
+
+      <Form form={form} layout="horizontal" labelCol={{ span: 5 }} wrapperCol={{ span: 17 }} style={{ marginTop: 16 }}>
+        <Form.Item name="contract_end" label="合同到期日" extra="AI 预填，可修改；应用到档案后自动生成/更新到期提醒待办">
+          <DatePicker style={{ width: "100%" }} placeholder="合同到期日" allowClear />
+        </Form.Item>
+        <Form.Item name="probation_end" label="试用期到期日">
+          <DatePicker style={{ width: "100%" }} placeholder="试用期到期日" allowClear />
+        </Form.Item>
+        <Form.Item wrapperCol={{ offset: 5, span: 17 }} style={{ marginBottom: 8 }}>
+          <Button type="primary" loading={applying} onClick={handleApply}>应用到档案</Button>
+        </Form.Item>
+      </Form>
+
+      <Table
+        size="small"
+        columns={fileColumns}
+        dataSource={files}
+        rowKey="id"
+        loading={listLoading}
+        pagination={false}
+        locale={{ emptyText: "暂无合同文件" }}
+      />
+    </Modal>
+  );
+}
+
 export default function Contracts() {
   const [items, setItems] = useState<ContractItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +236,7 @@ export default function Contracts() {
   const [rangeFilter, setRangeFilter] = useState("all");
   const [editing, setEditing] = useState<ContractItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [fileTalent, setFileTalent] = useState<ContractItem | null>(null);
   const [form] = Form.useForm();
 
   const fetchList = useCallback(async (keyword: string) => {
@@ -157,9 +347,12 @@ export default function Contracts() {
       render: (v: string | null) => <DateWithTag date={v} />,
     },
     {
-      title: "操作", key: "action", width: 90,
+      title: "操作", key: "action", width: 160,
       render: (_: unknown, r: ContractItem) => (
-        <Button type="link" size="small" onClick={() => openEdit(r)}>编辑日期</Button>
+        <Space size={4}>
+          <Button type="link" size="small" onClick={() => openEdit(r)}>编辑日期</Button>
+          <Button type="link" size="small" onClick={() => setFileTalent(r)}>合同文件</Button>
+        </Space>
       ),
     },
   ];
@@ -239,6 +432,13 @@ export default function Contracts() {
           pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
         />
       </Card>
+
+      {/* 合同文件弹窗：上传原件 + AI 识别日期 + 应用到档案 */}
+      <ContractFilesModal
+        talent={fileTalent}
+        onClose={() => setFileTalent(null)}
+        onApplied={() => fetchList(appliedQ)}
+      />
 
       {/* 编辑合同日期弹窗：保存即同步待办 */}
       <Modal

@@ -1,4 +1,4 @@
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult } from "./types";
 
 const BASE = "/api";
 
@@ -229,6 +229,44 @@ export const api = {
   // 合同到期提醒批量同步（幂等：新建/更新/取消待办）
   syncContractTasks: () =>
     request<ContractSyncResult>("/talents/contracts/sync-tasks", { method: "POST" }),
+
+  // 合同文件上传（multipart：file + talent_id + text）。
+  // text 为前端抽取的合同全文，后端用它调 AI 识别日期；AI 类接口传长超时。
+  uploadContractFile: (talentId: string, file: File, text: string) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("talent_id", talentId);
+    formData.append("text", text);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+    return fetch(`${BASE}/talents/contracts/files`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getToken()}` },
+      body: formData,
+      signal: ctrl.signal,
+    }).then(async (res) => {
+      clearTimeout(timer);
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({ error: "上传失败" }))) as { error?: string };
+        throw new Error(err.error || "上传失败");
+      }
+      return res.json() as Promise<ContractUploadResult>;
+    }, (e) => {
+      clearTimeout(timer);
+      throw e;
+    });
+  },
+
+  // 合同文件列表（按人才）
+  getContractFiles: (talentId: string) =>
+    request<ContractFile[]>(`/talents/contracts/files?talent_id=${encodeURIComponent(talentId)}`),
+
+  // 合同文件预览 / 下载地址（带 token，可直接给 <a> / iframe 用）
+  getContractFileUrl: (fileId: string, download = false) =>
+    `${BASE}/talents/contracts/files/${fileId}/file?token=${getToken() || ""}${download ? "&download=1" : ""}`,
+
+  deleteContractFile: (fileId: string) =>
+    request(`/talents/contracts/files/${fileId}`, { method: "DELETE" }),
 
   // 智能匹配（简历 + 人才画像 → 排序推荐）
   // 按职位生成招聘 JD（AI 起草，用户可改后再提炼画像）
