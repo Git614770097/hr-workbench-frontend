@@ -1,4 +1,4 @@
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult, ComplianceResponse } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult } from "./types";
 
 const BASE = "/api";
 
@@ -221,6 +221,14 @@ export const api = {
   // 合规到期扫描：合同 / 试用期 30 天内到期（含已过期未更新）
   getTalentCompliance: () =>
     request<ComplianceResponse>("/talents/compliance"),
+
+  // 合同管理：有合同/试用期日期的人才清单
+  getContracts: (q?: string) =>
+    request<ContractItem[]>(`/talents/contracts${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+
+  // 合同到期提醒批量同步（幂等：新建/更新/取消待办）
+  syncContractTasks: () =>
+    request<ContractSyncResult>("/talents/contracts/sync-tasks", { method: "POST" }),
 
   // 智能匹配（简历 + 人才画像 → 排序推荐）
   // 按职位生成招聘 JD（AI 起草，用户可改后再提炼画像）

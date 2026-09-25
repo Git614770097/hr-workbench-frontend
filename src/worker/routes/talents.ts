@@ -14,6 +14,48 @@ function dateOrNull(v: unknown): string | null {
   return m ? m[1] : null;
 }
 
+// ---- 合同/试用期到期 → 待办提醒（幂等同步）----
+// 规则：pending 的「合同到期：X」「试用期到期：X」待办与人才当前日期对齐——
+// 有日期且无待办 → 新建（priority high、source system）；日期变更 → 更新待办 due；
+// 日期被清空 → 取消残留提醒。编辑保存（PUT）与批量同步（/contracts/sync-tasks）共用。
+type TalentContractRow = { id: string; owner_id: string; name: string; contract_end: string | null; probation_end: string | null };
+type ExistingTask = { id: string; title: string; due_date: string | null };
+
+function contractTaskStmts(db: any, t: TalentContractRow, existing: ExistingTask[]) {
+  const kinds = [
+    {
+      prefix: "合同到期",
+      due: t.contract_end,
+      content: `${t.name} 的劳动合同将于 ${t.contract_end} 到期，请及时安排续签评估或离职交接。`,
+    },
+    {
+      prefix: "试用期到期",
+      due: t.probation_end,
+      content: `${t.name} 的试用期将于 ${t.probation_end} 到期，请提前完成转正评估。`,
+    },
+  ];
+  const stmts: any[] = [];
+  let created = 0, updated = 0, cancelled = 0;
+  for (const { prefix, due, content } of kinds) {
+    const title = `${prefix}：${t.name}`;
+    const dup = existing.find((x) => x.title === title);
+    if (!due) {
+      if (dup) { stmts.push(db.prepare(`UPDATE talent_tasks SET status = 'cancelled' WHERE id = ?`).bind(dup.id)); cancelled++; }
+      continue;
+    }
+    if (!dup) {
+      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, 'high', 'pending', 'system')`).bind(genId(), t.owner_id, t.id, title, content, due));
+      created++;
+      continue;
+    }
+    if (dup.due_date !== due) {
+      stmts.push(db.prepare(`UPDATE talent_tasks SET due_date = ?, content = ? WHERE id = ?`).bind(due, content, dup.id));
+      updated++;
+    }
+  }
+  return { stmts, created, updated, cancelled };
+}
+
 // Base64 <-> ArrayBuffer 转换（用于 KV 存储二进制文件）
 function arrayBufferToBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -122,6 +164,55 @@ talents.get("/compliance", async (c) => {
   });
 });
 
+// ---- 合同管理：有合同/试用期日期的人才清单（按最近到期日排序）----
+talents.get("/contracts", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const q = (c.req.query("q") || "").trim();
+  let sql = `SELECT id, name, phone, email, status, contract_end, probation_end FROM talents WHERE (contract_end IS NOT NULL OR probation_end IS NOT NULL)`;
+  const params: string[] = [];
+  if (session.role !== "admin") { sql += ` AND owner_id = ?`; params.push(session.userId); }
+  if (q) { sql += ` AND name LIKE ?`; params.push(`%${q}%`); }
+  sql += ` ORDER BY COALESCE(contract_end, probation_end) IS NULL, COALESCE(contract_end, probation_end) ASC LIMIT 500`;
+
+  const rows = (await c.env.DB.prepare(sql).bind(...params).all<any>()).results;
+  return c.json(rows);
+});
+
+// ---- 合同到期提醒批量同步：扫描全部有日期的人才，幂等生成/更新/取消待办 ----
+// 触发时机：合同管理页加载时自动调用一次；单条编辑保存时在 PUT /:id 里即时同步。
+talents.post("/contracts/sync-tasks", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const ownerCond = session.role !== "admin" ? " AND owner_id = ?" : "";
+  const ownerParams: string[] = session.role !== "admin" ? [session.userId] : [];
+  const talentsRows = (await c.env.DB.prepare(
+    `SELECT id, owner_id, name, contract_end, probation_end FROM talents WHERE (contract_end IS NOT NULL OR probation_end IS NOT NULL)${ownerCond} LIMIT 500`
+  ).bind(...ownerParams).all<TalentContractRow>()).results;
+  if (!talentsRows.length) return c.json({ checked: 0, created: 0, updated: 0, cancelled: 0 });
+
+  const ids = talentsRows.map((t) => t.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const tasksRows = (await c.env.DB.prepare(
+    `SELECT id, talent_id, title, due_date FROM talent_tasks WHERE talent_id IN (${placeholders}) AND status = 'pending' AND (title LIKE '合同到期：%' OR title LIKE '试用期到期：%')`
+  ).bind(...ids).all<ExistingTask & { talent_id: string }>()).results;
+
+  const byTalent: Record<string, ExistingTask[]> = {};
+  for (const tk of tasksRows) (byTalent[tk.talent_id] ||= []).push(tk);
+
+  const stmts: any[] = [];
+  let created = 0, updated = 0, cancelled = 0;
+  for (const t of talentsRows) {
+    const r = contractTaskStmts(c.env.DB, t, byTalent[t.id] || []);
+    stmts.push(...r.stmts);
+    created += r.created; updated += r.updated; cancelled += r.cancelled;
+  }
+  if (stmts.length) await c.env.DB.batch(stmts);
+  return c.json({ checked: talentsRows.length, created, updated, cancelled });
+});
+
 // ---- 人才详情（聚合：本体 + 相关待办 + 投递进程 + 阶段日志）----
 talents.get("/:id", async (c) => {
   const session = await getSession(c);
@@ -222,6 +313,16 @@ talents.put("/:id", async (c) => {
   ].map((v) => (v === undefined ? null : v));
   await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), source = COALESCE(?, source), resume_url = COALESCE(?, resume_url), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
     .bind(...scalars, ...dateParams, id).run();
+
+  // 合同/试用期日期有变更（含清空）→ 立即同步到期提醒待办
+  if (body.contract_end !== undefined || body.probation_end !== undefined) {
+    const t = await c.env.DB.prepare(`SELECT id, owner_id, name, contract_end, probation_end FROM talents WHERE id = ?`).bind(id).first<TalentContractRow>();
+    if (t) {
+      const tasks = await c.env.DB.prepare(`SELECT id, title, due_date FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND (title LIKE '合同到期：%' OR title LIKE '试用期到期：%')`).bind(id).all<ExistingTask>();
+      const { stmts } = contractTaskStmts(c.env.DB, t, tasks.results || []);
+      if (stmts.length) await c.env.DB.batch(stmts);
+    }
+  }
 
   return c.json({ id, ...body });
 });

@@ -20,6 +20,8 @@ const Pipeline = lazy(() => import("./pages/Pipeline"));
 const Funnel = lazy(() => import("./pages/Funnel"));
 const Jobs = lazy(() => import("./pages/Jobs"));
 const Tasks = lazy(() => import("./pages/Tasks"));
+// 合同管理：人才档案的合同/试用期字段集中视图，复用 talents 权限
+const Contracts = lazy(() => import("./pages/Contracts"));
 const Users = lazy(() => import("./pages/Users"));
 const Roles = lazy(() => import("./pages/Roles"));
 const TemplateLibrary = lazy(() => import("./pages/TemplateLibrary"));
@@ -119,6 +121,7 @@ export default function App({ themeKey, onChangeTheme }: AppProps) {
           <Route path="/funnel" element={<RequirePerm user={user} perm="funnel"><Funnel /></RequirePerm>} />
           <Route path="/jobs" element={<RequirePerm user={user} perm="jobs"><Jobs /></RequirePerm>} />
           <Route path="/tasks" element={<RequirePerm user={user} perm="tasks"><Tasks /></RequirePerm>} />
+          <Route path="/contracts" element={<RequirePerm user={user} perm="talents"><Contracts /></RequirePerm>} />
           <Route path="/templates" element={<RequirePerm user={user} perm="templates"><TemplateLibrary /></RequirePerm>} />
           {user.role === "admin" && <Route path="/roles" element={<Roles />} />}
           {user.role === "admin" && <Route path="/users" element={<Users />} />}

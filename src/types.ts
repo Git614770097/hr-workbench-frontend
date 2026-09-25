@@ -433,6 +433,24 @@ export interface ComplianceResponse {
   probation_count: number;
 }
 
+// ---- 合同管理 ----
+export interface ContractItem {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  status: string;
+  contract_end: string | null;
+  probation_end: string | null;
+}
+
+export interface ContractSyncResult {
+  checked: number;
+  created: number;
+  updated: number;
+  cancelled: number;
+}
+
 // ---- 跟进待办 ----
 export type TaskStatus = "pending" | "done" | "cancelled";
 

@@ -16,6 +16,7 @@ import {
   SolutionOutlined,
   CarryOutOutlined,
   UserSwitchOutlined,
+  FileProtectOutlined,
 } from "@ant-design/icons";
 import type { User } from "../types";
 import { ROLE_LABELS } from "../types";
@@ -80,6 +81,8 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
     { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
     { to: "/pipeline", label: "招聘流程", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
     { to: "/tasks", label: "跟进待办", icon: <CarryOutOutlined />, color: "#f97316", badge: taskBadge, perm: "tasks" },
+    // 合同管理与人才库同源数据（talents 表的合同/试用期字段），复用 talents 权限，不新增菜单 key
+    { to: "/contracts", label: "合同管理", icon: <FileProtectOutlined />, color: "#d97706", perm: "talents" },
     { to: "/funnel", label: "招聘漏斗", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
     // —— 第二梯队：按需查阅与产出 ——
     { to: "/profiles", label: "人才画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },
