@@ -343,7 +343,7 @@ export default function TalentList() {
     {
       title: "操作",
       key: "action",
-      width: 170,
+      width: 184,
       fixed: "right" as const,
       render: (_: any, record: Talent) => (
         <Space size={4}>

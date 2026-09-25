@@ -189,7 +189,7 @@ export default function Jobs() {
       render: (v: string) => v || "—",
     }] : []),
     {
-      title: "操作", key: "action", width: 240, fixed: "right" as const,
+      title: "操作", key: "action", width: 300, fixed: "right" as const,
       render: (_: any, r: Job) => (
         <Space size={4}>
           <Button type="link" size="small" onClick={() => { setPresetJobId(r.id); setAddOpen(true); }}>

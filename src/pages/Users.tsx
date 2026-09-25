@@ -295,7 +295,7 @@ export default function Users() {
       key: "action",
       width: 200,
       render: (_: unknown, record: UserRow) => (
-        <Space>
+        <Space size={4}>
           <Button type="link" size="small" onClick={() => { setShowReset(record.id); resetForm.resetFields(); }}>重置密码</Button>
           {record.role !== "admin" && (
             <>
