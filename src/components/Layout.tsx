@@ -72,14 +72,15 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
 
   // 菜单顺序按「日常使用频率」排列：
   //   高频业务（每天要用）→ 中频管理（每周/按需）→ 低频配置（仅管理员）。
-  // 同类里再按流程先后：先有人（人才库）→ 再有岗（岗位管理）→ 再看进度（招聘流程）→ 最后跟进（待办）。
+  // 同类里以「岗位为中心」的招聘动线排序：先建岗（岗位管理）→ 再找人（人才库）
+  // → 再推进（招聘流程）→ 日常跟进（待办）→ 复盘（漏斗/画像）→ 支撑（模板库）。
   const navItems: { to: string; label: string; icon: React.ReactNode; color: string; badge?: number; perm: string }[] = [
     // —— 第一梯队：招聘日常主循环，使用频率最高 ——
-    { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
     { to: "/jobs", label: "岗位管理", icon: <SolutionOutlined />, color: "#6366f1", perm: "jobs" },
+    { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
     { to: "/pipeline", label: "招聘流程", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
-    { to: "/funnel", label: "招聘漏斗", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
     { to: "/tasks", label: "跟进待办", icon: <CarryOutOutlined />, color: "#f97316", badge: taskBadge, perm: "tasks" },
+    { to: "/funnel", label: "招聘漏斗", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
     // —— 第二梯队：按需查阅与产出 ——
     { to: "/profiles", label: "人才画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },
     { to: "/templates", label: "模板库管理", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
