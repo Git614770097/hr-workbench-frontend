@@ -4,10 +4,10 @@ import {
   Card, Table, Input, Select, Button, Space, Tag, DatePicker, Modal,
   Form, message, Alert, Upload, Popconfirm, Typography,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined, PlusOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined, PlusOutlined, UserOutlined, FileTextOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
-import type { ContractItem, ContractFile } from "../types";
+import type { ContractItem, ContractFile, Talent } from "../types";
 import { STATUS_LABELS } from "../types";
 import { extractContractText } from "../utils/contractFile";
 
@@ -238,6 +238,8 @@ function AddContractModal({
   onSaved: () => void;
 }) {
   const [talentId, setTalentId] = useState<string | null>(null);
+  const [selectedTalent, setSelectedTalent] = useState<Talent | null>(null);
+  const [talentLoading, setTalentLoading] = useState(false);
   const [talentOptions, setTalentOptions] = useState<{ label: string; value: string }[]>([]);
   const [searching, setSearching] = useState(false);
   const [reading, setReading] = useState(false);
@@ -245,6 +247,8 @@ function AddContractModal({
   const [saving, setSaving] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [extracted, setExtracted] = useState<{ contract_end: string | null; probation_end: string | null } | null>(null);
+  const [aiFilled, setAiFilled] = useState(false);
   const [form] = Form.useForm();
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -268,11 +272,36 @@ function AddContractModal({
   useEffect(() => {
     if (!open) return;
     setTalentId(null);
+    setSelectedTalent(null);
     setWarning(null);
     setFileName(null);
+    setExtracted(null);
+    setAiFilled(false);
     form.resetFields();
     searchTalents("");
   }, [open, form, searchTalents]);
+
+  // 选择/切换人才：切换时重置已上传文件与 AI 预填（文件已挂到原人才名下，留着会误导）；
+  // 手填日期不动。同时拉取人才详情回显现有合同日期，提示覆盖风险。
+  const handleTalentChange = async (id: string | null) => {
+    if (fileName || extracted) {
+      setFileName(null);
+      setExtracted(null);
+      setWarning(null);
+      setAiFilled(false);
+      form.setFieldsValue({ contract_end: null, probation_end: null });
+      message.info("已切换人才，上传的文件与识别结果已重置");
+    }
+    setTalentId(id);
+    setSelectedTalent(null);
+    if (!id) return;
+    setTalentLoading(true);
+    try {
+      setSelectedTalent(await api.getTalent(id));
+    } catch { /* 详情拉取失败不阻塞，仅少一行回显 */ } finally {
+      setTalentLoading(false);
+    }
+  };
 
   // 上传合同文件：文本抽取 → 存档 + AI 识别 → 预填日期（文件已关联所选人才）
   const handleUpload = async (file: File) => {
@@ -291,6 +320,8 @@ function AddContractModal({
       const r = await api.uploadContractFile(talentId, file, text);
       setWarning(r.warning);
       setFileName(file.name);
+      setExtracted(r.extracted);
+      setAiFilled(!!r.extracted);
       form.setFieldsValue({
         contract_end: r.extracted?.contract_end ? dayjs(r.extracted.contract_end) : null,
         probation_end: r.extracted?.probation_end ? dayjs(r.extracted.probation_end) : null,
@@ -337,7 +368,7 @@ function AddContractModal({
       onCancel={onClose}
       onOk={handleSave}
       confirmLoading={saving}
-      okText="保存"
+      okText="保存到档案"
       cancelText="取消"
       width={560}
       destroyOnClose
@@ -352,11 +383,38 @@ function AddContractModal({
             loading={searching}
             options={talentOptions}
             onSearch={debouncedSearch}
-            onChange={setTalentId}
+            onChange={handleTalentChange}
             allowClear
             style={{ width: "100%" }}
           />
         </Form.Item>
+
+        {/* 选中人才回显：现有合同日期 + 覆盖风险提示 */}
+        {talentId && (
+          <Form.Item wrapperCol={{ span: 20, offset: 2 }} style={{ marginBottom: 12 }}>
+            {talentLoading ? (
+              <Alert type="info" showIcon icon={<UserOutlined />} message="正在读取人才信息…" />
+            ) : selectedTalent ? (
+              <Alert
+                type={selectedTalent.contract_end || selectedTalent.probation_end ? "warning" : "success"}
+                showIcon
+                icon={<UserOutlined />}
+                message={
+                  <Space size={6} wrap>
+                    <span>{selectedTalent.name}{selectedTalent.phone ? `（${selectedTalent.phone}）` : ""}</span>
+                    {selectedTalent.contract_end || selectedTalent.probation_end ? (
+                      <Tag color="orange" style={{ marginInlineEnd: 0 }}>
+                        已有日期：{[selectedTalent.contract_end && `合同 ${selectedTalent.contract_end}`, selectedTalent.probation_end && `试用期 ${selectedTalent.probation_end}`].filter(Boolean).join("，")}，保存将覆盖
+                      </Tag>
+                    ) : (
+                      <Tag color="green" style={{ marginInlineEnd: 0 }}>暂无合同日期</Tag>
+                    )}
+                  </Space>
+                }
+              />
+            ) : null}
+          </Form.Item>
+        )}
 
         <Form.Item wrapperCol={{ span: 20, offset: 2 }} style={{ marginBottom: 8 }}>
           <Upload.Dragger
@@ -375,22 +433,42 @@ function AddContractModal({
           </Upload.Dragger>
         </Form.Item>
 
-        {(reading || uploading || warning || fileName) && (
+        {/* 上传结果：文件卡片 + AI 识别结果 Tag */}
+        {fileName && !reading && !uploading && (
           <Form.Item wrapperCol={{ span: 20, offset: 2 }} style={{ marginBottom: 8 }}>
             <Alert
-              type={warning ? "warning" : "info"}
+              type="success"
+              showIcon
+              icon={<FileTextOutlined />}
+              message={`${fileName} 已存档`}
+              description={
+                <Space size={6} wrap>
+                  <Tag style={{ marginInlineEnd: 0 }}>合同 {extracted?.contract_end || "未识别"}</Tag>
+                  <Tag style={{ marginInlineEnd: 0 }}>试用期 {extracted?.probation_end || "未识别"}</Tag>
+                </Space>
+              }
+            />
+          </Form.Item>
+        )}
+        {(reading || uploading || (warning && !fileName)) && (
+          <Form.Item wrapperCol={{ span: 20, offset: 2 }} style={{ marginBottom: 8 }}>
+            <Alert
+              type={warning && !reading && !uploading ? "warning" : "info"}
               showIcon
               message={
                 reading ? "正在读取文件内容…"
                 : uploading ? "正在上传并识别日期…"
-                : fileName ? `${fileName} 已存档${warning ? `；${warning}` : ""}`
                 : warning || ""
               }
             />
           </Form.Item>
         )}
 
-        <Form.Item name="contract_end" label="合同到期日" extra="保存后自动生成/更新合同到期提醒待办">
+        <Form.Item
+          name="contract_end"
+          label="合同到期日"
+          extra={aiFilled ? "AI 识别结果，可修改" : "保存后自动生成/更新合同到期提醒待办"}
+        >
           <DatePicker style={{ width: "100%" }} placeholder="合同到期日" allowClear />
         </Form.Item>
         <Form.Item name="probation_end" label="试用期到期日">
