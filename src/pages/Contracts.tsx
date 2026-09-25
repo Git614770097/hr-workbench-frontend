@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, Select, Button, Space, Tag, DatePicker, Modal,
   Form, message, Alert, Upload, Popconfirm, Typography,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
 import type { ContractItem, ContractFile } from "../types";
@@ -228,6 +228,179 @@ function ContractFilesModal({
   );
 }
 
+/** 新增合同弹窗：没填过日期的人才不会出现在合同列表里，这里是它们的统一入口。
+ *  选人才 → 上传合同文件（AI 识别预填，文件同时存档）或直接手填日期 → 保存到档案。 */
+function AddContractModal({
+  open, onClose, onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [talentId, setTalentId] = useState<string | null>(null);
+  const [talentOptions, setTalentOptions] = useState<{ label: string; value: string }[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [form] = Form.useForm();
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const searchTalents = useCallback(async (q: string) => {
+    setSearching(true);
+    try {
+      const r = await api.getTalents({ q, page: 1, limit: 20 });
+      setTalentOptions(
+        r.items.map((t) => ({ label: t.phone ? `${t.name}（${t.phone}）` : t.name, value: t.id }))
+      );
+    } catch { /* 搜索失败不打断输入 */ } finally {
+      setSearching(false);
+    }
+  }, []);
+
+  const debouncedSearch = useCallback((q: string) => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => searchTalents(q), 300);
+  }, [searchTalents]);
+
+  useEffect(() => {
+    if (!open) return;
+    setTalentId(null);
+    setWarning(null);
+    setFileName(null);
+    form.resetFields();
+    searchTalents("");
+  }, [open, form, searchTalents]);
+
+  // 上传合同文件：文本抽取 → 存档 + AI 识别 → 预填日期（文件已关联所选人才）
+  const handleUpload = async (file: File) => {
+    if (!talentId) return;
+    setReading(true);
+    let text = "";
+    try {
+      text = await extractContractText(file);
+    } catch (e: any) {
+      message.warning(e?.message || "文件内容读取失败");
+    } finally {
+      setReading(false);
+    }
+    setUploading(true);
+    try {
+      const r = await api.uploadContractFile(talentId, file, text);
+      setWarning(r.warning);
+      setFileName(file.name);
+      form.setFieldsValue({
+        contract_end: r.extracted?.contract_end ? dayjs(r.extracted.contract_end) : null,
+        probation_end: r.extracted?.probation_end ? dayjs(r.extracted.probation_end) : null,
+      });
+      if (r.extracted) message.success("AI 已识别出日期，请核对后保存");
+      else message.info("文件已存档，未能自动识别日期，可手动填写");
+    } catch (e: any) {
+      message.error(e?.message || "上传失败");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!talentId) {
+      message.warning("请先选择人才");
+      return;
+    }
+    const values = await form.validateFields();
+    if (!values.contract_end && !values.probation_end) {
+      message.warning("请至少填写合同到期日或试用期到期日");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.updateTalent(talentId, {
+        contract_end: values.contract_end ? values.contract_end.format("YYYY-MM-DD") : null,
+        probation_end: values.probation_end ? values.probation_end.format("YYYY-MM-DD") : null,
+      });
+      message.success("合同已新增，到期提醒待办已同步");
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      message.error(e?.message || "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="新增合同"
+      open={open}
+      onCancel={onClose}
+      onOk={handleSave}
+      confirmLoading={saving}
+      okText="保存"
+      cancelText="取消"
+      width={560}
+      destroyOnClose
+    >
+      <Form form={form} layout="horizontal" labelCol={{ span: 6 }} wrapperCol={{ span: 16 }} style={{ marginTop: 16 }}>
+        <Form.Item label="选择人才" required extra="没填过合同日期的人才不会出现在左侧列表，在这里搜索选择">
+          <Select
+            showSearch
+            value={talentId}
+            placeholder="输入姓名或手机号搜索"
+            filterOption={false}
+            loading={searching}
+            options={talentOptions}
+            onSearch={debouncedSearch}
+            onChange={setTalentId}
+            allowClear
+            style={{ width: "100%" }}
+          />
+        </Form.Item>
+
+        <Form.Item wrapperCol={{ span: 20, offset: 2 }} style={{ marginBottom: 8 }}>
+          <Upload.Dragger
+            accept=".pdf,.docx"
+            showUploadList={false}
+            disabled={!talentId || reading || uploading}
+            beforeUpload={(f) => { handleUpload(f as unknown as File); return false; }}
+          >
+            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+            <p className="ant-upload-text">
+              {reading ? "正在读取文件内容…" : uploading ? "上传中，AI 识别日期…" : "上传合同文件（可选）"}
+            </p>
+            <p className="ant-upload-hint">
+              {talentId ? "支持 PDF / Word（.docx），上传后 AI 自动识别日期，文件同时存档" : "请先选择人才"}
+            </p>
+          </Upload.Dragger>
+        </Form.Item>
+
+        {(reading || uploading || warning || fileName) && (
+          <Form.Item wrapperCol={{ span: 20, offset: 2 }} style={{ marginBottom: 8 }}>
+            <Alert
+              type={warning ? "warning" : "info"}
+              showIcon
+              message={
+                reading ? "正在读取文件内容…"
+                : uploading ? "正在上传并识别日期…"
+                : fileName ? `${fileName} 已存档${warning ? `；${warning}` : ""}`
+                : warning || ""
+              }
+            />
+          </Form.Item>
+        )}
+
+        <Form.Item name="contract_end" label="合同到期日" extra="保存后自动生成/更新合同到期提醒待办">
+          <DatePicker style={{ width: "100%" }} placeholder="合同到期日" allowClear />
+        </Form.Item>
+        <Form.Item name="probation_end" label="试用期到期日">
+          <DatePicker style={{ width: "100%" }} placeholder="试用期到期日" allowClear />
+        </Form.Item>
+      </Form>
+    </Modal>
+  );
+}
+
 export default function Contracts() {
   const [items, setItems] = useState<ContractItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -237,6 +410,7 @@ export default function Contracts() {
   const [editing, setEditing] = useState<ContractItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [fileTalent, setFileTalent] = useState<ContractItem | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
   const [form] = Form.useForm();
 
   const fetchList = useCallback(async (keyword: string) => {
@@ -415,6 +589,7 @@ export default function Contracts() {
             <div className="search-control" />
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+            <Button icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>新增合同</Button>
             <Button icon={<BellOutlined />} onClick={manualSync}>同步提醒</Button>
             <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setRangeFilter("all"); fetchList(""); }}>重置</Button>
             <Button type="primary" icon={<SearchOutlined />} onClick={() => { setAppliedQ(q); fetchList(q); }}>查询</Button>
@@ -432,6 +607,13 @@ export default function Contracts() {
           pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
         />
       </Card>
+
+      {/* 新增合同：选人才 → 传文件 AI 识别或手填日期 → 保存到档案 */}
+      <AddContractModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onSaved={() => fetchList(appliedQ)}
+      />
 
       {/* 合同文件弹窗：上传原件 + AI 识别日期 + 应用到档案 */}
       <ContractFilesModal
