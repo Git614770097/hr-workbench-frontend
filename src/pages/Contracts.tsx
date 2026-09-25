@@ -11,6 +11,19 @@ import type { ContractItem, ContractFile, Talent } from "../types";
 import { STATUS_LABELS } from "../types";
 import { extractContractText } from "../utils/contractFile";
 
+// 日期快捷预设（从今天起算）：试用期按月、合同按年。
+// 三个弹窗（新增合同 / 合同文件 / 编辑日期）共用，保证体验一致。
+const PROBATION_PRESETS = [
+  { label: "一个月", value: dayjs().add(1, "month") },
+  { label: "三个月", value: dayjs().add(3, "month") },
+  { label: "六个月", value: dayjs().add(6, "month") },
+];
+const CONTRACT_PRESETS = [
+  { label: "一年", value: dayjs().add(1, "year") },
+  { label: "两年", value: dayjs().add(2, "year") },
+  { label: "三年", value: dayjs().add(3, "year") },
+];
+
 /** 剩余天数：两侧都用 UTC 午夜基准相减，无时区跨日问题 */
 function daysUntil(dateStr: string | null): number | null {
   if (!dateStr) return null;
@@ -205,10 +218,10 @@ function ContractFilesModal({
 
       <Form form={form} layout="horizontal" labelCol={{ span: 5 }} wrapperCol={{ span: 17 }} style={{ marginTop: 16 }}>
         <Form.Item name="contract_end" label="合同到期日" extra="AI 预填，可修改；应用到档案后自动生成/更新到期提醒待办">
-          <DatePicker style={{ width: "100%" }} placeholder="合同到期日" allowClear />
+          <DatePicker style={{ width: "100%" }} placeholder="合同到期日" allowClear presets={CONTRACT_PRESETS} />
         </Form.Item>
         <Form.Item name="probation_end" label="试用期到期日">
-          <DatePicker style={{ width: "100%" }} placeholder="试用期到期日" allowClear />
+          <DatePicker style={{ width: "100%" }} placeholder="试用期到期日" allowClear presets={PROBATION_PRESETS} />
         </Form.Item>
         <Form.Item wrapperCol={{ offset: 5, span: 17 }} style={{ marginBottom: 8 }}>
           <Button type="primary" loading={applying} onClick={handleApply}>应用到档案</Button>
@@ -469,10 +482,10 @@ function AddContractModal({
           label="合同到期日"
           extra={aiFilled ? "AI 识别结果，可修改" : "保存后自动生成/更新合同到期提醒待办"}
         >
-          <DatePicker style={{ width: "100%" }} placeholder="合同到期日" allowClear />
+          <DatePicker style={{ width: "100%" }} placeholder="合同到期日" allowClear presets={CONTRACT_PRESETS} />
         </Form.Item>
         <Form.Item name="probation_end" label="试用期到期日">
-          <DatePicker style={{ width: "100%" }} placeholder="试用期到期日" allowClear />
+          <DatePicker style={{ width: "100%" }} placeholder="试用期到期日" allowClear presets={PROBATION_PRESETS} />
         </Form.Item>
       </Form>
     </Modal>
@@ -714,10 +727,10 @@ export default function Contracts() {
       >
         <Form form={form} layout="horizontal" labelCol={{ span: 6 }} wrapperCol={{ span: 16 }} style={{ marginTop: 16 }}>
           <Form.Item name="contract_end" label="合同到期日" extra="清空日期并保存，将自动取消合同到期提醒">
-            <DatePicker style={{ width: "100%" }} placeholder="选择合同到期日（可清空）" />
+            <DatePicker style={{ width: "100%" }} placeholder="选择合同到期日（可清空）" presets={CONTRACT_PRESETS} />
           </Form.Item>
           <Form.Item name="probation_end" label="试用期到期日" extra="到期前 30 天自动生成转正评估提醒">
-            <DatePicker style={{ width: "100%" }} placeholder="选择试用期到期日（可清空）" />
+            <DatePicker style={{ width: "100%" }} placeholder="选择试用期到期日（可清空）" presets={PROBATION_PRESETS} />
           </Form.Item>
         </Form>
       </Modal>
