@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Card, Button, Select, Space, Row, Col, Empty, Spin, Tooltip, message } from "antd";
 import {
-  ReloadOutlined, SearchOutlined, FunnelPlotOutlined,
+  ReloadOutlined, SearchOutlined, FunnelPlotOutlined, DownloadOutlined,
   ThunderboltOutlined, RiseOutlined, ClockCircleOutlined, TeamOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
+import { downloadBlob, dateStamp, csvCell } from "../utils/file";
 import type { FunnelResponse, FunnelStayItem, Job, User } from "../types";
 import FunnelChartView, { levelColor } from "../components/FunnelChart";
 
@@ -140,6 +141,69 @@ export default function Funnel() {
     (data?.stage_stay || []).map((x) => [x.key, x])
   );
 
+  /** 导出当前筛选下的漏斗全量数据：概览/阶段/渠道/淘汰原因/周期，一个 CSV 五段表 */
+  const exportFunnel = () => {
+    if (!data || !s) return;
+    const rows: string[] = [];
+    const timeLabel = TIME_RANGES.find((t) => t.value === daysFilter)?.label || "全部时间";
+    const jobLabel = jobs.find((j) => j.id === jobFilter)?.title || "全部岗位";
+
+    rows.push("招聘漏斗数据导出");
+    rows.push([`岗位：${jobLabel}`, `时间范围：${timeLabel}`, `导出时间：${new Date().toLocaleString("zh-CN")}`].map(csvCell).join(","));
+    rows.push("");
+
+    rows.push("【漏斗概览】");
+    rows.push("进入流程,进行中,已入职,已淘汰,已放弃,整体转化率");
+    rows.push([s.total, s.in_progress, s.hired, s.rejected, s.withdrawn, pct(s.overall_rate)].map(csvCell).join(","));
+    rows.push("");
+
+    rows.push("【阶段漏斗】（人数按「曾到达」口径：到过该阶段即计入）");
+    rows.push("阶段,人数,环比转化率,环比流失,累计转化率,平均停留天数");
+    for (let i = 0; i < stages.length; i++) {
+      const st = stages[i];
+      const stay = stayMap[st.key];
+      rows.push([
+        st.label,
+        st.count,
+        i === 0 ? "—" : pct(st.rate),
+        st.drop > 0 ? st.drop : "—",
+        pct(st.overall_rate),
+        stay?.avg_days != null ? `${stay.avg_days} 天` : "—",
+      ].map(csvCell).join(","));
+    }
+    rows.push("");
+
+    rows.push("【渠道效果】（人·岗位口径：同一人才多岗位分别计）");
+    rows.push("来源渠道,进入流程,已入职,入职转化率");
+    for (const src of data.sources || []) {
+      rows.push([src.source, src.entered, src.hired, pct(src.rate)].map(csvCell).join(","));
+    }
+    rows.push("");
+
+    rows.push("【淘汰原因分布】");
+    rows.push("原因,人次");
+    for (const r of data.reject_reasons || []) {
+      rows.push([r.reason, r.count].map(csvCell).join(","));
+    }
+    rows.push("");
+
+    rows.push("【周期指标】（天，均值易被长尾拉偏，请配合 p50/p90 解读）");
+    rows.push("指标,均值,p50,p90,最长,最短,样本数");
+    const cycles: [string, FunnelResponse["cycles"]["tti"]][] = [
+      ["简历入库 → 首次面试", data.cycles.tti],
+      ["首次面试 → Offer", data.cycles.to_offer],
+      ["Offer → 入职", data.cycles.to_hire],
+      ["入库 → 入职（全程）", data.cycles.total],
+    ];
+    for (const [name, c] of cycles) {
+      rows.push([name, c.avg, c.p50, c.p90, c.max, c.min, c.n].map(csvCell).join(","));
+    }
+
+    const blob = new Blob(["\ufeff" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    downloadBlob(blob, `招聘漏斗_${dateStamp()}.csv`);
+    message.success("已导出招聘漏斗数据");
+  };
+
   return (
     <div className="funnel-page">
       {/* 筛选 */}
@@ -188,6 +252,7 @@ export default function Funnel() {
             </div>
           )}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+            <Button icon={<DownloadOutlined />} onClick={exportFunnel} disabled={!data}>导出数据</Button>
             <Button icon={<ReloadOutlined />} onClick={resetSearch}>重置</Button>
             <Button type="primary" icon={<SearchOutlined />} onClick={applySearch}>查询</Button>
           </div>

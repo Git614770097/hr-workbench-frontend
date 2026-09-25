@@ -54,13 +54,7 @@ const COLLAPSED_COUNT = 4;
 // 列表每页条数
 const PAGE_SIZE = 10;
 
-import { escapeHtml, downloadBlob } from "../utils/file";
-
-function dateStamp(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
-}
+import { escapeHtml, downloadBlob, dateStamp } from "../utils/file";
 
 export default function TalentList() {
   const [talents, setTalents] = useState<Talent[]>([]);
