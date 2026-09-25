@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模板库 AI 体检报告</title>
+<style>
+  :root { --ink:#1f2328; --sub:#57606a; --line:#e4e8ec; --bg:#f6f8fa; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif; color:var(--ink); background:#fff; line-height:1.75; padding:40px 24px 80px; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:26px; margin-bottom:6px; }
+  .meta { color:var(--sub); font-size:13px; margin-bottom:28px; }
+  h2 { font-size:19px; margin:34px 0 12px; padding-left:10px; border-left:4px solid #3b82f6; }
+  h3 { font-size:15px; margin:18px 0 8px; }
+  p { margin-bottom:10px; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; margin:10px 0 6px; }
+  th,td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--bg); font-weight:600; white-space:nowrap; }
+  td .name { font-weight:600; }
+  .tag { display:inline-block; font-size:12px; padding:1px 8px; border-radius:10px; margin-right:4px; white-space:nowrap; }
+  .t-red { background:#fee2e2; color:#b91c1c; }
+  .t-orange { background:#ffedd5; color:#c2410c; }
+  .t-blue { background:#dbeafe; color:#1d4ed8; }
+  .t-green { background:#dcfce7; color:#15803d; }
+  .t-gray { background:#e5e7eb; color:#4b5563; }
+  .stat-row { display:flex; gap:12px; flex-wrap:wrap; margin:16px 0 6px; }
+  .stat { flex:1 1 160px; border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:var(--bg); }
+  .stat .num { font-size:26px; font-weight:700; }
+  .stat .lbl { font-size:13px; color:var(--sub); }
+  .callout { border:1px solid #bfdbfe; background:#eff6ff; border-radius:10px; padding:14px 16px; margin:14px 0; font-size:14px; }
+  .callout.warn { border-color:#fcd34d; background:#fffbeb; }
+  .quote { border-left:3px solid var(--line); padding:2px 12px; color:var(--sub); font-size:13px; margin:8px 0; background:var(--bg); }
+  code { background:var(--bg); border:1px solid var(--line); border-radius:4px; padding:0 5px; font-size:12.5px; }
+  ul { padding-left:22px; margin-bottom:10px; }
+  li { margin-bottom:6px; }
+  .footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--line); color:var(--sub); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>模板库 AI 体检报告</h1>
+<div class="meta">体检范围：全库 110 份模板 × 6 大分类（证明文档 27 / 合同协议 19 / 薪酬福利 19 / 离职退休 17 / 招聘入职 15 / 员工异动 13）· 2026-09-25</div>
+
+<div class="stat-row">
+  <div class="stat"><div class="num" style="color:#b91c1c">5</div><div class="lbl">内容有合规风险，建议修改</div></div>
+  <div class="stat"><div class="num" style="color:#c2410c">2</div><div class="lbl">完全重复，建议清理</div></div>
+  <div class="stat"><div class="num" style="color:#1d4ed8">13</div><div class="lbl">AI 改造高价值模板</div></div>
+  <div class="stat"><div class="num" style="color:#15803d">90+</div><div class="lbl">结构合格，无需改动</div></div>
+</div>
+
+<div class="callout">
+<b>先说最重要的发现：</b>全库 110 份模板已经<strong>统一使用 <code>{{占位符}}</code> 约定</strong>（公司名称、姓名、部门、合同到期日等 60+ 种字段）。这正是未来「AI 功能」与模板之间的现成接口——<strong>AI 填充不需要改模板内容，只需按占位符映射系统数据</strong>。所以「哪些模板需要改变」的答案分四档：5 份修内容、2 份清重复、13 份值得做 AI 深度改造、其余不动。
+</div>
+
+<h2>一、内容有合规风险，建议修改（5 份）</h2>
+<p>这几份是法律敏感文档，问题不在形式而在条款本身，建议优先处理：</p>
+
+<table>
+<tr><th style="width:190px">模板</th><th>问题</th><th style="width:330px">修改建议</th></tr>
+<tr>
+  <td><span class="name">劳动合同（通用版）</span><br><span class="tag t-red">风险最高</span></td>
+  <td>缺《劳动合同法》第 17 条两款<strong>必备条款</strong>：①工作时间与休息休假；②劳动保护和劳动条件（含职业危害防护）。另外试用期工资（<code>{{试用期薪资}}</code>）没有法定下限提示——不得低于约定工资的 80% 且不低于当地最低工资；试用期长度与合同期限的法定比例（如 3 年合同试用期≤6 个月）也无任何约束提示。</td>
+  <td>补「工作时间与休息休假」「劳动保护」两节条款；在试用期薪资、试用期结束日两个占位符旁各加一行合规提示文字。</td>
+</tr>
+<tr>
+  <td><span class="name">竞业限制协议</span></td>
+  <td>补偿标准（<code>{{补偿标准}}</code>）无下限指引。司法实践中未约定标准的按<strong>离职前 12 个月平均工资的 30%</strong> 且不低于当地最低工资兜底；填太低有被调整甚至协议失效风险。</td>
+  <td>补偿条款补一句法定下限提示；建议注明「按月支付」。</td>
+</tr>
+<tr>
+  <td><span class="name">兼职协议</span></td>
+  <td>「甲方不为乙方缴纳社会保险」的表述与<strong>非全日制用工</strong>规则冲突（非全日制必须缴工伤保险，库里另一份「非全日制用工合同」写对了）。两份模板边界模糊，混用会出错。</td>
+  <td>在协议开头注明适用场景（纯劳务兼职，非非全日制用工），或直接在社保条款处提示两份模板的区分标准（每周工时 ≤24 小时属非全日制）。</td>
+</tr>
+<tr>
+  <td><span class="name">工伤认定申请</span></td>
+  <td>缺<strong>30 日申报时限</strong>提示（单位应在事故伤害发生之日起 30 日内申报，逾期期间的工伤待遇费用由单位承担）。</td>
+  <td>文首或申请事项处加时限警示行。</td>
+</tr>
+<tr>
+  <td><span class="name">经济补偿金计算表</span></td>
+  <td>列了社平工资 3 倍（<code>{{社平三倍}}</code>），但没写<strong>双封顶规则</strong>：月工资高于社平 3 倍的，按 3 倍封顶计发且年限最高 12 年。</td>
+  <td>计算公式下方补双封顶说明行。</td>
+</tr>
+</table>
+
+<h2>二、完全重复，建议清理（2 份）</h2>
+<table>
+<tr><th style="width:320px">重复对</th><th>情况</th><th style="width:240px">建议</th></tr>
+<tr>
+  <td><span class="name">在职证明</span>（证明文档 #95）<br>vs <span class="name">在职证明（副本）</span>（#96）</td>
+  <td>两份内容<strong>逐字相同</strong>，「副本」并没有任何差异。</td>
+  <td>删掉「副本」；或把它改造成<strong>不含月薪版本</strong>（办签证/租房时常被要求不写工资），这样才值得保留。</td>
+</tr>
+<tr>
+  <td><span class="name">离职证明</span>（离职退休 #55）<br>vs <span class="name">离职证明</span>（证明文档 #107）</td>
+  <td><strong>跨分类完全重复</strong>，同一份文本存了两份。</td>
+  <td>删一份（建议留离职退休分类下的，与离职流程文档放一起）。</td>
+</tr>
+</table>
+
+<h2>三、AI 改造高价值模板（13 份 + 全库接口）</h2>
+<p>如果往系统里加 AI 功能，这 13 份是投入产出比最高的改造对象：</p>
+
+<table>
+<tr><th style="width:320px">模板 / 组</th><th>AI 怎么介入</th><th style="width:150px">价值</th></tr>
+<tr><td><span class="name">员工关怀通知（生日/节日）</span></td><td>模板本身就是个空壳（<code>{{关怀正文}}</code>），天生适合 <strong>AI 生成正文</strong>：输入员工姓名+场景（生日/节日/慰问/里程碑），AI 写一段有个性的话。</td><td><span class="tag t-blue">即插即用</span></td></tr>
+<tr><td><span class="name">录用通知书（Offer）</span></td><td>AI 按人才档案+岗位数据一次性填充全部占位符并润色措辞（薪资结构、报到材料清单自动对齐）。</td><td><span class="tag t-red">最高频</span></td></tr>
+<tr><td><span class="name">面试评价表</span></td><td>AI 根据面试记录/简历草拟「优点 / 不足与风险点」评语初稿，面试官改签字。</td><td><span class="tag t-orange">省时间</span></td></tr>
+<tr><td><span class="name">绩效考核表</span></td><td>AI 按「工作亮点 / 改进建议」两栏，依据周期内任务/流水数据预填评语。</td><td><span class="tag t-orange">省时间</span></td></tr>
+<tr><td><span class="name">PIP（绩效改进计划）</span></td><td>AI 根据考核结果生成 SMART 改进目标与措施草稿（这块最难写好，AI 增益最大）。</td><td><span class="tag t-orange">增益大</span></td></tr>
+<tr><td><span class="name">晋升通知 / 调岗通知书 / 调薪通知书 / 奖金发放通知 / 奖惩通知 / 警告信</span></td><td>同一类「告知函」：AI 按系统内异动数据自动填充+按公司语气润色，一次生成。</td><td><span class="tag t-green">批量提效</span></td></tr>
+<tr><td><span class="name">合同到期提醒通知 / 劳动合同续签通知</span></td><td>与<strong>合同管理模块直接打通</strong>：系统里的到期待办一键生成这两份通知，剩余天数、到期日自动带出。</td><td><span class="tag t-blue">数据现成</span></td></tr>
+</table>
+
+<div class="callout warn">
+<b>关于占位符接口的说明：</b>9 月 22 日精简时删掉的「套用生成文档 + 占位符体系」<strong>不会加回</strong>。但要注意：删掉的是「手动选人才→填占位符→生成文档」的交互，占位符本身仍留在全部 110 份模板内容里。未来做 AI 填充时，<code>{{占位符}}</code> 直接成为 AI 的字段映射契约，模板内容一行都不用改——这是现状最幸运的一点。
+</div>
+
+<h2>四、可不动（90+ 份）</h2>
+<p>逐份检查后，其余模板结构合格：</p>
+<ul>
+  <li><b>协议类</b>（劳务派遣、退休返聘、培训服务期、协商解除、股权激励等）：条款要素完备、引用法条准确（裁员通知引第 41 条、协商解除引第 36 条均正确），保持现状；</li>
+  <li><b>表单类</b>（入职登记表、背景调查、个税专项附加扣除——已含「3 岁以下婴幼儿照护」新项、数据隐私同意书——符合个保法框架）：字段设计合理且时效性没问题；</li>
+  <li><b>评分表类</b>（培训评估、晋升评估、面试评价、绩效考核）：五维 1-5 分结构统一，风格一致。</li>
+</ul>
+
+<h2>五、建议执行顺序</h2>
+<table>
+<tr><th style="width:70px">顺序</th><th>动作</th><th>理由</th></tr>
+<tr><td>1</td><td>修 5 份合规风险模板 + 清理 2 份重复</td><td>与 AI 无关，本来就是内容质量问题；量小（7 份），一次改完</td></tr>
+<tr><td>2</td><td>做 AI 模板填充时，从「员工关怀通知 + Offer + 合同到期提醒通知」切入</td><td>三者分别代表：纯 AI 生成、全字段填充、与合同模块打通，验证三种接入模式</td></tr>
+<tr><td>3</td><td>信函类批量填充（6 份告知函 + 2 份评价表）</td><td>模式与第 2 步相同，属于横向铺开</td></tr>
+</table>
+
+<div class="footer">体检方式：全量拉取 doc_templates 110 条 → 剥离 HTML 逐份细读 → 法务要点核对 + 重复比对 + AI 接入价值评估。原始摘要留存于 scripts/tpl_digest.txt。</div>
+</div>
+</body>
+</html>
