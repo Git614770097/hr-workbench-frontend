@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import {
-  Modal, Form, Input, InputNumber, Select, Spin, message, Upload, Button,
+  Modal, Form, Input, InputNumber, Select, Spin, message, Upload, Button, DatePicker,
 } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
 import { api } from "../api";
 import { STATUS_LABELS, EDUCATION_OPTIONS, SOURCE_OPTIONS } from "../types";
 
@@ -30,6 +31,7 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
           form.setFieldsValue({
             ...t,
             skills: t.skills.join(", "),
+            hire_date: t.hire_date ? dayjs(t.hire_date) : null,
           });
         } else {
           form.resetFields();
@@ -49,6 +51,7 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
         ...values,
         years_experience: values.years_experience ?? undefined,
         skills: values.skills ? values.skills.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
+        hire_date: values.hire_date ? values.hire_date.format("YYYY-MM-DD") : (values.hire_date === null ? null : undefined),
       };
       let result;
       if (isEdit && talentId) {
@@ -135,6 +138,9 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
             </Form.Item>
             <Form.Item name="status" label="状态">
               <Select placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
+            </Form.Item>
+            <Form.Item name="hire_date" label="入职日期" extra="标记「已入职」或填写此日期后，自动生成社保增员待办">
+              <DatePicker style={{ width: "100%" }} placeholder="选择入职日期" allowClear />
             </Form.Item>
             <Form.Item name="source" label="来源渠道">
               <Select allowClear showSearch placeholder="请选择来源渠道" options={SOURCE_OPTIONS.map((s) => ({ label: s, value: s }))} />

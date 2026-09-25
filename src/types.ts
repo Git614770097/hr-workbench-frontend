@@ -74,8 +74,39 @@ export interface Talent {
   contract_end: string | null;
   probation_end: string | null;
   resignation_date: string | null;
+  hire_date: string | null;   // 入职日期（社保增员待办基准日）
   created_at: string;
   updated_at: string;
+}
+
+// 参保状态（talent_social.si_status）
+export const SI_STATUS_LABELS: Record<string, string> = {
+  none: "未参保",
+  active: "参保中",
+  stopped: "已停缴",
+};
+export const SI_STATUS_COLORS: Record<string, string> = {
+  none: "default",
+  active: "green",
+  stopped: "default",
+};
+
+// 社保公积金台账行（talents LEFT JOIN talent_social）
+export interface SocialItem {
+  id: string;                    // 人才 id
+  name: string;
+  phone: string | null;
+  status: string;
+  hire_date: string | null;
+  resignation_date: string | null;
+  si_status: string | null;      // null = 无台账记录（视同未参保）
+  si_city: string | null;
+  si_base: number | null;
+  hf_base: number | null;
+  si_rate_personal: number | null;
+  si_rate_company: number | null;
+  hf_rate_personal: number | null;
+  hf_rate_company: number | null;
 }
 
 // 学历选项（筛选 / 表单 / 导入解析共用）

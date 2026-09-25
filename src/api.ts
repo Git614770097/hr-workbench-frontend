@@ -1,4 +1,4 @@
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem } from "./types";
 
 const BASE = "/api";
 
@@ -267,6 +267,18 @@ export const api = {
 
   deleteContractFile: (fileId: string) =>
     request(`/talents/contracts/files/${fileId}`, { method: "DELETE" }),
+
+  // ---- 社保公积金台账 ----
+  getSocialList: (q?: string) =>
+    request<SocialItem[]>(`/talents/social${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+
+  // 编辑参保信息（upsert），后端保存后即同步增减员待办
+  updateSocial: (talentId: string, data: Partial<SocialItem>) =>
+    request<{ ok: true }>(`/talents/social/${talentId}`, { method: "PUT", body: JSON.stringify(data) }),
+
+  // 增减员待办批量同步（幂等）
+  syncSocialTasks: () =>
+    request<ContractSyncResult>("/talents/social/sync-tasks", { method: "POST" }),
 
   // 智能匹配（简历 + 人才画像 → 排序推荐）
   // 按职位生成招聘 JD（AI 起草，用户可改后再提炼画像）

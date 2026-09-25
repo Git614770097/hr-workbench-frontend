@@ -17,6 +17,7 @@ import {
   CarryOutOutlined,
   UserSwitchOutlined,
   FileProtectOutlined,
+  SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import type { User } from "../types";
 import { ROLE_LABELS } from "../types";
@@ -83,6 +84,8 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
     { to: "/funnel", label: "招聘漏斗", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
     // 合同管理与人才库同源数据（talents 表的合同/试用期字段），复用 talents 权限，不新增菜单 key
     { to: "/contracts", label: "合同管理", icon: <FileProtectOutlined />, color: "#d97706", perm: "talents" },
+    // 社保公积金台账同样复用 talents 权限
+    { to: "/social", label: "社保公积金", icon: <SafetyCertificateOutlined />, color: "#0d9488", perm: "talents" },
     // —— 按需查阅与产出 ——
     { to: "/profiles", label: "人才画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },
     { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },

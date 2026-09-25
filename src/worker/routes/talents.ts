@@ -57,6 +57,70 @@ function contractTaskStmts(db: any, t: TalentContractRow, existing: ExistingTask
   return { stmts, created, updated, cancelled };
 }
 
+// ---- 社保增减员 → 待办提醒（幂等同步，与合同到期同套路）----
+// 规则：已入职（status=placed 或填了 hire_date）且未参保 → 「社保增员：X」；
+// 填了离职日期且仍在缴 → 「社保减员：X」。参保/停缴状态变化即对齐待办。
+type SocialTalentRow = {
+  id: string; owner_id: string; name: string;
+  status: string; hire_date: string | null; resignation_date: string | null;
+  si_status: string | null;  // LEFT JOIN talent_social，无记录为 null
+};
+
+function socialTaskStmts(db: any, t: SocialTalentRow, existing: ExistingTask[]) {
+  const si = t.si_status || "none";
+  const onboarded = t.status === "placed" || !!t.hire_date;
+  const kinds = [
+    {
+      prefix: "社保增员",
+      active: onboarded && si === "none",
+      due: t.hire_date || null,
+      content: `${t.name} 已入职${t.hire_date ? `（${t.hire_date}）` : ""}，尚未办理社保参保登记，请及时办理社保增员。`,
+    },
+    {
+      prefix: "社保减员",
+      active: !!t.resignation_date && si === "active",
+      due: t.resignation_date,
+      content: `${t.name} 将于 ${t.resignation_date} 离职，社保仍在缴，请在离职当月及时办理社保减员（停缴）。`,
+    },
+  ];
+  const stmts: any[] = [];
+  let created = 0, updated = 0, cancelled = 0;
+  for (const { prefix, active, due, content } of kinds) {
+    const title = `${prefix}：${t.name}`;
+    const dup = existing.find((x) => x.title === title);
+    if (!active) {
+      if (dup) { stmts.push(db.prepare(`UPDATE talent_tasks SET status = 'cancelled' WHERE id = ?`).bind(dup.id)); cancelled++; }
+      continue;
+    }
+    const effectiveDue = due || new Date().toISOString().slice(0, 10);
+    if (!dup) {
+      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, 'high', 'pending', 'system')`).bind(genId(), t.owner_id, t.id, title, content, effectiveDue));
+      created++;
+      continue;
+    }
+    if (dup.due_date !== effectiveDue) {
+      stmts.push(db.prepare(`UPDATE talent_tasks SET due_date = ?, content = ? WHERE id = ?`).bind(effectiveDue, content, dup.id));
+      updated++;
+    }
+  }
+  return { stmts, created, updated, cancelled };
+}
+
+/** 单个人才的社保待办即时同步：查该人才行 + 现存待办 → batch 执行 */
+async function syncSocialTasksForTalent(db: any, talentId: string) {
+  const t = (await db.prepare(
+    `SELECT t.id, t.owner_id, t.name, t.status, t.hire_date, t.resignation_date, s.si_status
+       FROM talents t LEFT JOIN talent_social s ON s.talent_id = t.id
+      WHERE t.id = ?`
+  ).bind(talentId).first()) as SocialTalentRow | undefined;
+  if (!t) return;
+  const tasks = (await db.prepare(
+    `SELECT id, title, due_date FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND (title LIKE '社保增员：%' OR title LIKE '社保减员：%')`
+  ).bind(talentId).all()) as { results: ExistingTask[] };
+  const { stmts } = socialTaskStmts(db, t, tasks.results || []);
+  if (stmts.length) await db.batch(stmts);
+}
+
 // Base64 <-> ArrayBuffer 转换（用于 KV 存储二进制文件）
 function arrayBufferToBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -381,6 +445,101 @@ talents.delete("/contracts/files/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+// ---- 社保公积金台账 ----
+// 清单口径：已入职 / 填了入职或离职日期 / 有参保记录 的人才（待办动作由前端按同规则推导）。
+// 基数与比例只记录不校验——各地政策差异大，由用户按参保地自行填写。
+talents.get("/social", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const q = (c.req.query("q") || "").trim();
+  let sql = `
+    SELECT t.id, t.name, t.phone, t.status, t.hire_date, t.resignation_date,
+           s.si_status, s.si_city, s.si_base, s.hf_base,
+           s.si_rate_personal, s.si_rate_company, s.hf_rate_personal, s.hf_rate_company
+      FROM talents t LEFT JOIN talent_social s ON s.talent_id = t.id
+     WHERE (t.status = 'placed' OR t.hire_date IS NOT NULL OR t.resignation_date IS NOT NULL OR s.id IS NOT NULL)`;
+  const params: string[] = [];
+  if (session.role !== "admin") { sql += ` AND t.owner_id = ?`; params.push(session.userId); }
+  if (q) { sql += ` AND t.name LIKE ?`; params.push(`%${q}%`); }
+  sql += ` LIMIT 500`;
+
+  const rows = (await c.env.DB.prepare(sql).bind(...params).all<any>()).results;
+  return c.json(rows);
+});
+
+// 编辑参保信息（upsert 一人一条），保存即同步增减员待办
+talents.put("/social/:talentId", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const talentId = c.req.param("talentId");
+  let checkSql = "SELECT id FROM talents WHERE id = ?";
+  const checkParams: string[] = [talentId];
+  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first();
+  if (!existing) return c.json({ error: "人才不存在" }, 404);
+
+  const body = await c.req.json<any>();
+  const num = (v: unknown) => (typeof v === "number" && !isNaN(v) ? v : null);
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const siStatus = ["none", "active", "stopped"].includes(body.si_status) ? body.si_status : "none";
+
+  const values = [
+    siStatus, str(body.si_city), num(body.si_base), num(body.hf_base),
+    num(body.si_rate_personal), num(body.si_rate_company), num(body.hf_rate_personal), num(body.hf_rate_company),
+  ];
+
+  await c.env.DB.prepare(
+    `INSERT INTO talent_social (id, owner_id, talent_id, si_status, si_city, si_base, hf_base, si_rate_personal, si_rate_company, hf_rate_personal, hf_rate_company)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(talent_id) DO UPDATE SET
+       si_status = excluded.si_status, si_city = excluded.si_city, si_base = excluded.si_base,
+       hf_base = excluded.hf_base, si_rate_personal = excluded.si_rate_personal,
+       si_rate_company = excluded.si_rate_company, hf_rate_personal = excluded.hf_rate_personal,
+       hf_rate_company = excluded.hf_rate_company, updated_at = datetime('now')`
+  ).bind(genId(), session.userId, talentId, ...values).run();
+
+  // 台账变化 → 立即对齐增减员待办
+  await syncSocialTasksForTalent(c.env.DB, talentId);
+  return c.json({ ok: true });
+});
+
+// 增减员待办批量同步（幂等）：页面加载时自动调用 + 手动触发
+talents.post("/social/sync-tasks", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const ownerCond = session.role !== "admin" ? " AND t.owner_id = ?" : "";
+  const ownerParams: string[] = session.role !== "admin" ? [session.userId] : [];
+  const talentsRows = (await c.env.DB.prepare(
+    `SELECT t.id, t.owner_id, t.name, t.status, t.hire_date, t.resignation_date, s.si_status
+       FROM talents t LEFT JOIN talent_social s ON s.talent_id = t.id
+      WHERE (t.status = 'placed' OR t.hire_date IS NOT NULL OR t.resignation_date IS NOT NULL OR s.id IS NOT NULL)${ownerCond}
+      LIMIT 500`
+  ).bind(...ownerParams).all<SocialTalentRow>()).results;
+  if (!talentsRows.length) return c.json({ checked: 0, created: 0, updated: 0, cancelled: 0 });
+
+  const ids = talentsRows.map((t) => t.id);
+  const placeholders = ids.map(() => "?").join(",");
+  const tasksRows = (await c.env.DB.prepare(
+    `SELECT id, talent_id, title, due_date FROM talent_tasks WHERE talent_id IN (${placeholders}) AND status = 'pending' AND (title LIKE '社保增员：%' OR title LIKE '社保减员：%')`
+  ).bind(...ids).all<ExistingTask & { talent_id: string }>()).results;
+
+  const byTalent: Record<string, ExistingTask[]> = {};
+  for (const tk of tasksRows) (byTalent[tk.talent_id] ||= []).push(tk);
+
+  const stmts: any[] = [];
+  let created = 0, updated = 0, cancelled = 0;
+  for (const t of talentsRows) {
+    const r = socialTaskStmts(c.env.DB, t, byTalent[t.id] || []);
+    stmts.push(...r.stmts);
+    created += r.created; updated += r.updated; cancelled += r.cancelled;
+  }
+  if (stmts.length) await c.env.DB.batch(stmts);
+  return c.json({ checked: talentsRows.length, created, updated, cancelled });
+});
+
 // ---- 人才详情（聚合：本体 + 相关待办 + 投递进程 + 阶段日志）----
 talents.get("/:id", async (c) => {
   const session = await getSession(c);
@@ -441,8 +600,8 @@ talents.post("/", async (c) => {
   const body = await c.req.json<any>();
   const id = genId();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
-  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.source || null, body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date)).run();
+  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, hire_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.source || null, body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date)).run();
 
   return c.json({ id, ...body });
 });
@@ -462,7 +621,7 @@ talents.put("/:id", async (c) => {
   const body = await c.req.json<any>();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
   // 日期字段动态拼 SET：传了才更新（含清空 ""→NULL），未传保持原值——COALESCE 无法区分这两种情况
-  const dateFields = ["birth_date", "contract_end", "probation_end", "resignation_date"] as const;
+  const dateFields = ["birth_date", "contract_end", "probation_end", "resignation_date", "hire_date"] as const;
   let dateSet = "";
   const dateParams: (string | null)[] = [];
   for (const f of dateFields) {
@@ -490,6 +649,11 @@ talents.put("/:id", async (c) => {
       const { stmts } = contractTaskStmts(c.env.DB, t, tasks.results || []);
       if (stmts.length) await c.env.DB.batch(stmts);
     }
+  }
+
+  // 入职日期/离职日期/在职状态有变更 → 立即同步社保增减员待办
+  if (body.hire_date !== undefined || body.resignation_date !== undefined || body.status !== undefined) {
+    await syncSocialTasksForTalent(c.env.DB, id);
   }
 
   return c.json({ id, ...body });
@@ -526,6 +690,7 @@ talents.delete("/:id", async (c) => {
     // 待办属于用户，不静默删除，只解除与人才的关联
     c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),
     c.env.DB.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(id),
+    c.env.DB.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(id),
     c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id),
   ]);
   return c.json({ ok: true });

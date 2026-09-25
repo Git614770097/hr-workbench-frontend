@@ -180,6 +180,7 @@ export default function TalentDetail() {
               <Descriptions.Item label="期望薪资">{talent.expected_salary || "—"}</Descriptions.Item>
               <Descriptions.Item label="期望城市">{talent.expected_city || "—"}</Descriptions.Item>
               <Descriptions.Item label="来源渠道">{talent.source || "—"}</Descriptions.Item>
+              <Descriptions.Item label="入职日期">{talent.hire_date || "—"}</Descriptions.Item>
               {isAdmin && <Descriptions.Item label="创建人">{talent.owner_name || "—"}</Descriptions.Item>}
               <Descriptions.Item label="电话" span={2}>
                 {talent.phone ? (

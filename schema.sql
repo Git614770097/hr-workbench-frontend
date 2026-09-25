@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS talents (
   contract_end TEXT,        -- 合同到期日
   probation_end TEXT,       -- 试用期结束日
   resignation_date TEXT,    -- 预计离职日期（离职倒计时）
+  hire_date TEXT,           -- 入职日期（社保增员待办基准日）
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -199,8 +200,27 @@ CREATE TABLE IF NOT EXISTS contract_files (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 参保台账：一人一条，基数/比例由用户按参保地政策自填（系统不维护费率规则库）
+CREATE TABLE IF NOT EXISTS talent_social (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  talent_id TEXT NOT NULL UNIQUE REFERENCES talents(id) ON DELETE CASCADE,
+  si_status TEXT NOT NULL DEFAULT 'none',  -- none 未参保 / active 参保中 / stopped 已停缴
+  si_city TEXT,
+  si_base REAL,
+  hf_base REAL,
+  si_rate_personal REAL,
+  si_rate_company REAL,
+  hf_rate_personal REAL,
+  hf_rate_company REAL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_talents_owner ON talents(owner_id);
+CREATE INDEX IF NOT EXISTS idx_talent_social_talent ON talent_social(talent_id);
+CREATE INDEX IF NOT EXISTS idx_talent_social_owner ON talent_social(owner_id);
 CREATE INDEX IF NOT EXISTS idx_talents_status ON talents(status);
 CREATE INDEX IF NOT EXISTS idx_communications_talent ON communications(talent_id);
 CREATE INDEX IF NOT EXISTS idx_doc_templates_category ON doc_templates(category);

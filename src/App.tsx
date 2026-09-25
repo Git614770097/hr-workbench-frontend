@@ -22,6 +22,8 @@ const Jobs = lazy(() => import("./pages/Jobs"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 // 合同管理：人才档案的合同/试用期字段集中视图，复用 talents 权限
 const Contracts = lazy(() => import("./pages/Contracts"));
+// 社保公积金台账：参保状态/基数/比例 + 增减员待办联动，复用 talents 权限
+const Social = lazy(() => import("./pages/Social"));
 const Users = lazy(() => import("./pages/Users"));
 const Roles = lazy(() => import("./pages/Roles"));
 const TemplateLibrary = lazy(() => import("./pages/TemplateLibrary"));
@@ -122,6 +124,7 @@ export default function App({ themeKey, onChangeTheme }: AppProps) {
           <Route path="/jobs" element={<RequirePerm user={user} perm="jobs"><Jobs /></RequirePerm>} />
           <Route path="/tasks" element={<RequirePerm user={user} perm="tasks"><Tasks /></RequirePerm>} />
           <Route path="/contracts" element={<RequirePerm user={user} perm="talents"><Contracts /></RequirePerm>} />
+          <Route path="/social" element={<RequirePerm user={user} perm="talents"><Social /></RequirePerm>} />
           <Route path="/templates" element={<RequirePerm user={user} perm="templates"><TemplateLibrary /></RequirePerm>} />
           {user.role === "admin" && <Route path="/roles" element={<Roles />} />}
           {user.role === "admin" && <Route path="/users" element={<Users />} />}
