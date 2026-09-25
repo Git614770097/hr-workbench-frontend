@@ -432,7 +432,16 @@ html[data-theme="dark"] .resume-doc-preview,
   gap: 0.4rem; margin-top: 0.45rem; padding-top: 0.4rem;
   border-top: 1px solid #f4f5f7;
 }
-.pipe-card-stale { font-size: 0.72rem; }
+/* 卡片停留状态：普通灰 / 偏久黄 / 超时红（语义色走类，暗色双档在下方） */
+.pipe-stale { font-size: 0.72rem; display: inline-flex; align-items: center; gap: 3px; color: #a8adb5; }
+.pipe-stale.warn { color: #d48806; font-weight: 600; }
+.pipe-stale.hot { color: #ff4d4f; font-weight: 600; }
+/* 卡片阶段备注：单行截断，悬停 Tooltip 看全文 */
+.pipe-card-note {
+  font-size: 0.72rem; color: #8c8c8c; margin-top: 0.3rem;
+  display: flex; align-items: center; gap: 4px; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 /* 停留超时（≥14 天）卡片整卡预警：浅红描边 + 浅红底 */
 .pipe-card.pipe-card-stalehot { border-color: #ffccc7; background: #fff1f0; }
 .pipe-empty { text-align: center; color: #c2c6cc; font-size: 0.76rem; padding: 1.4rem 0; }
@@ -623,6 +632,9 @@ html[data-theme="dark"] .pipe-card-name { color: #e5e7eb; }
 html[data-theme="dark"] .pipe-card-sub { color: #9ca3af; }
 html[data-theme="dark"] .pipe-card-foot { border-top-color: #303030; }
 html[data-theme="dark"] .pipe-card.pipe-card-stalehot { border-color: #5c2626; background: #2a1a1a; }
+html[data-theme="dark"] .pipe-stale { color: #8c8c8c; }
+html[data-theme="dark"] .pipe-stale.warn { color: #e8b339; }
+html[data-theme="dark"] .pipe-stale.hot { color: #ff7875; }
 html[data-theme="dark"] .task-item { background: #1f1f1f; border-color: #303030; }
 html[data-theme="dark"] .task-item.is-overdue { background: #2a1a1a; }
 html[data-theme="dark"] .task-item.is-today { background: #2a2415; }

@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Button, Select, Input, Space, Tag, Dropdown, message, Empty,
-  Segmented, Spin, Tooltip, Modal, Timeline, Rate, Descriptions, Alert,
+  Segmented, Spin, Tooltip, Modal, Timeline, Rate, Descriptions, Alert, Typography,
 } from "antd";
 import {
   ReloadOutlined, SearchOutlined, UserAddOutlined, MoreOutlined,
   ClockCircleOutlined, FilePdfOutlined, SwapOutlined, DeleteOutlined,
-  HistoryOutlined, UserOutlined,
+  HistoryOutlined, UserOutlined, MessageOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -345,8 +345,23 @@ export default function Pipeline() {
 
                         <div className="pipe-card-tags">
                           {card.job_title && (
-                            <Tag color="blue" style={{ fontSize: 11, marginInlineEnd: 0 }}>
-                              {card.job_title}
+                            <Tooltip title="点击聚焦该岗位的候选人">
+                              <Tag
+                                color="blue"
+                                style={{ fontSize: 11, marginInlineEnd: 0, cursor: "pointer" }}
+                                onClick={() => card.job_id && setJobFilter(card.job_id)}
+                              >
+                                {card.job_title}
+                              </Tag>
+                            </Tooltip>
+                          )}
+                          {card.rating != null && (
+                            <Tag
+                              color={card.rating >= 4 ? "gold" : card.rating === 3 ? "orange" : undefined}
+                              style={{ fontSize: 11, marginInlineEnd: 0 }}
+                              title="阶段评分（1-5）：可在人才详情的投递记录中调整"
+                            >
+                              ★ {card.rating}
                             </Tag>
                           )}
                           {card.years_experience != null && (
@@ -360,15 +375,23 @@ export default function Pipeline() {
                           )}
                         </div>
 
+                        {card.stage_notes && (
+                          <Tooltip title={card.stage_notes} placement="topLeft">
+                            <div className="pipe-card-note">
+                              <MessageOutlined /> {card.stage_notes}
+                            </div>
+                          </Tooltip>
+                        )}
+
                         <div className="pipe-card-foot">
                           {stale7 ? (
                             <Tooltip title={`已在本阶段停留 ${card.days_in_stage} 天，${stale14 ? "超过 14 天，请立即推进、约面或释放" : "建议尽快推进"}`}>
-                              <span style={{ fontSize: "0.72rem", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 3, color: stale14 ? "#ff4d4f" : "#d48806" }}>
+                              <span className={`pipe-stale${stale14 ? " hot" : " warn"}`}>
                                 <ClockCircleOutlined /> {stale14 ? "停留超时" : "停留偏久"} {card.days_in_stage} 天
                               </span>
                             </Tooltip>
                           ) : (
-                            <span style={{ fontSize: "0.72rem", color: "#a8adb5" }}>
+                            <span className="pipe-stale">
                               {card.days_in_stage === 0 ? "今天更新" : `停留 ${card.days_in_stage} 天`}
                             </span>
                           )}
@@ -442,10 +465,10 @@ export default function Pipeline() {
                       {STAGE_META[l.to_stage]?.label || l.to_stage}
                     </Tag>
                   </div>
-                  <div style={{ fontSize: "0.75rem", color: "#999", marginTop: 2 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: "0.75rem", display: "block", marginTop: 2 }}>
                     {l.user_name || "系统"} · {new Date(l.created_at + "Z").toLocaleString("zh-CN")}
                     {l.remark ? ` · ${l.remark}` : ""}
-                  </div>
+                  </Typography.Text>
                 </div>
               ),
             }))}
