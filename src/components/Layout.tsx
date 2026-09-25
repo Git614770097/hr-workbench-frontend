@@ -76,18 +76,18 @@ export default function Layout({ user, onLogout, themeKey, onChangeTheme, childr
   // 同类里以「岗位为中心」的招聘动线排序：先建岗（岗位管理）→ 再找人（人才库）
   // → 再推进（招聘流程）→ 日常跟进（待办）→ 复盘（漏斗/画像）→ 支撑（模板库）。
   const navItems: { to: string; label: string; icon: React.ReactNode; color: string; badge?: number; perm: string }[] = [
-    // —— 第一梯队：招聘日常主循环，使用频率最高 ——
-    { to: "/jobs", label: "岗位管理", icon: <SolutionOutlined />, color: "#6366f1", perm: "jobs" },
-    { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
-    { to: "/pipeline", label: "招聘流程", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
+    // —— 每日待办优先，其后是招聘主循环（岗位 → 流程 → 漏斗）——
     { to: "/tasks", label: "跟进待办", icon: <CarryOutOutlined />, color: "#f97316", badge: taskBadge, perm: "tasks" },
+    { to: "/jobs", label: "岗位管理", icon: <SolutionOutlined />, color: "#6366f1", perm: "jobs" },
+    { to: "/pipeline", label: "招聘流程", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
+    { to: "/funnel", label: "招聘漏斗", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
     // 合同管理与人才库同源数据（talents 表的合同/试用期字段），复用 talents 权限，不新增菜单 key
     { to: "/contracts", label: "合同管理", icon: <FileProtectOutlined />, color: "#d97706", perm: "talents" },
-    { to: "/funnel", label: "招聘漏斗", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
-    // —— 第二梯队：按需查阅与产出 ——
+    // —— 按需查阅与产出 ——
     { to: "/profiles", label: "人才画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },
+    { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
     { to: "/templates", label: "模板库管理", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
-    // —— 第三梯队：基础配置与系统管理，频率最低 ——
+    // —— 基础配置与系统管理，频率最低 ——
     ...(user.role === "admin" ? [{ to: "/roles", label: "角色管理", icon: <SafetyOutlined />, color: "#f59e0b", perm: "roles" }] : []),
     ...(user.role === "admin" ? [{ to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users" }] : []),
   ].filter((item) => canSee(item.perm));

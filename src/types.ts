@@ -29,11 +29,11 @@ export type MenuKey =
   | "talents" | "pipeline" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "users";
 
 export const MENU_PERMISSIONS: { key: MenuKey; label: string }[] = [
-  { key: "jobs", label: "岗位管理" },
-  { key: "talents", label: "人才库管理" },
-  { key: "pipeline", label: "招聘流程" },
   { key: "tasks", label: "跟进待办" },
+  { key: "jobs", label: "岗位管理" },
+  { key: "pipeline", label: "招聘流程" },
   { key: "funnel", label: "招聘漏斗" },
+  { key: "talents", label: "人才库管理" },
   { key: "profiles", label: "人才画像" },
   { key: "templates", label: "模板库管理" },
   { key: "users", label: "用户管理" },
