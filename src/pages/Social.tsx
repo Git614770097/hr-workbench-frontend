@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, Select, Button, Space, Tag, Modal,
@@ -62,16 +62,50 @@ function calcTax(salary: number, insurance: number, special: number) {
   return { months, totalTax, totalNet, monthlyTaxable };
 }
 
+/** 数字滚动计数：结果出现后从 0 平滑滚到目标值（easeOutCubic，避免生硬跳变） */
+function AnimatedNumber({
+  value, duration = 700, format,
+}: {
+  value: number;
+  duration?: number;
+  format: (n: number) => string;
+}) {
+  const [display, setDisplay] = useState(0);
+  const raf = useRef<number | null>(null);
+  useEffect(() => {
+    const start = performance.now();
+    const to = value;
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      setDisplay(to * eased);
+      if (p < 1) raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
+  }, [value, duration]);
+  return <>{format(display)}</>;
+}
+
 function TaxCalculatorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form] = Form.useForm();
   const [result, setResult] = useState<ReturnType<typeof calcTax> | null>(null);
   const [salary, setSalary] = useState<number | null>(null);
+  const [calculating, setCalculating] = useState(false);
+  const [resultKey, setResultKey] = useState(0);  // 每次新结果 +1，驱动结果区重新播放入场动画
 
   const handleCalc = async () => {
     const v = await form.validateFields();
     const s = Number(v.salary) || 0;
-    setSalary(s);
-    setResult(calcTax(s, Number(v.insurance) || 0, Number(v.special) || 0));
+    setCalculating(true);
+    setResult(null);
+    // 短暂延迟给按钮一个加载反馈，结果随后淡入，避免「一点就蹦出来」的生硬感
+    setTimeout(() => {
+      setSalary(s);
+      setResult(calcTax(s, Number(v.insurance) || 0, Number(v.special) || 0));
+      setResultKey((k) => k + 1);
+      setCalculating(false);
+    }, 320);
   };
 
   const cols = [
@@ -98,25 +132,31 @@ function TaxCalculatorModal({ open, onClose }: { open: boolean; onClose: () => v
           <InputNumber style={{ width: "100%" }} min={0} step={500} placeholder="如 2000" />
         </Form.Item>
         <Form.Item wrapperCol={{ offset: 10, span: 14 }} style={{ marginBottom: 4 }}>
-          <Button type="primary" icon={<CalculatorOutlined />} onClick={handleCalc}>计算</Button>
+          <Button type="primary" icon={<CalculatorOutlined />} loading={calculating} onClick={handleCalc}>{calculating ? "计算中…" : "计算"}</Button>
         </Form.Item>
       </Form>
 
       {result && salary != null && (
-        <div style={{ marginTop: 8 }}>
+        <div key={resultKey} className="tax-result" style={{ marginTop: 8 }}>
           <div className="page-stats" style={{ marginBottom: 12 }}>
-            <div className="stat">
-              <div className="stat-num is-neutral">{result.monthlyTaxable > 0 ? `¥${result.monthlyTaxable.toLocaleString("zh-CN")}` : "¥0"}</div>
+            <div className="stat tax-stat">
+              <div className="stat-num is-neutral">
+                <AnimatedNumber value={result.monthlyTaxable} format={(n) => (n > 0 ? `¥${Math.round(n).toLocaleString("zh-CN")}` : "¥0")} />
+              </div>
               <div className="stat-label">月应纳税所得额</div>
             </div>
             <div className="stat-sep" />
-            <div className="stat">
-              <div className="stat-num is-bad">¥{result.totalTax.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</div>
+            <div className="stat tax-stat">
+              <div className="stat-num is-bad">
+                <AnimatedNumber value={result.totalTax} format={(n) => `¥${n.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`} />
+              </div>
               <div className="stat-label">全年个税合计</div>
             </div>
             <div className="stat-sep" />
-            <div className="stat">
-              <div className="stat-num is-good">¥{(result.totalNet / 12).toLocaleString("zh-CN", { minimumFractionDigits: 2 })}</div>
+            <div className="stat tax-stat">
+              <div className="stat-num is-good">
+                <AnimatedNumber value={result.totalNet / 12} format={(n) => `¥${n.toLocaleString("zh-CN", { minimumFractionDigits: 2 })}`} />
+              </div>
               <div className="stat-label">月均到手</div>
             </div>
           </div>

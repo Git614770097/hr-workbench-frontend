@@ -812,6 +812,17 @@ html[data-theme="dark"] .funnel-canvas::after {
 html[data-theme="dark"] .funnel-label.is-active { color: #60a5fa; }
 html[data-theme="dark"] .funnel-note.is-active { background: rgba(96, 165, 250, 0.14); }
 
+/* 个税计算器：结果淡入上滑 + 统计卡 hover 轻浮（不喧宾夺主，只给细微反馈） */
+@keyframes taxResultIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tax-result { animation: taxResultIn 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.tax-result .stat-num { font-variant-numeric: tabular-nums; }
+.tax-stat { transition: transform 0.18s ease; border-radius: 8px; padding: 0.3rem 0.6rem; }
+.tax-stat:hover { transform: translateY(-3px); }
+
+
 /* 漏斗左侧阶段名列：等分 flex 行，与右侧注释列同构（中心对齐各级） */
 .funnel-labels {
   position: absolute; left: 0;
