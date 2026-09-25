@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Modal, Form, Input, InputNumber, Select, DatePicker, message, Alert, Button, Divider,
+  Modal, Form, Input, InputNumber, Select, DatePicker, AutoComplete, message, Alert, Divider,
 } from "antd";
 import dayjs from "dayjs";
 import { api } from "../api";
@@ -35,7 +35,8 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
         .catch((err) => message.error((err as Error).message));
     } else {
       form.resetFields();
-      form.setFieldsValue({ job_type: "fulltime", status: "open", priority: "normal", headcount: 1 });
+      // 新增默认值：开放日期默认今天（新建岗位通常即刻开放），状态隐含「在招」不显示
+      form.setFieldsValue({ job_type: "fulltime", status: "open", priority: "normal", headcount: 1, opened_at: dayjs() });
     }
   }, [open, jobId]);
 
@@ -43,6 +44,8 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
     setSaving(true);
     try {
       const data: Partial<Job> = {
+        // status 字段仅编辑时显示；新增走这里默认「在招」（后端也有兜底）
+        status: "open",
         ...values,
         opened_at: values.opened_at ? values.opened_at.format("YYYY-MM-DD") : null,
         closed_at: values.closed_at ? values.closed_at.format("YYYY-MM-DD") : null,
@@ -69,8 +72,11 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
       open={open}
       onCancel={onClose}
       width={720}
-      footer={null}
       destroyOnClose
+      okText={isEdit ? "保存修改" : "创建岗位"}
+      cancelText="取消"
+      confirmLoading={saving}
+      onOk={() => form.submit()}
     >
       <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSubmit}>
         {/* 两列网格（全站统一）：外层 .form-grid 固定两列均分，
@@ -83,12 +89,14 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
             <Input placeholder="如 高级前端工程师" />
           </Form.Item>
           <Form.Item name="department" label="用人部门">
-            <Select
-              showSearch allowClear placeholder="请选择或输入部门"
-              mode="tags" maxCount={1}
-              options={departments.map((d) => ({ label: d, value: d }))}
-              onChange={(v: string[]) => form.setFieldValue("department", v?.[v.length - 1] || undefined)}
-              value={undefined}
+            {/* AutoComplete：既可从历史部门下拉选，也可直接输入新部门（单值） */}
+            <AutoComplete
+              allowClear
+              placeholder="请选择或输入部门"
+              options={departments.map((d) => ({ value: d }))}
+              filterOption={(input, option) =>
+                (option?.value as string).toLowerCase().includes(input.toLowerCase())
+              }
             />
           </Form.Item>
 
@@ -109,13 +117,16 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
           <Form.Item name="priority" label="紧急度">
             <Select options={Object.entries(PRIORITY_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
           </Form.Item>
-          <Form.Item name="status" label="状态">
-            <Select options={[
-              { label: "在招", value: "open" },
-              { label: "暂停", value: "paused" },
-              { label: "已关闭", value: "closed" },
-            ]} />
-          </Form.Item>
+          {/* 状态仅编辑时显示：新建岗位隐含「在招」，不该允许直接建成「已关闭」 */}
+          {isEdit && (
+            <Form.Item name="status" label="状态">
+              <Select options={[
+                { label: "在招", value: "open" },
+                { label: "暂停", value: "paused" },
+                { label: "已关闭", value: "closed" },
+              ]} />
+            </Form.Item>
+          )}
 
           <Form.Item name="salary_range" label="薪资范围">
             <Input placeholder="如 25-40K·14薪" />
@@ -127,8 +138,8 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
           <Form.Item name="experience" label="经验要求">
             <Input placeholder="如 3-5年" />
           </Form.Item>
-          {/* 占位：字段数为奇数，补一格让最后一行的左列不被拉伸 */}
-          <span className="form-row-filler" />
+          {/* 占位：编辑时字段数为奇数（多出状态字段），补一格让最后一行的左列不被拉伸 */}
+          {isEdit && <span className="form-row-filler" />}
         </div>
 
         <Divider orientation="left" orientationMargin={0} style={{ fontSize: 13, color: "#8c8c8c", margin: "4px 0 16px" }}>
@@ -143,19 +154,14 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
           <Input.TextArea rows={3} placeholder="一行一条…" />
         </Form.Item>
 
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="关闭岗位时系统会自动记录关闭日期；重新开放会自动清空。"
-        />
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="primary" htmlType="submit" loading={saving}>
-            {isEdit ? "保存修改" : "创建岗位"}
-          </Button>
-        </div>
+        {isEdit && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="关闭岗位时系统会自动记录关闭日期；重新开放会自动清空。"
+          />
+        )}
       </Form>
     </Modal>
   );
