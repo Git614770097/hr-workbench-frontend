@@ -4,12 +4,13 @@ import {
   Card, Table, Input, Select, Button, Space, Tag, DatePicker, Modal,
   Form, message, Alert, Upload, Popconfirm, Typography,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined, PlusOutlined, UserOutlined, FileTextOutlined } from "@ant-design/icons";
+import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined, PlusOutlined, UserOutlined, FileTextOutlined, ExclamationCircleOutlined, FileProtectOutlined, HourglassOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
 import type { ContractItem, ContractFile, Talent } from "../types";
 import { STATUS_LABELS } from "../types";
 import { extractContractText } from "../utils/contractFile";
+import AnimatedNumber from "../components/AnimatedNumber";
 
 // 日期快捷预设（从今天起算）：试用期按月、合同按年。
 // 三个弹窗（新增合同 / 合同文件 / 编辑日期）共用，保证体验一致。
@@ -627,18 +628,25 @@ export default function Contracts() {
       {/* 统计区：合同/试用期到期概况 */}
       <div className="page-stats" style={{ marginBottom: 16 }}>
         <div className="stat">
-          <div className="stat-num is-bad">{expiredCount}</div>
-          <div className="stat-label">已过期（合同或试用期）</div>
+          <span className="stat-icon is-bad"><ExclamationCircleOutlined /></span>
+          <span className="stat-body">
+            <span className="stat-num is-bad"><AnimatedNumber value={expiredCount} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+            <span className="stat-label">已过期（合同或试用期）</span>
+          </span>
         </div>
-        <div className="stat-sep" />
         <div className="stat">
-          <div className="stat-num is-neutral">{due30Count}</div>
-          <div className="stat-label">合同 30 天内到期</div>
+          <span className="stat-icon is-warn"><FileProtectOutlined /></span>
+          <span className="stat-body">
+            <span className="stat-num is-warn"><AnimatedNumber value={due30Count} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+            <span className="stat-label">合同 30 天内到期</span>
+          </span>
         </div>
-        <div className="stat-sep" />
         <div className="stat">
-          <div className="stat-num is-neutral">{probationDueCount}</div>
-          <div className="stat-label">试用期 30 天内到期</div>
+          <span className="stat-icon is-neutral"><HourglassOutlined /></span>
+          <span className="stat-body">
+            <span className="stat-num is-neutral"><AnimatedNumber value={probationDueCount} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+            <span className="stat-label">试用期 30 天内到期</span>
+          </span>
         </div>
       </div>
 

@@ -8,6 +8,7 @@ import {
   ReloadOutlined, SearchOutlined, UserAddOutlined, MoreOutlined,
   ClockCircleOutlined, FilePdfOutlined, SwapOutlined, DeleteOutlined,
   HistoryOutlined, UserOutlined, MessageOutlined,
+  SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, BarsOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -16,6 +17,7 @@ import {
   PIPELINE_STAGES, STAGE_META, SOURCE_OPTIONS, PRIORITY_LABELS, REJECT_REASONS,
 } from "../types";
 import AddToPipelineModal from "../components/AddToPipelineModal";
+import AnimatedNumber from "../components/AnimatedNumber";
 
 const EMPTY_COLUMNS: Record<string, PipelineCard[]> = Object.fromEntries(
   PIPELINE_STAGES.map((s) => [s.key, []])
@@ -184,23 +186,32 @@ export default function Pipeline() {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <div className="page-stats">
           <div className="stat">
-            <span className="stat-num">{stats.active}</span>
-            <span className="stat-label">进行中</span>
+            <span className="stat-icon is-neutral"><SyncOutlined /></span>
+            <span className="stat-body">
+              <span className="stat-num"><AnimatedNumber value={stats.active} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+              <span className="stat-label">进行中</span>
+            </span>
           </div>
-          <span className="stat-sep" />
           <div className="stat">
-            <span className="stat-num is-good">{stats.hired}</span>
-            <span className="stat-label">已入职</span>
+            <span className="stat-icon is-good"><CheckCircleOutlined /></span>
+            <span className="stat-body">
+              <span className="stat-num is-good"><AnimatedNumber value={stats.hired} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+              <span className="stat-label">已入职</span>
+            </span>
           </div>
-          <span className="stat-sep" />
           <div className="stat">
-            <span className="stat-num is-bad">{stats.rejected}</span>
-            <span className="stat-label">已淘汰</span>
+            <span className="stat-icon is-bad"><CloseCircleOutlined /></span>
+            <span className="stat-body">
+              <span className="stat-num is-bad"><AnimatedNumber value={stats.rejected} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+              <span className="stat-label">已淘汰</span>
+            </span>
           </div>
-          <span className="stat-sep" />
           <div className="stat">
-            <span className="stat-num is-neutral">{stats.total}</span>
-            <span className="stat-label">流程内合计</span>
+            <span className="stat-icon is-neutral"><BarsOutlined /></span>
+            <span className="stat-body">
+              <span className="stat-num is-neutral"><AnimatedNumber value={stats.total} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+              <span className="stat-label">流程内合计</span>
+            </span>
           </div>
         </div>
         <Space>

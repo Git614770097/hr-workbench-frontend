@@ -692,21 +692,56 @@ html[data-theme="dark"] .task-undated-head { color: #b0b6c0; }
 .page-head-main { min-width: 0; }
 .page-title { font-size: 1.25rem; font-weight: 700; color: #1f2937; line-height: 1.2; margin: 0; }
 .page-desc { font-size: 0.82rem; color: #8c8c8c; margin: 0.3rem 0 0; line-height: 1.5; }
-.page-stats { display: flex; align-items: center; gap: 0.9rem; flex-shrink: 0; }
-.stat { display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.page-stats { display: flex; align-items: stretch; gap: 0.75rem; flex-shrink: 0; flex-wrap: wrap; }
+/* 统计卡片：图标 + 数字/标签，hover 轻浮（统一各列表页顶部统计区的视觉层次） */
+.stat {
+  display: flex; align-items: center; gap: 0.65rem;
+  padding: 0.7rem 1.1rem;
+  background: #ffffff;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  min-width: 128px;
+  line-height: 1;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.stat:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.07);
+  border-color: #e3e7ee;
+}
+.stat-icon {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 10px; font-size: 1.2rem;
+}
+.stat-body { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
 .stat-num {
-  font-size: 1.55rem; font-weight: 700; color: #3b82f6;
+  font-size: 1.45rem; font-weight: 700; color: #3b82f6;
   font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
 }
-.stat-label { font-size: 0.72rem; color: #8c8c8c; margin-top: 0.25rem; }
+.stat-label { font-size: 0.74rem; color: #8c8c8c; margin-top: 0.25rem; }
 .stat-sep { width: 1px; height: 28px; background: #eef0f3; }
+/* 卡片化后竖线分隔退场（个税计算器 .tax-stat 仍 column 布局，不受影响） */
+.page-stats .stat-sep { display: none; }
 /* 语义色修饰：亮色保留语义、暗色用亮档，避免内联硬编码在暗色下不可读 */
 .stat-num.is-good { color: #10b981; }
 .stat-num.is-bad { color: #ef4444; }
 .stat-num.is-neutral { color: #1f2937; }
+.stat-num.is-warn { color: #d97706; }
+.stat-icon.is-good { color: #10b981; background: rgba(16, 185, 129, 0.10); }
+.stat-icon.is-bad { color: #ef4444; background: rgba(239, 68, 68, 0.10); }
+.stat-icon.is-neutral { color: #3b82f6; background: rgba(59, 130, 246, 0.10); }
+.stat-icon.is-warn { color: #d97706; background: rgba(245, 158, 11, 0.14); }
+html[data-theme="dark"] .stat { background: #1f1f1f; border-color: #303030; }
+html[data-theme="dark"] .stat:hover { border-color: #3a3a3a; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
 html[data-theme="dark"] .stat-num.is-good { color: #34d399; }
 html[data-theme="dark"] .stat-num.is-bad { color: #f87171; }
 html[data-theme="dark"] .stat-num.is-neutral { color: #e5e7eb; }
+html[data-theme="dark"] .stat-num.is-warn { color: #fbbf24; }
+html[data-theme="dark"] .stat-icon.is-good { color: #34d399; background: rgba(52, 211, 153, 0.15); }
+html[data-theme="dark"] .stat-icon.is-bad { color: #f87171; background: rgba(248, 113, 113, 0.15); }
+html[data-theme="dark"] .stat-icon.is-neutral { color: #60a5fa; background: rgba(96, 165, 250, 0.15); }
+html[data-theme="dark"] .stat-icon.is-warn { color: #fbbf24; background: rgba(251, 191, 36, 0.15); }
 
 /* ===== 人才画像页 ===== */
 .profiles-page .search-card { border: 1px solid #eef0f3; }
@@ -819,8 +854,14 @@ html[data-theme="dark"] .funnel-note.is-active { background: rgba(96, 165, 250, 
 }
 .tax-result { animation: taxResultIn 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
 .tax-result .stat-num { font-variant-numeric: tabular-nums; }
-.tax-stat { transition: transform 0.18s ease; border-radius: 8px; padding: 0.3rem 0.6rem; }
-.tax-stat:hover { transform: translateY(-3px); }
+/* 个税计算器统计沿用 column 竖排，覆盖卡片化的 row 布局与背景/边框 */
+.tax-stat {
+  flex-direction: column; align-items: center; gap: 0;
+  background: transparent; border: none;
+  padding: 0.3rem 0.6rem; min-width: 0;
+  transition: transform 0.18s ease; border-radius: 8px;
+}
+.tax-stat:hover { transform: translateY(-3px); box-shadow: none; border-color: transparent; }
 
 
 /* 漏斗左侧阶段名列：等分 flex 行，与右侧注释列同构（中心对齐各级） */

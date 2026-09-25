@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, Select, Button, Space, Tag, Modal,
@@ -6,10 +6,12 @@ import {
 } from "antd";
 import {
   SearchOutlined, ReloadOutlined, BellOutlined, CalculatorOutlined,
+  UserAddOutlined, UserDeleteOutlined, SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { SocialItem } from "../types";
 import { SI_STATUS_LABELS, SI_STATUS_COLORS, STATUS_LABELS } from "../types";
+import AnimatedNumber from "../components/AnimatedNumber";
 
 /** 待办动作推导（与后端 socialTaskStmts 同口径）：onboarded=已入职、si=参保状态 */
 function deriveAction(r: SocialItem): "add" | "stop" | null {
@@ -60,31 +62,6 @@ function calcTax(salary: number, insurance: number, special: number) {
     months.push({ m, cumulative, tax, net });
   }
   return { months, totalTax, totalNet, monthlyTaxable };
-}
-
-/** 数字滚动计数：结果出现后从 0 平滑滚到目标值（easeOutCubic，避免生硬跳变） */
-function AnimatedNumber({
-  value, duration = 700, format,
-}: {
-  value: number;
-  duration?: number;
-  format: (n: number) => string;
-}) {
-  const [display, setDisplay] = useState(0);
-  const raf = useRef<number | null>(null);
-  useEffect(() => {
-    const start = performance.now();
-    const to = value;
-    const tick = (now: number) => {
-      const p = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
-      setDisplay(to * eased);
-      if (p < 1) raf.current = requestAnimationFrame(tick);
-    };
-    raf.current = requestAnimationFrame(tick);
-    return () => { if (raf.current) cancelAnimationFrame(raf.current); };
-  }, [value, duration]);
-  return <>{format(display)}</>;
 }
 
 function TaxCalculatorModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -381,18 +358,25 @@ export default function Social() {
       {/* 统计区：增减员 / 参保概况 */}
       <div className="page-stats" style={{ marginBottom: 16 }}>
         <div className="stat">
-          <div className="stat-num is-bad">{pendingAdd}</div>
-          <div className="stat-label">待增员</div>
+          <span className="stat-icon is-warn"><UserAddOutlined /></span>
+          <span className="stat-body">
+            <span className="stat-num is-warn"><AnimatedNumber value={pendingAdd} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+            <span className="stat-label">待增员</span>
+          </span>
         </div>
-        <div className="stat-sep" />
         <div className="stat">
-          <div className="stat-num is-bad">{pendingStop}</div>
-          <div className="stat-label">待减员</div>
+          <span className="stat-icon is-bad"><UserDeleteOutlined /></span>
+          <span className="stat-body">
+            <span className="stat-num is-bad"><AnimatedNumber value={pendingStop} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+            <span className="stat-label">待减员</span>
+          </span>
         </div>
-        <div className="stat-sep" />
         <div className="stat">
-          <div className="stat-num is-good">{activeCount}</div>
-          <div className="stat-label">参保中</div>
+          <span className="stat-icon is-good"><SafetyCertificateOutlined /></span>
+          <span className="stat-body">
+            <span className="stat-num is-good"><AnimatedNumber value={activeCount} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+            <span className="stat-label">参保中</span>
+          </span>
         </div>
       </div>
 
