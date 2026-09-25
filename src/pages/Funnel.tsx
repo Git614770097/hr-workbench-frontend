@@ -6,8 +6,8 @@ import {
   ThunderboltOutlined, RiseOutlined, ClockCircleOutlined, TeamOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
-import type { FunnelResponse, Job, User } from "../types";
-import FunnelChartView from "../components/FunnelChart";
+import type { FunnelResponse, FunnelStayItem, Job, User } from "../types";
+import FunnelChartView, { levelColor } from "../components/FunnelChart";
 
 // 周期指标的配色（与漏斗同一套柔和色系，暗色模式取亮档）
 // 顺序即流程顺序：入库→首面 / 首面→Offer / Offer→入职 / 全流程
@@ -135,6 +135,11 @@ export default function Funnel() {
   const segTotal = segs.length ? segs.reduce((a, b) => a + b.days, 0) : null;
   const SEG_COLORS = KPI_COLORS.slice(0, 3);
 
+  // 各阶段停留明细（表格用，仅保留主线 5 级）
+  const stayMap: Record<string, FunnelStayItem> = Object.fromEntries(
+    (data?.stage_stay || []).map((x) => [x.key, x])
+  );
+
   return (
     <div className="funnel-page">
       {/* 筛选 */}
@@ -210,11 +215,11 @@ export default function Funnel() {
           {/* ===== 左：漏斗展示 ===== */}
           <Col xs={24} xl={14}>
           <Card
-            title={<Space><FunnelPlotOutlined />阶段转化</Space>}
+            title={<Space><FunnelPlotOutlined />转化漏斗</Space>}
             style={{ marginBottom: 16 }}
             styles={{ body: { padding: "20px 24px" } }}
             extra={
-              <Tooltip title="阶段人数按「曾到达」统计：只要候选人到过该阶段就计入。柱体为各阶段人数，柱顶标注相对上一级的转化率与流失人数，蓝色折线为累计转化率（右轴），x 轴下方为当前停留均长">
+              <Tooltip title="阶段人数按「曾到达」统计：只要候选人到过该阶段就计入，因此漏斗逐级递减，不会因为后期淘汰而回退">
                 <span style={{ fontSize: 12, color: "#8c8c8c" }}>统计口径说明</span>
               </Tooltip>
             }
@@ -223,7 +228,7 @@ export default function Funnel() {
               stages={stages}
               stageStay={data!.stage_stay}
               dark={isDark}
-              height={420}
+              height={stages.length * 100 + 56}
             />
 
             {/* 终态分支：淘汰 / 放弃 */}
@@ -404,6 +409,49 @@ export default function Funnel() {
                     ) : (
                       <div className="funnel-kpi-foot">暂无样本 · {cd.desc}</div>
                     )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* 阶段转化分析：窄栏用纵向进度条，比表格更合适 */}
+          <Card title="阶段转化" style={{ marginTop: 16 }} styles={{ body: { padding: "16px 18px" } }}>
+            <div className="funnel-analysis">
+              {stages.map((st, i) => {
+                const stStay = stayMap[st.key];
+                const color = levelColor(i, isDark);
+                return (
+                  <div className="funnel-analysis-row" key={st.key}>
+                    <div className="funnel-analysis-head">
+                      <span className="funnel-dot" style={{ background: color }} />
+                      <span className="funnel-analysis-name">{st.label}</span>
+                      <span className="funnel-analysis-count">{st.count} 人</span>
+                    </div>
+                    <div className="funnel-analysis-bar">
+                      <div
+                        className="funnel-analysis-fill"
+                        style={{ width: `${Math.max(4, st.overall_rate * 100)}%`, background: color }}
+                      />
+                    </div>
+                    <div className="funnel-analysis-meta">
+                      {i === 0 ? (
+                        <span className="funnel-note-base">漏斗顶层</span>
+                      ) : (
+                        <>
+                          <span className={st.rate < 0.5 ? "funnel-note-rate is-low" : "funnel-note-rate"}>
+                            {pct(st.rate)}
+                          </span>
+                          {st.drop > 0 && <span className="funnel-note-drop">流失 {st.drop}</span>}
+                        </>
+                      )}
+                      <span className="funnel-analysis-cum">累计 {pct(st.overall_rate)}</span>
+                      {stStay && stStay.avg_days != null && (
+                        <span className={stStay.avg_days >= 7 ? "funnel-note-sub is-slow" : "funnel-note-sub"}>
+                          停留 {stStay.avg_days} 天
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
