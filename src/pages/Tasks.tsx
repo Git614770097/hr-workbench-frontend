@@ -382,6 +382,17 @@ export default function Tasks() {
         <Card
           className="task-calendar-card"
           styles={{ body: { padding: "12px 16px 16px" } }}
+          title={
+            <Button
+              type="link"
+              size="small"
+              icon={<PlusOutlined />}
+              style={{ paddingInline: 0 }}
+              onClick={() => openCreate(selected)}
+            >
+              新建待办
+            </Button>
+          }
           extra={
             <Space size={12} wrap style={{ fontSize: 12, color: "#8c8c8c" }}>
               <Space size={4}>
@@ -429,15 +440,6 @@ export default function Tasks() {
           styles={{ body: { padding: "14px 16px" } }}
           title={
             <Space size={8}>
-              <Button
-                type="link"
-                size="small"
-                icon={<PlusOutlined />}
-                style={{ paddingInline: 0 }}
-                onClick={() => openCreate(selected)}
-              >
-                新建待办
-              </Button>
               <span>
                 {selectedDate ? selectedDate.format("M 月 D 日 dddd") : "未指定日期"}
               </span>
