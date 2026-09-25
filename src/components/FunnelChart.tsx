@@ -123,8 +123,12 @@ export default function FunnelChartView({ stages, stageStay = [], dark = false, 
 
     chart.setOption(
       {
-        animationDuration: 700,
+        animationDuration: 800,
         animationEasing: "cubicOut",
+        // 错开入场：五层依次滑入（数据刷新/重新查询时因 notMerge 会重播）
+        animationDelay: (idx: number) => idx * 110,
+        animationDurationUpdate: 600,
+        animationDelayUpdate: 0,
         tooltip: {
           trigger: "item",
           backgroundColor: C.tipBg,
@@ -181,10 +185,18 @@ export default function FunnelChartView({ stages, stageStay = [], dark = false, 
               borderColor: C.border,
               borderWidth: 2,
               borderRadius: 4, // 圆角，去掉生硬的直角
+              // 伪 3D：每层向下的柔和投影 → 层叠「浮起」感（渐变管纵向立体，投影管层间分离）
+              shadowBlur: dark ? 10 : 8,
+              shadowOffsetY: dark ? 5 : 4,
+              shadowColor: dark ? "rgba(0,0,0,0.5)" : "rgba(15,23,42,0.16)",
             },
             emphasis: {
-              label: { fontSize: 16, fontWeight: 700 },
-              itemStyle: { shadowBlur: 14, shadowColor: "rgba(0,0,0,0.18)" },
+              label: { fontSize: 19, fontWeight: 700 },
+              itemStyle: {
+                shadowBlur: 22,
+                shadowOffsetY: 8,
+                shadowColor: dark ? "rgba(0,0,0,0.65)" : "rgba(15,23,42,0.3)",
+              },
             },
             data: stages.map((s, i) => ({
               name: s.label,
@@ -204,9 +216,28 @@ export default function FunnelChartView({ stages, stageStay = [], dark = false, 
       true
     );
 
+    // 悬停联动：悬停漏斗某层 → 左侧阶段名 + 右侧注释对应行同步高亮
+    //（ECharts 在 canvas 里，HTML 列 pointer-events:none，只能反向用事件驱动 DOM）
+    const labEls = Array.from(boxRef.current.querySelectorAll<HTMLElement>(".funnel-label"));
+    const noteEls = Array.from(boxRef.current.querySelectorAll<HTMLElement>(".funnel-note"));
+    const onHover = (p: { dataIndex: number }) => {
+      labEls[p.dataIndex]?.classList.add("is-active");
+      noteEls[p.dataIndex]?.classList.add("is-active");
+    };
+    const onLeave = (p: { dataIndex: number }) => {
+      labEls[p.dataIndex]?.classList.remove("is-active");
+      noteEls[p.dataIndex]?.classList.remove("is-active");
+    };
+    chart.on("mouseover", onHover);
+    chart.on("mouseout", onLeave);
+
     const ro = new ResizeObserver(() => chart.resize());
     ro.observe(boxRef.current);
-    return () => ro.disconnect();
+    return () => {
+      chart.off("mouseover", onHover);
+      chart.off("mouseout", onLeave);
+      ro.disconnect();
+    };
   }, [stages, topCount, dark, JSON.stringify(stageStay)]);
 
   useEffect(() => {
