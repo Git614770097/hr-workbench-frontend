@@ -1,11 +1,12 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, Link } from "react-router-dom";
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { Spin, Button, Alert } from "antd";
 import type { User } from "./types";
-import type { ThemeKey } from "./theme";
+import type { ThemeState } from "./theme";
 import { api } from "./api";
-// 登录页保持同步加载（未登录时的首屏，避免白屏闪烁）
+// 登录页与落地页保持同步加载（未登录时的首屏，避免白屏闪烁）
 import Login from "./pages/Login";
+import Landing from "./pages/Landing";
 import Layout from "./components/Layout";
 
 // 其余页面按路由懒加载：把 Quill 富文本编辑器、pdfjs 等重依赖
@@ -27,6 +28,8 @@ const Social = lazy(() => import("./pages/Social"));
 const Users = lazy(() => import("./pages/Users"));
 const Roles = lazy(() => import("./pages/Roles"));
 const TemplateLibrary = lazy(() => import("./pages/TemplateLibrary"));
+// 帮助中心：轻量 FAQ 页，从顶栏问号进入，不占侧栏菜单
+const Help = lazy(() => import("./pages/Help"));
 
 // 页面切换时的加载占位
 const pageFallback = (
@@ -43,11 +46,11 @@ function RequirePerm({ user, perm, children }: { user: User; perm: string; child
 }
 
 interface AppProps {
-  themeKey: ThemeKey;
-  onChangeTheme: (key: ThemeKey) => void;
+  theme: ThemeState;
+  onChangeTheme: (s: ThemeState) => void;
 }
 
-export default function App({ themeKey, onChangeTheme }: AppProps) {
+export default function App({ theme, onChangeTheme }: AppProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   // 有 token 但首屏加载失败（典型：D1 冷启动导致 /api/auth/me 查询挂起超时），
@@ -105,13 +108,26 @@ export default function App({ themeKey, onChangeTheme }: AppProps) {
     return (
       <Routes>
         <Route path="/login" element={<Login onLogin={fetchUser} />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="/" element={<Landing />} />
+        {/* 帮助中心未登录也开放：登录页顶部「帮助中心」直达，潜在用户可先看 FAQ */}
+        <Route
+          path="/help"
+          element={
+            <div>
+              <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px 16px 0" }}>
+                <Link to="/login">← 返回登录</Link>
+              </div>
+              <Help />
+            </div>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     );
   }
 
   return (
-    <Layout user={user} onLogout={logout} themeKey={themeKey} onChangeTheme={onChangeTheme}>
+    <Layout user={user} onLogout={logout} theme={theme} onChangeTheme={onChangeTheme} onUserChange={setUser}>
       <Suspense fallback={pageFallback}>
         <Routes>
           <Route path="/" element={<Navigate to="/talents" replace />} />
@@ -128,6 +144,8 @@ export default function App({ themeKey, onChangeTheme }: AppProps) {
           <Route path="/templates" element={<RequirePerm user={user} perm="templates"><TemplateLibrary /></RequirePerm>} />
           {user.role === "admin" && <Route path="/roles" element={<Roles />} />}
           {user.role === "admin" && <Route path="/users" element={<Users />} />}
+          {/* 帮助中心：所有登录用户可看，不做权限控制 */}
+          <Route path="/help" element={<Help />} />
           <Route path="*" element={<Navigate to="/talents" replace />} />
         </Routes>
       </Suspense>

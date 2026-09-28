@@ -1,5 +1,9 @@
 import React, { useState } from "react";
 import ReactDOM from "react-dom/client";
+// React 19 + antd v5 官方兼容补丁：必须放在所有 antd 引用之前。
+// 没有它，antd 的静态方法（Modal.confirm / message / notification）在
+// React 19 下静默失败——点击后什么都不渲染，表现为「点了没反应」。
+import "@ant-design/v5-patch-for-react-19";
 import { BrowserRouter } from "react-router-dom";
 import { ConfigProvider, theme as antdTheme } from "antd";
 import zhCN from "antd/locale/zh_CN";
@@ -10,38 +14,39 @@ import dayjs from "dayjs";
 // 只传 antd locale 会出现「外壳中文、面板英文」的混合状态。
 import "dayjs/locale/zh-cn";
 import App from "./App";
-import { getThemeKey, applyTheme, getTheme, type ThemeKey } from "./theme";
+import { getThemeState, applyTheme, getColorDef, saveThemeState, type ThemeState } from "./theme";
 import "./styles/global.css";
 
 dayjs.locale("zh-cn");
 
 function Root() {
-  const [themeKey, setThemeKey] = useState<ThemeKey>(() => {
-    const key = getThemeKey();
-    applyTheme(key);
-    return key;
+  const [theme, setTheme] = useState<ThemeState>(() => {
+    const s = getThemeState();
+    applyTheme(s);
+    return s;
   });
 
-  const changeTheme = (key: ThemeKey) => {
-    setThemeKey(key);
-    applyTheme(key);
+  const changeTheme = (s: ThemeState) => {
+    setTheme(s);
+    applyTheme(s);
+    saveThemeState(s);
   };
 
-  const theme = getTheme(themeKey);
+  const colorDef = getColorDef(theme.color);
 
   return (
     <ConfigProvider
       locale={zhCN}
       theme={{
-        algorithm: theme.dark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+        algorithm: theme.mode === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: {
-          colorPrimary: theme.colorPrimary,
+          colorPrimary: colorDef.colorPrimary,
           borderRadius: 8,
         },
       }}
     >
       <BrowserRouter>
-        <App themeKey={themeKey} onChangeTheme={changeTheme} />
+        <App theme={theme} onChangeTheme={changeTheme} />
       </BrowserRouter>
     </ConfigProvider>
   );

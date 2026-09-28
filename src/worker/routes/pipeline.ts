@@ -126,6 +126,90 @@ pipeline.get("/stale", async (c) => {
   return c.json({ items, total: items.length });
 });
 
+// ---- 阶段停滞 → 待办提醒（幂等同步）----
+// 规则：候选人在非终态阶段停留 ≥ STALE_DAYS 天 → 生成「阶段停滞：X」待办（normal / system）；
+// 停留天数变化 → 更新待办内容；已被推进（不再停滞）→ 取消残留提醒。
+// 与合同/社保待办同一套幂等同步套路，可重复调用（前端每次进看板自动跑一次）。
+const STALE_DAYS = 7;
+
+pipeline.post("/sync-stale-tasks", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const conditions: string[] = ["tj.stage NOT IN ('hired','rejected','withdrawn')"];
+  const params: (string | number)[] = [];
+  if (session.role !== "admin") {
+    conditions.push("t.owner_id = ?");
+    params.push(session.userId);
+  }
+
+  const rows = await c.env.DB.prepare(`
+    SELECT tj.stage, tj.updated_at as stage_updated_at,
+           t.id as talent_id, t.name, t.owner_id, j.title as job_title
+    FROM talent_jobs tj
+    JOIN talents t ON tj.talent_id = t.id
+    LEFT JOIN jobs j ON tj.job_id = j.id
+    WHERE ${conditions.join(" AND ")}
+  `).bind(...params).all();
+
+  // 同一人才可能挂在多个岗位：取停留最久的一条作为代表，一人只提醒一次
+  const today = Date.now();
+  const staleMap = new Map<string, {
+    talent_id: string; name: string; owner_id: string; days: number; stage: string; job_title: string | null;
+  }>();
+  for (const r of rows.results as any[]) {
+    const days = Math.floor((today - new Date(r.stage_updated_at + "Z").getTime()) / 86400000);
+    if (days < STALE_DAYS) continue;
+    const prev = staleMap.get(r.talent_id);
+    if (!prev || days > prev.days) {
+      staleMap.set(r.talent_id, {
+        talent_id: r.talent_id, name: r.name, owner_id: r.owner_id,
+        days, stage: r.stage, job_title: r.job_title,
+      });
+    }
+  }
+
+  // 现存「阶段停滞」待办：普通用户只看自己的，避免误取消他人提醒
+  let tSql = "SELECT id, talent_id, content FROM talent_tasks WHERE title LIKE '阶段停滞%' AND status = 'pending'";
+  const tParams: string[] = [];
+  if (session.role !== "admin") { tSql += " AND owner_id = ?"; tParams.push(session.userId); }
+  const existing = new Map<string, any>();
+  for (const t of (await c.env.DB.prepare(tSql).bind(...tParams).all<any>()).results) {
+    existing.set(t.talent_id, t);
+  }
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const stmts: any[] = [];
+  let created = 0, updated = 0, cancelled = 0;
+
+  for (const [talentId, v] of staleMap) {
+    const title = `阶段停滞：${v.name}`;
+    const content = `${v.name}${v.job_title ? `（${v.job_title}）` : ""} 在「${STAGE_LABELS[v.stage as Stage]?.label || v.stage}」已停留 ${v.days} 天，请尽快推进、约面或释放。`;
+    const dup = existing.get(talentId);
+    if (!dup) {
+      stmts.push(c.env.DB.prepare(
+        "INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
+      ).bind(genId(), v.owner_id, talentId, title, content, todayStr));
+      created++;
+    } else if (dup.content !== content) {
+      stmts.push(c.env.DB.prepare("UPDATE talent_tasks SET content = ?, due_date = ? WHERE id = ?")
+        .bind(content, todayStr, dup.id));
+      updated++;
+    }
+  }
+
+  // 已不再停滞（被推进/淘汰/入职）→ 取消残留提醒
+  for (const [talentId, t] of existing) {
+    if (!staleMap.has(talentId)) {
+      stmts.push(c.env.DB.prepare("UPDATE talent_tasks SET status = 'cancelled' WHERE id = ?").bind(t.id));
+      cancelled++;
+    }
+  }
+
+  if (stmts.length > 0) await c.env.DB.batch(stmts);
+  return c.json({ created, updated, cancelled, total: staleMap.size });
+});
+
 // ============================================================
 // 招聘漏斗（funnel）
 // 口径说明：阶段人数采用「曾到达」口径 —— 只要 job_stage_logs 里出现过
@@ -341,12 +425,23 @@ pipeline.get("/funnel", async (c) => {
   const inProgress = cands.filter((cd) => !TERMINAL.includes(cd.current_stage as Stage)).length;
 
   // ---- 渠道效果：按人才来源分组（口径与人·岗位一致，同人才多岗分别计）----
-  const srcMap: Record<string, { entered: number; hired: number }> = {};
+  // 除「进入→入职」外，补充进行中/淘汰/放弃分布与平均招聘周期，
+  // 回答「哪个渠道量最大、哪个转化高、哪个招得快」三个问题
+  const srcMap: Record<string, {
+    entered: number; hired: number; inProgress: number; rejected: number; withdrawn: number; cycles: number[];
+  }> = {};
   for (const cd of cands) {
     const key = (cd.source || "").trim() || "未记录";
-    (srcMap[key] ||= { entered: 0, hired: 0 });
-    srcMap[key].entered++;
-    if (cd.reached.has("hired")) srcMap[key].hired++;
+    const v = (srcMap[key] ||= { entered: 0, hired: 0, inProgress: 0, rejected: 0, withdrawn: 0, cycles: [] });
+    v.entered++;
+    if (cd.reached.has("hired")) v.hired++;
+    if (!TERMINAL.includes(cd.current_stage as Stage)) v.inProgress++;
+    if (cd.reached.has("rejected")) v.rejected++;
+    if (cd.reached.has("withdrawn")) v.withdrawn++;
+    // 平均招聘周期：入库（或首次进入流程）→ 入职的天数，仅入职者计入样本
+    const start = parseSqlTime(cd.talent_created_at) ?? parseSqlTime(cd.entered_at);
+    const hi = cd.firstEnter["hired"];
+    if (start != null && hi != null && hi >= start) v.cycles.push(toDays(hi - start));
   }
   const sources = Object.entries(srcMap)
     .map(([source, v]) => ({
@@ -354,6 +449,10 @@ pipeline.get("/funnel", async (c) => {
       entered: v.entered,
       hired: v.hired,
       rate: v.entered > 0 ? Math.round((v.hired / v.entered) * 1000) / 1000 : 0,
+      in_progress: v.inProgress,
+      rejected: v.rejected,
+      withdrawn: v.withdrawn,
+      avg_cycle_days: avg(v.cycles),
     }))
     .sort((a, b) => b.entered - a.entered);
 
@@ -426,7 +525,7 @@ pipeline.post("/", async (c) => {
 
   const dup = await c.env.DB.prepare("SELECT id FROM talent_jobs WHERE talent_id = ? AND job_id = ?")
     .bind(body.talent_id, body.job_id).first();
-  if (dup) return c.json({ error: "该人才已在此岗位的招聘流程中" }, 409);
+  if (dup) return c.json({ error: "该人才已在此岗位的招聘看板中" }, 409);
 
   const id = genId();
   const stage: Stage = STAGES.includes(body.stage as Stage) ? (body.stage as Stage) : "screening";
@@ -434,7 +533,7 @@ pipeline.post("/", async (c) => {
     .bind(id, body.talent_id, body.job_id, stage, body.notes || null).run();
 
   await c.env.DB.prepare("INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, NULL, ?, ?, ?)")
-    .bind(genId(), id, stage, session.userId, "加入招聘流程").run();
+    .bind(genId(), id, stage, session.userId, "加入招聘看板").run();
 
   // 同步人才全局阶段（若是新录入状态）
   await c.env.DB.prepare("UPDATE talents SET stage = CASE WHEN stage IN ('new','archived') OR stage IS NULL THEN ? ELSE stage END, updated_at = datetime('now') WHERE id = ?")
@@ -490,7 +589,7 @@ pipeline.post("/batch", async (c) => {
       c.env.DB.prepare("INSERT INTO talent_jobs (id, talent_id, job_id, stage, notes) VALUES (?, ?, ?, ?, ?)")
         .bind(id, t.id, body.job_id, stage, body.notes || null),
       c.env.DB.prepare("INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, NULL, ?, ?, ?)")
-        .bind(genId(), id, stage, session.userId, "加入招聘流程"),
+        .bind(genId(), id, stage, session.userId, "加入招聘看板"),
       c.env.DB.prepare("UPDATE talents SET stage = CASE WHEN stage IN ('new','archived') OR stage IS NULL THEN ? ELSE stage END, updated_at = datetime('now') WHERE id = ?")
         .bind(stage, t.id),
     ];
@@ -503,6 +602,86 @@ pipeline.post("/batch", async (c) => {
     job_title: job.title,
     added_names: added.map((t) => t.name),
     skipped_names: talents.filter((t) => dupSet.has(t.id)).map((t) => t.name),
+  });
+});
+
+// ---- 批量切换阶段（看板多选 → 一次推进或淘汰）----
+// 初筛环节最痛：一次刷掉 20 人原本要拖 20 次 + 填 20 次原因，这里一次性完成。
+// 权限、阶段日志、淘汰原因结构化、入职联动都与单卡流转保持一致。
+pipeline.post("/batch-stage", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const body = await c.req.json<{ link_ids?: string[]; stage?: string; reject_reason?: string; remark?: string }>();
+  const ids = [...new Set((body.link_ids || []).filter(Boolean))];
+  const stage = body.stage as Stage;
+  if (ids.length === 0 || !STAGES.includes(stage)) return c.json({ error: "参数不合法" }, 400);
+  if (ids.length > 100) return c.json({ error: "一次最多批量流转 100 人" }, 400);
+
+  const ph = ids.map(() => "?").join(",");
+  const rows = await c.env.DB.prepare(`
+    SELECT tj.id, tj.stage as old_stage, tj.talent_id, tj.job_id, t.name as talent_name, t.owner_id
+    FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id IN (${ph})
+  `).bind(...ids).all<any>();
+
+  // 无权限的跳过；已处于目标阶段的跳过（不重复写日志）
+  const targets = (rows.results as any[]).filter((r) => {
+    if (session.role !== "admin" && r.owner_id !== session.userId) return false;
+    return r.old_stage !== stage;
+  });
+  const skipped = rows.results.length - targets.length;
+  if (targets.length === 0) return c.json({ updated: 0, skipped, names: [] });
+
+  // 淘汰原因结构化：标准原因以【原因】前缀拼进备注，漏斗页据此统计分布
+  let remark = body.remark || "";
+  if (stage === "rejected" && body.reject_reason) remark = `【${body.reject_reason}】${remark}`;
+
+  const stmts: any[] = [];
+  for (const r of targets) {
+    stmts.push(c.env.DB.prepare("UPDATE talent_jobs SET stage = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(stage, r.id));
+    stmts.push(c.env.DB.prepare(
+      "INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, ?, ?, ?, ?)"
+    ).bind(genId(), r.id, r.old_stage, stage, session.userId, remark || null));
+  }
+  await c.env.DB.batch(stmts);
+
+  // 批量入职联动：人才状态置 placed，并生成「试用期跟进」待办（防重）
+  let hiredLinked = 0;
+  if (stage === "hired") {
+    const talentIds = [...new Set(targets.map((r) => r.talent_id))];
+    const dupRows = await c.env.DB.prepare(
+      `SELECT talent_id FROM talent_tasks WHERE status = 'pending' AND title LIKE '试用期跟进%' AND talent_id IN (${talentIds.map(() => "?").join(",")})`
+    ).bind(...talentIds).all<any>();
+    const dupSet = new Set((dupRows.results as any[]).map((r) => r.talent_id));
+
+    const due = new Date(Date.now() + 90 * 86400000);
+    const p = (n: number) => String(n).padStart(2, "0");
+    const dueStr = `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`;
+
+    const hiredStmts: any[] = [];
+    for (const r of targets) {
+      hiredStmts.push(c.env.DB.prepare(
+        "UPDATE talents SET status = 'placed', stage = 'hired', updated_at = datetime('now') WHERE id = ?"
+      ).bind(r.talent_id));
+      if (!dupSet.has(r.talent_id)) {
+        hiredStmts.push(c.env.DB.prepare(
+          "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
+        ).bind(genId(), r.owner_id, r.talent_id, r.job_id,
+          `试用期跟进：${r.talent_name}`,
+          "候选人已入职，关注试用期表现与融入情况，到期前完成转正评估。", dueStr));
+        dupSet.add(r.talent_id);
+        hiredLinked++;
+      }
+    }
+    await c.env.DB.batch(hiredStmts);
+  }
+
+  return c.json({
+    updated: targets.length,
+    skipped,
+    hired_linked: hiredLinked,
+    names: targets.map((r) => r.talent_name),
   });
 });
 

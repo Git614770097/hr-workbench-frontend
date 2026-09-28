@@ -9,6 +9,7 @@ import {
 import { api } from "../api";
 import { ROLE_LABELS } from "../types";
 import type { Role, UserRow } from "../types";
+import { fmtDateTime } from "../utils/time";
 
 /** 账号状态展示元数据：审批通过的用户不展示状态列内容，保持表格干净 */
 function statusTag(status: string | null) {
@@ -195,7 +196,7 @@ export default function Users() {
       dataIndex: "created_at",
       key: "created_at",
       width: 180,
-      render: (v: string) => v ? new Date(v).toLocaleString("zh-CN") : "—",
+      render: (v: string) => fmtDateTime(v),
     },
     {
       title: "操作",
@@ -239,7 +240,7 @@ export default function Users() {
       dataIndex: "reset_requested_at",
       key: "reset_requested_at",
       width: 180,
-      render: (v: string) => v ? new Date(v.replace(" ", "T") + "Z").toLocaleString("zh-CN") : "—",
+      render: (v: string) => fmtDateTime(v),
     },
     {
       title: "操作",
@@ -288,7 +289,7 @@ export default function Users() {
       dataIndex: "created_at",
       key: "created_at",
       width: 180,
-      render: (v: string) => v ? new Date(v).toLocaleString("zh-CN") : "—",
+      render: (v: string) => fmtDateTime(v),
     },
     {
       title: "操作",

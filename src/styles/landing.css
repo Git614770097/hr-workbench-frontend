@@ -1,0 +1,446 @@
+/* ==========================================================================
+   Landing 落地页样式（营销页，独立于后台 global.css）
+   设计方向：工业实用 · 克制 —— 发丝边框 + 等宽数字 + 精密网格 + 单一强调色
+   记忆点：Hero 区一个会动的「招聘漏斗」SVG + 等宽 KPI 指标
+   ========================================================================== */
+
+/* ---- 设计令牌 ---- */
+.land {
+  /* 颜色：浅蓝灰底 + 企业蓝渐变 Hero + 企业蓝主色（对齐登录页商务专业风） */
+  --land-bg: #f1f5f9;
+  --land-surface: #ffffff;
+  --land-ink: #0f172a;
+  --land-muted: #475569;
+  --land-faint: #94a3b8;
+  --land-line: rgba(15, 23, 42, 0.10);
+  --land-line-strong: rgba(15, 23, 42, 0.16);
+  --land-brand: #2563eb;
+  --land-brand-ink: #1e3a8a;
+  --land-accent: #2563eb;
+  --land-accent-deep: #1d4ed8;
+  --land-hero-text: #f8fafc;
+  --land-hero-muted: #bfdbfe;
+
+  /* 字阶 */
+  --land-fs-hero: clamp(2.45rem, 5.6vw, 4rem);
+  --land-fs-h2: clamp(1.55rem, 2.8vw, 2.1rem);
+  --land-fs-body: 1rem;
+  --land-fs-small: 0.86rem;
+  --land-fs-caption: 0.78rem;
+
+  /* 字体 */
+  --land-font-sans: "PingFang SC", "HarmonyOS Sans SC", "MiSans",
+    "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+  --land-font-mono: "JetBrains Mono", "SF Mono", "Consolas", "Menlo", monospace;
+
+  /* 间距 */
+  --land-s1: 4px;
+  --land-s2: 8px;
+  --land-s3: 16px;
+  --land-s4: 24px;
+  --land-s5: 40px;
+  --land-s6: 64px;
+  --land-s7: 96px;
+
+  /* 圆角 */
+  --land-r-sm: 4px;
+  --land-r-md: 8px;
+  --land-r-lg: 14px;
+
+  /* 阴影（带环境色，非纯黑） */
+  --land-shadow-1: 0 2px 8px rgba(20, 22, 27, 0.08);
+  --land-shadow-2: 0 8px 28px rgba(20, 22, 27, 0.12);
+  --land-shadow-3: 0 24px 64px rgba(11, 30, 61, 0.28);
+
+  /* 动效 */
+  --land-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --land-dur-fast: 160ms;
+  --land-dur-base: 320ms;
+  --land-dur-slow: 640ms;
+
+  background: var(--land-bg);
+  color: var(--land-ink);
+  font-family: var(--land-font-sans);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+.land * { box-sizing: border-box; }
+.land a { color: inherit; text-decoration: none; }
+
+/* 数字/指标统一用等宽，制造仪表盘感 */
+.land .num { font-family: var(--land-font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+/* 内容容器 */
+.land-wrap { max-width: 1160px; margin: 0 auto; padding: 0 var(--land-s4); }
+
+/* ==========================================================================
+   顶部导航（固定）
+   ========================================================================== */
+.land-nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+  backdrop-filter: saturate(1.2) blur(14px);
+  -webkit-backdrop-filter: saturate(1.2) blur(14px);
+  background: rgba(241, 245, 249, 0.85);
+  border-bottom: 1px solid var(--land-line);
+}
+.land-nav-inner {
+  max-width: 1160px; margin: 0 auto; padding: 0 var(--land-s4);
+  height: 64px; display: flex; align-items: center; justify-content: space-between; gap: var(--land-s3);
+}
+.land-logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.02rem; letter-spacing: -0.01em; }
+.land-logo-mark {
+  width: 30px; height: 30px; border-radius: 7px; flex-shrink: 0;
+  background: var(--land-brand);
+  display: grid; place-items: center;
+  color: #fff; font-family: var(--land-font-mono); font-weight: 700; font-size: 0.72rem;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+}
+.land-logo-sub { color: var(--land-faint); font-weight: 500; font-size: var(--land-fs-small); margin-left: 2px; }
+.land-nav-actions { display: flex; align-items: center; gap: var(--land-s2); }
+.land-nav-link {
+  padding: 8px 14px; border-radius: var(--land-r-md); font-size: var(--land-fs-small);
+  color: var(--land-muted); font-weight: 500; transition: color var(--land-dur-fast) ease, background var(--land-dur-fast) ease;
+}
+.land-nav-link:hover { color: var(--land-ink); background: rgba(20,22,27,0.05); }
+
+/* 按钮体系 */
+.land-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 46px; padding: 0 22px; border-radius: var(--land-r-md);
+  font-size: 0.95rem; font-weight: 600; letter-spacing: 0.01em;
+  cursor: pointer; border: 1px solid transparent;
+  transition: transform var(--land-dur-fast) ease, background var(--land-dur-fast) ease,
+    border-color var(--land-dur-fast) ease, color var(--land-dur-fast) ease, box-shadow var(--land-dur-fast) ease;
+  white-space: nowrap;
+}
+.land-btn:focus-visible { outline: 2px solid var(--land-accent); outline-offset: 2px; }
+.land-btn-primary { background: var(--land-accent); color: #fff; }
+.land-btn-primary:hover { background: var(--land-accent-deep); transform: translateY(-1px); box-shadow: var(--land-shadow-1); }
+.land-btn-primary:active { transform: translateY(0); }
+.land-btn-ghost {
+  background: transparent; color: var(--land-ink);
+  border-color: var(--land-line-strong);
+}
+.land-btn-ghost:hover { border-color: var(--land-ink); background: rgba(20,22,27,0.03); }
+.land-btn-ghost-hero {
+  background: rgba(255,255,255,0.06); color: var(--land-hero-text);
+  border-color: rgba(238,242,251,0.22);
+}
+.land-btn-ghost-hero:hover { background: rgba(255,255,255,0.12); border-color: rgba(238,242,251,0.4); }
+.land-btn-sm { height: 40px; padding: 0 18px; font-size: 0.88rem; }
+
+/* ==========================================================================
+   Hero（深藏蓝，非对称：左文案 + 右漏斗可视化）
+   ========================================================================== */
+.land-hero {
+  position: relative; background: linear-gradient(160deg, #1e40af 0%, #2563eb 100%); color: var(--land-hero-text);
+  padding: 152px 0 88px; overflow: hidden;
+}
+/* 氛围：网格图案 + 右上角蓝光斑 */
+.land-hero::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(238,242,251,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(238,242,251,0.05) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(70% 80% at 70% 0%, #000 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(70% 80% at 70% 0%, #000 0%, transparent 100%);
+}
+.land-hero::after {
+  content: ""; position: absolute; top: -180px; right: -120px; width: 560px; height: 560px;
+  border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, rgba(255,255,255,0.18), transparent 65%);
+  filter: blur(2px);
+}
+.land-hero-grid {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: 1.05fr 0.95fr; gap: var(--land-s6); align-items: center;
+}
+.land-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--land-font-mono); font-size: var(--land-fs-caption); letter-spacing: 0.14em;
+  color: var(--land-hero-muted); text-transform: uppercase;
+  padding: 6px 12px; border: 1px solid rgba(238,242,251,0.18); border-radius: 100px;
+}
+.land-eyebrow-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--land-accent); box-shadow: 0 0 0 3px rgba(37,99,235,0.28); }
+.land-hero h1 {
+  font-size: var(--land-fs-hero); line-height: 1.12; font-weight: 700;
+  letter-spacing: -0.025em; margin: var(--land-s4) 0 var(--land-s3);
+}
+.land-hero h1 .land-hl { color: var(--land-accent); }
+.land-hero-lead {
+  font-size: 1.06rem; line-height: 1.75; color: var(--land-hero-muted);
+  max-width: 46ch; margin: 0 0 var(--land-s5);
+}
+.land-hero-cta { display: flex; align-items: center; gap: var(--land-s3); flex-wrap: wrap; }
+.land-hero-note { font-size: var(--land-fs-caption); color: var(--land-hero-muted); margin-top: var(--land-s3); }
+.land-hero-note .num { color: var(--land-hero-text); }
+
+/* Hero 内 KPI 指标条（等宽数字） */
+.land-hero-kpis {
+  display: flex; align-items: stretch; gap: 0; margin-top: var(--land-s5);
+  border: 1px solid rgba(238,242,251,0.16); border-radius: var(--land-r-md); overflow: hidden;
+  width: fit-content; max-width: 100%;
+}
+.land-hero-kpi { padding: 14px 22px; display: flex; flex-direction: column; gap: 2px; border-right: 1px solid rgba(238,242,251,0.14); }
+.land-hero-kpi:last-child { border-right: none; }
+.land-hero-kpi b { font-family: var(--land-font-mono); font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; }
+.land-hero-kpi span { font-size: var(--land-fs-caption); color: var(--land-hero-muted); }
+
+/* 漏斗可视化卡片（白色卡片，与登录页白卡片呼应） */
+.land-hero-visual {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid rgba(255,255,255,0.5); border-radius: var(--land-r-lg);
+  padding: 24px 20px 20px;
+  box-shadow: 0 24px 60px rgba(15, 40, 90, 0.28);
+}
+.land-hero-visual-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px; padding: 0 4px;
+}
+.land-hero-visual-title { font-size: var(--land-fs-small); font-weight: 600; color: #0f172a; }
+.land-hero-visual-tag {
+  font-family: var(--land-font-mono); font-size: var(--land-fs-caption); color: #2563eb;
+  padding: 3px 8px; border: 1px solid rgba(37,99,235,0.3); border-radius: 4px; letter-spacing: 0.04em;
+}
+.land-funnel { display: block; width: 100%; height: auto; }
+
+/* ==========================================================================
+   通用 section 头
+   ========================================================================== */
+.land-section { padding: var(--land-s7) 0; }
+.land-section-head { max-width: 640px; margin-bottom: var(--land-s5); }
+.land-section-kicker {
+  font-family: var(--land-font-mono); font-size: var(--land-fs-caption); letter-spacing: 0.14em;
+  color: var(--land-brand); text-transform: uppercase;
+}
+.land-section-title { font-size: var(--land-fs-h2); font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; margin: var(--land-s2) 0 var(--land-s3); }
+.land-section-desc { color: var(--land-muted); font-size: 1.02rem; line-height: 1.75; max-width: 60ch; }
+
+/* ==========================================================================
+   功能矩阵（发丝边框网格，序号代替图标）
+   ========================================================================== */
+.land-features-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--land-line); border-left: 1px solid var(--land-line);
+}
+.land-feature {
+  /* 主题渐变由内联 CSS 变量注入，每张卡片一色 */
+  --feat-c1: #2563eb; --feat-c2: #60a5fa; --feat-i: 0;
+  position: relative; padding: 26px 26px 28px;
+  border-right: 1px solid var(--land-line); border-bottom: 1px solid var(--land-line);
+  background: var(--land-surface);
+  overflow: hidden; z-index: 0;
+  transition: background var(--land-dur-base) ease, box-shadow var(--land-dur-base) var(--land-ease-out);
+}
+/* 顶部渐变光条：hover 时从左向右展开 */
+.land-feature::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, var(--feat-c1), var(--feat-c2));
+  transform: scaleX(0); transform-origin: left;
+  transition: transform var(--land-dur-slow) var(--land-ease-out);
+}
+/* 右上角光斑：hover 淡入放大 */
+.land-feature-glow {
+  position: absolute; right: -46px; top: -46px; width: 150px; height: 150px; border-radius: 50%;
+  background: radial-gradient(circle, var(--feat-c2), transparent 68%);
+  opacity: 0; transform: scale(0.5); pointer-events: none;
+  transition: opacity var(--land-dur-base) ease, transform var(--land-dur-base) var(--land-ease-out);
+}
+/* 渐变图标块 */
+.land-feature-icon {
+  width: 46px; height: 46px; border-radius: 12px;
+  display: grid; place-items: center; color: #fff;
+  background: linear-gradient(135deg, var(--feat-c1), var(--feat-c2));
+  box-shadow: 0 8px 20px -6px var(--feat-c1);
+  margin-bottom: 18px;
+  transition: transform var(--land-dur-base) var(--land-ease-out), box-shadow var(--land-dur-base) ease;
+}
+.land-feature-icon svg { width: 24px; height: 24px; }
+.land-feature-idx {
+  position: absolute; top: 24px; right: 22px;
+  font-family: var(--land-font-mono); font-size: var(--land-fs-caption); color: var(--land-faint);
+  letter-spacing: 0.08em;
+  transition: color var(--land-dur-base) ease;
+}
+.land-feature h3 { font-size: 1.08rem; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.01em; }
+.land-feature p { color: var(--land-muted); font-size: var(--land-fs-small); line-height: 1.7; margin: 0; }
+.land-feature-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+.land-feature-tag {
+  font-family: var(--land-font-mono); font-size: 0.72rem; letter-spacing: 0.02em;
+  color: var(--feat-c1);
+  background: color-mix(in srgb, var(--feat-c1) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--feat-c1) 26%, transparent);
+  padding: 3px 8px; border-radius: 4px;
+  transition: background var(--land-dur-fast) ease, border-color var(--land-dur-fast) ease;
+}
+/* hover：背景染主题色、彩色投影浮起、光条展开、图标弹跳、序号点亮 */
+.land-feature:hover {
+  z-index: 1;
+  background: color-mix(in srgb, var(--feat-c1) 5%, #ffffff);
+  box-shadow: 0 14px 44px -10px color-mix(in srgb, var(--feat-c1) 55%, transparent);
+}
+.land-feature:hover::before { transform: scaleX(1); }
+.land-feature:hover .land-feature-glow { opacity: 0.5; transform: scale(1); }
+.land-feature:hover .land-feature-icon {
+  transform: translateY(-3px) rotate(-3deg) scale(1.06);
+  box-shadow: 0 14px 28px -8px var(--feat-c1);
+}
+.land-feature:hover .land-feature-idx { color: var(--feat-c1); }
+
+/* ==========================================================================
+   招聘全生命周期（横向流程，编号步骤 + 发丝线）
+   ========================================================================== */
+.land-flow { background: var(--land-surface); border-top: 1px solid var(--land-line); border-bottom: 1px solid var(--land-line); }
+.land-flow-track {
+  position: relative; display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--land-s3);
+  margin-top: var(--land-s2);
+}
+.land-flow-track::before {
+  content: ""; position: absolute; top: 20px; left: 4%; right: 4%; height: 1px;
+  background: var(--land-line-strong);
+}
+.land-flow-step { position: relative; padding-top: 56px; }
+.land-flow-dot {
+  position: absolute; top: 12px; left: 0; width: 17px; height: 17px; border-radius: 50%;
+  background: var(--land-bg); border: 1px solid var(--land-line-strong);
+  display: grid; place-items: center; z-index: 1;
+}
+.land-flow-dot::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--land-brand); }
+.land-flow-num { font-family: var(--land-font-mono); font-size: var(--land-fs-caption); color: var(--land-faint); letter-spacing: 0.06em; }
+.land-flow-step h3 { font-size: 0.98rem; font-weight: 700; margin: 6px 0 4px; }
+.land-flow-step p { font-size: var(--land-fs-small); color: var(--land-muted); line-height: 1.6; margin: 0; }
+
+/* ==========================================================================
+   数据安全（深色段，PIPL 合规）
+   ========================================================================== */
+.land-security { background: var(--land-brand-ink); color: var(--land-hero-text); position: relative; overflow: hidden; }
+.land-security::after {
+  content: ""; position: absolute; bottom: -140px; left: -80px; width: 420px; height: 420px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.14), transparent 65%); pointer-events: none;
+}
+.land-security .land-section-kicker { color: #93c5fd; }
+.land-security .land-section-desc { color: #cbd5e1; }
+.land-security-grid {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--land-s3); margin-top: var(--land-s2);
+}
+.land-security-item {
+  border: 1px solid rgba(238,242,251,0.16); border-radius: var(--land-r-md); padding: 24px 22px;
+  background: rgba(255,255,255,0.03);
+}
+.land-security-item .num { color: var(--land-accent); font-size: var(--land-fs-caption); letter-spacing: 0.1em; }
+.land-security-item h3 { font-size: 1rem; font-weight: 700; margin: 12px 0 6px; }
+.land-security-item p { color: #cbd5e1; font-size: var(--land-fs-small); line-height: 1.65; margin: 0; }
+
+/* ==========================================================================
+   定价（发丝边框表格感，中档高亮）
+   ========================================================================== */
+.land-pricing-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--land-s3); align-items: stretch;
+}
+.land-plan {
+  position: relative; background: var(--land-surface); border: 1px solid var(--land-line);
+  border-radius: var(--land-r-lg); padding: 28px 26px; display: flex; flex-direction: column;
+  transition: transform var(--land-dur-base) var(--land-ease-out), box-shadow var(--land-dur-base) var(--land-ease-out);
+}
+.land-plan:hover { transform: translateY(-4px); box-shadow: var(--land-shadow-2); }
+.land-plan.is-featured { border-color: var(--land-brand); box-shadow: var(--land-shadow-2); }
+.land-plan-badge {
+  position: absolute; top: -12px; left: 24px; background: var(--land-brand); color: #fff;
+  font-family: var(--land-font-mono); font-size: 0.7rem; letter-spacing: 0.06em;
+  padding: 4px 10px; border-radius: 100px;
+}
+.land-plan-name { font-size: 0.95rem; font-weight: 600; color: var(--land-muted); }
+.land-plan-price { display: flex; align-items: baseline; gap: 6px; margin: 14px 0 4px; }
+.land-plan-price .num { font-size: 2.4rem; font-weight: 700; letter-spacing: -0.03em; }
+.land-plan-price em { font-style: normal; font-size: var(--land-fs-small); color: var(--land-faint); }
+.land-plan-desc { font-size: var(--land-fs-caption); color: var(--land-faint); margin-bottom: 20px; }
+.land-plan-feats { list-style: none; margin: 0 0 24px; padding: 20px 0 0; border-top: 1px solid var(--land-line); display: flex; flex-direction: column; gap: 11px; flex: 1; }
+.land-plan-feats li { display: flex; align-items: flex-start; gap: 10px; font-size: var(--land-fs-small); color: var(--land-muted); line-height: 1.55; }
+.land-plan-feats li::before {
+  content: ""; flex-shrink: 0; width: 16px; height: 16px; margin-top: 3px; border-radius: 50%;
+  background: rgba(29,78,216,0.12); position: relative;
+}
+.land-plan-feats li::after {
+  content: ""; flex-shrink: 0; width: 5px; height: 9px; margin-left: -12px; margin-top: 6px;
+  border: solid var(--land-brand); border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.land-plan .land-btn { width: 100%; }
+.land-plan-footnote { text-align: center; color: var(--land-faint); font-size: var(--land-fs-caption); margin-top: var(--land-s4); }
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+.land-footer { border-top: 1px solid var(--land-line); padding: var(--land-s6) 0 var(--land-s5); }
+.land-footer-grid { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--land-s4); flex-wrap: wrap; }
+.land-footer-brand p { color: var(--land-muted); font-size: var(--land-fs-small); max-width: 40ch; margin: 12px 0 0; line-height: 1.7; }
+.land-footer-links { display: flex; gap: var(--land-s6); flex-wrap: wrap; }
+.land-footer-col { display: flex; flex-direction: column; gap: 10px; }
+.land-footer-col h4 { font-size: var(--land-fs-caption); font-weight: 600; color: var(--land-faint); letter-spacing: 0.08em; margin: 0 0 4px; }
+.land-footer-col a { font-size: var(--land-fs-small); color: var(--land-muted); transition: color var(--land-dur-fast) ease; }
+.land-footer-col a:hover { color: var(--land-ink); }
+.land-footer-legal { margin-top: var(--land-s5); padding-top: var(--land-s4); border-top: 1px solid var(--land-line); display: flex; align-items: center; justify-content: space-between; gap: var(--land-s3); flex-wrap: wrap; font-size: var(--land-fs-caption); color: var(--land-faint); }
+.land-footer-legal .num { color: var(--land-muted); }
+
+/* ==========================================================================
+   动效：入场序列 + 滚动 reveal + 漏斗层展开
+   （全部包在 prefers-reduced-motion: no-preference 内，reduce 下直接可见）
+   ========================================================================== */
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes landFadeUp { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+  .land-hero .land-hero-anim { opacity: 0; animation: landFadeUp 0.7s var(--land-ease-out) forwards; }
+  .land-hero .land-hero-anim:nth-child(1) { animation-delay: 0ms; }
+  .land-hero .land-hero-anim:nth-child(2) { animation-delay: 80ms; }
+  .land-hero .land-hero-anim:nth-child(3) { animation-delay: 160ms; }
+  .land-hero .land-hero-anim:nth-child(4) { animation-delay: 240ms; }
+  .land-hero .land-hero-anim:nth-child(5) { animation-delay: 320ms; }
+  .land-hero-visual { opacity: 0; animation: landFadeUp 0.8s var(--land-ease-out) 200ms forwards; }
+
+  /* 漏斗各层依次展开（每层的 animation-delay 由组件内联设置） */
+  @keyframes landFunnelIn { from { opacity: 0; transform: scaleY(0.6); } to { opacity: 1; transform: none; } }
+  .land-funnel .f-layer { opacity: 0; transform-origin: center; animation: landFunnelIn 0.5s var(--land-ease-out) forwards; }
+  .land-funnel .f-label { opacity: 0; animation: landFadeUp 0.5s var(--land-ease-out) forwards; }
+
+  /* 滚动 reveal：默认隐藏，IntersectionObserver 加 .in */
+  .land-reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.6s var(--land-ease-out), transform 0.6s var(--land-ease-out); }
+  .land-reveal.in { opacity: 1; transform: none; }
+
+  /* 功能矩阵卡片：入场按序号错峰，hover 的背景/投影不受延迟影响 */
+  .land-feature.land-reveal {
+    transition:
+      background var(--land-dur-base) ease,
+      box-shadow var(--land-dur-base) var(--land-ease-out),
+      opacity 0.6s var(--land-ease-out) calc(var(--feat-i, 0) * 70ms),
+      transform 0.6s var(--land-ease-out) calc(var(--feat-i, 0) * 70ms);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .land-hero .land-hero-anim, .land-hero-visual, .land-funnel .f-layer, .land-funnel .f-label { opacity: 1 !important; animation: none !important; }
+  .land-reveal { opacity: 1; transform: none; }
+}
+
+/* ==========================================================================
+   响应式
+   ========================================================================== */
+@media (max-width: 1000px) {
+  .land-hero-grid { grid-template-columns: 1fr; gap: var(--land-s5); }
+  .land-hero-visual { max-width: 520px; }
+  .land-features-grid { grid-template-columns: repeat(2, 1fr); }
+  .land-flow-track { grid-template-columns: repeat(3, 1fr); row-gap: var(--land-s5); }
+  .land-flow-track::before { display: none; }
+  .land-security-grid, .land-pricing-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .land { --land-s6: 48px; --land-s7: 64px; }
+  .land-nav-sub { display: none; }
+  .land-hero { padding-top: 120px; }
+  .land-hero-kpis { flex-wrap: wrap; width: 100%; }
+  .land-hero-kpi { flex: 1 1 40%; border-bottom: 1px solid rgba(238,242,251,0.14); }
+  .land-features-grid { grid-template-columns: 1fr; }
+  .land-flow-track { grid-template-columns: 1fr 1fr; }
+}

@@ -307,7 +307,7 @@ export default function Match() {
   const handleAddToPipeline = (cd: Candidate) => {
     const id = savedIds[cd.key];
     if (!id) {
-      message.info("请先「录入人才库」，再加入招聘流程");
+      message.info("请先「录入人才库」，再加入招聘看板");
       return;
     }
     setPipelineTalentId(id);
@@ -340,7 +340,7 @@ export default function Match() {
         priority: "normal",
         source: "system",
       });
-      message.success(`已生成「${name}」的面试待办（${due} 到期），可在「跟进待办」查看`);
+      message.success(`已生成「${name}」的面试待办（${due} 到期），可在「待办日历」查看`);
     } catch (err) {
       message.error((err as Error).message);
     }
@@ -610,7 +610,7 @@ export default function Match() {
         open={!!pipelineTalentId}
         presetTalentId={pipelineTalentId}
         onClose={() => setPipelineTalentId(null)}
-        onSuccess={() => message.success("已加入招聘流程")}
+        onSuccess={() => message.success("已加入招聘看板")}
       />
     </div>
   );

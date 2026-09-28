@@ -2,16 +2,19 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, Select, Button, Space, Tag, DatePicker, Modal,
-  Form, message, Alert, Upload, Popconfirm, Typography,
+  Form, message, Alert, Upload, Popconfirm, Typography, Dropdown,
 } from "antd";
-import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined, PlusOutlined, UserOutlined, FileTextOutlined, ExclamationCircleOutlined, FileProtectOutlined, HourglassOutlined, InfoCircleOutlined } from "@ant-design/icons";
+import type { MenuProps } from "antd";
+import { SearchOutlined, ReloadOutlined, BellOutlined, InboxOutlined, PlusOutlined, UserOutlined, FileTextOutlined, ExclamationCircleOutlined, FileProtectOutlined, HourglassOutlined, InfoCircleOutlined, DownloadOutlined, FileWordOutlined, FileExcelOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
 import type { ContractItem, ContractFile, Talent } from "../types";
 import { STATUS_LABELS } from "../types";
 import { extractContractText } from "../utils/contractFile";
+import { downloadBlob, dateStamp, csvCell, escapeHtml } from "../utils/file";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
+import { useTableScrollY } from "../hooks/useTableScrollY";
 
 // 日期快捷预设（从今天起算）：试用期按月、合同按年。
 // 三个弹窗（新增合同 / 合同文件 / 编辑日期）共用，保证体验一致。
@@ -35,6 +38,13 @@ function daysUntil(dateStr: string | null): number | null {
   const p = (n: number) => String(n).padStart(2, "0");
   const today = new Date(`${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}T00:00:00Z`);
   return Math.round((d.getTime() - today.getTime()) / 86400000);
+}
+
+/** 剩余天数 → 导出文案：已过期 N 天 / N 天 / — */
+function fmtDays(d: number | null): string {
+  if (d == null) return "—";
+  if (d < 0) return `已过期 ${-d} 天`;
+  return `${d} 天`;
 }
 
 /** 到期日 + 剩余天数 Tag（红=已过期 / 橙=30 天内 / 灰=充裕） */
@@ -506,6 +516,8 @@ export default function Contracts() {
   const [addOpen, setAddOpen] = useState(false);
   const [form] = Form.useForm();
   const intro = useDismissible("contracts.intro");
+  // 表格高度随视口自适应：表头固定、表体滚动、分页条常驻可见
+  const { ref: tableRef, y: tableY } = useTableScrollY();
 
   const fetchList = useCallback(async (keyword: string) => {
     setLoading(true);
@@ -524,7 +536,7 @@ export default function Contracts() {
       try {
         const r = await api.syncContractTasks();
         if (r.created + r.updated > 0) {
-          message.info(`已同步合同到期提醒：新建 ${r.created} 条、更新 ${r.updated} 条，请在「跟进待办」查看`);
+          message.info(`已同步合同到期提醒：新建 ${r.created} 条、更新 ${r.updated} 条，请在「待办日历」查看`);
         }
       } catch { /* 同步失败不阻塞页面 */ }
       fetchList("");
@@ -596,6 +608,64 @@ export default function Contracts() {
     }
   };
 
+  // 导出字段与列表一致，并附合同/试用期剩余天数
+  const exportColumns: { title: string; get: (r: ContractItem) => string }[] = [
+    { title: "姓名", get: (r) => r.name || "" },
+    { title: "手机号", get: (r) => r.phone || "" },
+    { title: "人才状态", get: (r) => STATUS_LABELS[r.status as keyof typeof STATUS_LABELS] || r.status || "" },
+    { title: "合同到期日", get: (r) => r.contract_end || "" },
+    { title: "合同剩余天数", get: (r) => fmtDays(daysUntil(r.contract_end)) },
+    { title: "试用期到期日", get: (r) => r.probation_end || "" },
+    { title: "试用期剩余天数", get: (r) => fmtDays(daysUntil(r.probation_end)) },
+  ];
+
+  // 导出 Word（.doc，Word 可直接打开 HTML，表格样式与列表一致）
+  const handleExportWord = () => {
+    if (!filtered.length) { message.warning("暂无数据可导出"); return; }
+    const thead = exportColumns.map((c) => `<th>${c.title}</th>`).join("");
+    const tbody = filtered.map((r) => {
+      const tds = exportColumns.map((c) => `<td>${escapeHtml(c.get(r))}</td>`).join("");
+      return `<tr>${tds}</tr>`;
+    }).join("");
+    const html = `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>合同到期清单</title>
+<style>
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; margin: 24px; color: #333; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #999; font-size: 12px; margin-bottom: 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+  th { background: #f5f5f5; font-weight: 600; }
+  tr:nth-child(even) td { background: #fafafa; }
+</style></head><body>
+<h1>合同到期清单</h1>
+<div class="sub">共 ${filtered.length} 人 · 导出时间 ${new Date().toLocaleString("zh-CN")}</div>
+<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
+</body></html>`;
+    downloadBlob(new Blob(["\ufeff" + html], { type: "application/msword;charset=utf-8" }), `合同到期清单_${dateStamp()}.doc`);
+    message.success(`已导出 ${filtered.length} 条合同记录（Word）`);
+  };
+
+  // 导出 CSV（Excel 直开，BOM + CRLF）
+  const handleExportCsv = () => {
+    if (!filtered.length) { message.warning("暂无数据可导出"); return; }
+    const header = exportColumns.map((c) => csvCell(c.title)).join(",");
+    const rows = filtered.map((r) => exportColumns.map((c) => csvCell(c.get(r))).join(","));
+    const csv = ["\ufeff" + header, ...rows].join("\r\n");
+    downloadBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), `合同到期清单_${dateStamp()}.csv`);
+    message.success(`已导出 ${filtered.length} 条合同记录（CSV）`);
+  };
+
+  const exportItems: MenuProps["items"] = [
+    { key: "word", label: "导出 Word", icon: <FileWordOutlined /> },
+    { key: "csv", label: "导出 CSV", icon: <FileExcelOutlined /> },
+  ];
+
+  const onExportClick: MenuProps["onClick"] = ({ key }) => {
+    if (key === "word") handleExportWord();
+    else if (key === "csv") handleExportCsv();
+  };
+
   const columns = [
     {
       title: "姓名", dataIndex: "name", key: "name", width: 120,
@@ -658,7 +728,7 @@ export default function Contracts() {
           showIcon
           closable
           style={{ marginBottom: 16 }}
-          message="合同 / 试用期到期前 30 天（含已过期未处理）会自动在「跟进待办」生成高优先级提醒；编辑日期后提醒自动更新，清空日期则自动取消提醒。"
+          message="合同 / 试用期到期前 30 天（含已过期未处理）会自动在「待办日历」生成高优先级提醒；编辑日期后提醒自动更新，清空日期则自动取消提醒。"
           onClose={intro.dismiss}
         />
       )}
@@ -697,6 +767,9 @@ export default function Contracts() {
             {intro.dismissed && (
               <Button icon={<InfoCircleOutlined />} onClick={intro.restore}>说明</Button>
             )}
+            <Dropdown menu={{ items: exportItems, onClick: onExportClick }} trigger={["click"]}>
+              <Button icon={<DownloadOutlined />}>导出</Button>
+            </Dropdown>
             <Button icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>新增合同</Button>
             <Button icon={<BellOutlined />} onClick={manualSync}>同步提醒</Button>
             <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setRangeFilter("all"); fetchList(""); }}>重置</Button>
@@ -706,14 +779,17 @@ export default function Contracts() {
       </Card>
 
       <Card styles={{ body: { padding: 0 } }}>
-        <Table
-          className="profiles-table"
-          columns={columns}
-          dataSource={filtered}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
-        />
+        <div ref={tableRef}>
+          <Table
+            className="profiles-table"
+            columns={columns}
+            dataSource={filtered}
+            rowKey="id"
+            loading={loading}
+            scroll={{ y: tableY }}
+            pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
+          />
+        </div>
       </Card>
 
       {/* 新增合同：选人才 → 传文件 AI 识别或手填日期 → 保存到档案 */}

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  Modal, Button, Input, InputNumber, Select, Typography, Spin, Alert, Tag,
+  Modal, Button, Input, InputNumber, Select, Typography, Spin, Alert, Tag, Tooltip,
 } from "antd";
 import mammoth from "mammoth";
 import { EDUCATION_OPTIONS, STATUS_LABELS } from "../types";
@@ -13,8 +13,12 @@ interface Props {
   /** 队列总数 */
   total: number;
   saving: boolean;
+  /** 批量确认进度（null = 未在批量中）：核对弹窗内常驻显示，避免长时间无反馈 */
+  batchProgress: { current: number; total: number } | null;
   onChange: (field: keyof ParsedTalent, value: unknown) => void;
   onSave: () => void;
+  /** 全部确认：剩余记录一次性录入，不再逐份点保存 */
+  onConfirmAll: () => void;
   onSkip: () => void;
   onClose: () => void;
 }
@@ -22,7 +26,7 @@ interface Props {
 // 逐份核对弹窗：左侧简历原文预览（PDF 用 iframe / Word 用 mammoth 转 HTML），
 // 右侧解析字段（可直接改），点「保存并录入」才写入人才库并保存原始简历。
 export default function ImportPreviewModal({
-  record, index, total, saving, onChange, onSave, onSkip, onClose,
+  record, index, total, saving, batchProgress, onChange, onSave, onConfirmAll, onSkip, onClose,
 }: Props) {
   const [pdfUrl, setPdfUrl] = useState("");
   const [docHtml, setDocHtml] = useState("");
@@ -87,11 +91,25 @@ export default function ImportPreviewModal({
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             <Button onClick={onClose}>关闭</Button>
             <Button danger onClick={onSkip} disabled={saving}>移除</Button>
+            {total > 1 && (
+              <Tooltip title="按当前解析结果直接录入剩余全部，不再逐份核对（不做逐条查重）">
+                <Button loading={saving} onClick={onConfirmAll}>全部确认（剩余 {total} 份）</Button>
+              </Tooltip>
+            )}
             <Button type="primary" loading={saving} onClick={onSave}>保存并录入</Button>
           </div>
         </div>
       }
     >
+      {/* 批量确认进度：常驻在弹窗内，长耗时操作不能只靠 toast */}
+      {batchProgress && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={`正在批量录入 ${batchProgress.current} / ${batchProgress.total} 份，请勿关闭页面`}
+        />
+      )}
       {record && (
         <div style={{ display: "flex", gap: 16, alignItems: "stretch" }}>
           {/* 左：简历原文。没有文件时整块不渲染，右侧字段区自动占满 */}

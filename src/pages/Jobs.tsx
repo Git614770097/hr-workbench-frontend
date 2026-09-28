@@ -18,6 +18,8 @@ import {
 } from "../types";
 import JobFormModal from "../components/JobFormModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
+import { DemoSeedButton } from "../components/DemoSeed";
+import { useTableScrollY } from "../hooks/useTableScrollY";
 
 const PAGE_SIZE = 10;
 
@@ -28,6 +30,9 @@ export default function Jobs() {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+
+  // 表格高度随视口自适应：表头固定、表体滚动、分页条常驻可见
+  const { ref: tableRef, y: tableY } = useTableScrollY();
 
   const [draftQ, setDraftQ] = useState("");
   const [draftStatus, setDraftStatus] = useState("");
@@ -260,12 +265,13 @@ export default function Jobs() {
           <Space>
             <Button
               type="primary" icon={<PlusOutlined />}
+              data-onb-action="new-job"
               onClick={() => { setEditingId(null); setFormOpen(true); }}
             >
               新增岗位
             </Button>
             <Link to="/pipeline">
-              <Button icon={<TeamOutlined />}>查看招聘流程</Button>
+              <Button icon={<TeamOutlined />}>查看招聘看板</Button>
             </Link>
           </Space>
           <Space>
@@ -274,21 +280,35 @@ export default function Jobs() {
           </Space>
         </div>
 
-        <Table
-          className="profiles-table"
-          columns={columns}
-          dataSource={jobs}
-          rowKey="id"
-          loading={loading}
-          scroll={{ x: 1500 }}
-          pagination={{
-            current: page,
-            total,
-            pageSize: PAGE_SIZE,
-            onChange: (p) => setPage(p),
-            showTotal: (t) => `共 ${t} 个岗位`,
-          }}
-        />
+        <div ref={tableRef}>
+          <Table
+            className="profiles-table"
+            columns={columns}
+            dataSource={jobs}
+            rowKey="id"
+            loading={loading}
+            scroll={{ x: 1500, y: tableY }}
+            locale={{
+              // 空库引导：新企业第一次进来，给一个一键看效果的入口
+              emptyText: (
+                <div style={{ padding: "40px 0", textAlign: "center" }}>
+                  <Empty description="还没有岗位" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
+                  <DemoSeedButton onDone={fetchJobs} />
+                  <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
+                    也可以点「新增岗位」创建真实岗位
+                  </div>
+                </div>
+              ),
+            }}
+            pagination={{
+              current: page,
+              total,
+              pageSize: PAGE_SIZE,
+              onChange: (p) => setPage(p),
+              showTotal: (t) => `共 ${t} 个岗位`,
+            }}
+          />
+        </div>
       </Card>
 
       {/* 新增 / 编辑岗位 */}

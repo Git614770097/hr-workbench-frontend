@@ -7,6 +7,8 @@ export interface User {
   permissions?: string[];
   /** 管理员用临时密码重置过，需在下次登录后自行修改 */
   must_change_password?: boolean;
+  /** 是否已配置个人 PushPlus 推送 token（用于到期提醒推送到本人微信） */
+  pushplus_configured?: boolean;
 }
 
 /** 用户管理列表行（管理员视角，含审批与重置申请状态） */
@@ -29,9 +31,9 @@ export type MenuKey =
   | "talents" | "pipeline" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "users";
 
 export const MENU_PERMISSIONS: { key: MenuKey; label: string }[] = [
-  { key: "tasks", label: "跟进待办" },
+  { key: "tasks", label: "待办日历" },
   { key: "jobs", label: "岗位管理" },
-  { key: "pipeline", label: "招聘流程" },
+  { key: "pipeline", label: "招聘看板" },
   { key: "funnel", label: "招聘漏斗" },
   { key: "talents", label: "人才库管理" },
   { key: "profiles", label: "人才画像" },
@@ -75,6 +77,7 @@ export interface Talent {
   probation_end: string | null;
   resignation_date: string | null;
   hire_date: string | null;   // 入职日期（社保增员待办基准日）
+  is_demo?: number;           // 示例数据标记：1=一键载入的演示数据
   created_at: string;
   updated_at: string;
 }
@@ -126,9 +129,9 @@ export interface DocTemplate {
   updated_at: string;
 }
 
-// 模板分类（新建/筛选共用，共 6 大类）
+// 模板分类（新建/筛选共用，共 7 大类）
 export const TEMPLATE_CATEGORIES = [
-  "招聘入职", "合同协议", "员工异动", "薪酬福利", "离职退休", "证明文档",
+  "招聘入职", "合同协议", "员工异动", "薪酬福利", "社保公积金", "离职退休", "证明文档",
 ];
 
 // 模板作用域：official 官方（管理员维护，全员只读）/ shared 共享 / private 个人
@@ -172,7 +175,7 @@ export const ROLE_LABELS: Record<string, string> = {
 };
 
 // ============================================================
-// 招聘流程 / 岗位管理 / 跟进待办
+// 招聘看板 / 岗位管理 / 待办日历
 // ============================================================
 
 // ---- 招聘流程阶段（顺序即看板列顺序）----
@@ -254,6 +257,7 @@ export interface Job {
   requirements: string | null;
   opened_at: string | null;
   closed_at: string | null;
+  is_demo?: number;           // 示例数据标记：1=一键载入的演示数据
   created_at: string;
   updated_at: string;
   // 聚合统计（列表接口返回）
@@ -436,6 +440,11 @@ export interface FunnelSourceItem {
   entered: number;  // 进入流程的投递数
   hired: number;    // 曾到达「已入职」的投递数
   rate: number;     // 入职转化率（0~1）
+  in_progress: number;  // 尚未到达终态（招聘中）的投递数
+  rejected: number;     // 曾到达「已淘汰」的投递数
+  withdrawn: number;    // 曾到达「已放弃」的投递数
+  /** 入库→入职的平均天数（仅入职者样本，无样本为 null） */
+  avg_cycle_days: number | null;
 }
 
 export interface FunnelRejectReason {
@@ -501,7 +510,7 @@ export interface ContractUploadResult {
   warning: string | null;
 }
 
-// ---- 跟进待办 ----
+// ---- 待办日历 ----
 export type TaskStatus = "pending" | "done" | "cancelled";
 
 export interface Task {

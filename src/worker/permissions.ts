@@ -6,10 +6,10 @@ export type MenuKey = (typeof MENU_KEYS)[number];
 
 export const MENU_LABELS: Record<MenuKey, string> = {
   talents: "人才库管理",
-  pipeline: "招聘流程",
+  pipeline: "招聘看板",
   funnel: "招聘漏斗",
   jobs: "岗位管理",
-  tasks: "跟进待办",
+  tasks: "待办日历",
   templates: "模板库管理",
   profiles: "人才画像",
   users: "用户管理",

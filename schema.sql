@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
   status TEXT NOT NULL DEFAULT 'active', -- active 可登录 / pending 待管理员审批 / rejected 已拒绝
   reset_requested_at TEXT,               -- 忘记密码申请时间，NULL 表示无待处理申请
   must_change_password INTEGER NOT NULL DEFAULT 0, -- 管理员设临时密码后置 1，下次登录需自行修改
+  pushplus_token TEXT,                   -- 个人 PushPlus 推送 token（用于到期提醒推送到本人）
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -53,6 +54,7 @@ CREATE TABLE IF NOT EXISTS talents (
   probation_end TEXT,       -- 试用期结束日
   resignation_date TEXT,    -- 预计离职日期（离职倒计时）
   hire_date TEXT,           -- 入职日期（社保增员待办基准日）
+  is_demo INTEGER DEFAULT 0, -- 示例数据标记：1=一键载入的演示数据，可整批清除
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -75,6 +77,7 @@ CREATE TABLE IF NOT EXISTS jobs (
   requirements TEXT,
   opened_at TEXT,
   closed_at TEXT,
+  is_demo INTEGER DEFAULT 0, -- 示例数据标记：1=一键载入的演示数据，可整批清除
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

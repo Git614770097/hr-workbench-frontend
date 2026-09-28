@@ -243,7 +243,7 @@ export default function TalentDetail() {
             style={{ marginBottom: 16 }}
             extra={
               <Link to="/tasks">
-                <Button size="small" icon={<CalendarOutlined />}>去跟进待办</Button>
+                <Button size="small" icon={<CalendarOutlined />}>去待办日历</Button>
               </Link>
             }
           >
@@ -298,7 +298,7 @@ export default function TalentDetail() {
           {/* 投递进程：每个岗位一条，含当前阶段与流转时间线 */}
           <Card title={`投递进程${pipeline.length > 0 ? `（${pipeline.length}）` : ""}`}>
             {pipeline.length === 0 ? (
-              <Empty description="尚未进入招聘流程" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty description="尚未进入招聘看板" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ) : (
               pipeline.map((p, idx) => {
                 const meta = STAGE_META[p.stage];

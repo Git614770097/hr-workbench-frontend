@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Card, Button, Select, Space, Row, Col, Empty, Spin, Tooltip, message } from "antd";
+import { Card, Button, Select, Space, Row, Col, Empty, Spin, Tooltip, message, Table, Alert } from "antd";
 import {
   ReloadOutlined, SearchOutlined, FunnelPlotOutlined, DownloadOutlined,
   ThunderboltOutlined, RiseOutlined, ClockCircleOutlined, TeamOutlined,
@@ -8,7 +8,7 @@ import {
 import { api } from "../api";
 import { downloadBlob, dateStamp, csvCell } from "../utils/file";
 import type { FunnelResponse, FunnelStayItem, Job, User } from "../types";
-import FunnelChartView, { levelColor } from "../components/FunnelChart";
+import FunnelChartView from "../components/FunnelChart";
 
 // 周期指标的配色（与漏斗同一套柔和色系，暗色模式取亮档）
 // 顺序即流程顺序：入库→首面 / 首面→Offer / Offer→入职 / 全流程
@@ -76,17 +76,17 @@ export default function Funnel() {
   })();
   const isAdmin = currentUser?.role === "admin";
 
-  // 跟随全局主题（html[data-theme]，配 ECharts 文字色/描边色）
+  // 跟随全局主题（html[data-theme-mode]，配 ECharts 文字色/描边色）
   const [isDark, setIsDark] = useState(
-    () => document.documentElement.getAttribute("data-theme") === "dark"
+    () => document.documentElement.getAttribute("data-theme-mode") === "dark"
   );
   const KPI_COLORS = isDark ? KPI_COLORS_DARK : KPI_COLORS_LIGHT;
   useEffect(() => {
     const el = document.documentElement;
-    const sync = () => setIsDark(el.getAttribute("data-theme") === "dark");
+    const sync = () => setIsDark(el.getAttribute("data-theme-mode") === "dark");
     sync();
     const mo = new MutationObserver(sync);
-    mo.observe(el, { attributes: true, attributeFilter: ["data-theme"] });
+    mo.observe(el, { attributes: true, attributeFilter: ["data-theme-mode"] });
     return () => mo.disconnect();
   }, []);
 
@@ -174,9 +174,12 @@ export default function Funnel() {
     rows.push("");
 
     rows.push("【渠道效果】（人·岗位口径：同一人才多岗位分别计）");
-    rows.push("来源渠道,进入流程,已入职,入职转化率");
+    rows.push("来源渠道,进入流程,进行中,已入职,已淘汰,已放弃,入职转化率,平均周期(天)");
     for (const src of data.sources || []) {
-      rows.push([src.source, src.entered, src.hired, pct(src.rate)].map(csvCell).join(","));
+      rows.push([
+        src.source, src.entered, src.in_progress, src.hired, src.rejected, src.withdrawn,
+        pct(src.rate), src.avg_cycle_days != null ? src.avg_cycle_days : "—",
+      ].map(csvCell).join(","));
     }
     rows.push("");
 
@@ -267,11 +270,11 @@ export default function Funnel() {
             description={
               filtered
                 ? "当前筛选条件下没有数据，试试放宽岗位或时间范围"
-                : "还没有候选人进入招聘流程，先去「招聘流程」把人才挂到岗位上，这里就会有数据了"
+                : "还没有候选人进入招聘看板，先去「招聘看板」把人才挂到岗位上，这里就会有数据了"
             }
           >
             <Link to="/pipeline">
-              <Button type="primary">去招聘流程录入</Button>
+              <Button type="primary">去招聘看板录入</Button>
             </Link>
           </Empty>
         </Card>
@@ -313,8 +316,12 @@ export default function Funnel() {
               </span>
             </div>
           </Card>
-          {/* 结论：先给总览数据，再给诊断意见 */}
-          <Card title="结论" styles={{ body: { padding: "14px 18px" } }}>
+          </Col>
+
+          {/* ===== 右：数据分析 ===== */}
+          <Col xs={24} xl={10}>
+          {/* 结论：总览数据 + 诊断意见，窄栏放在最前 */}
+          <Card title="结论" style={{ marginBottom: 16 }} styles={{ body: { padding: "14px 18px" } }}>
             <div className="funnel-summary">
               <div className="funnel-summary-item">
                 <span className="funnel-summary-num">{s.total}</span>
@@ -381,10 +388,6 @@ export default function Funnel() {
               })()}
             </div>
           </Card>
-          </Col>
-
-          {/* ===== 右：数据分析 ===== */}
-          <Col xs={24} xl={10}>
           {/* 招聘周期 */}
           <Card
             title="招聘周期"
@@ -480,83 +483,62 @@ export default function Funnel() {
             </div>
           </Card>
 
-          {/* 阶段转化分析：窄栏用纵向进度条，比表格更合适 */}
-          <Card title="阶段转化" style={{ marginTop: 16 }} styles={{ body: { padding: "16px 18px" } }}>
-            <div className="funnel-analysis">
-              {stages.map((st, i) => {
-                const stStay = stayMap[st.key];
-                const color = levelColor(i, isDark);
-                return (
-                  <div className="funnel-analysis-row" key={st.key}>
-                    <div className="funnel-analysis-head">
-                      <span className="funnel-dot" style={{ background: color }} />
-                      <span className="funnel-analysis-name">{st.label}</span>
-                      <span className="funnel-analysis-count">{st.count} 人</span>
-                    </div>
-                    <div className="funnel-analysis-bar">
-                      <div
-                        className="funnel-analysis-fill"
-                        style={{ width: `${Math.max(4, st.overall_rate * 100)}%`, background: color }}
-                      />
-                    </div>
-                    <div className="funnel-analysis-meta">
-                      {i === 0 ? (
-                        <span className="funnel-note-base">漏斗顶层</span>
-                      ) : (
-                        <>
-                          <span className={st.rate < 0.5 ? "funnel-note-rate is-low" : "funnel-note-rate"}>
-                            {pct(st.rate)}
-                          </span>
-                          {st.drop > 0 && <span className="funnel-note-drop">流失 {st.drop}</span>}
-                        </>
-                      )}
-                      <span className="funnel-analysis-cum">累计 {pct(st.overall_rate)}</span>
-                      {stStay && stStay.avg_days != null && (
-                        <span className={stStay.avg_days >= 7 ? "funnel-note-sub is-slow" : "funnel-note-sub"}>
-                          停留 {stStay.avg_days} 天
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-
           </Col>
 
-          {/* ===== 渠道效果：各来源「进入流程 → 入职」转化 ===== */}
+          {/* ===== 渠道效果：各来源「进入 → 进行中 → 入职」+ 平均周期 ===== */}
           {data!.sources.length > 0 && (
             <Col xs={24} xl={14}>
               <Card
                 title={<Space><TeamOutlined />渠道效果</Space>}
                 styles={{ body: { padding: "16px 18px" } }}
                 extra={
-                  <Tooltip title="按人才来源统计进入流程与入职转化；同一人才投多个岗位按投递记录分别计入，与漏斗口径一致。来源在人才库「来源渠道」字段维护">
+                  <Tooltip title="按人才来源统计各阶段分布与入职转化、平均招聘周期；同一人才投多个岗位按投递记录分别计入，与漏斗口径一致。来源在人才库「来源渠道」字段或导入简历时维护。">
                     <span style={{ fontSize: 12, color: "#8c8c8c" }}>口径说明</span>
                   </Tooltip>
                 }
               >
-                {data!.sources.map((src) => (
-                  <div key={src.source} style={{ marginBottom: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{src.source}</span>
-                      <span style={{ fontSize: 12, color: "#8c8c8c" }}>
-                        进入 <b style={{ color: "#262626" }}>{src.entered}</b>
-                        <span style={{ margin: "0 4px" }}>·</span>
-                        入职 <b style={{ color: "#10b981" }}>{src.hired}</b>
-                        <span style={{ margin: "0 4px" }}>·</span>
-                        <b style={{ color: src.rate >= 0.3 ? "#10b981" : src.rate > 0 ? "#d48806" : "#8c8c8c" }}>{pct(src.rate)}</b>
-                      </span>
-                    </div>
-                    <div className="funnel-analysis-bar">
-                      <div
-                        className="funnel-analysis-fill"
-                        style={{ width: `${Math.max(2, src.rate * 100)}%`, background: "#10b981" }}
-                      />
-                    </div>
-                  </div>
-                ))}
+                {(() => {
+                  // 数据质量提示：「未记录」占比过高时报表失真，提醒用户补录
+                  const unknown = data!.sources.find((s) => s.source === "未记录");
+                  const total = data!.sources.reduce((a, s) => a + s.entered, 0);
+                  if (!unknown || total === 0 || unknown.entered / total <= 0.4) return null;
+                  return (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message={`有 ${unknown.entered} 条候选人未记录来源（占 ${pct(unknown.entered / total)}），统计可能失真。新导入可在「导入简历」时选择本批来源，存量可在人才库编辑补录`}
+                    />
+                  );
+                })()}
+                <Table
+                  size="small"
+                  pagination={false}
+                  rowKey="source"
+                  dataSource={data!.sources}
+                  columns={[
+                    {
+                      title: "来源渠道", dataIndex: "source",
+                      render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span>,
+                    },
+                    { title: "进入", dataIndex: "entered", align: "right" },
+                    { title: "进行中", dataIndex: "in_progress", align: "right" },
+                    {
+                      title: "入职", dataIndex: "hired", align: "right",
+                      render: (v: number) => <b style={{ color: "#10b981" }}>{v}</b>,
+                    },
+                    {
+                      title: "转化率", dataIndex: "rate", align: "right",
+                      render: (v: number) => (
+                        <b style={{ color: v >= 0.3 ? "#10b981" : v > 0 ? "#d48806" : "#8c8c8c" }}>{pct(v)}</b>
+                      ),
+                    },
+                    {
+                      title: "平均周期", dataIndex: "avg_cycle_days", align: "right",
+                      render: (v: number | null) => (v == null ? "—" : `${v} 天`),
+                    },
+                  ]}
+                />
               </Card>
             </Col>
           )}

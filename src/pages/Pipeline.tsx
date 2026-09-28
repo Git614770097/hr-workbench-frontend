@@ -3,12 +3,14 @@ import { Link } from "react-router-dom";
 import {
   Card, Button, Select, Input, Space, Tag, Dropdown, message, Empty,
   Segmented, Spin, Tooltip, Modal, Timeline, Rate, Descriptions, Alert, Typography,
+  Checkbox,
 } from "antd";
 import {
   ReloadOutlined, SearchOutlined, UserAddOutlined, MoreOutlined,
   ClockCircleOutlined, FilePdfOutlined, SwapOutlined, DeleteOutlined,
   HistoryOutlined, UserOutlined, MessageOutlined,
   SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, BarsOutlined,
+  PhoneOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -18,10 +20,21 @@ import {
 } from "../types";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import AnimatedNumber from "../components/AnimatedNumber";
+import { DemoSeedButton } from "../components/DemoSeed";
 
 const EMPTY_COLUMNS: Record<string, PipelineCard[]> = Object.fromEntries(
   PIPELINE_STAGES.map((s) => [s.key, []])
 );
+
+// 复制到剪贴板（看板卡片电话一键复制；失败时给可感知的提示）
+const copyText = async (text: string, label: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    message.success(`已复制${label}`);
+  } catch {
+    message.error("复制失败，请手动复制");
+  }
+};
 
 export default function Pipeline() {
   const [columns, setColumns] = useState<Record<string, PipelineCard[]>>(EMPTY_COLUMNS);
@@ -44,8 +57,11 @@ export default function Pipeline() {
   const [logModal, setLogModal] = useState<{ open: boolean; title: string; logs: StageLog[]; loading: boolean }>({
     open: false, title: "", logs: [], loading: false,
   });
-  // 淘汰原因弹窗：拖入「已淘汰」先选标准原因（受控 state，不依赖 Form 取值）
-  const [rejectModal, setRejectModal] = useState<{ linkId: string; talentName: string } | null>(null);
+  // 批量选择：勾选卡片后一次性推进/淘汰，初筛环节最省点击
+  const [selected, setSelected] = useState<string[]>([]);
+  const [batchSaving, setBatchSaving] = useState(false);
+  // 淘汰原因弹窗：单卡或批量共用（linkIds 长度 1 = 单卡；>1 = 批量，统一记一次原因）
+  const [rejectModal, setRejectModal] = useState<{ linkIds: string[]; talentName: string } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectNote, setRejectNote] = useState("");
 
@@ -72,10 +88,62 @@ export default function Pipeline() {
 
   useEffect(() => { fetchPipeline(); }, [fetchPipeline]);
 
+  // 进入看板自动同步一次「阶段停滞」待办：停留 ≥7 天的候选人自动进待办，
+  // 不用 HR 自己记着谁卡住了。接口幂等（只对齐不重复建），重复调用无副作用。
+  useEffect(() => {
+    if (loading) return;
+    api.syncStaleTasks()
+      .then((r) => {
+        if (r.created > 0) {
+          message.info(`已为 ${r.created} 位停留超过 7 天的候选人生成「阶段停滞」跟进待办`);
+        }
+      })
+      .catch(() => {});
+  }, [loading]);
+
   useEffect(() => {
     api.getJobOptions().then(setJobs).catch(() => {});
     if (isAdmin) api.getUsers().then(setUsers).catch(() => {});
   }, [isAdmin]);
+
+  // ---- 批量选择（初筛一次刷掉一批人，不必逐张拖）----
+  const toggleSelect = (linkId: string, checked: boolean) => {
+    setSelected((prev) => (checked ? [...new Set([...prev, linkId])] : prev.filter((x) => x !== linkId)));
+  };
+
+  // 列头全选：整列一起处理，「这一列大部分都不要」时最省事
+  const toggleColumn = (list: PipelineCard[], checked: boolean) => {
+    const ids = list.map((c) => c.link_id);
+    setSelected((prev) => {
+      const rest = prev.filter((x) => !ids.includes(x));
+      return checked ? [...new Set([...rest, ...ids])] : rest;
+    });
+  };
+
+  // 批量推进：淘汰需统一选原因（走弹窗），其余直接批量流转
+  const batchMove = async (toStage: Stage) => {
+    if (selected.length === 0) return;
+    if (toStage === "rejected") {
+      setRejectReason("");
+      setRejectNote("");
+      setRejectModal({ linkIds: [...selected], talentName: `已选 ${selected.length} 人` });
+      return;
+    }
+    setBatchSaving(true);
+    try {
+      const res = await api.batchUpdateStage({ link_ids: selected, stage: toStage });
+      message.success(
+        toStage === "hired"
+          ? `已批量流转 ${res.updated} 人到「${STAGE_META[toStage].label}」${res.hired_linked > 0 ? `，生成 ${res.hired_linked} 条试用期跟进待办` : ""}`
+          : `已批量流转 ${res.updated} 人到「${STAGE_META[toStage].label}」${res.skipped > 0 ? `（${res.skipped} 人已在该阶段，已跳过）` : ""}`
+      );
+      setSelected([]);
+      fetchPipeline();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+    setBatchSaving(false);
+  };
 
   // 切换阶段（拖拽或菜单）
   const moveStage = async (linkId: string, toStage: Stage, talentName: string) => {
@@ -87,7 +155,7 @@ export default function Pipeline() {
     if (toStage === "rejected") {
       setRejectReason("");
       setRejectNote("");
-      setRejectModal({ linkId, talentName });
+      setRejectModal({ linkIds: [linkId], talentName });
       return;
     }
     try {
@@ -105,12 +173,21 @@ export default function Pipeline() {
     }
   };
 
-  // 确认淘汰：带标准原因写入流转日志
+  // 确认淘汰：带标准原因写入流转日志（单卡与批量共用，按 linkIds 数量分流）
   const confirmReject = async () => {
     if (!rejectModal || !rejectReason) return;
+    const ids = rejectModal.linkIds;
     try {
-      await api.updateStage(rejectModal.linkId, "rejected", rejectNote || undefined, rejectReason);
-      message.success(`「${rejectModal.talentName}」已淘汰（${rejectReason}）`);
+      if (ids.length > 1) {
+        const res = await api.batchUpdateStage({
+          link_ids: ids, stage: "rejected", reject_reason: rejectReason, remark: rejectNote || undefined,
+        });
+        message.success(`已批量淘汰 ${res.updated} 人（${rejectReason}）`);
+        setSelected([]);
+      } else {
+        await api.updateStage(ids[0], "rejected", rejectNote || undefined, rejectReason);
+        message.success(`「${rejectModal.talentName}」已淘汰（${rejectReason}）`);
+      }
       setRejectModal(null);
       fetchPipeline();
     } catch (err) {
@@ -121,14 +198,14 @@ export default function Pipeline() {
   const handleRemove = (card: PipelineCard) => {
     Modal.confirm({
       title: `确认将「${card.name}」移出该岗位？`,
-      content: "人才档案本身不会删除，仅解除与本岗位的招聘流程关联。",
+      content: "人才档案本身不会删除，仅解除与本岗位的招聘看板关联。",
       okText: "移出",
       okButtonProps: { danger: true },
       cancelText: "取消",
       onOk: async () => {
         try {
           await api.removeFromPipeline(card.link_id);
-          message.success("已移出招聘流程");
+          message.success("已移出招聘看板");
           fetchPipeline();
         } catch (err) {
           message.error((err as Error).message);
@@ -182,7 +259,7 @@ export default function Pipeline() {
 
   return (
     <div>
-      {/* 顶部统计 + 操作（统计复用 page-head 的 stat 体系，语义色由 CSS 类接管、暗色自动适配） */}
+      {/* 顶部统计 + 操作（统计复用 page-stats 的 stat 体系，语义色由 CSS 类接管、暗色自动适配） */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <div className="page-stats">
           <div className="stat">
@@ -225,7 +302,7 @@ export default function Pipeline() {
           />
           <Button icon={<ReloadOutlined />} onClick={fetchPipeline} loading={loading}>刷新</Button>
           <Button type="primary" icon={<UserAddOutlined />} onClick={() => setAddOpen(true)}>
-            加入招聘流程
+            加入招聘看板
           </Button>
         </Space>
       </div>
@@ -283,6 +360,34 @@ export default function Pipeline() {
         </div>
       </Card>
 
+      {/* 批量操作条：勾选卡片后出现，一次推进或淘汰一批（初筛最省点击） */}
+      {selected.length > 0 && (
+        <Card className="pipe-batch-bar" style={{ marginBottom: 16 }} styles={{ body: { padding: 12 } }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <Typography.Text strong>已选 {selected.length} 人</Typography.Text>
+            <Dropdown
+              trigger={["click"]}
+              menu={{
+                items: PIPELINE_STAGES.filter((s) => s.key !== "rejected").map((s) => ({
+                  key: s.key,
+                  label: (
+                    <span>
+                      <span className="pipe-col-dot" style={{ background: s.color, display: "inline-block", marginRight: 8 }} />
+                      流转到 {s.label}
+                    </span>
+                  ),
+                })),
+                onClick: ({ key }) => batchMove(key as Stage),
+              }}
+            >
+              <Button type="primary" loading={batchSaving}>批量推进到…</Button>
+            </Dropdown>
+            <Button danger disabled={batchSaving} onClick={() => batchMove("rejected")}>批量淘汰</Button>
+            <Button type="link" onClick={() => setSelected([])}>取消选择</Button>
+          </div>
+        </Card>
+      )}
+
       {/* 看板 */}
       {loading ? (
         <div style={{ textAlign: "center", padding: "4rem" }}><Spin size="large" /></div>
@@ -292,9 +397,18 @@ export default function Pipeline() {
             description={
               filtered
                 ? "当前筛选条件下没有候选人"
-                : "招聘流程还是空的，点击右上角「加入招聘流程」把人才挂到岗位上"
+                : "招聘看板还是空的，点击右上角「加入招聘看板」把人才挂到岗位上"
             }
-          />
+          >
+            {!filtered && (
+              <div style={{ marginTop: 8 }}>
+                <DemoSeedButton onDone={fetchPipeline} />
+                <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
+                  载入后即可体验拖拽流转与招聘漏斗，数据可一键清除
+                </div>
+              </div>
+            )}
+          </Empty>
         </Card>
       ) : (
         <div className="pipe-board">
@@ -316,6 +430,15 @@ export default function Pipeline() {
                 }}
               >
                 <div className="pipe-col-head" style={{ background: s.bg, color: s.color }}>
+                  <Checkbox
+                    checked={list.length > 0 && list.every((c) => selected.includes(c.link_id))}
+                    indeterminate={
+                      list.some((c) => selected.includes(c.link_id)) &&
+                      !list.every((c) => selected.includes(c.link_id))
+                    }
+                    onChange={(e) => toggleColumn(list, e.target.checked)}
+                    style={{ marginInlineEnd: 2 }}
+                  />
                   <span className="pipe-col-dot" style={{ background: s.color }} />
                   {s.label}
                   <span className="pipe-col-count">{list.length}</span>
@@ -331,15 +454,21 @@ export default function Pipeline() {
                       return (
                       <div
                         key={card.link_id}
-                        className={`pipe-card${dragging === card.link_id ? " dragging" : ""}${stale14 ? " pipe-card-stalehot" : ""}`}
+                        className={`pipe-card${dragging === card.link_id ? " dragging" : ""}${stale14 ? " pipe-card-stalehot" : ""}${selected.includes(card.link_id) ? " pipe-card-selected" : ""}`}
                         draggable
                         onDragStart={() => setDragging(card.link_id)}
                         onDragEnd={() => { setDragging(null); setDropTarget(null); }}
                       >
                         <div className="pipe-card-top">
-                          <Link className="pipe-card-name" to={`/talents/${card.talent_id}`}>
-                            {card.name}
-                          </Link>
+                          <span className="pipe-card-title">
+                            <Checkbox
+                              checked={selected.includes(card.link_id)}
+                              onChange={(e) => toggleSelect(card.link_id, e.target.checked)}
+                            />
+                            <Link className="pipe-card-name" to={`/talents/${card.talent_id}`}>
+                              {card.name}
+                            </Link>
+                          </span>
                           <Dropdown
                             menu={{ items: buildStageMenu(card), onClick: ({ key }) => onStageMenuClick(card, key) }}
                             trigger={["click"]}
@@ -375,16 +504,18 @@ export default function Pipeline() {
                               ★ {card.rating}
                             </Tag>
                           )}
-                          {card.years_experience != null && (
-                            <Tag style={{ fontSize: 11, marginInlineEnd: 0 }}>{card.years_experience}年</Tag>
-                          )}
-                          {card.education && (
-                            <Tag style={{ fontSize: 11, marginInlineEnd: 0 }}>{card.education}</Tag>
-                          )}
-                          {card.city && (
-                            <Tag style={{ fontSize: 11, marginInlineEnd: 0 }}>{card.city}</Tag>
-                          )}
                         </div>
+
+                        {/* 静态属性合并为一行次要文字，降噪（原先 3 个 Tag） */}
+                        {(card.years_experience != null || card.education || card.city) && (
+                          <div className="pipe-card-meta">
+                            {[
+                              card.years_experience != null ? `${card.years_experience}年经验` : null,
+                              card.education,
+                              card.city,
+                            ].filter(Boolean).join(" · ")}
+                          </div>
+                        )}
 
                         {card.stage_notes && (
                           <Tooltip title={card.stage_notes} placement="topLeft">
@@ -395,18 +526,35 @@ export default function Pipeline() {
                         )}
 
                         <div className="pipe-card-foot">
-                          {stale7 ? (
-                            <Tooltip title={`已在本阶段停留 ${card.days_in_stage} 天，${stale14 ? "超过 14 天，请立即推进、约面或释放" : "建议尽快推进"}`}>
-                              <span className={`pipe-stale${stale14 ? " hot" : " warn"}`}>
-                                <ClockCircleOutlined /> {stale14 ? "停留超时" : "停留偏久"} {card.days_in_stage} 天
+                          <div className="pipe-card-foot-left">
+                            {stale7 ? (
+                              <Tooltip title={`已在本阶段停留 ${card.days_in_stage} 天，${stale14 ? "超过 14 天，请立即推进、约面或释放" : "建议尽快推进"}`}>
+                                <span className={`pipe-stale${stale14 ? " hot" : " warn"}`}>
+                                  <ClockCircleOutlined /> {stale14 ? "停留超时" : "停留偏久"} {card.days_in_stage} 天
+                                </span>
+                              </Tooltip>
+                            ) : (
+                              <span className="pipe-stale">
+                                {card.days_in_stage === 0 ? "今天更新" : `停留 ${card.days_in_stage} 天`}
                               </span>
-                            </Tooltip>
-                          ) : (
-                            <span className="pipe-stale">
-                              {card.days_in_stage === 0 ? "今天更新" : `停留 ${card.days_in_stage} 天`}
-                            </span>
-                          )}
-                          <Space size={2}>
+                            )}
+                            {card.owner_name && (
+                              <Tooltip title="负责人">
+                                <span className="pipe-owner"><UserOutlined /> {card.owner_name}</span>
+                              </Tooltip>
+                            )}
+                          </div>
+                          <Space size={2} className="pipe-card-acts">
+                            {card.phone && (
+                              <Tooltip title={`复制电话 ${card.phone}`}>
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<PhoneOutlined />}
+                                  onClick={() => copyText(card.phone!, "电话")}
+                                />
+                              </Tooltip>
+                            )}
                             {card.resume_url && (
                               <Tooltip title="查看简历">
                                 <Link to={`/talents/${card.talent_id}`}>
@@ -440,7 +588,7 @@ export default function Pipeline() {
         </div>
       )}
 
-      {/* 加入招聘流程 */}
+      {/* 加入招聘看板 */}
       <AddToPipelineModal
         open={addOpen}
         onClose={() => setAddOpen(false)}

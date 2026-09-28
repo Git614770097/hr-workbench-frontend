@@ -81,6 +81,16 @@ export const api = {
   changeMyPassword: (data: { old_password: string; new_password: string }) =>
     request("/auth/me/password", { method: "PUT", body: JSON.stringify(data) }),
 
+  // 个人推送设置：保存/清空 PushPlus token
+  updateMyPushplus: (token: string) =>
+    request<{ ok: boolean; configured: boolean }>("/auth/me/pushplus", {
+      method: "PUT",
+      body: JSON.stringify({ token }),
+    }),
+  // 给当前用户推一条测试消息
+  testMyPushplus: () =>
+    request<{ ok: boolean; message: string }>("/auth/me/pushplus/test", { method: "POST" }),
+
   // User management (admin only)
   getUsers: (status?: string) =>
     request<UserRow[]>(`/auth/users${status ? `?status=${encodeURIComponent(status)}` : ""}`),
@@ -138,6 +148,17 @@ export const api = {
     request<{ imported: number; items: { id: string; name: string }[] }>("/talents/import", {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+
+  // 示例数据（演示模式）：一键载入 / 一键清除
+  seedDemo: () =>
+    request<{ ok: boolean; seeded: { jobs: number; talents: number; tasks: number } }>("/demo/seed", {
+      method: "POST",
+    }),
+
+  clearDemo: () =>
+    request<{ ok: boolean; removed: { talents: number; jobs: number } }>("/demo/seed", {
+      method: "DELETE",
     }),
 
   // AI 简历解析（后端代理，调用 DeepSeek）
@@ -334,7 +355,7 @@ export const api = {
     if (params.page) qs.set("page", String(params.page));
     if (params.limit) qs.set("limit", String(params.limit));
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return request<{ items: DocTemplate[]; total: number }>(`/templates${suffix}`);
+    return request<{ items: DocTemplate[]; total: number; page: number; limit: number; pages: number }>(`/templates${suffix}`);
   },
   getTemplateCategories: () =>
     request<{ items: { category: string; count: number }[] }>("/templates/categories"),
@@ -369,7 +390,7 @@ export const api = {
     request(`/jobs/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteJob: (id: string) => request(`/jobs/${id}`, { method: "DELETE" }),
 
-  // ---- 招聘流程 ----
+  // ---- 招聘看板 ----
   getPipeline: (params: { job_id?: string; owner_id?: string; q?: string } = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v) as [string, string][]
@@ -399,6 +420,18 @@ export const api = {
     request(`/pipeline/${linkId}`, { method: "DELETE" }),
   getStaleCandidates: () =>
     request<{ items: (PipelineCard & { days_stale: number })[]; total: number }>("/pipeline/stale"),
+  // 阶段停滞 → 待办同步（幂等，可重复调用）：返回本次新建/更新/取消数量
+  syncStaleTasks: () =>
+    request<{ created: number; updated: number; cancelled: number; total: number }>(
+      "/pipeline/sync-stale-tasks",
+      { method: "POST" }
+    ),
+  // 批量流转：看板多选 → 一次推进或淘汰（淘汰传 rejectReason 统一记原因）
+  batchUpdateStage: (data: { link_ids: string[]; stage: string; reject_reason?: string; remark?: string }) =>
+    request<{ updated: number; skipped: number; hired_linked: number; names: string[] }>(
+      "/pipeline/batch-stage",
+      { method: "POST", body: JSON.stringify(data) }
+    ),
 
   // ---- 招聘漏斗 ----
   getFunnel: (params: { job_id?: string; owner_id?: string; days?: number } = {}) => {
@@ -410,7 +443,7 @@ export const api = {
     return request<FunnelResponse>(`/pipeline/funnel${qs ? `?${qs}` : ""}`);
   },
 
-  // ---- 跟进待办 ----
+  // ---- 待办日历 ----
   getTasks: (params: { scope?: string; talent_id?: string; priority?: string; owner_id?: string } = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v) as [string, string][]

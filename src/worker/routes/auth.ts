@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { setCookie, getCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { genId } from "../helpers";
+import { sendPushPlus } from "../reminders";
 
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -205,7 +206,7 @@ auth.post("/login", async (c) => {
 auth.get("/me", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null; must_change_password: number }>();
+  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null; must_change_password: number; pushplus_token: string | null }>();
   if (!user) return c.json({ error: "用户不存在" }, 401);
 
   // 管理员拥有全部权限；普通用户取角色 permissions
@@ -223,6 +224,7 @@ auth.get("/me", async (c) => {
   return c.json({
     id: user.id, phone: user.phone, name: user.name, role: user.role, role_id: user.role_id,
     must_change_password: !!user.must_change_password,
+    pushplus_configured: !!(user.pushplus_token && user.pushplus_token.trim()),
     permissions,
   });
 });
@@ -395,6 +397,42 @@ auth.put("/me/password", async (c) => {
   return c.json({ ok: true });
 });
 
+// ---- 保存/清空个人 PushPlus 推送 token ----
+// 用于到期提醒推送到本人微信；传空字符串即清空（关闭推送）。
+auth.put("/me/pushplus", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const { token } = await c.req.json<{ token: string }>();
+  const cleaned = (token || "").trim();
+  if (cleaned !== "" && cleaned.length < 10) {
+    return c.json({ error: "token 格式不正确，请从 pushplus.plus 复制完整 token" }, 400);
+  }
+
+  await c.env.DB.prepare("UPDATE users SET pushplus_token = ? WHERE id = ?")
+    .bind(cleaned === "" ? null : cleaned, session.userId).run();
+
+  return c.json({ ok: true, configured: cleaned !== "" });
+});
+
+// ---- 给当前用户推一条测试消息（验证 token 是否生效）----
+auth.post("/me/pushplus/test", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const user = await c.env.DB.prepare("SELECT pushplus_token FROM users WHERE id = ?")
+    .bind(session.userId).first<{ pushplus_token: string | null }>();
+  const token = user?.pushplus_token;
+  if (!token) return c.json({ error: "你尚未配置推送 token，请先保存后再测试" }, 400);
+
+  const res = await sendPushPlus(
+    token,
+    "测试推送",
+    "这是一条来自「人力资源管理系统」的测试消息。如果你收到它，说明到期提醒推送已配置成功。"
+  );
+  return c.json(res);
+});
+
 // ---- 管理员：修改用户角色 ----
 auth.put("/users/:id/role", async (c) => {
   const session = await getSession(c);
@@ -430,7 +468,10 @@ auth.put("/users/:id/password", async (c) => {
   if (!password || password.length < 6) return c.json({ error: "密码至少6位" }, 400);
 
   const passwordHash = await hashPassword(password);
-  await c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(passwordHash, id).run();
+  // 管理员设的是临时密码，打上标记让用户下次登录后自行修改（与忘记密码处理路径一致）
+  await c.env.DB.prepare(
+    "UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?"
+  ).bind(passwordHash, id).run();
   return c.json({ ok: true });
 });
 

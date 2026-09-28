@@ -69,6 +69,70 @@ export function tidyHtml(html: string): string {
   return c.innerHTML;
 }
 
+// ---------- 明细行转真表格 ----------
+
+// 判断一行是否为「明细行」：形如「序号 | 姓名 | 身份证号 | 备注」，至少含 2 个分隔符
+function isDetailRow(line: string): boolean {
+  const text = line.replace(/<[^>]+>/g, "").trim();
+  return text.split("|").length >= 3;
+}
+
+// 一组连续明细行 → HTML 表格（首行作表头）
+function buildDetailTable(lines: string[]): string {
+  const rows = lines.map((line) => {
+    const cells = line.split("|").map((c) => c.trim()).filter((c) => c !== "");
+    return cells;
+  });
+  const head = rows.shift() || [];
+  const headHtml = head.map((c) => `<th>${c}</th>`).join("");
+  // 单单元格行（形如 {{增员明细}} 的占位行）跨整行，作为表格内的可填空行
+  const bodyHtml = rows
+    .map((cs) =>
+      cs.length === 1
+        ? `<tr><td colspan="${head.length}">${cs[0]}</td></tr>`
+        : `<tr>${cs.map((c) => `<td>${c}</td>`).join("")}</tr>`
+    )
+    .join("");
+  return `<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;margin:4px 0;font-size:13px"><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`;
+}
+
+// 把模板里的「序号 | 姓名 | ...」文本明细行解析为真正的 HTML 表格，
+// 用于导出 Word / 查看预览 —— 台账类模板（增减员表、补缴申请表等）导出后才是可用的表格。
+// 非明细行保持原样，不改动任何文字内容。
+export function detailRowsToTable(html: string): string {
+  const c = document.createElement("div");
+  c.innerHTML = html;
+  const parts: string[] = [];
+
+  for (const block of Array.from(c.children)) {
+    if (block.tagName !== "P") { parts.push(block.outerHTML); continue; }
+    const style = block.getAttribute("style");
+    const styleAttr = style ? ` style="${style}"` : "";
+    const lines = block.innerHTML.split(/<br\s*\/?>/i).map((s) => s.trim());
+    if (!lines.some(isDetailRow)) { parts.push(block.outerHTML); continue; }
+
+    // 块内混合：连续明细行合并成表格，其余行按原段落输出
+    const segs: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+      const flag = isDetailRow(lines[i]);
+      const group: string[] = [];
+      while (i < lines.length && isDetailRow(lines[i]) === flag) { group.push(lines[i]); i += 1; }
+      // 明细表后紧跟的纯占位符行（如 {{增员明细}}）并入表格，作为可填的空行
+      if (flag) {
+        while (i < lines.length && /^\s*\{\{[^}]+\}\}\s*$/.test(lines[i].replace(/<[^>]+>/g, ""))) {
+          group.push(lines[i]);
+          i += 1;
+        }
+      }
+      segs.push(flag ? buildDetailTable(group) : `<p${styleAttr}>${group.join("<br>")}</p>`);
+    }
+    parts.push(segs.join(""));
+  }
+
+  return parts.join("");
+}
+
 // 一键整理格式：在 tidyHtml 清理的基础上，按中文公文/合同惯例自动布局排版
 // 规则：标题居中加粗二号黑体；条款/序号标题加粗；正文宋体四号 + 首行缩进 2 字符；
 //       甲乙方信息行不缩进；末尾落款（公司/日期/签章）右对齐

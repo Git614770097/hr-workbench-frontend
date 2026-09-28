@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Modal, Upload, Button, Alert, message, Typography,
+  Modal, Upload, Button, Alert, message, Typography, Select,
 } from "antd";
 import { InboxOutlined } from "@ant-design/icons";
 import { api } from "../api";
+import { SOURCE_OPTIONS } from "../types";
 import ImportPreviewModal from "./ImportPreviewModal";
 import {
   parseResumeToTalent, recordToData,
@@ -22,6 +23,9 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   const [parsing, setParsing] = useState(false);
   const [records, setRecords] = useState<ParsedTalent[]>([]);
   const [error, setError] = useState("");
+  // 本批来源渠道：整批统一选一次（用户拍定），保存每条时注入 source。
+  // 不选也不阻断——漏斗页「渠道效果」会提示未记录占比过高。
+  const [batchSource, setBatchSource] = useState<string | undefined>(undefined);
   const parsingRef = useRef(false);
   // 多文件选择的缓冲：beforeUpload 对每个文件同步调用一次，先用队列收齐，再统一解析
   const pendingFilesRef = useRef<File[]>([]);
@@ -36,6 +40,9 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   // 本轮已录入份数，用于结束时汇总
   const savedCount = useRef(0);
 
+  // 批量确认进度：一次性录入剩余全部时，核对弹窗内常驻显示「正在录入 x/y」
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
+
   // 组件常驻（父级只切换 open），每次打开都从干净状态开始，
   // 避免上次没处理完的解析记录/核对弹窗残留到下一次导入。
   useEffect(() => {
@@ -47,6 +54,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setSavingOne(false);
     savedCount.current = 0;
     pendingFilesRef.current = [];
+    // 来源渠道每次打开都重置：宁可多选一次，也不能把上一批的渠道错标到新一批
+    setBatchSource(undefined);
   }, [open]);
 
   const handleFiles = async (files: File[]) => {
@@ -110,7 +119,9 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
 
   // 逐份核对：保存单条（写入人才库 + 保存原始简历）
   const saveRecord = async (rec: ParsedTalent) => {
-    const res = await api.importTalents([recordToData(rec)]);
+    // 注入本批统一选择的来源渠道（未选则 undefined，落库为 null）
+    const data = { ...recordToData(rec), source: batchSource || undefined };
+    const res = await api.importTalents([data]);
     const created = res.items?.[0];
     if (created && rec.file) {
       try {
@@ -200,6 +211,44 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     advanceReview(rec.key);
   };
 
+  // 全部确认：把当前队列里剩下的记录一次性录入，不再逐份点「保存并录入」。
+  // 解析结果可信时（批量同渠道导入）用这个最省事；注意跳过逐条手机号查重，
+  // 否则每份都弹一次确认框，批量就失去意义了。
+  const handleConfirmAll = async () => {
+    const list = records.filter((r) => r.name.trim());
+    const skipNoName = records.length - list.length;
+    if (list.length === 0) {
+      message.error("没有可录入的记录：解析结果缺少姓名，请先补填");
+      return;
+    }
+    setSavingOne(true);
+    setError("");
+    let ok = 0;
+    const failed: string[] = [];
+    setBatchProgress({ current: 0, total: list.length });
+    for (let i = 0; i < list.length; i++) {
+      setBatchProgress({ current: i + 1, total: list.length });
+      try {
+        await saveRecord(list[i]);
+        savedCount.current += 1;
+        ok += 1;
+      } catch (err) {
+        failed.push(list[i].name || list[i].fileName || "未命名");
+      }
+    }
+    setBatchProgress(null);
+    setSavingOne(false);
+    onSuccess();
+    if (failed.length === 0) {
+      message.success(`已批量录入 ${ok} 份${skipNoName > 0 ? `，${skipNoName} 份因缺少姓名已跳过` : ""}`);
+    } else {
+      message.warning(`已录入 ${ok} 份，${failed.length} 份失败：${failed.slice(0, 3).join("、")}${failed.length > 3 ? " 等" : ""}`);
+    }
+    setRecords([]);
+    setReviewKey(null);
+    onClose();
+  };
+
   // 关闭核对弹窗 = 放弃本轮尚未处理的简历（没有中间列表可回退，所以必须问清楚）。
   // 已录入的已经写库，不受影响。
   const handleCloseReview = () => {
@@ -232,6 +281,22 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         可一次上传多份，会依次核对。
       </Typography.Paragraph>
 
+      {/* 本批来源渠道：整批统一选一次，招聘漏斗的「渠道效果」靠它统计 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <Typography.Text type="secondary" style={{ flexShrink: 0 }}>
+          本批来源渠道：
+        </Typography.Text>
+        <Select
+          allowClear
+          showSearch
+          style={{ minWidth: 260 }}
+          placeholder="选择后应用到本批全部录入"
+          value={batchSource}
+          onChange={setBatchSource}
+          options={SOURCE_OPTIONS.map((s) => ({ label: s, value: s }))}
+        />
+      </div>
+
       <Dragger accept=".pdf,.docx" multiple showUploadList={false} disabled={parsing} beforeUpload={handleBeforeUpload}>
         <p className="ant-upload-drag-icon"><InboxOutlined /></p>
         <p className="ant-upload-text">点击或拖拽简历文件到此处</p>
@@ -251,8 +316,10 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         index={reviewIndex}
         total={records.length}
         saving={savingOne}
+        batchProgress={batchProgress}
         onChange={(field, value) => { if (reviewRecord) updateRecord(reviewRecord.key, field, value); }}
         onSave={handleSaveOne}
+        onConfirmAll={handleConfirmAll}
         onSkip={handleSkipOne}
         onClose={handleCloseReview}
       />

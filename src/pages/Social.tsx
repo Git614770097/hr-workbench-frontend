@@ -6,13 +6,14 @@ import {
 } from "antd";
 import {
   SearchOutlined, ReloadOutlined, BellOutlined, CalculatorOutlined,
-  UserAddOutlined, UserDeleteOutlined, SafetyCertificateOutlined, InfoCircleOutlined,
+  UserAddOutlined, UserDeleteOutlined, SafetyCertificateOutlined, InfoCircleOutlined, DollarOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { SocialItem } from "../types";
 import { SI_STATUS_LABELS, SI_STATUS_COLORS, STATUS_LABELS } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
+import { useTableScrollY } from "../hooks/useTableScrollY";
 
 /** 待办动作推导（与后端 socialTaskStmts 同口径）：onboarded=已入职、si=参保状态 */
 function deriveAction(r: SocialItem): "add" | "stop" | null {
@@ -27,6 +28,19 @@ const ACTION_TAG: Record<"add" | "stop", { text: string; color: string }> = {
   add: { text: "待增员", color: "orange" },
   stop: { text: "待减员", color: "red" },
 };
+
+/**
+ * 月缴额 = 社保基数 × 比例 + 公积金基数 × 比例（比例按百分数存，如 10.5 表示 10.5%）
+ * 任一侧缺基数或比例即按 0 计；两侧都缺返回 null（显示 —）。
+ */
+function monthlyFee(r: SocialItem, kind: "personal" | "company"): number | null {
+  const siRate = kind === "personal" ? r.si_rate_personal : r.si_rate_company;
+  const hfRate = kind === "personal" ? r.hf_rate_personal : r.hf_rate_company;
+  const si = r.si_base != null && siRate != null ? (r.si_base * siRate) / 100 : null;
+  const hf = r.hf_base != null && hfRate != null ? (r.hf_base * hfRate) / 100 : null;
+  if (si == null && hf == null) return null;
+  return Math.round(((si ?? 0) + (hf ?? 0)) * 100) / 100;
+}
 
 // ---- 个税计算器（累计预扣法，7 级超额累进）----
 const TAX_BRACKETS: { limit: number; rate: number; deduct: number }[] = [
@@ -266,6 +280,8 @@ export default function Social() {
   const [editing, setEditing] = useState<SocialItem | null>(null);
   const [taxOpen, setTaxOpen] = useState(false);
   const intro = useDismissible("social.intro");
+  // 表格高度随视口自适应：表头固定、表体滚动、合计行与分页条常驻可见
+  const { ref: tableRef, y: tableY } = useTableScrollY();
 
   const fetchList = useCallback(async (keyword: string) => {
     setLoading(true);
@@ -284,7 +300,7 @@ export default function Social() {
       try {
         const r = await api.syncSocialTasks();
         if (r.created + r.updated > 0) {
-          message.info(`已同步社保增减员提醒：新建 ${r.created} 条、更新 ${r.updated} 条，请在「跟进待办」查看`);
+          message.info(`已同步社保增减员提醒：新建 ${r.created} 条、更新 ${r.updated} 条，请在「待办日历」查看`);
         }
       } catch { /* 同步失败不阻塞页面 */ }
       fetchList("");
@@ -303,6 +319,12 @@ export default function Social() {
   const pendingAdd = items.filter((r) => deriveAction(r) === "add").length;
   const pendingStop = items.filter((r) => deriveAction(r) === "stop").length;
   const activeCount = items.filter((r) => (r.si_status || "none") === "active").length;
+
+  // 月缴额合计：全量用于顶部统计卡，filtered 用于表格合计行
+  const allPersonal = items.reduce((s, r) => s + (monthlyFee(r, "personal") ?? 0), 0);
+  const allCompany = items.reduce((s, r) => s + (monthlyFee(r, "company") ?? 0), 0);
+  const sumPersonal = filtered.reduce((s, r) => s + (monthlyFee(r, "personal") ?? 0), 0);
+  const sumCompany = filtered.reduce((s, r) => s + (monthlyFee(r, "company") ?? 0), 0);
 
   const cities = Array.from(new Set(items.map((r) => r.si_city).filter((c): c is string => !!c)));
 
@@ -340,6 +362,20 @@ export default function Social() {
     { title: "社保基数", dataIndex: "si_base", key: "si_base", width: 110, render: fmtMoney },
     { title: "公积金基数", dataIndex: "hf_base", key: "hf_base", width: 110, render: fmtMoney },
     { title: "个人比例", key: "rate_p", width: 120, render: (_: unknown, r: SocialItem) => `${fmtRate(r.si_rate_personal)} / ${fmtRate(r.hf_rate_personal)}` },
+    {
+      title: "个人月缴", key: "fee_p", width: 110,
+      render: (_: unknown, r: SocialItem) => {
+        const v = monthlyFee(r, "personal");
+        return v != null ? <span style={{ fontWeight: 500 }}>¥{v.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span> : "—";
+      },
+    },
+    {
+      title: "单位月缴", key: "fee_c", width: 110,
+      render: (_: unknown, r: SocialItem) => {
+        const v = monthlyFee(r, "company");
+        return v != null ? <span style={{ fontWeight: 500 }}>¥{v.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span> : "—";
+      },
+    },
     {
       title: "待办动作", key: "action", width: 96,
       render: (_: unknown, r: SocialItem) => {
@@ -380,12 +416,19 @@ export default function Social() {
             <span className="stat-label">参保中</span>
           </span>
         </div>
+        <div className="stat">
+          <span className="stat-icon is-neutral"><DollarOutlined /></span>
+          <span className="stat-body">
+            <span className="stat-num is-neutral"><AnimatedNumber value={allPersonal + allCompany} format={(n) => `¥${Math.round(n).toLocaleString("zh-CN")}`} /></span>
+            <span className="stat-label">月缴合计</span>
+          </span>
+        </div>
       </div>
 
       {!intro.dismissed && (
         <Alert
           type="info" showIcon closable style={{ marginBottom: 16 }}
-          message="标记「已入职」或填了入职日期、但未参保的人才 → 自动生成「社保增员」待办；填了离职日期且仍在缴 → 生成「社保减员」待办。基数与比例由你按参保地政策填写，系统不维护费率规则库。"
+          message="标记「已入职」或填了入职日期、但未参保的人才 → 自动生成「社保增员」待办；填了离职日期且仍在缴 → 生成「社保减员」待办。基数与比例由你按参保地政策填写，系统不维护费率规则库；「个人月缴 / 单位月缴」由基数 × 对应比例自动算出（社保 + 公积金）。"
           onClose={intro.dismiss}
         />
       )}
@@ -436,15 +479,35 @@ export default function Social() {
       </Card>
 
       <Card styles={{ body: { padding: 0 } }}>
-        <Table
-          className="profiles-table"
-          columns={columns}
-          dataSource={filtered}
-          rowKey="id"
-          loading={loading}
-          pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
-        />
-      </Card>
+        <div ref={tableRef}>
+          <Table
+            className="profiles-table"
+            columns={columns}
+            dataSource={filtered}
+            rowKey="id"
+            loading={loading}
+            scroll={{ x: 1400, y: tableY }}
+            pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
+            summary={() => (
+              <Table.Summary fixed>
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={7}>
+                    合计（当前筛选 {filtered.length} 人）
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={7}>
+                    <span style={{ fontWeight: 500 }}>个人 ¥{sumPersonal.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={8}>
+                    <span style={{ fontWeight: 500 }}>单位 ¥{sumCompany.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={9} colSpan={2}>
+                    <span style={{ fontWeight: 500 }}>用工总成本 ¥{(sumPersonal + sumCompany).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}/月</span>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              </Table.Summary>
+            )}
+          />
+        </div>      </Card>
 
       <SocialEditModal
         item={editing}

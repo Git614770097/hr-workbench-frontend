@@ -11,7 +11,9 @@ import { pipelineRoutes } from "./routes/pipeline";
 import { taskRoutes } from "./routes/tasks";
 import aiParseRoutes from "./routes/aiParse";
 import matchRoutes from "./routes/match";
+import demoRoutes from "./routes/demo";
 import { parsePermissions } from "./permissions";
+import { runReminders } from "./reminders";
 
 export interface Env {
   DB: D1Database;
@@ -19,6 +21,7 @@ export interface Env {
   ASSETS: Fetcher;
   RESUMES: KVNamespace;
   DEEPSEEK_API_KEY?: string;
+  PUSHPLUS_TOKEN?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -87,11 +90,11 @@ app.use("/api/pipeline", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
-// 招聘漏斗：与「招聘流程」同源数据，但页面是独立菜单。
+// 招聘漏斗：与「招聘看板」同源数据，但页面是独立菜单。
 // 只统计、不修改数据，因此不额外要求 funnel 权限 ——
 // 有 pipeline 权限即可查看（避免存量角色看不到数据）。
 // 注：路由为 /api/pipeline/funnel，已被上面 /api/pipeline/* 覆盖。
-// 跟进待办
+// 待办日历
 app.use("/api/tasks/*", async (c, next) => {
   const blocked = await menuGuard(c, "tasks");
   if (blocked) return blocked;
@@ -151,11 +154,26 @@ app.route("/api/pipeline", pipelineRoutes);
 app.route("/api/tasks", taskRoutes);
 app.route("/api/parse-resume", aiParseRoutes);
 app.route("/api/match", matchRoutes);
+app.route("/api/demo", demoRoutes);
 
 // ---- Health check ----
 app.get("/api/health", (c) =>
   c.json({ status: "ok", time: new Date().toISOString() })
 );
+
+// ---- 手动触发到期提醒推送（仅 admin，用于上线后立刻验收）----
+app.get("/api/reminders/test", async (c) => {
+  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  if (!token) return c.json({ error: "未登录" }, 401);
+  const sessionRaw = await c.env.SESSIONS.get(token);
+  if (!sessionRaw) return c.json({ error: "未登录" }, 401);
+  let session: { role: string };
+  try { session = JSON.parse(sessionRaw); } catch { return c.json({ error: "未登录" }, 401); }
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const result = await runReminders(c.env);
+  return c.json(result);
+});
 
 // ---- API 未匹配路径：明确返回 JSON 404 ----
 // 必须放在下面 SPA 兜底之前。否则拼错的 /api/xxx 会落到静态资源兜底，
@@ -165,4 +183,9 @@ app.all("/api/*", (c) => c.json({ error: "接口不存在" }, 404));
 // ---- Fallback to static assets (SPA) ----
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
 
-export default app;
+export default {
+  fetch: app.fetch,
+  async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
+    await runReminders(env);
+  },
+};

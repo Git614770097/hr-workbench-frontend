@@ -298,10 +298,10 @@ export default function MatchResultCard({
             size="small"
             icon={<SendOutlined />}
             disabled={!savedId}
-            title={savedId ? "" : "请先录入人才库，再加入招聘流程"}
+            title={savedId ? "" : "请先录入人才库，再加入招聘看板"}
             onClick={onAddToPipeline}
           >
-            加入招聘流程
+            加入招聘看板
           </Button>
           <Button
             size="small"

@@ -65,7 +65,7 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
         message.success(`已把 ${res.added} 人加入「${res.job_title}」${skip}`);
       } else {
         const res = await api.addToPipeline(values);
-        message.success(`「${res.talent_name}」已加入「${res.job_title}」的招聘流程`);
+        message.success(`「${res.talent_name}」已加入「${res.job_title}」的招聘看板`);
       }
       form.resetFields();
       onSuccess();
@@ -81,7 +81,7 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
 
   return (
     <Modal
-      title="加入招聘流程"
+      title="加入招聘看板"
       open={open}
       onCancel={onClose}
       width={560}
@@ -93,7 +93,7 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
           type="warning"
           showIcon
           message="还没有岗位"
-          description="招聘流程需要先有岗位。请先到「岗位管理」创建一个在招岗位，再回来添加候选人。"
+          description="招聘看板需要先有岗位。请先到「岗位管理」创建一个在招岗位，再回来添加候选人。"
         />
       ) : (
         <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSubmit} initialValues={{ stage: "screening" }}>

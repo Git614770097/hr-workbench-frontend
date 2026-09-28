@@ -387,6 +387,7 @@ export default function Tasks() {
               type="link"
               size="small"
               icon={<PlusOutlined />}
+              data-onb-action="new-task"
               style={{ paddingInline: 0 }}
               onClick={() => openCreate(selected)}
             >
