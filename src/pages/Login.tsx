@@ -202,6 +202,7 @@ export default function Login({ onLogin }: Props) {
         <div className="login-shell">
           <div className="login-card">
             <aside className="login-brand">
+              <span className="login-brand-tag"><i />云端部署 · 打开浏览器即用</span>
               <h1>让 <span className="login-hl">AI</span> 替你<br />跑招聘全流程</h1>
               <p className="login-brand-lead">写 JD、筛简历、盯到期、算个税，一个人也能有整个 HR 部门的效率。</p>
               <ul className="login-points">
@@ -212,7 +213,6 @@ export default function Login({ onLogin }: Props) {
               <div className="login-kpis">
                 <div><b className="num">6+</b><span>核心模块</span></div>
                 <div><b className="num">110+</b><span>人事模板</span></div>
-                <div><b className="num">14</b><span>天免费试用</span></div>
               </div>
             </aside>
 
