@@ -1,0 +1,26 @@
+{
+  "name": "HR 工作台 · 招聘全生命周期管理系统",
+  "short_name": "HR 工作台",
+  "description": "人才库、招聘流程、招聘漏斗、合同管理，一站式人事工作台。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f8ff",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
