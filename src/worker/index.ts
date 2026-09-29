@@ -44,8 +44,10 @@ app.use("/api/*", async (c, next) => {
   try { session = JSON.parse(sessionRaw); } catch { return next(); }
   if (session.role === "admin") return next();
   const path = c.req.path;
-  if (path.startsWith("/api/auth/me")) return next();
-  if (path === "/api/auth/settings/pushplus" && method === "PUT") return next();
+  // 所有 /api/auth/* 一律放行（登录/退出/注册/改密码/申请开通/配置 pushplus 等自服务接口）：
+  // 冻结用户浏览器里可能残留旧 token，登录/退出请求会自动带上它；若这里拦截，冻结用户
+  // 会连「重新登录换账号」都被 403，卡死在只读会话里。业务数据写操作（talents/jobs/…）仍受约束。
+  if (path.startsWith("/api/auth/")) return next();
   const u = await c.env.DB.prepare("SELECT status FROM users WHERE id = ?").bind(session.userId).first<{ status: string | null }>();
   if (u && u.status === "frozen") {
     return c.json({ error: "账户已冻结，仅可查看；续费后恢复使用", code: "FROZEN" }, 403);
