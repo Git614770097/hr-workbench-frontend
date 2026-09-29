@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import type { Context } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { genId } from "../helpers";

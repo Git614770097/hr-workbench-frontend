@@ -576,21 +576,6 @@ export interface MatchProfile {
   updated_at?: string;
 }
 
-export const EMPTY_MATCH_PROFILE: MatchProfile = {
-  name: "",
-  job_title: "",
-  city: "",
-  education: "",
-  min_years: null,
-  max_years: null,
-  salary_range: "",
-  industry: "",
-  must_skills: [],
-  nice_skills: [],
-  requirements: "",
-  jd_raw: "",
-};
-
 /** 硬性条件判定（规则算出，不随 AI 波动）。ok 为 null = 无法判定（画像未要求或简历未体现） */
 export interface MatchHardCheck {
   education: { ok: boolean | null; actual: string; require: string };

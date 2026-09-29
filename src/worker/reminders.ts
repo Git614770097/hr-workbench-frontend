@@ -1,4 +1,5 @@
 import type { Env } from "./index";
+import { escapeHtml } from "../utils/escapeHtml";
 
 // ---- 会员到期自动冻结（read-only）----
 // 每日定时执行：把「正常 active、非 admin、且会员有效期已过」的账号置为 frozen。
@@ -74,10 +75,6 @@ export async function sendPushPlus(
 // 场景：有人自助注册、提交密码重置申请这类「必须管理员介入」的事件，
 //       以前只能等管理员自己登后台看「用户管理」页才知道，
 //       现在注册/提交的那一刻就推送过去，把等待时间压到几分钟。
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m as string]!));
-}
 
 // 以中国时区（UTC+8）格式化当前时间，避免 D1/now 的 UTC 时间看起来差 8 小时
 function nowCn(): string {

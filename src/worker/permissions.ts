@@ -4,24 +4,6 @@
 export const MENU_KEYS = ["tasks", "jobs", "pipeline", "funnel", "talents", "profiles", "templates", "users"] as const;
 export type MenuKey = (typeof MENU_KEYS)[number];
 
-export const MENU_LABELS: Record<MenuKey, string> = {
-  talents: "人才库管理",
-  pipeline: "招聘看板",
-  funnel: "招聘漏斗",
-  jobs: "岗位管理",
-  tasks: "待办日历",
-  templates: "模板库管理",
-  profiles: "人才画像",
-  users: "用户管理",
-};
-
-// 判断权限列表是否包含某菜单（admin 永远通过）
-export function hasPermission(role: string, permissions: string[] | null | undefined, menu: MenuKey): boolean {
-  if (role === "admin") return true;
-  if (!permissions || !Array.isArray(permissions)) return false;
-  return permissions.includes(menu);
-}
-
 // 解析 roles.permissions 的 JSON 字符串
 export function parsePermissions(raw: string | null | undefined): string[] {
   if (!raw) return [];

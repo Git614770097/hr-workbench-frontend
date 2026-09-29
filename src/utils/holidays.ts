@@ -95,14 +95,6 @@ export function dayInfo(ymd: string): DayInfo {
   return { type: "workday", rest: false, known };
 }
 
-/** 日历格子上显示的小标记文案（工作日不显示，保持格子干净） */
-export const DAY_TYPE_LABEL: Record<DayType, string> = {
-  holiday: "休",
-  makeup: "班",
-  weekend: "休",
-  workday: "",
-};
-
 /** 该年是否内置了节假日安排（未内置时页面会提示数据缺失） */
 export function hasHolidayData(year: number): boolean {
   return KNOWN_YEARS.has(year);

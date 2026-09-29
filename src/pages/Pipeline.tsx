@@ -14,7 +14,7 @@ import {
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
-import type { PipelineCard, PipelineResponse, Stage, StageLog, Talent, User, Job } from "../types";
+import type { PipelineCard, PipelineResponse, Stage, StageLog, User, Job } from "../types";
 import {
   PIPELINE_STAGES, STAGE_META, SOURCE_OPTIONS, PRIORITY_LABELS, REJECT_REASONS,
 } from "../types";

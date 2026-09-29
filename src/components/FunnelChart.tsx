@@ -57,9 +57,6 @@ const levelAt = (i: number, dark: boolean): Level => {
   return arr[Math.min(i, arr.length - 1)];
 };
 
-/** 供页面其他位置（右侧分析列表的色点/进度条）复用同一套配色，避免两处不一致 */
-export const levelColor = (i: number, dark = false) => levelAt(i, dark).from;
-
 /** 纵向同色系渐变（上浅下深，增加段内立体感） */
 const gradientOf = (i: number, dark: boolean) => {
   const l = levelAt(i, dark);

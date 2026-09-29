@@ -10,7 +10,7 @@ import {
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { SocialItem } from "../types";
-import { SI_STATUS_LABELS, SI_STATUS_COLORS, STATUS_LABELS } from "../types";
+import { SI_STATUS_LABELS, SI_STATUS_COLORS } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
 
