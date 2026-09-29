@@ -258,7 +258,7 @@ export default function Pipeline() {
   const filtered = !!(jobFilter || ownerFilter || appliedQ);
 
   return (
-    <div>
+    <div className="page-fill">
       {/* 顶部统计 + 操作（统计复用 page-stats 的 stat 体系，语义色由 CSS 类接管、暗色自动适配） */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
         <div className="page-stats">
@@ -392,7 +392,7 @@ export default function Pipeline() {
       {loading ? (
         <div style={{ textAlign: "center", padding: "4rem" }}><Spin size="large" /></div>
       ) : stats.total === 0 ? (
-        <Card>
+        <Card className="list-card">
           <Empty
             description={
               filtered

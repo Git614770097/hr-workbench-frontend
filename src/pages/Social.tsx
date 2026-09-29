@@ -389,7 +389,7 @@ export default function Social() {
   ];
 
   return (
-    <div>
+    <div className="page-fill">
       {/* 统计区：增减员 / 参保概况 */}
       <div className="page-stats" style={{ marginBottom: 16 }}>
         <div className="stat">
@@ -475,7 +475,7 @@ export default function Social() {
         </div>
       </Card>
 
-      <Card styles={{ body: { padding: 0 } }}>
+      <Card className="list-card" styles={{ body: { padding: 0 } }}>
         <Table
           className="profiles-table"
           columns={columns}

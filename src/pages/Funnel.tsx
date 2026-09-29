@@ -265,7 +265,7 @@ export default function Funnel() {
       {loading ? (
         <div style={{ textAlign: "center", padding: "4rem" }}><Spin size="large" /></div>
       ) : !s || s.total === 0 ? (
-        <Card>
+        <Card className="list-card">
           <Empty
             description={
               filtered

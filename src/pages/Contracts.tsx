@@ -693,7 +693,7 @@ export default function Contracts() {
   ];
 
   return (
-    <div>
+    <div className="page-fill">
       {/* 统计区：合同/试用期到期概况 */}
       <div className="page-stats" style={{ marginBottom: 16 }}>
         <div className="stat">
@@ -775,7 +775,7 @@ export default function Contracts() {
         </div>
       </Card>
 
-      <Card styles={{ body: { padding: 0 } }}>
+      <Card className="list-card" styles={{ body: { padding: 0 } }}>
         <Table
           className="profiles-table"
           columns={columns}

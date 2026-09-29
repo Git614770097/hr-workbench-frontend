@@ -995,3 +995,69 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 @media (max-width: 900px) {
   .funnel-kpi-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ===== 列表空数据缺省页：白底撑到内容区底部 ===== */
+/* 页根纵向 flex + min-height:100%（.main-content 是 flex 派生的定高滚动容器，
+   百分比可解析）；最后一个直接子 Card flex:1 撑满剩余高度。
+   有数据时最后一个 DOM 子元素是表格/看板/Row 而非 Card，规则自动不命中；
+   Modal 经 portal 挂到 body，不算根的 DOM 子元素。 */
+.page-fill {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.page-fill > .ant-card:last-child {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+/* body 撑满卡片：空态时 Empty 才有「整卡高度」可居中；有数据时内容贴顶、白底到底 */
+.page-fill > .ant-card:last-child > .ant-card-body { flex: 1; }
+
+/* 根类不是 page-fill 的三个既有页面：画像/用户（profiles-page）、漏斗（funnel-page）、
+   待办（tasks-page：grid 双卡布局，整块 flex:1 后两卡随行等高拉伸到底） */
+.profiles-page,
+.funnel-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.profiles-page > .ant-card:last-child,
+.funnel-page > .ant-card:last-child {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.profiles-page > .ant-card:last-child > .ant-card-body,
+.funnel-page > .ant-card:last-child > .ant-card-body { flex: 1; }
+
+.tasks-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+/* 覆盖 .tasks-layout 的 align-items:start：两卡随行拉伸等高，右列日卡空态 Empty 才有居中空间 */
+.tasks-page > .tasks-layout { flex: 1; align-items: stretch; }
+
+/* ===== 空态缺省图（Empty）垂直居中 ===== */
+/* A. 表格空态：.ant-table-placeholder 仅在无数据时渲染，:has 天然只命中空态，
+      不影响有数据页面的表格布局。整链 flex 拉伸后，多余高度全部落入
+      tbody 里唯一的空态行，单元格浏览器默认 vertical-align:middle → Empty 居中。 */
+.list-card:has(.ant-table-placeholder) { display: flex; flex-direction: column; }
+.list-card:has(.ant-table-placeholder) > .ant-card-body { flex: 1; display: flex; flex-direction: column; }
+.list-card:has(.ant-table-placeholder) .ant-table-wrapper { flex: 1; display: flex; flex-direction: column; }
+.list-card:has(.ant-table-placeholder) .ant-spin-nested-loading { flex: 1; display: flex; flex-direction: column; }
+.list-card:has(.ant-table-placeholder) .ant-spin-container { flex: 1; display: flex; flex-direction: column; }
+.list-card:has(.ant-table-placeholder) .ant-spin-container > .ant-table { flex: 1; display: flex; flex-direction: column; }
+.list-card:has(.ant-table-placeholder) .ant-table-container { flex: 1; display: flex; flex-direction: column; }
+.list-card:has(.ant-table-placeholder) .ant-table-content { flex: 1; display: flex; flex-direction: column; }
+.list-card:has(.ant-table-placeholder) .ant-table-content > table { flex: 1; }
+
+/* B. 直接渲染 Empty 的卡（Pipeline/Funnel 空态卡、待办日卡）：body 内容整体垂直居中。 */
+.list-card:has(> .ant-card-body > .ant-empty) > .ant-card-body,
+.task-day-card:has(> .ant-card-body > .ant-empty) > .ant-card-body {
+  display: flex; flex-direction: column; justify-content: center;
+}
+/* 待办日卡参与 grid 等高拉伸后，body 要撑满卡片，Empty 才有居中空间 */
+.tasks-page .task-day-card { display: flex; flex-direction: column; }
+.tasks-page .task-day-card > .ant-card-body { flex: 1; }

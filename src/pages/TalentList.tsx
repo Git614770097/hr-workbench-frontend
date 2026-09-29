@@ -358,7 +358,7 @@ export default function TalentList() {
   ];
 
   return (
-    <div>
+    <div className="page-fill">
       {/* 合规到期提醒：轻量 Alert + 名单弹窗（不做成独立看板） */}
       {compliance && compliance.items.length > 0 && (
         <Alert

@@ -100,12 +100,12 @@ export default function Roles() {
   ];
 
   return (
-    <div>
+    <div className="page-fill">
       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 16 }}>
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建角色</Button>
       </div>
 
-      <Card>
+      <Card className="list-card">
         <Table className="profiles-table" columns={columns} dataSource={roles} rowKey="id" loading={loading} pagination={false} />
         <div style={{ marginTop: 12, fontSize: 12 }}>
           <Typography.Text type="secondary">

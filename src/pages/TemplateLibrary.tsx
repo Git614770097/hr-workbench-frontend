@@ -259,7 +259,7 @@ ${body}
   ];
 
   return (
-    <div>
+    <div className="page-fill">
       {/* 搜索区：关键词 + 操作按钮 */}
       <Card style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -292,7 +292,7 @@ ${body}
       </Card>
 
       {/* 模板列表 */}
-      <Card>
+      <Card className="list-card">
         {/* 分类 Tab */}
         <Tabs
           activeKey={category || "all"}

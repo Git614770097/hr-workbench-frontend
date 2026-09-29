@@ -217,7 +217,7 @@ export default function Jobs() {
   ];
 
   return (
-    <div>
+    <div className="page-fill">
       <Card className="search-card" style={{ marginBottom: 16 }}>
         {/* 布局约定（全站统一）：搜索 Card 只放字段（label 左 / 控件右，一行 4 个）；
             筛选条件超过 4 个时自动换行，不另起按钮行。 */}

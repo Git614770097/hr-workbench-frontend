@@ -351,7 +351,7 @@ export default function Match() {
     .sort((a, b) => results[b.key].score - results[a.key].score);
 
   return (
-    <div>
+    <div className="page-fill">
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/talents")}>返回人才库</Button>
         <Typography.Title level={4} style={{ margin: 0 }}>智能匹配</Typography.Title>
