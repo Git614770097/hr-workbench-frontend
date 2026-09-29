@@ -199,9 +199,6 @@ export default function Landing() {
                 <div className="land-hero-kpi"><b className="num">110+</b><span>人事模板</span></div>
                 <div className="land-hero-kpi"><b className="num">0</b><span>部署成本</span></div>
               </div>
-              <p className="land-hero-note land-hero-anim">
-                首月体验 <span className="num">¥9.9</span> 含账号开通，全功能不限岗位；之后每年 ¥49.9，到期未续费账户转为只读，续费后即刻恢复。
-              </p>
             </div>
 
             {/* 漏斗可视化 */}
