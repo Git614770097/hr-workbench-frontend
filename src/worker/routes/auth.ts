@@ -566,8 +566,14 @@ auth.put("/users/:id/membership", async (c) => {
   const body = await c.req.json<{ months?: number; paid_until?: string; clear?: boolean }>()
     .catch(() => ({ months: 0, paid_until: "", clear: false }));
 
-  const target = await c.env.DB.prepare("SELECT id FROM users WHERE id = ?").bind(id).first();
+  const target = await c.env.DB.prepare("SELECT id, role FROM users WHERE id = ?").bind(id).first<{ id: string; role: string }>();
   if (!target) return c.json({ error: "用户不存在" }, 404);
+
+  // 管理员账号永不可被冻结（与每日 cron 的 role != 'admin' 口径一致），
+  // 避免误操作把管理员清空/冻结后失去全功能。
+  if (target.role === "admin") {
+    return c.json({ error: "管理员账号不可被冻结或清空" }, 400);
+  }
 
   if (body.clear) {
     // 撤销会员：清空有效期并立即转为只读（不等 cron）。
