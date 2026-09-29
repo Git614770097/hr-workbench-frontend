@@ -185,9 +185,9 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
     ...(user.role === "admin" ? [{ to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users" }] : []),
   ].filter((item) => canSee(item.perm));
 
+  // 退出后的跳转交给 App.logout（整页跳 /login），避免与「清空用户态」抢时序
   const handleLogout = () => {
     onLogout();
-    navigate("/login");
   };
 
   // 管理员重置过密码 → 本次登录自动弹一次；用户选「稍后再说」后本次会话不再烦他

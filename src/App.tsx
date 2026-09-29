@@ -81,9 +81,20 @@ export default function App({ theme, onChangeTheme }: AppProps) {
     fetchUser();
   }, [fetchUser]);
 
+  // 退出登录：清掉本地凭证后整页跳 /login。
+  //
+  // 两个坑都不能踩：
+  // ① 不能用 SPA 的 navigate("/login")：它与「清空用户态」是两条独立更新，存在竞态——
+  //    路由可能先跳到 /login 而 user 仍非空，命中已登录路由块的 `*`（重定向回 /talents），
+  //    等 user 置空后又命中匿名路由块的 `*`（→ /），最终被丢到营销落地页而非登录页。
+  // ② 也不能在这里 setUser(null)：它会立刻触发一次重渲染，当前路径（如 /talents）
+  //    落到匿名路由块的 `*` → `<Navigate to="/" />`，于是**先闪一帧营销落地页**，
+  //    浏览器随后才执行整页跳转。整页跳转本身会重置整个应用状态，
+  //    这里不需要（也不应该）再动 React 状态。
   const logout = () => {
     localStorage.removeItem("token");
-    setUser(null);
+    localStorage.removeItem("user");
+    window.location.replace("/login");
   };
 
   if (loading) {
