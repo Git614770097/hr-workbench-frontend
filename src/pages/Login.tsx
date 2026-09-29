@@ -188,6 +188,8 @@ export default function Login({ onLogin }: Props) {
       }}
     >
       <div className="login">
+        <span className="login-orb-b" aria-hidden />
+
         <header className="login-top">
           <Link to="/" className="login-top-brand">
             <span className="login-logo-mark">HR</span>

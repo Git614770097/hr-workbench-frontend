@@ -1,25 +1,26 @@
 /* ==========================================================================
-   登录 / 注册 / 忘记密码页
-   沉浸式现代风：深色墨蓝画布（多层柔光 + 点阵网格）+ 悬浮玻璃顶栏
-   + 双栏大卡（左：渐变品牌叙事区 / 右：纯白通透表单区）
-   独立于后台 global.css，固定浅色呈现，不跟随明暗换肤。
+   登录 / 注册 / 忘记密码页 · 「明快年轻化」版
+   - 浅色背景 + 多色柔光（粉 / 紫 / 蓝 / 薄荷）+ 漂浮装饰圆
+   - 双栏卡片：左浅紫粉渐变叙事 / 右纯白表单
+   - 微动画：卡片入场、悬停抬升、背景柔光漂移、按钮下沉、装饰圆浮动
+   - 自适应高度：card 自适应视口，避免出现滚动条
+   独立于后台 global.css，固定浅色呈现。
    ========================================================================== */
 
 .login {
   position: relative;
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 116px 24px 48px;
-  /* 深色墨蓝画布 + 三处柔光，营造纵深 */
+  display: flex; align-items: center; justify-content: center;
+  padding: 60px 24px 22px;
+  /* 明快多色柔光背景 */
   background:
-    radial-gradient(900px 620px at 12% 8%, rgba(59, 130, 246, 0.28), transparent 62%),
-    radial-gradient(820px 560px at 92% 18%, rgba(124, 58, 237, 0.26), transparent 60%),
-    radial-gradient(760px 620px at 62% 108%, rgba(14, 165, 233, 0.22), transparent 62%),
-    linear-gradient(180deg, #070d1e 0%, #0a1226 46%, #070d1e 100%);
-  color: #e6ecf8;
-  font-family: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+    radial-gradient(720px 540px at 6% 8%, rgba(252, 231, 243, 0.85), transparent 62%),
+    radial-gradient(680px 520px at 96% 22%, rgba(221, 214, 254, 0.75), transparent 62%),
+    radial-gradient(620px 540px at 50% 110%, rgba(191, 219, 254, 0.65), transparent 62%),
+    radial-gradient(560px 420px at 92% 88%, rgba(209, 250, 229, 0.55), transparent 62%),
+    #fbfaff;
+  color: #1e1b4b;
+  font-family: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Source Han Sans SC", "Microsoft YaHei", "Inter", "Nunito", sans-serif;
   line-height: 1.7;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
@@ -27,141 +28,200 @@
 }
 .login * { box-sizing: border-box; }
 
-/* 点阵网格：叠一层极淡的技术感纹理，避免大色块空洞 */
+/* 极淡点阵：技术感但不抢戏 */
 .login::before {
   content: "";
   position: absolute; inset: 0;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px);
-  background-size: 26px 26px;
-  mask-image: radial-gradient(1200px 720px at 50% 32%, #000 12%, transparent 82%);
-  -webkit-mask-image: radial-gradient(1200px 720px at 50% 32%, #000 12%, transparent 82%);
+  background-image: radial-gradient(rgba(99, 102, 241, 0.10) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(1200px 720px at 50% 32%, #000 10%, transparent 80%);
+  -webkit-mask-image: radial-gradient(1200px 720px at 50% 32%, #000 10%, transparent 80%);
   pointer-events: none;
+  opacity: 0.55;
 }
 
-/* 数字统一 tabular，保持规整感 */
+/* 漂浮装饰圆：两枚 + 缓慢漂移，给背景以呼吸感 */
+.login::after {
+  content: "";
+  position: absolute;
+  width: 360px; height: 360px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(244, 114, 182, 0.38), transparent 62%);
+  top: -90px; left: -100px;
+  filter: blur(2px);
+  animation: loginOrb1 18s ease-in-out infinite;
+  pointer-events: none;
+}
+.login-orb-b {
+  position: absolute;
+  width: 300px; height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.35), transparent 62%);
+  bottom: -80px; right: -60px;
+  filter: blur(2px);
+  animation: loginOrb2 22s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes loginOrb1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(60px, 40px) scale(1.08); }
+}
+@keyframes loginOrb2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(-50px, -40px) scale(1.10); }
+}
+
+/* 数字统一 tabular */
 .login .num { font-variant-numeric: tabular-nums; }
 
-/* ---- 悬浮玻璃顶栏（浮在画布之上，非贴边白条） ---- */
+/* ---- 浅色玻璃顶栏 ---- */
 .login-top {
-  position: fixed; top: 18px; left: 24px; right: 24px; z-index: 10;
+  position: fixed; top: 16px; left: 24px; right: 24px; z-index: 10;
   height: 60px;
   padding: 0 18px 0 22px;
   display: flex; align-items: center; justify-content: space-between;
   border-radius: 18px;
-  background: rgba(11, 18, 38, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(18px) saturate(150%);
-  -webkit-backdrop-filter: blur(18px) saturate(150%);
-  box-shadow: 0 18px 40px rgba(3, 8, 22, 0.42);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(99, 102, 241, 0.16);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: 0 12px 30px rgba(67, 56, 202, 0.10);
+  animation: loginFadeDown 0.5s ease 0.05s both;
 }
 .login-top-brand {
   display: inline-flex; align-items: center; gap: 11px;
-  font-size: 1.02rem; font-weight: 700; color: #fff;
+  font-size: 1.02rem; font-weight: 800; color: #1e1b4b;
   text-decoration: none; letter-spacing: -0.01em;
 }
 .login-logo-mark {
   width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
-  background: linear-gradient(150deg, #60a5fa, #2563eb 62%, #7c3aed);
+  background: linear-gradient(135deg, #f472b6, #a78bfa 52%, #60a5fa);
   color: #fff; display: grid; place-items: center;
   font-family: "JetBrains Mono", "SF Mono", "Consolas", monospace;
-  font-size: 0.75rem; font-weight: 700; letter-spacing: 0.02em;
-  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
+  font-size: 0.75rem; font-weight: 800; letter-spacing: 0.02em;
+  box-shadow: 0 8px 22px rgba(167, 139, 250, 0.45);
+  animation: loginLogoSpin 14s linear infinite;
 }
 .login-top-actions { display: flex; align-items: center; gap: 8px; }
 .login-top-actions a {
-  font-size: 0.86rem; color: rgba(226, 234, 248, 0.78);
+  font-size: 0.86rem; color: #4c1d95;
   cursor: pointer; text-decoration: none;
   padding: 7px 14px; border-radius: 10px;
   border: 1px solid transparent;
-  transition: color 0.16s ease, background-color 0.16s ease, border-color 0.16s ease;
+  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
 }
 .login-top-actions a:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.16);
+  color: #4338ca;
+  background: rgba(99, 102, 241, 0.10);
+  border-color: rgba(99, 102, 241, 0.20);
+}
+
+@keyframes loginFadeDown {
+  from { opacity: 0; transform: translateY(-12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes loginLogoSpin {
+  to { transform: rotate(360deg); }
 }
 
 /* ---- 主容器 ---- */
 .login-shell {
   position: relative; z-index: 1;
   width: 100%; max-width: 1080px;
-  display: flex; flex-direction: column; gap: 22px;
+  display: flex; flex-direction: column; gap: 16px;
 }
 
-/* 双栏大卡：左渐变叙事 / 右纯白表单 */
+/* 双栏大卡：白底 + 彩色柔阴影 + 悬停抬升 */
 .login-card {
   display: grid;
   grid-template-columns: 1.02fr 1fr;
-  min-height: 588px;
-  background: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  /* 自适应高度：常见视口下不出现滚动条；窄屏时按内容伸展 */
+  min-height: min(560px, calc(100vh - 144px));
+  background: #ffffff;
+  border: 1px solid rgba(99, 102, 241, 0.10);
   border-radius: 26px;
   overflow: hidden;
-  /* 先用品牌色光晕托底，再叠深色投影：卡片像悬浮在画布上 */
+  box-shadow:
+    0 0 0 1px rgba(148, 163, 184, 0.06),
+    0 30px 60px -18px rgba(67, 56, 202, 0.18),
+    0 0 80px -32px rgba(244, 114, 182, 0.28);
+  animation: loginCardIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease;
+}
+.login-card:hover {
+  transform: translateY(-3px);
   box-shadow:
     0 0 0 1px rgba(148, 163, 184, 0.10),
-    0 40px 80px -20px rgba(2, 6, 20, 0.62),
-    0 0 90px -30px rgba(37, 99, 235, 0.55);
+    0 40px 80px -18px rgba(67, 56, 202, 0.25),
+    0 0 100px -30px rgba(244, 114, 182, 0.42);
+}
+@keyframes loginCardIn {
+  from { opacity: 0; transform: translateY(18px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* ============ 左侧：沉浸式品牌叙事区 ============ */
+/* ============ 左侧：浅紫粉渐变品牌叙事 ============ */
 .login-brand {
   position: relative; overflow: hidden;
-  padding: 52px 46px;
+  padding: 50px 46px;
   display: flex; flex-direction: column;
-  color: #fff;
-  background: linear-gradient(158deg, #1b2ea8 0%, #2b5cf0 46%, #6d3bf5 100%);
+  color: #1e1b4b;
+  background: linear-gradient(160deg, #fdf2f8 0%, #f3e8ff 48%, #e0e7ff 100%);
 }
-/* 内部柔光 + 对角细网格，避免大面积纯渐变发闷 */
+/* 内部柔光 */
 .login-brand::before {
   content: "";
   position: absolute; inset: 0;
   background:
-    radial-gradient(420px 320px at 86% 6%, rgba(125, 211, 252, 0.42), transparent 66%),
-    radial-gradient(460px 380px at 4% 96%, rgba(167, 139, 250, 0.40), transparent 68%);
+    radial-gradient(360px 280px at 86% 8%, rgba(252, 165, 215, 0.55), transparent 66%),
+    radial-gradient(420px 320px at 4% 96%, rgba(147, 197, 253, 0.45), transparent 70%);
   pointer-events: none;
 }
+/* 斜向细网格 */
 .login-brand::after {
   content: "";
   position: absolute; inset: 0;
-  background-image: linear-gradient(115deg, rgba(255, 255, 255, 0.10) 1px, transparent 1px);
+  background-image: linear-gradient(115deg, rgba(99, 102, 241, 0.08) 1px, transparent 1px);
   background-size: 46px 46px;
-  mask-image: radial-gradient(520px 460px at 78% 24%, #000, transparent 78%);
-  -webkit-mask-image: radial-gradient(520px 460px at 78% 24%, #000, transparent 78%);
+  mask-image: radial-gradient(540px 460px at 76% 22%, #000, transparent 78%);
+  -webkit-mask-image: radial-gradient(540px 460px at 76% 22%, #000, transparent 78%);
   pointer-events: none;
+  opacity: 0.65;
 }
 
+/* 顶部徽标 */
 .login-brand-tag {
   position: relative; z-index: 1;
   align-self: flex-start;
   display: inline-flex; align-items: center; gap: 8px;
   padding: 6px 14px; border-radius: 999px;
-  font-size: 0.74rem; letter-spacing: 0.02em; color: #e0efff;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  font-size: 0.74rem; letter-spacing: 0.02em; color: #4338ca;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(99, 102, 241, 0.22);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
+  font-weight: 600;
 }
 .login-brand-tag i {
   width: 6px; height: 6px; border-radius: 50%;
-  background: #4ade80;
-  box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.22);
-  animation: loginPulse 2.4s ease-in-out infinite;
+  background: #34d399;
+  box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.22);
+  animation: loginPulseGreen 2.4s ease-in-out infinite;
 }
-@keyframes loginPulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 4px rgba(74, 222, 128, 0.22); }
-  50% { opacity: 0.55; box-shadow: 0 0 0 7px rgba(74, 222, 128, 0.08); }
+@keyframes loginPulseGreen {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 4px rgba(52, 211, 153, 0.22); }
+  50% { opacity: 0.65; box-shadow: 0 0 0 8px rgba(52, 211, 153, 0.06); }
 }
 
 .login-brand h1 {
   position: relative; z-index: 1;
-  font-size: 2.1rem; line-height: 1.28; font-weight: 700;
+  font-size: 2.15rem; line-height: 1.28; font-weight: 800;
   letter-spacing: -0.025em;
   margin: 22px 0 14px;
-  text-shadow: 0 2px 24px rgba(12, 24, 62, 0.28);
+  color: #1e1b4b;
 }
 .login-brand h1 .login-hl {
-  background: linear-gradient(96deg, #a5f3fc, #fde68a 58%, #fca5a5);
+  background: linear-gradient(96deg, #ec4899, #a855f7 48%, #6366f1 90%);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -169,12 +229,12 @@
 }
 .login-brand-lead {
   position: relative; z-index: 1;
-  color: rgba(224, 236, 255, 0.86);
+  color: #4338ca;
   font-size: 0.94rem; line-height: 1.75; margin: 0;
   max-width: 30em;
 }
 
-/* 卖点：玻璃质感条目，hover 微微提亮 */
+/* 卖点：白玻璃质感条目 + hover 抬升 + 微旋转小标 */
 .login-points {
   position: relative; z-index: 1;
   list-style: none; margin: 30px 0 0; padding: 0;
@@ -182,98 +242,123 @@
 }
 .login-points li {
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  font-size: 0.9rem; color: rgba(240, 247, 255, 0.95);
-  background: rgba(255, 255, 255, 0.09);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  transition: background-color 0.18s ease, transform 0.18s ease;
+  padding: 11px 14px;
+  border-radius: 14px;
+  font-size: 0.9rem; color: #1e1b4b; font-weight: 500;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(99, 102, 241, 0.12);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background-color 0.18s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
 }
-.login-points li:hover { background: rgba(255, 255, 255, 0.16); transform: translateX(3px); }
+.login-points li:hover {
+  background: #ffffff;
+  transform: translateX(4px);
+  box-shadow: 0 10px 24px -10px rgba(99, 102, 241, 0.30);
+}
 .login-points .num {
-  width: 26px; height: 26px; flex-shrink: 0;
+  width: 28px; height: 28px; flex-shrink: 0;
   display: grid; place-items: center;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.20);
-  font-size: 0.68rem; color: #dbeafe; font-weight: 700;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #f472b6, #a78bfa);
+  color: #fff; font-size: 0.72rem; font-weight: 800;
+  box-shadow: 0 6px 14px -4px rgba(167, 139, 250, 0.55);
+  transition: transform 0.25s ease;
 }
+.login-points li:hover .num { transform: rotate(-8deg) scale(1.06); }
 
-/* 底部指标条 */
+/* 底部指标 */
 .login-kpis {
   position: relative; z-index: 1;
   margin-top: auto; padding-top: 26px;
   display: flex; gap: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.20);
+  border-top: 1px dashed rgba(99, 102, 241, 0.24);
 }
 .login-kpis > div {
   flex: 1;
   display: flex; flex-direction: column; gap: 2px;
   padding: 0 18px;
-  border-right: 1px solid rgba(255, 255, 255, 0.20);
+  border-right: 1px dashed rgba(99, 102, 241, 0.24);
 }
 .login-kpis > div:first-child { padding-left: 0; }
 .login-kpis > div:last-child { border-right: none; }
 .login-kpis b {
-  font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3;
+  font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.3;
+  background: linear-gradient(96deg, #ec4899, #6366f1);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
 }
-.login-kpis span { font-size: 0.74rem; color: rgba(200, 220, 255, 0.80); }
+.login-kpis span { font-size: 0.74rem; color: #6d28d9; font-weight: 500; }
 
 /* ============ 右侧：纯白表单区 ============ */
 .login-form {
   position: relative;
-  padding: 52px 48px;
+  padding: 50px 48px;
   display: flex; flex-direction: column;
   justify-content: center;
-  background: #fff;
+  background: #ffffff;
   color: #0f172a;
 }
 
-/* 模式切换 pill：胶囊底 + 白色激活片 */
+/* 模式切换 pill：白底胶囊 + 选中带品牌色 */
 .login-tabs {
   align-self: flex-start;
   display: inline-flex; gap: 4px;
-  background: #f1f5f9; border-radius: 999px; padding: 4px;
+  background: #f5f3ff; border-radius: 999px; padding: 4px;
   margin-bottom: 26px;
+  border: 1px solid rgba(99, 102, 241, 0.10);
 }
 .login-tabs button {
   border: none; background: transparent; cursor: pointer;
   padding: 8px 24px; border-radius: 999px;
-  font-family: inherit; font-size: 0.9rem; font-weight: 500; color: #64748b;
-  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  font-family: inherit; font-size: 0.9rem; font-weight: 600; color: #6d28d9;
+  transition: background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease;
 }
 .login-tabs button.on {
-  background: #fff; color: #1d4ed8; font-weight: 600;
-  box-shadow: 0 2px 10px rgba(15, 40, 90, 0.14);
+  background: linear-gradient(135deg, #ec4899, #a855f7 50%, #6366f1);
+  color: #fff;
+  box-shadow: 0 8px 20px -6px rgba(168, 85, 247, 0.55);
 }
-.login-tabs button:hover:not(.on) { color: #0f172a; }
+.login-tabs button:hover:not(.on) { color: #4338ca; background: rgba(99, 102, 241, 0.08); }
 
-.login-title { font-size: 1.55rem; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 8px; }
+.login-title { font-size: 1.55rem; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 8px; color: #0f172a; }
 .login-sub { color: #64748b; font-size: 0.9rem; margin: 0 0 24px; line-height: 1.6; }
 
-/* antd 控件微调：统一高度、圆角、边框（focus 色由内层 ConfigProvider 接管） */
+/* antd 控件 */
 .login-form .ant-form-item { margin-bottom: 16px; }
 .login-form .ant-input,
 .login-form .ant-input-affix-wrapper {
-  height: 48px; border-radius: 10px;
-  border-color: #dbe2ea;
-  background: #fbfcfe;
+  height: 48px; border-radius: 12px;
+  border-color: #e2e8f0;
+  background: #fbfaff;
   font-size: 0.93rem;
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.22s ease;
 }
 .login-form .ant-input:focus,
 .login-form .ant-input-affix-wrapper:focus,
 .login-form .ant-input-affix-wrapper:focus-within {
   background: #fff;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.18);
 }
 .login-form .ant-input:hover,
-.login-form .ant-input-affix-wrapper:hover { border-color: #94a3b8; }
+.login-form .ant-input-affix-wrapper:hover { border-color: #c4b5fd; }
 .login-form .ant-btn {
-  height: 48px; border-radius: 10px;
-  font-size: 0.98rem; font-weight: 600;
-  box-shadow: 0 10px 24px -8px rgba(37, 99, 235, 0.55);
+  height: 48px; border-radius: 12px;
+  font-size: 0.98rem; font-weight: 700;
+  background: linear-gradient(135deg, #ec4899, #a855f7 50%, #6366f1);
+  border-color: transparent;
+  box-shadow: 0 12px 28px -10px rgba(168, 85, 247, 0.55);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, filter 0.18s ease;
 }
-.login-form .ant-btn:hover { box-shadow: 0 14px 28px -8px rgba(37, 99, 235, 0.65); }
+.login-form .ant-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+  box-shadow: 0 18px 32px -10px rgba(168, 85, 247, 0.65);
+}
+.login-form .ant-btn:active { transform: translateY(0); filter: brightness(0.98); }
 .login-alert { margin-bottom: 16px; border-radius: 10px; font-size: 0.86rem; }
 
 /* 验证码行 */
@@ -282,14 +367,13 @@
 .login-captcha-box { position: relative; flex-shrink: 0; }
 .login-captcha-img {
   height: 48px; width: 132px; cursor: pointer;
-  border: 1px solid #dbe2ea; border-radius: 10px; overflow: hidden;
+  border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;
   background: #f8fafc;
   display: flex; align-items: center; justify-content: center;
-  transition: border-color 0.16s ease;
+  transition: border-color 0.16s ease, transform 0.2s ease;
 }
-.login-captcha-img:hover { border-color: #2563eb; }
+.login-captcha-img:hover { border-color: #a78bfa; transform: scale(1.02); }
 .login-captcha-img svg { display: block; width: 100%; height: 100%; }
-/* 验证码到期倒计时角标 */
 .login-captcha-countdown {
   position: absolute; right: 0; bottom: 0;
   font-size: 10px; line-height: 1.4; padding: 2px 6px;
@@ -306,7 +390,7 @@
   padding: 8px; flex-shrink: 0;
   transition: color 0.16s ease, transform 0.3s ease;
 }
-.login-captcha-refresh:hover { color: #2563eb; }
+.login-captcha-refresh:hover { color: #6366f1; transform: rotate(60deg); }
 .login-captcha-refresh.spinning { animation: loginSpin 0.6s linear infinite; }
 @keyframes loginSpin { to { transform: rotate(360deg); } }
 
@@ -317,20 +401,21 @@
   font-size: 0.86rem; color: #94a3b8;
 }
 .login-switch a {
-  color: #2563eb; cursor: pointer; font-weight: 500; text-decoration: none;
+  color: #6366f1; cursor: pointer; font-weight: 600; text-decoration: none;
   transition: color 0.16s ease;
 }
-.login-switch a:hover { color: #1d4ed8; text-decoration: underline; }
+.login-switch a:hover { color: #ec4899; text-decoration: underline; }
 .login-switch-sep { color: #cbd5e1; }
 
-/* ---- 页脚：贴合深色画布 ---- */
+/* ---- 页脚：贴合浅色画布 ---- */
 .login-foot {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  font-size: 0.78rem; color: rgba(203, 216, 240, 0.62); flex-wrap: wrap;
+  font-size: 0.78rem; color: #6d28d9; flex-wrap: wrap;
+  animation: loginFadeDown 0.5s ease 0.18s both;
 }
 .login-foot-links { display: flex; gap: 16px; }
-.login-foot a { color: rgba(203, 216, 240, 0.72); cursor: pointer; text-decoration: none; transition: color 0.16s ease; }
-.login-foot a:hover { color: #fff; }
+.login-foot a { color: #6d28d9; cursor: pointer; text-decoration: none; transition: color 0.16s ease; }
+.login-foot a:hover { color: #4338ca; }
 
 /* ---- 响应式 ---- */
 @media (max-width: 980px) {
@@ -339,7 +424,7 @@
   .login-form { padding: 36px 28px; }
 }
 @media (max-width: 768px) {
-  .login { padding: 104px 16px 28px; }
+  .login { padding: 96px 14px 24px; }
   .login-top { top: 12px; left: 12px; right: 12px; padding: 0 10px 0 14px; }
   .login-top-brand span:last-child { display: none; }
   .login-top-actions { gap: 2px; }
@@ -348,5 +433,12 @@
 
 /* 尊重用户「减弱动效」偏好 */
 @media (prefers-reduced-motion: reduce) {
-  .login * { animation: none !important; transition: none !important; }
+  .login *,
+  .login::before,
+  .login::after,
+  .login-orb-b,
+  .login-brand-tag i {
+    animation: none !important;
+    transition: none !important;
+  }
 }
