@@ -159,6 +159,17 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
     });
   };
 
+  // 移动端抽屉菜单开关：≤768px 时侧栏变 fixed 滑入（CSS 断点负责表现），
+  // 顶栏同一个按钮按当前视口分流：手机开/关抽屉，桌面切侧栏折叠。
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const toggleMenu = () => {
+    if (window.matchMedia("(max-width: 768px)").matches) {
+      setMobileNavOpen((v) => !v);
+    } else {
+      toggleCollapsed();
+    }
+  };
+
   // 判断某菜单是否可见（admin 全可见；普通用户看 permissions）
   // 见上方提前定义的 canSee
 
@@ -297,8 +308,9 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   );
 
   return (
-    <div className="app-layout">
-      <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+    <div className={"app-layout" + (mobileNavOpen ? " nav-open" : "")}>
+      <div className="app-nav-mask" onClick={() => setMobileNavOpen(false)} />
+      <aside className={`sidebar${collapsed ? " collapsed" : ""}${mobileNavOpen ? " nav-open" : ""}`}>
         <div className="sidebar-logo">
           <span className="logo-text">人力资源管理系统</span>
         </div>
@@ -312,6 +324,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
                 data-onb={item.to}
                 className={({ isActive }) => (isActive ? "active" : "")}
                 title={collapsed ? item.label : undefined}
+                onClick={() => setMobileNavOpen(false)}
               >
                 <span className="nav-icon" style={{ background: item.color + "1a", color: item.color }}>
                   {item.icon}
@@ -338,7 +351,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
             type="text"
             className="topbar-collapse"
             icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            onClick={toggleCollapsed}
+            onClick={toggleMenu}
           />
           <div className="topbar-right">
             {/* 帮助入口：重看新手指引 / 常见问题。data-onb 锚点保留给引导高亮 */}

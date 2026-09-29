@@ -352,7 +352,7 @@ export default function Match() {
 
   return (
     <div className="page-fill">
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/talents")}>返回人才库</Button>
         <Typography.Title level={4} style={{ margin: 0 }}>智能匹配</Typography.Title>
         <Typography.Text type="secondary">

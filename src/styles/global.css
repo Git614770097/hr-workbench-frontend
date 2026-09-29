@@ -114,9 +114,21 @@ html[data-theme-mode="dark"] .theme-mode-btn.is-active { color: #fff; }
 
 /* 详情页 */
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+/* ===== 移动端适配（2026-09-29）：≤768px 侧栏变抽屉 ===== */
+/* 遮罩默认不渲染，仅手机端菜单打开时显示；桌面下永久 display:none（防 resize 残留态） */
+.app-nav-mask { display: none; position: fixed; inset: 0; z-index: 999; background: rgba(0, 0, 0, 0.45); }
 @media (max-width: 768px) {
-  .sidebar { display: none; }
-  .main-content { padding: 1rem; }
+  .sidebar {
+    position: fixed; z-index: 1000; left: 0; top: 0; bottom: 0; width: 264px;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.08);
+  }
+  /* 手机忽略桌面折叠态（localStorage 恢复的 collapsed 宽度在抽屉里没有意义） */
+  .sidebar.collapsed { width: 264px; }
+  .app-layout.nav-open .sidebar { transform: translateX(0); }
+  .app-layout.nav-open .app-nav-mask { display: block; }
+  .main-content { padding: 0.75rem; }
   .detail-grid { grid-template-columns: 1fr; }
 }
 
@@ -1038,6 +1050,36 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 }
 /* 覆盖 .tasks-layout 的 align-items:start：两卡随行拉伸等高，右列日卡空态 Empty 才有居中空间 */
 .tasks-page > .tasks-layout { flex: 1; align-items: stretch; }
+
+/* ===== 移动端适配：全局断点（2026-09-29） ===== */
+/* 平板：搜索区 4 列 → 2 列；漏斗 KPI 已有 900px 断点 */
+@media (max-width: 900px) {
+  .search-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* 手机：搜索区单列、统计区 2×2、工具行换行 */
+@media (max-width: 576px) {
+  .search-grid { grid-template-columns: minmax(0, 1fr); }
+  /* page-stats 与右侧按钮组同处一个 flex wrap 行（如 Pipeline 顶部），
+     必须先占满一行，内部 stat 的 50% basis 才有确定基准，否则整体超宽挤出视口 */
+  .page-stats { width: 100%; }
+  .page-stats .stat { flex: 1 1 calc(50% - 0.5rem); }
+  .toolbar { flex-wrap: wrap; gap: 8px; }
+  /* antd Space 默认 nowrap：手机上按钮组超宽时会溢出视口，放开换行兜底
+     （内容不超宽时不换行，行为不变） */
+  .main-content .ant-space { flex-wrap: wrap; }
+  /* 弹窗全宽：antd Modal 宽度走内联 style，只能 !important 压 */
+  .ant-modal { max-width: calc(100vw - 16px) !important; margin: 12px auto; }
+  .ant-modal .ant-modal-content { padding: 16px; }
+}
+/* 手机：表格横向滑动（table 撑开最小宽，wrapper 横向滚动；
+   仍是整页垂直滚动，不与「不设 scroll.y」铁律冲突） */
+@media (max-width: 768px) {
+  .main-content .ant-table-wrapper { overflow-x: auto; }
+  .main-content .ant-table { min-width: 640px; }
+  /* 招聘看板：固定列宽 + 横滑（触屏不支持 HTML5 拖拽流转，点卡片操作/批量选择仍可用） */
+  .pipe-board { grid-auto-columns: minmax(260px, 300px); overflow-x: auto; padding-bottom: 4px; }
+  .tasks-layout { gap: 12px; }
+}
 
 /* ===== 空态缺省图（Empty）垂直居中 ===== */
 /* A. 表格空态：.ant-table-placeholder 仅在无数据时渲染，:has 天然只命中空态，
