@@ -109,6 +109,9 @@ html[data-theme-mode="dark"] .theme-mode-btn.is-active { color: #fff; }
 
 .main-content { flex: 1; overflow-y: auto; padding: 1rem; background: #f5f6f8; }
 
+/* 冻结只读横幅 */
+.frozen-banner { margin: 0.75rem 1rem 0; }
+
 /* 详情页 */
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
 @media (max-width: 768px) {

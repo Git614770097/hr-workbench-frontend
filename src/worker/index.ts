@@ -13,7 +13,7 @@ import aiParseRoutes from "./routes/aiParse";
 import matchRoutes from "./routes/match";
 import demoRoutes from "./routes/demo";
 import { parsePermissions } from "./permissions";
-import { runReminders } from "./reminders";
+import { runReminders, freezeExpiredAccounts } from "./reminders";
 
 export interface Env {
   DB: D1Database;
@@ -28,6 +28,30 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", logger());
 app.use("/api/*", cors());
+
+// ---- 冻结账户写操作守卫 ----
+// 到期未续费的账号 status='frozen'，允许登录但只能查看（read-only）。
+// 这里对所有非 GET 的业务写请求做硬拦截：frozen 且非 admin → 403。
+// 放行：自身账号安全类（改密码 / 配置 pushplus）；admin 永远放行。
+app.use("/api/*", async (c, next) => {
+  const method = c.req.method;
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
+  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  if (!token) return next();
+  const sessionRaw = await c.env.SESSIONS.get(token);
+  if (!sessionRaw) return next();
+  let session: { role: string; userId: string };
+  try { session = JSON.parse(sessionRaw); } catch { return next(); }
+  if (session.role === "admin") return next();
+  const path = c.req.path;
+  if (path.startsWith("/api/auth/me")) return next();
+  if (path === "/api/auth/settings/pushplus" && method === "PUT") return next();
+  const u = await c.env.DB.prepare("SELECT status FROM users WHERE id = ?").bind(session.userId).first<{ status: string | null }>();
+  if (u && u.status === "frozen") {
+    return c.json({ error: "账户已冻结，仅可查看；续费后恢复使用", code: "FROZEN" }, 403);
+  }
+  return next();
+});
 
 // ---- 菜单权限拦截 ----
 // 各业务路径通过下面的 app.use(...) 显式绑定菜单 key 做校验，
@@ -187,5 +211,6 @@ export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
     await runReminders(env);
+    await freezeExpiredAccounts(env);
   },
 };

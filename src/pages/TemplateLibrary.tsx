@@ -13,11 +13,8 @@ import { toHtml, stripHtml, smartTidyHtml, detailRowsToTable } from "../utils/te
 import { downloadBlob, dateStamp, escapeHtml } from "../utils/file";
 import { fmtDate, fmtDateTime } from "../utils/time";
 import RichTextEditor from "../components/RichTextEditor";
-import { useTableScrollY } from "../hooks/useTableScrollY";
 
 export default function TemplateLibrary() {
-  // 表格高度随视口自适应：表头固定、表体滚动、分页条常驻可见
-  const { ref: tableRef, y: tableY } = useTableScrollY();
   const [templates, setTemplates] = useState<DocTemplate[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -306,27 +303,24 @@ ${body}
           ]}
           style={{ marginBottom: 8 }}
         />
-        <div ref={tableRef}>
-          <Table
-            rowKey="id"
-            columns={columns}
-            dataSource={templates}
-            loading={loading}
-            size="middle"
-            scroll={{ y: tableY }}
-            pagination={{
-              current: page,
-              pageSize,
-              total,
-              onChange: (p) => setPage(p),
-              showSizeChanger: true,
-              pageSizeOptions: [10, 20, 50, 100],
-              onShowSizeChange: (_current, size) => { setPageSize(size); setPage(1); },
-              showTotal: (t) => `共 ${t} 个模板`,
-            }}
-            locale={{ emptyText: "暂无模板，点击右上角新建" }}
-          />
-        </div>
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={templates}
+          loading={loading}
+          size="middle"
+          pagination={{
+            current: page,
+            pageSize,
+            total,
+            onChange: (p) => setPage(p),
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            onShowSizeChange: (_current, size) => { setPageSize(size); setPage(1); },
+            showTotal: (t) => `共 ${t} 个模板`,
+          }}
+          locale={{ emptyText: "暂无模板，点击右上角新建" }}
+        />
       </Card>
 
       {/* 新建 / 编辑模板弹窗（富文本） */}

@@ -1,5 +1,23 @@
 import type { Env } from "./index";
 
+// ---- 会员到期自动冻结（read-only）----
+// 每日定时执行：把「正常 active、非 admin、且会员有效期已过」的账号置为 frozen。
+// frozen 用户仍可登录查看，但后端写操作守卫会拦截任何修改，续费后由管理员开通恢复 active。
+// 早期/存量用户在上线时会被回填为长期有效（paid_until 远未来），不会被误冻。
+//
+// 比较口径：统一用 datetime(paid_until) 归一化（日期-only 串会补成当天 00:00）。
+// 同时把 paid_until IS NULL 的 active 账号也判为过期并冻结 —— 防止有人把会员「清空」后
+// 白嫖永久全功能（清空逻辑会即时置 frozen，这里作为兜底，NULL 绝不等于「永久有效」）。
+export async function freezeExpiredAccounts(env: Env): Promise<{ frozen: number }> {
+  const r = await env.DB.prepare(
+    "UPDATE users SET status = 'frozen' " +
+    "WHERE status = 'active' AND role != 'admin' " +
+    "AND (paid_until IS NULL OR datetime(paid_until) < datetime('now'))"
+  ).run();
+  return { frozen: r.meta?.changes ?? 0 };
+}
+
+
 // 以中国时区（UTC+8）取 ymd，避免 D1 的 date('now') 是 UTC 导致日期差 8 小时
 function ymd(d: Date): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -50,6 +68,132 @@ export async function sendPushPlus(
       ? `推送成功（code ${result.code}）`
       : `推送失败：HTTP ${res.status} ${result.msg || JSON.stringify(result)}`,
   };
+}
+
+// ================= 管理员事件推送 =================
+// 场景：有人自助注册、提交密码重置申请这类「必须管理员介入」的事件，
+//       以前只能等管理员自己登后台看「用户管理」页才知道，
+//       现在注册/提交的那一刻就推送过去，把等待时间压到几分钟。
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[m as string]!));
+}
+
+// 以中国时区（UTC+8）格式化当前时间，避免 D1/now 的 UTC 时间看起来差 8 小时
+function nowCn(): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(new Date());
+}
+
+export interface AdminNotifyResult {
+  /** 成功推送的人数 */
+  pushedTo: number;
+  /** 是否走的全局 token（说明没有任何管理员单独配置） */
+  viaGlobal: boolean;
+  note: string;
+}
+
+// 推给所有「管用户」的人：status='active' 且配了 token 的管理员
+// （role='admin'，或所在角色的 permissions 含 users 菜单权限）。
+// 兜底：一个都没配 token 时退回全局 PUSHPLUS_TOKEN（兼容单人部署）。
+export async function notifyAdmins(
+  env: Env,
+  title: string,
+  content: string
+): Promise<AdminNotifyResult> {
+  const rows = await env.DB.prepare(
+    `SELECT u.id, u.name, u.pushplus_token
+       FROM users u LEFT JOIN roles r ON u.role_id = r.id
+      WHERE u.status = 'active'
+        AND u.pushplus_token IS NOT NULL AND u.pushplus_token != ''
+        AND (u.role = 'admin' OR r.permissions LIKE '%users%')`
+  ).all<{ id: string; name: string; pushplus_token: string }>();
+
+  const admins = (rows.results || []).filter((u) => u.pushplus_token && u.pushplus_token.trim());
+
+  if (admins.length === 0) {
+    if (!env.PUSHPLUS_TOKEN) {
+      return { pushedTo: 0, viaGlobal: false, note: "无可用推送通道（管理员均未配置 token，且无全局 PUSHPLUS_TOKEN）" };
+    }
+    const res = await sendPushPlus(env.PUSHPLUS_TOKEN, title, content);
+    return { pushedTo: res.ok ? 1 : 0, viaGlobal: true, note: res.message };
+  }
+
+  let pushedTo = 0;
+  const failures: string[] = [];
+  for (const u of admins) {
+    const res = await sendPushPlus(u.pushplus_token, title, content);
+    if (res.ok) pushedTo++;
+    else failures.push(`${u.name}：${res.message}`);
+  }
+  return {
+    pushedTo,
+    viaGlobal: false,
+    note: pushedTo > 0
+      ? `已推送给 ${pushedTo} 位管理员` + (failures.length > 0 ? `，${failures.length} 人失败` : "")
+      : `推送失败：${failures.join("；")}`,
+  };
+}
+
+// 事件①：有人提交注册申请 → 催管理员去审批
+export async function notifyNewRegistration(
+  env: Env,
+  info: { name: string; phone: string }
+): Promise<AdminNotifyResult> {
+  const lines = [
+    "<b>有人提交了注册申请，正等待审批</b>",
+    `姓名：${escapeHtml(info.name)}`,
+    `手机号：${escapeHtml(info.phone)}`,
+    `提交时间：${nowCn()}`,
+    "<br>",
+    "处理入口：登录后台 → 用户管理 →「待审批注册申请」→ 通过（顺手把角色分配了）。",
+    "在审批通过前，这个账号无法登录。",
+  ];
+  return notifyAdmins(env, "新用户注册待审批", lines.join("<br>"));
+}
+
+// 事件②：有人提交「忘记密码」申请 → 催管理员去核对身份
+// 同一个账号 30 分钟内只推一次：避免被反复提交刷屏。
+export async function notifyPasswordResetRequest(
+  env: Env,
+  info: { name: string; phone: string; userId: string }
+): Promise<AdminNotifyResult> {
+  const dedupeKey = `pwdreq:${info.userId}`;
+  const recent = await env.SESSIONS.get(dedupeKey);
+  if (recent) return { pushedTo: 0, viaGlobal: false, note: "30 分钟内已推送过，本次跳过" };
+  await env.SESSIONS.put(dedupeKey, "1", { expirationTtl: 1800 });
+
+  const lines = [
+    "<b>有人提交了密码重置申请</b>",
+    `姓名：${escapeHtml(info.name)}`,
+    `手机号：${escapeHtml(info.phone)}`,
+    `提交时间：${nowCn()}`,
+    "<br>",
+    "系统没有短信/邮件通道，无法自助重置。请先线下确认是本人，",
+    "再到「用户管理」→「密码重置申请」给他设置一个临时密码（对方登录后会被要求修改）。",
+  ];
+  return notifyAdmins(env, "密码重置申请待处理", lines.join("<br>"));
+}
+
+// 事件③：用户扫码付款后申请开通会员 → 催管理员去确认收款并开通
+// 同一个账号 30 分钟内只推一次：避免被反复点击刷屏。
+// 该接口放行于冻结写守卫（路径 /api/auth/me/*），所以冻结用户也能发起申请。
+export async function notifyMembershipRequest(
+  env: Env,
+  info: { name: string; phone: string }
+): Promise<AdminNotifyResult> {
+  const lines = [
+    "<b>有用户付款后申请开通会员</b>",
+    `姓名：${escapeHtml(info.name)}`,
+    `手机号：${escapeHtml(info.phone)}`,
+    `提交时间：${nowCn()}`,
+    "<br>",
+    "请确认是否收到款项，再到「用户管理」→ 该用户「开通 / 续期」即可恢复其全功能。",
+  ];
+  return notifyAdmins(env, "会员开通申请待处理", lines.join("<br>"));
 }
 
 export interface ReminderResult {

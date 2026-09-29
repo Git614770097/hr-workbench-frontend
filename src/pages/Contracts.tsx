@@ -14,7 +14,6 @@ import { extractContractText } from "../utils/contractFile";
 import { downloadBlob, dateStamp, csvCell, escapeHtml } from "../utils/file";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
-import { useTableScrollY } from "../hooks/useTableScrollY";
 
 // 日期快捷预设（从今天起算）：试用期按月、合同按年。
 // 三个弹窗（新增合同 / 合同文件 / 编辑日期）共用，保证体验一致。
@@ -516,8 +515,6 @@ export default function Contracts() {
   const [addOpen, setAddOpen] = useState(false);
   const [form] = Form.useForm();
   const intro = useDismissible("contracts.intro");
-  // 表格高度随视口自适应：表头固定、表体滚动、分页条常驻可见
-  const { ref: tableRef, y: tableY } = useTableScrollY();
 
   const fetchList = useCallback(async (keyword: string) => {
     setLoading(true);
@@ -779,17 +776,14 @@ export default function Contracts() {
       </Card>
 
       <Card styles={{ body: { padding: 0 } }}>
-        <div ref={tableRef}>
-          <Table
-            className="profiles-table"
-            columns={columns}
-            dataSource={filtered}
-            rowKey="id"
-            loading={loading}
-            scroll={{ y: tableY }}
-            pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
-          />
-        </div>
+        <Table
+          className="profiles-table"
+          columns={columns}
+          dataSource={filtered}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
+        />
       </Card>
 
       {/* 新增合同：选人才 → 传文件 AI 识别或手填日期 → 保存到档案 */}

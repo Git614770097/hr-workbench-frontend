@@ -18,7 +18,6 @@ import ResumePreviewModal from "../components/ResumePreviewModal";
 import TalentFormModal from "../components/TalentFormModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import { DemoSeedButton, DemoBanner } from "../components/DemoSeed";
-import { useTableScrollY } from "../hooks/useTableScrollY";
 
 // 搜索条件（draft = 编辑中，applied = 已生效）
 interface Filters {
@@ -84,9 +83,6 @@ export default function TalentList() {
   // 导出状态
   const [exporting, setExporting] = useState(false);
   const [printData, setPrintData] = useState<Talent[] | null>(null);
-
-  // 表格高度随视口自适应：表头固定、表体滚动、分页条常驻可见
-  const { ref: tableRef, y: tableY } = useTableScrollY();
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -425,36 +421,34 @@ export default function TalentList() {
             <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
           </Space>
         </div>
-        <div ref={tableRef}>
-          <Table
-            className="profiles-table"
-            columns={columns}
-            dataSource={talents}
-            rowKey="id"
-            loading={loading}
-            rowSelection={rowSelection}
-            scroll={{ x: 1500, y: tableY }}
-            locale={{
-              // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」
-              emptyText: (
-                <div style={{ padding: "40px 0", textAlign: "center" }}>
-                  <Empty description="人才库还是空的" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
-                  <DemoSeedButton onDone={fetchTalents} />
-                  <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-                    也可以点左上角「新增人才」或「导入」录入真实数据
-                  </div>
+        <Table
+          className="profiles-table"
+          columns={columns}
+          dataSource={talents}
+          rowKey="id"
+          loading={loading}
+          rowSelection={rowSelection}
+          scroll={{ x: 1500 }}
+          locale={{
+            // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」
+            emptyText: (
+              <div style={{ padding: "40px 0", textAlign: "center" }}>
+                <Empty description="人才库还是空的" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
+                <DemoSeedButton onDone={fetchTalents} />
+                <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
+                  也可以点左上角「新增人才」或「导入」录入真实数据
                 </div>
-              ),
-            }}
-            pagination={{
-              current: page,
-              total,
-              pageSize: PAGE_SIZE,
-              onChange: (p) => setPage(p),
-              showTotal: (t) => `共 ${t} 位人才`,
-            }}
-          />
-        </div>
+              </div>
+            ),
+          }}
+          pagination={{
+            current: page,
+            total,
+            pageSize: PAGE_SIZE,
+            onChange: (p) => setPage(p),
+            showTotal: (t) => `共 ${t} 位人才`,
+          }}
+        />
       </Card>
 
       {/* 打印导出容器：仅在打印时显示 */}

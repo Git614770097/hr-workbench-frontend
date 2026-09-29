@@ -9,6 +9,10 @@ export interface User {
   must_change_password?: boolean;
   /** 是否已配置个人 PushPlus 推送 token（用于到期提醒推送到本人微信） */
   pushplus_configured?: boolean;
+  /** 会员有效期（NULL=未开通；时间串=已过期/有效，由管理员手动开通） */
+  paid_until?: string | null;
+  /** 账号状态：active=正常 / frozen=已冻结(只读，到期未续费) / pending / rejected / disabled */
+  status?: string | null;
 }
 
 /** 用户管理列表行（管理员视角，含审批与重置申请状态） */
@@ -24,6 +28,8 @@ export interface UserRow {
   /** 忘记密码申请时间，非 null 表示有待处理申请 */
   reset_requested_at: string | null;
   must_change_password: number;
+  /** 会员有效期（NULL=未开通；时间串=已过期/有效） */
+  paid_until: string | null;
 }
 
 // 菜单权限 key（与后端 src/worker/permissions.ts 保持一致）

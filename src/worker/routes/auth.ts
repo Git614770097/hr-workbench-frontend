@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { setCookie, getCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { genId } from "../helpers";
-import { sendPushPlus } from "../reminders";
+import { sendPushPlus, notifyNewRegistration, notifyPasswordResetRequest, notifyMembershipRequest } from "../reminders";
 
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -116,7 +116,19 @@ auth.post("/register", async (c) => {
     "INSERT INTO users (id, phone, name, password_hash, role, role_id, status) VALUES (?, ?, ?, ?, 'user', NULL, 'pending')"
   ).bind(id, phone, name, passwordHash).run();
 
-  return c.json({ ok: true, message: "注册已提交，请等待管理员审批后登录" });
+  // 立即推送给管理员，别让申请人干等。
+  // 放在 waitUntil 里后台执行：推送要走第三方接口，不能拖慢注册响应，失败也不影响注册结果。
+  try {
+    c.executionCtx?.waitUntil?.(
+      notifyNewRegistration(c.env, { name, phone })
+        .then((r) => console.log(`[register-notify] ${r.note}`))
+        .catch((e) => console.error("[register-notify] failed:", e))
+    );
+  } catch (e) {
+    console.error("[register-notify] schedule failed:", e);
+  }
+
+  return c.json({ ok: true, message: "注册已提交，管理员已收到通知，审批通过后即可登录" });
 });
 
 // ---- 忘记密码：提交重置申请 ----
@@ -156,6 +168,17 @@ auth.post("/forgot-password", async (c) => {
   await c.env.DB.prepare("UPDATE users SET reset_requested_at = datetime('now') WHERE id = ?")
     .bind(user.id).run();
 
+  // 同上：立刻通知管理员去核对身份。（内置 30 分钟去重，防止被刷）
+  try {
+    c.executionCtx?.waitUntil?.(
+      notifyPasswordResetRequest(c.env, { name: user.name, phone, userId: user.id })
+        .then((r) => console.log(`[pwdreset-notify] ${r.note}`))
+        .catch((e) => console.error("[pwdreset-notify] failed:", e))
+    );
+  } catch (e) {
+    console.error("[pwdreset-notify] schedule failed:", e);
+  }
+
   return c.json({ ok: true, message: OK_MSG });
 });
 
@@ -182,17 +205,17 @@ auth.post("/login", async (c) => {
   const passwordHash = await hashPassword(password);
   if (user.password_hash !== passwordHash) return c.json({ error: "手机号或密码错误" }, 401);
 
-  // 待审批 / 已拒绝的账号不允许登录。
+  // 待审批 / 已拒绝 / 已停用的账号不允许登录。
   // 注意：这里放在密码校验之后，避免通过响应差异探测某手机号是否已注册。
-  // 存量用户 status 为 'active'（迁移时的 DEFAULT），不受影响。
-  if (user.status && user.status !== "active") {
-    const msg =
-      user.status === "pending"
-        ? "账号正在等待管理员审批，通过后即可登录"
-        : user.status === "rejected"
-          ? "注册申请未通过，请联系管理员"
-          : "账号已被停用，请联系管理员";
-    return c.json({ error: msg }, 403);
+  // frozen（到期未续费）允许登录，但仅只读——前端有横幅提示、后端写操作守卫拦截。
+  if (user.status === "pending") {
+    return c.json({ error: "账号正在等待管理员审批，通过后即可登录" }, 403);
+  }
+  if (user.status === "rejected") {
+    return c.json({ error: "注册申请未通过，请联系管理员" }, 403);
+  }
+  if (user.status === "disabled") {
+    return c.json({ error: "账号已被停用，请联系管理员" }, 403);
   }
 
   const token = genToken();
@@ -206,7 +229,7 @@ auth.post("/login", async (c) => {
 auth.get("/me", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null; must_change_password: number; pushplus_token: string | null }>();
+  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token, paid_until, status FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null; must_change_password: number; pushplus_token: string | null; paid_until: string | null; status: string | null }>();
   if (!user) return c.json({ error: "用户不存在" }, 401);
 
   // 管理员拥有全部权限；普通用户取角色 permissions
@@ -225,6 +248,8 @@ auth.get("/me", async (c) => {
     id: user.id, phone: user.phone, name: user.name, role: user.role, role_id: user.role_id,
     must_change_password: !!user.must_change_password,
     pushplus_configured: !!(user.pushplus_token && user.pushplus_token.trim()),
+    paid_until: user.paid_until,
+    status: user.status,
     permissions,
   });
 });
@@ -258,7 +283,8 @@ auth.post("/users", async (c) => {
 
   const id = genId();
   const passwordHash = await hashPassword(password);
-  await c.env.DB.prepare("INSERT INTO users (id, phone, name, password_hash, role, role_id, status) VALUES (?, ?, ?, ?, 'user', ?, 'active')")
+  // 管理员自建账号同样给 1 个月试用（与审批通过一致），到期未续费进入冻结只读。
+  await c.env.DB.prepare("INSERT INTO users (id, phone, name, password_hash, role, role_id, status, paid_until) VALUES (?, ?, ?, ?, 'user', ?, 'active', datetime('now', '+1 month'))")
     .bind(id, phone, name, passwordHash, finalRoleId).run();
 
   return c.json({ id, phone, name, role: "user", role_id: finalRoleId });
@@ -278,7 +304,7 @@ auth.get("/users", async (c) => {
 
   let sql =
     "SELECT u.id, u.phone, u.name, u.role, u.role_id, u.status, u.created_at, " +
-    "u.reset_requested_at, u.must_change_password, r.name as role_name " +
+    "u.reset_requested_at, u.must_change_password, u.paid_until, r.name as role_name " +
     "FROM users u LEFT JOIN roles r ON u.role_id = r.id";
   const params: string[] = [];
   if (statusFilter) {
@@ -316,7 +342,9 @@ auth.put("/users/:id/approve", async (c) => {
     finalRoleId = body.role_id;
   }
 
-  await c.env.DB.prepare("UPDATE users SET status = 'active', role_id = ? WHERE id = ?")
+  // 审批通过即开通：分配角色，并给 1 个月试用（paid_until = 现在+1月）。
+  // 试用到期后由每日定时任务置为 frozen（只读），续费（管理员开通）后恢复 active。
+  await c.env.DB.prepare("UPDATE users SET status = 'active', role_id = ?, paid_until = datetime('now', '+1 month') WHERE id = ?")
     .bind(finalRoleId, id).run();
   return c.json({ ok: true });
 });
@@ -433,7 +461,38 @@ auth.post("/me/pushplus/test", async (c) => {
   return c.json(res);
 });
 
-// ---- 管理员：修改用户角色 ----
+// ---- 当前用户：付款后申请管理员开通会员 ----
+// 冻结/到期用户扫码付款后，点「我已付款，申请开通」→ 通过 PushPlus 通知管理员。
+// 与忘记密码申请同理：同一账号 30 分钟内只推一次，防刷。
+// 路径 /api/auth/me/* 已被冻结写守卫放行，故冻结用户也能发起申请（这正是它的使用场景）。
+auth.post("/me/membership-request", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const dedupeKey = `memberreq:${session.userId}`;
+  const recent = await c.env.SESSIONS.get(dedupeKey);
+  if (recent) {
+    return c.json({ ok: true, message: "申请已提交，管理员会尽快处理（30 分钟内重复申请不会重复推送）" });
+  }
+  await c.env.SESSIONS.put(dedupeKey, "1", { expirationTtl: 1800 });
+
+  const user = await c.env.DB.prepare("SELECT name, phone FROM users WHERE id = ?")
+    .bind(session.userId).first<{ name: string; phone: string }>();
+  const name = user?.name || session.name;
+  const phone = user?.phone || "";
+
+  try {
+    c.executionCtx?.waitUntil?.(
+      notifyMembershipRequest(c.env, { name, phone })
+        .then((r) => console.log(`[memberreq-notify] ${r.note}`))
+        .catch((e) => console.error("[memberreq-notify] failed:", e))
+    );
+  } catch (e) {
+    console.error("[memberreq-notify] schedule failed:", e);
+  }
+
+  return c.json({ ok: true, message: "已通知管理员，请稍候；管理员确认收款后会在后台为你开通" });
+});
 auth.put("/users/:id/role", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
@@ -490,6 +549,97 @@ auth.delete("/users/:id", async (c) => {
   await c.env.DB.prepare("DELETE FROM talents WHERE owner_id = ?").bind(id).run();
   await c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
 
+  return c.json({ ok: true });
+});
+
+// ---- 管理员：设置会员有效期（手动开通 / 续期 / 清空）----
+// 用户扫码付款后，管理员在此确认收款并开通。
+//   clear=true        → 撤销会员（清空 paid_until 并立即置 frozen 只读，杜绝「清空=永久免费」）
+//   paid_until=日期    → 直接设定到指定日期（支持 YYYY-MM-DD 或 YYYY-MM-DD HH:MM:SS）
+//   months=N          → 在当前有效期基础上顺延 N 个月（已过期或从未开通则从今天起算）
+auth.put("/users/:id/membership", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const id = c.req.param("id");
+  const body = await c.req.json<{ months?: number; paid_until?: string; clear?: boolean }>()
+    .catch(() => ({ months: 0, paid_until: "", clear: false }));
+
+  const target = await c.env.DB.prepare("SELECT id FROM users WHERE id = ?").bind(id).first();
+  if (!target) return c.json({ error: "用户不存在" }, 404);
+
+  if (body.clear) {
+    // 撤销会员：清空有效期并立即转为只读（不等 cron）。
+    // 这样「清空」= 收回全功能，而不是白嫖永久有效。
+    await c.env.DB.prepare("UPDATE users SET paid_until = NULL, status = 'frozen' WHERE id = ?").bind(id).run();
+    return c.json({ ok: true });
+  }
+
+  if (body.paid_until && body.paid_until.trim()) {
+    // 直接指定日期：仅传 YYYY-MM-DD 时补到当天 23:59:59，
+    // 避免「当天 00:00 即被判过期」导致当天就被冻结。
+    const raw = body.paid_until.trim();
+    const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw} 23:59:59` : raw;
+    // 续费/开通：写入有效期，并把可能处于 frozen 的状态恢复为 active
+    await c.env.DB.prepare("UPDATE users SET paid_until = ?, status = 'active' WHERE id = ?")
+      .bind(normalized, id).run();
+    return c.json({ ok: true });
+  }
+
+  if (body.months && body.months > 0) {
+    const m = Math.floor(body.months);
+    // 已过期或从未开通 → 从今天起算；仍在有效期 → 在当前日期上顺延
+    // 用 datetime(paid_until) 归一化比较，避免仅日期串被误判；
+    // 顺带把 frozen 恢复为 active（续费即解封）
+    await c.env.DB.prepare(
+      "UPDATE users SET status = 'active', paid_until = datetime(" +
+      "CASE WHEN paid_until IS NULL OR datetime(paid_until) < datetime('now') " +
+      "THEN datetime('now') ELSE datetime(paid_until) END, '+' || ? || ' months') WHERE id = ?"
+    ).bind(String(m), id).run();
+    return c.json({ ok: true });
+  }
+
+  return c.json({ error: "请提供 months（续期月数）、paid_until（指定日期）或 clear（清空）之一" }, 400);
+});
+
+// ---- 支付收款配置（收款码 + 说明），供「去续费」页向用户展示 ----
+// 存于 site_settings 简单键值表，无需单独建表。
+auth.get("/settings/pay", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const rows = await c.env.DB.prepare(
+    "SELECT key, value FROM site_settings WHERE key IN ('pay_wechat_qr','pay_alipay_qr','pay_note')"
+  ).all<{ key: string; value: string }>();
+  const map: Record<string, string> = {};
+  (rows.results || []).forEach((r) => { map[r.key] = r.value; });
+  return c.json({
+    wechat_qr: map["pay_wechat_qr"] || null,
+    alipay_qr: map["pay_alipay_qr"] || null,
+    note: map["pay_note"] || null,
+  });
+});
+
+// ---- 管理员：保存支付收款配置 ----
+auth.put("/settings/pay", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const { wechat_qr, alipay_qr, note } = await c.req.json<{ wechat_qr?: string; alipay_qr?: string; note?: string }>()
+    .catch(() => ({ wechat_qr: "", alipay_qr: "", note: "" }));
+
+  const items: [string, string][] = [
+    ["pay_wechat_qr", (wechat_qr || "").trim()],
+    ["pay_alipay_qr", (alipay_qr || "").trim()],
+    ["pay_note", (note || "").trim()],
+  ];
+  for (const [k, v] of items) {
+    await c.env.DB.prepare(
+      "INSERT INTO site_settings (key, value) VALUES (?, ?) " +
+      "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    ).bind(k, v).run();
+  }
   return c.json({ ok: true });
 });
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Avatar, Button, Tag, Dropdown, Tooltip, Popover } from "antd";
+import { Avatar, Button, Tag, Dropdown, Tooltip, Popover, Alert } from "antd";
 import {
   LogoutOutlined,
   TeamOutlined,
@@ -22,6 +22,8 @@ import {
   MoonOutlined,
   BellOutlined,
   LockOutlined,
+  CrownOutlined,
+  QrcodeOutlined,
 } from "@ant-design/icons";
 import { QuestionCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import type { User } from "../types";
@@ -32,6 +34,8 @@ import Onboarding from "./Onboarding";
 import { ONBOARDING_STEPS } from "./onboardingSteps";
 import PushplusModal from "./PushplusModal";
 import PasswordModal from "./PasswordModal";
+import MembershipModal from "./MembershipModal";
+import PayConfigModal from "./PayConfigModal";
 
 // 引导只自动播放一次，之后靠顶栏问号按钮手动唤出
 // 「已看过」按用户维度记录（换账号后新账号仍会走一次首次引导）
@@ -94,6 +98,9 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   // 修改自己的密码弹窗；forced=true 表示管理员重置过密码、本次登录必须先改掉
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [forcePassword, setForcePassword] = useState(false);
+  // 会员续费（全员）与收款码设置（管理员）
+  const [memberOpen, setMemberOpen] = useState(false);
+  const [payConfigOpen, setPayConfigOpen] = useState(false);
   useEffect(() => {
     // URL 开关：reset 先清标记，force 只跳过抑制，随后把参数从地址栏抹掉避免重复触发
     const flag = readOnbFlag();
@@ -222,6 +229,22 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
       label: "消息推送设置",
       onClick: () => setPushplusOpen(true),
     },
+    {
+      key: "member",
+      icon: <CrownOutlined />,
+      label: "会员续费",
+      onClick: () => setMemberOpen(true),
+    },
+    ...(user.role === "admin"
+      ? [
+          {
+            key: "payconfig",
+            icon: <QrcodeOutlined />,
+            label: "收款码设置",
+            onClick: () => setPayConfigOpen(true),
+          },
+        ]
+      : []),
     { type: "divider" as const },
     {
       key: "logout",
@@ -366,6 +389,23 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
           </div>
         </header>
 
+        {user.status === "frozen" && (
+          <Alert
+            type="warning"
+            showIcon
+            className="frozen-banner"
+            message="账户已冻结，当前为只读模式"
+            description={
+              <span>
+                会员已到期未续费，您可查看数据但无法新增或修改。续费后即刻恢复。
+                <Button type="link" size="small" style={{ paddingInline: 4 }} onClick={() => setMemberOpen(true)}>
+                  去续费
+                </Button>
+              </span>
+            }
+          />
+        )}
+
         <main className="main-content">{children}</main>
       </div>
 
@@ -392,6 +432,18 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
           setForcePassword(false);
           onUserChange({ ...user, must_change_password: false });
         }}
+      />
+
+      <MembershipModal
+        open={memberOpen}
+        user={user}
+        onClose={() => setMemberOpen(false)}
+      />
+
+      <PayConfigModal
+        open={payConfigOpen}
+        onClose={() => setPayConfigOpen(false)}
+        onSaved={() => {}}
       />
     </div>
   );

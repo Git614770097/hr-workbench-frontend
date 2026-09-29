@@ -13,7 +13,6 @@ import type { SocialItem } from "../types";
 import { SI_STATUS_LABELS, SI_STATUS_COLORS, STATUS_LABELS } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
-import { useTableScrollY } from "../hooks/useTableScrollY";
 
 /** 待办动作推导（与后端 socialTaskStmts 同口径）：onboarded=已入职、si=参保状态 */
 function deriveAction(r: SocialItem): "add" | "stop" | null {
@@ -280,8 +279,6 @@ export default function Social() {
   const [editing, setEditing] = useState<SocialItem | null>(null);
   const [taxOpen, setTaxOpen] = useState(false);
   const intro = useDismissible("social.intro");
-  // 表格高度随视口自适应：表头固定、表体滚动、合计行与分页条常驻可见
-  const { ref: tableRef, y: tableY } = useTableScrollY();
 
   const fetchList = useCallback(async (keyword: string) => {
     setLoading(true);
@@ -479,35 +476,33 @@ export default function Social() {
       </Card>
 
       <Card styles={{ body: { padding: 0 } }}>
-        <div ref={tableRef}>
-          <Table
-            className="profiles-table"
-            columns={columns}
-            dataSource={filtered}
-            rowKey="id"
-            loading={loading}
-            scroll={{ x: 1400, y: tableY }}
-            pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
-            summary={() => (
-              <Table.Summary fixed>
-                <Table.Summary.Row>
-                  <Table.Summary.Cell index={0} colSpan={7}>
-                    合计（当前筛选 {filtered.length} 人）
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={7}>
-                    <span style={{ fontWeight: 500 }}>个人 ¥{sumPersonal.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={8}>
-                    <span style={{ fontWeight: 500 }}>单位 ¥{sumCompany.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span>
-                  </Table.Summary.Cell>
-                  <Table.Summary.Cell index={9} colSpan={2}>
-                    <span style={{ fontWeight: 500 }}>用工总成本 ¥{(sumPersonal + sumCompany).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}/月</span>
-                  </Table.Summary.Cell>
-                </Table.Summary.Row>
-              </Table.Summary>
-            )}
-          />
-        </div>      </Card>
+        <Table
+          className="profiles-table"
+          columns={columns}
+          dataSource={filtered}
+          rowKey="id"
+          loading={loading}
+          pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
+          summary={() => (
+            <Table.Summary fixed>
+              <Table.Summary.Row>
+                <Table.Summary.Cell index={0} colSpan={7}>
+                  合计（当前筛选 {filtered.length} 人）
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={7}>
+                  <span style={{ fontWeight: 500 }}>个人 ¥{sumPersonal.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={8}>
+                  <span style={{ fontWeight: 500 }}>单位 ¥{sumCompany.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={9} colSpan={2}>
+                  <span style={{ fontWeight: 500 }}>用工总成本 ¥{(sumPersonal + sumCompany).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}/月</span>
+                </Table.Summary.Cell>
+              </Table.Summary.Row>
+            </Table.Summary>
+          )}
+        />
+      </Card>
 
       <SocialEditModal
         item={editing}

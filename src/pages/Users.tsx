@@ -1,15 +1,29 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Card, Table, Button, Space, Tag, Popconfirm, message, Modal, Form, Input, Tooltip, Select, Alert, Badge,
 } from "antd";
 import {
-  PlusOutlined, KeyOutlined, UserAddOutlined, CheckOutlined, StopOutlined,
+  KeyOutlined, UserAddOutlined, CheckOutlined, StopOutlined,
   ClockCircleOutlined, LockOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import { ROLE_LABELS } from "../types";
 import type { Role, UserRow } from "../types";
-import { fmtDateTime } from "../utils/time";
+import { fmtDateTime, fmtDate } from "../utils/time";
+
+/** 账号状态展示元数据：审批通过的用户不展示状态列内容，保持表格干净 */
+const STATUS_OPTIONS = [
+  { value: "active", label: "在职" },
+  { value: "pending", label: "待审批" },
+  { value: "rejected", label: "已拒绝" },
+];
+
+/** 角色筛选里的两个虚拟项（不是真实角色 id，用 __ 前缀区分） */
+const ROLE_ALL = "";
+const ROLE_ADMIN = "__admin";
+const ROLE_NONE = "__none";
+
+const EMPTY_QUERY = { keyword: "", role: ROLE_ALL, status: ROLE_ALL };
 
 /** 账号状态展示元数据：审批通过的用户不展示状态列内容，保持表格干净 */
 function statusTag(status: string | null) {
@@ -23,22 +37,68 @@ function statusTag(status: string | null) {
   return <Tag color="error">已停用</Tag>;
 }
 
+/** 会员状态展示：未开通 / 有效至 X / 已过期 X */
+function memberState(paidUntil: string | null | undefined): { status: "none" | "active" | "expired"; label: string } {
+  if (!paidUntil) return { status: "none", label: "未开通" };
+  const d = new Date(paidUntil.includes("T") || paidUntil.includes("Z") ? paidUntil : paidUntil.replace(" ", "T") + "Z");
+  if (Number.isNaN(d.getTime())) return { status: "none", label: "未开通" };
+  // 早期/存量用户回填的远未来有效期（如 2099）视为长期有效
+  if (d.getTime() > Date.now() && d.getFullYear() > 2090) {
+    return { status: "active", label: "长期有效" };
+  }
+  return d.getTime() > Date.now()
+    ? { status: "active", label: `有效至 ${fmtDate(paidUntil)}` }
+    : { status: "expired", label: `已过期 ${fmtDate(paidUntil)}` };
+}
+
 export default function Users() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [pending, setPending] = useState<UserRow[]>([]);
   const [resets, setResets] = useState<UserRow[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
   const [showReset, setShowReset] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<UserRow | null>(null);
   const [approving, setApproving] = useState<UserRow | null>(null);
   const [resolving, setResolving] = useState<UserRow | null>(null);
-  const [createForm] = Form.useForm();
   const [resetForm] = Form.useForm();
   const [assignForm] = Form.useForm();
   const [approveForm] = Form.useForm();
   const [resolveForm] = Form.useForm();
+  // ---- 会员开通 / 续期 ----
+  const [membering, setMembering] = useState<UserRow | null>(null);
+  const [memberMonths, setMemberMonths] = useState(12);
+  const [memberDate, setMemberDate] = useState("");
+
+  // ---- 搜索区（约定与其它列表页一致：输入时不立即过滤，点「查询」才应用）----
+  const [draft, setDraft] = useState(EMPTY_QUERY);
+  const [query, setQuery] = useState(EMPTY_QUERY);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const roleOptions = [
+    { value: ROLE_ADMIN, label: "管理员" },
+    { value: ROLE_NONE, label: "未分配角色" },
+    ...roles.map((r) => ({ value: r.id, label: r.name })),
+  ];
+
+  const filtered = useMemo(() => {
+    const kw = query.keyword.trim().toLowerCase();
+    return users.filter((u) => {
+      if (kw && !`${u.name} ${u.phone}`.toLowerCase().includes(kw)) return false;
+      if (query.role === ROLE_ADMIN && u.role !== "admin") return false;
+      if (query.role === ROLE_NONE && (u.role === "admin" || u.role_id)) return false;
+      if (query.role && query.role !== ROLE_ADMIN && query.role !== ROLE_NONE && u.role_id !== query.role) {
+        return false;
+      }
+      if (query.status && (u.status || "active") !== query.status) return false;
+      return true;
+    });
+  }, [users, query]);
+
+  const applyQuery = () => { setQuery(draft); setPage(1); };
+  const resetQuery = () => { setDraft(EMPTY_QUERY); setQuery(EMPTY_QUERY); setPage(1); };
+  const hasQuery = !!query.keyword || !!query.role || !!query.status;
 
   const fetchUsers = async () => {
     try {
@@ -65,18 +125,6 @@ export default function Users() {
   };
 
   useEffect(() => { fetchUsers(); fetchRoles(); }, []);
-
-  const handleCreate = async (values: { phone: string; name: string; password: string; role_id?: string | null }) => {
-    try {
-      await api.createUser(values);
-      createForm.resetFields();
-      setShowCreate(false);
-      message.success("用户已创建");
-      fetchUsers();
-    } catch (err) {
-      message.error((err as Error).message);
-    }
-  };
 
   /** 审批通过：把 pending 改成 active，并同时挂上角色 */
   const handleApprove = async (values: { role_id?: string | null }) => {
@@ -156,6 +204,37 @@ export default function Users() {
     try {
       await api.deleteUser(id);
       message.success(`已删除「${name}」`);
+      fetchUsers();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
+  /** 开通 / 续期：填了指定日期则按日期设定，否则按所选月数顺延 */
+  const handleSetMember = async () => {
+    if (!membering) return;
+    try {
+      if (memberDate.trim()) {
+        await api.setMembership(membering.id, { paid_until: memberDate.trim() });
+        message.success(`已为「${membering.name}」设定会员有效期`);
+      } else {
+        await api.setMembership(membering.id, { months: memberMonths });
+        message.success(`已为「${membering.name}」开通 / 续期 ${memberMonths} 个月`);
+      }
+      setMembering(null);
+      setMemberDate("");
+      setMemberMonths(12);
+      fetchUsers();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
+  /** 清空会员（退款 / 撤销） */
+  const handleClearMember = async (record: UserRow) => {
+    try {
+      await api.setMembership(record.id, { clear: true });
+      message.success(`已清空「${record.name}」的会员`);
       fetchUsers();
     } catch (err) {
       message.error((err as Error).message);
@@ -292,11 +371,34 @@ export default function Users() {
       render: (v: string) => fmtDateTime(v),
     },
     {
+      title: "会员",
+      dataIndex: "paid_until",
+      key: "paid_until",
+      width: 160,
+      render: (v: string | null, record: UserRow) => {
+        if (record.status === "frozen") return <Tag color="orange">已冻结（只读）</Tag>;
+        const st = memberState(record.paid_until);
+        if (st.status === "active") return <Tag color="green">{st.label}</Tag>;
+        if (st.status === "expired") return <Tag color="red">{st.label}</Tag>;
+        return <Tag>未开通</Tag>;
+      },
+    },
+    {
       title: "操作",
       key: "action",
       width: 200,
       render: (_: unknown, record: UserRow) => (
         <Space size={4}>
+          <Button type="link" size="small" onClick={() => { setMembering(record); setMemberMonths(12); setMemberDate(""); }}>开通</Button>
+          {record.paid_until ? (
+            <Popconfirm
+              title={`清空「${record.name}」的会员有效期？`}
+              description="清空后该用户恢复为未开通状态。"
+              onConfirm={() => handleClearMember(record)}
+            >
+              <Button type="link" size="small" danger>清空</Button>
+            </Popconfirm>
+          ) : null}
           <Button type="link" size="small" onClick={() => { setShowReset(record.id); resetForm.resetFields(); }}>重置密码</Button>
           {record.role !== "admin" && (
             <>
@@ -312,15 +414,10 @@ export default function Users() {
   ];
 
   return (
-    <div>
-      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 16 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => { setShowCreate(true); createForm.resetFields(); }}>
-          添加用户
-        </Button>
-      </div>
-
+    <div className="profiles-page">
       {pending.length > 0 && (
         <Card
+          className="list-card"
           style={{ marginBottom: 16 }}
           title={
             <Space>
@@ -337,6 +434,7 @@ export default function Users() {
             message="通过后请为其分配角色，否则该用户登录后看不到任何菜单。"
           />
           <Table
+            className="profiles-table"
             columns={pendingColumns}
             dataSource={pending}
             rowKey="id"
@@ -348,6 +446,7 @@ export default function Users() {
 
       {resets.length > 0 && (
         <Card
+          className="list-card"
           style={{ marginBottom: 16 }}
           title={
             <Space>
@@ -364,6 +463,7 @@ export default function Users() {
             message="请先线下核对申请人身份，再为其设置新密码。系统会打上标记，提醒该用户登录后自行修改。"
           />
           <Table
+            className="profiles-table"
             columns={resetColumns}
             dataSource={resets}
             rowKey="id"
@@ -373,55 +473,79 @@ export default function Users() {
         </Card>
       )}
 
-      <Card title="全部账号">
-        <Table
-          columns={columns}
-          dataSource={users}
-          rowKey="id"
-          loading={loading}
-          pagination={false}
-        />
+      {/* 顶部搜索区域：label 左 + 控件右，一行 4 个（复用全站 search-card 约定类） */}
+      <Card className="search-card" style={{ marginBottom: 16 }}>
+        <div className="search-grid">
+          <div className="search-field">
+            <span className="search-label">关键词</span>
+            <div className="search-control">
+              <Input
+                allowClear
+                style={{ width: "100%" }}
+                placeholder="姓名 / 手机号"
+                value={draft.keyword}
+                onChange={(e) => setDraft({ ...draft, keyword: e.target.value })}
+                onPressEnter={applyQuery}
+              />
+            </div>
+          </div>
+          <div className="search-field">
+            <span className="search-label">角色</span>
+            <div className="search-control">
+              <Select
+                allowClear
+                style={{ width: "100%" }}
+                placeholder="全部角色"
+                value={draft.role || undefined}
+                options={roleOptions}
+                onChange={(v) => setDraft({ ...draft, role: v ?? ROLE_ALL })}
+              />
+            </div>
+          </div>
+          <div className="search-field">
+            <span className="search-label">账号状态</span>
+            <div className="search-control">
+              <Select
+                allowClear
+                style={{ width: "100%" }}
+                placeholder="全部状态"
+                value={draft.status || undefined}
+                options={STATUS_OPTIONS}
+                onChange={(v) => setDraft({ ...draft, status: v ?? ROLE_ALL })}
+              />
+            </div>
+          </div>
+        </div>
       </Card>
 
-      {/* 创建用户弹窗 */}
-      <Modal
-        title="添加普通用户"
-        open={showCreate}
-        onCancel={() => setShowCreate(false)}
-        footer={null}
-      >
-        <Form form={createForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleCreate}>
-          <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入姓名" }]}>
-            <Input placeholder="姓名" />
-          </Form.Item>
-          <Form.Item
-            name="phone"
-            label="手机号"
-            rules={[
-              { required: true, message: "请输入手机号" },
-              { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
-            ]}
-          >
-            <Input placeholder="手机号" maxLength={11} />
-          </Form.Item>
-          <Form.Item name="password" label="初始密码" rules={[{ required: true, message: "请输入密码" }, { min: 6, message: "至少6位" }]}>
-            <Input.Password placeholder="至少6位" />
-          </Form.Item>
-          <Form.Item name="role_id" label="角色（可选）">
-            <Select
-              allowClear
-              placeholder="不选则无菜单权限，需稍后分配"
-              options={roles.map((r) => ({ value: r.id, label: r.name }))}
-            />
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 0 }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <Button onClick={() => setShowCreate(false)}>取消</Button>
-              <Button type="primary" htmlType="submit">创建</Button>
-            </div>
-          </Form.Item>
-        </Form>
-      </Modal>
+      <Card className="list-card">
+        {/* 布局约定（全站统一）：搜索 Card 只放字段；工具行左侧是数据操作，
+            右侧是「重置 / 查询」，两者对齐，不另起一行 */}
+        <div className="toolbar">
+          <span style={{ flex: 1 }} />
+          <Space>
+            <Button onClick={resetQuery}>重置</Button>
+            <Button type="primary" onClick={applyQuery}>查询</Button>
+          </Space>
+        </div>
+        <Table
+          className="profiles-table"
+          columns={columns}
+          dataSource={filtered}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            current: page,
+            pageSize,
+            total: filtered.length,
+            onChange: (p, ps) => { setPage(p); setPageSize(ps); },
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50],
+            showTotal: (t) => `共 ${t} 个账号`,
+          }}
+          locale={{ emptyText: hasQuery ? "没有符合筛选条件的账号" : "暂无账号" }}
+        />
+      </Card>
 
       {/* 审批通过弹窗 —— 通过的同时必须指定角色 */}
       <Modal
@@ -535,6 +659,42 @@ export default function Users() {
             </div>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 会员开通 / 续期弹窗 */}
+      <Modal
+        title={`会员开通 / 续期 — ${membering?.name || ""}`}
+        open={!!membering}
+        onCancel={() => setMembering(null)}
+        footer={null}
+      >
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="用户扫码付款后，在此确认收款并开通。续费会在当前有效期基础上顺延；已过期或从未开通则从今天起算。"
+        />
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 6 }}>续费时长</div>
+          <Select
+            value={memberMonths}
+            onChange={setMemberMonths}
+            style={{ width: "100%" }}
+            options={[
+              { value: 1, label: "1 个月" },
+              { value: 3, label: "3 个月" },
+              { value: 12, label: "12 个月（1 年）" },
+            ]}
+          />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 6 }}>或指定到期日（YYYY-MM-DD，留空则按上方时长）</div>
+          <Input value={memberDate} onChange={(e) => setMemberDate(e.target.value)} placeholder="例如 2027-09-28" />
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <Button onClick={() => setMembering(null)}>取消</Button>
+          <Button type="primary" onClick={handleSetMember}>确认开通</Button>
+        </div>
       </Modal>
     </div>
   );

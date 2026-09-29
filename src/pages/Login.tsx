@@ -40,7 +40,7 @@ export default function Login({ onLogin }: Props) {
       setCaptchaSvg(res.svg);
       setCaptchaLeft(CAPTCHA_TTL);
       if (silent) {
-        setError("验证码已过期，已自动刷新，请重新输入");
+        // 到期自动刷新不弹提示，仅清空用户已填的旧验证码（旧码已失效）
         const active = mode === "login" ? loginForm : mode === "register" ? registerForm : forgotForm;
         active.setFieldValue("captcha", "");
       }
@@ -117,7 +117,7 @@ export default function Login({ onLogin }: Props) {
         captcha_id: captchaId,
         captcha: values.captcha,
       });
-      setSuccess(res.message || "注册已提交，请等待管理员审批后登录");
+      setSuccess(res.message || "注册已提交，管理员已收到通知，审批通过后即可登录");
       registerForm.resetFields();
     } catch (err) {
       setError((err as Error).message);
@@ -138,7 +138,7 @@ export default function Login({ onLogin }: Props) {
         captcha_id: captchaId,
         captcha: values.captcha,
       });
-      setSuccess(res.message || "重置申请已提交，请等待管理员核对后设置新密码");
+      setSuccess(res.message || "重置申请已提交，管理员会尽快核对处理");
       forgotForm.resetFields();
     } catch (err) {
       setError((err as Error).message);
@@ -229,7 +229,7 @@ export default function Login({ onLogin }: Props) {
                 {mode === "login"
                   ? "登录你的 AI 招聘工作台"
                   : mode === "register"
-                    ? "注册后由管理员审批通过即可登录"
+                    ? "注册后管理员会收到通知，审批通过即可登录"
                     : "提交申请，由管理员核对后为你设置新密码"}
               </p>
 

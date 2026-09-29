@@ -1,3 +1,4 @@
+import { message } from "antd";
 import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem } from "./types";
 
 const BASE = "/api";
@@ -39,7 +40,11 @@ async function request<T>(
   }
 
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({ error: "请求失败" }))) as { error?: string };
+    const err = (await res.json().catch(() => ({ error: "请求失败" }))) as { error?: string; code?: string };
+    // 账户已冻结（到期未续费）：只读，任何写操作被后端拦截，这里给出统一提示
+    if (res.status === 403 && err.code === "FROZEN") {
+      message.error("账户已冻结，仅可查看；续费后恢复使用");
+    }
     throw new Error(err.error || "请求失败");
   }
 
@@ -116,6 +121,18 @@ export const api = {
     request(`/auth/users/${id}/password`, { method: "PUT", body: JSON.stringify({ password }) }),
   deleteUser: (id: string) =>
     request(`/auth/users/${id}`, { method: "DELETE" }),
+
+  // 会员开通 / 续期 / 清空（管理员确认收款后操作）
+  setMembership: (id: string, data: { months?: number; paid_until?: string; clear?: boolean }) =>
+    request(`/auth/users/${id}/membership`, { method: "PUT", body: JSON.stringify(data) }),
+  // 支付收款配置（收款码 + 说明），向用户展示
+  getPayConfig: () =>
+    request<{ wechat_qr: string | null; alipay_qr: string | null; note: string | null }>("/auth/settings/pay"),
+  setPayConfig: (data: { wechat_qr?: string; alipay_qr?: string; note?: string }) =>
+    request("/auth/settings/pay", { method: "PUT", body: JSON.stringify(data) }),
+  // 当前用户付款后申请开通会员（推送通知管理员）
+  requestMembership: () =>
+    request<{ ok: boolean; message?: string; error?: string }>("/auth/me/membership-request", { method: "POST" }),
 
   // Roles (admin only)
   getRoles: () => request<Role[]>("/roles"),

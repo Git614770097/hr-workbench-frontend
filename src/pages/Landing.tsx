@@ -99,20 +99,20 @@ const SECURITY = [
 // 试用和付费用户看到的功能完全一样，避免把潜在定制客户挡在门外。
 const PLANS = [
   {
-    name: "免费试用", kind: "plan",
-    symbol: "¥", price: "0", period: "首个 30 天",
-    desc: "先用起来，不合适就不用",
+    name: "体验版", kind: "plan",
+    symbol: "¥", price: "9.9", period: "首月 · 含账号开通",
+    desc: "先用起来，不合适不续费",
     feats: ["全部功能开放", "不限在招岗位", "简历导入与解析", "AI 生成 JD 与画像"],
-    featured: false,
-    cta: "开始试用",
+    featured: true,
+    cta: "开始体验",
   },
   {
-    name: "早期用户专享", kind: "plan",
-    symbol: "¥", price: "9.9", period: "首年 · 之后 ¥99 / 年",
-    desc: "不分版本，所有功能都在里面",
+    name: "会员续费", kind: "plan",
+    symbol: "¥", price: "49.9", period: "每年",
+    desc: "到期未续费转为只读，续费即恢复全功能",
     feats: ["全部招聘模块", "合同与社保台账", "待办与到期提醒", "招聘漏斗分析", "不限在招岗位"],
-    featured: true,
-    cta: "立即开通",
+    featured: false,
+    cta: "立即续费",
   },
   {
     name: "定制开发", kind: "custom",
@@ -200,7 +200,7 @@ export default function Landing() {
                 <div className="land-hero-kpi"><b className="num">0</b><span>部署成本</span></div>
               </div>
               <p className="land-hero-note land-hero-anim">
-                注册后 <span className="num">30</span> 天全功能免费试用，不需要任何支付信息；之后早期用户首年 9.9 元。
+                首月体验 <span className="num">¥9.9</span> 含账号开通，全功能不限岗位；之后每年 ¥49.9，到期未续费账户转为只读，续费后即刻恢复。
               </p>
             </div>
 
@@ -354,7 +354,7 @@ export default function Landing() {
               ))}
             </div>
             <p className="land-plan-footnote">
-              试用期内不收费、不绑定支付方式；早期用户首年 9.9 元，之后每年 99 元。定制开发按需求单独评估报价。
+              首月体验 ¥9.9 含账号开通，之后每年 ¥49.9；到期未续费账户转为只读，续费后即刻恢复全功能。定制开发按需求单独评估报价。
             </p>
           </div>
         </section>

@@ -22,7 +22,14 @@ CREATE TABLE IF NOT EXISTS users (
   reset_requested_at TEXT,               -- 忘记密码申请时间，NULL 表示无待处理申请
   must_change_password INTEGER NOT NULL DEFAULT 0, -- 管理员设临时密码后置 1，下次登录需自行修改
   pushplus_token TEXT,                   -- 个人 PushPlus 推送 token（用于到期提醒推送到本人）
+  paid_until TEXT,                       -- 会员有效期（NULL=未开通；过期时间串=已过期/有效），手动开通制
   created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 站点简单配置（KV 风格键值表）：当前仅存支付收款配置（收款码 + 说明）
+CREATE TABLE IF NOT EXISTS site_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
 );
 
 -- 人才档案表

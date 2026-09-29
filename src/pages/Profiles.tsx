@@ -12,7 +12,6 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { EDUCATION_OPTIONS } from "../types";
 import type { MatchProfile } from "../types";
-import { useTableScrollY } from "../hooks/useTableScrollY";
 
 /** 画像整体薪资区间原文（如「20-35K·13薪」）→ 统一展示 */
 function profileSalaryRange(p: MatchProfile): string {
@@ -76,8 +75,6 @@ function fieldsFromProfile(p: MatchProfile): ProfileFields {
 /** 列表页：管理「职位画像」——每个画像 = 目标职位 + 招聘需求 + AI 提炼的整体要求字段 */
 export default function Profiles() {
   const navigate = useNavigate();
-  // 表格高度随视口自适应：表头固定、表体滚动、分页条常驻可见
-  const { ref: tableRef, y: tableY } = useTableScrollY();
   const [list, setList] = useState<MatchProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<MatchProfile | null>(null);
@@ -404,19 +401,17 @@ export default function Profiles() {
             <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
           </Space>
         </div>
-        <div ref={tableRef}>
-          <Table
-            className="profiles-table"
-            rowKey="id"
-            size="small"
-            loading={loading}
-            dataSource={filtered}
-            columns={columns}
-            scroll={{ x: 1220, y: tableY }}
-            locale={{ emptyText: <Empty description="还没有画像，点左上角「新建画像」填写目标职位" /> }}
-            pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 个画像` }}
-          />
-        </div>
+        <Table
+          className="profiles-table"
+          rowKey="id"
+          size="small"
+          loading={loading}
+          dataSource={filtered}
+          columns={columns}
+          scroll={{ x: 1220 }}
+          locale={{ emptyText: <Empty description="还没有画像，点左上角「新建画像」填写目标职位" /> }}
+          pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 个画像` }}
+        />
       </Card>
 
       {/* 新建 / 编辑画像：「目标职位 + 招聘需求（JD） + AI 提炼的画像字段」 */}
