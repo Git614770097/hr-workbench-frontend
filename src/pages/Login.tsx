@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Form, Input, Button, Alert, ConfigProvider, theme as antdTheme } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
-import { Link } from "react-router-dom";
 import { api } from "../api";
 import "../styles/login.css";
 
@@ -188,179 +187,162 @@ export default function Login({ onLogin }: Props) {
       }}
     >
       <div className="login">
+        <span className="login-orb-a" aria-hidden />
         <span className="login-orb-b" aria-hidden />
-
-        <header className="login-top">
-          <Link to="/" className="login-top-brand">
-            <span className="login-logo-mark">HR</span>
-            <span>HR 工作台</span>
-          </Link>
-          <div className="login-top-actions">
-            <Link to="/">官网首页</Link>
-            <Link to="/help">帮助中心</Link>
-          </div>
-        </header>
 
         <div className="login-shell">
           <div className="login-card">
-            <aside className="login-brand">
-              <span className="login-brand-tag"><i />云端部署 · 打开浏览器即用</span>
-              <h1>让 <span className="login-hl">AI</span> 替你<br />跑招聘全流程</h1>
-              <p className="login-brand-lead">写 JD、筛简历、盯到期、算个税，一个人也能有整个 HR 部门的效率。</p>
-              <ul className="login-points">
-                <li><span className="num">01</span><span>AI 招聘助手 · 一键生成 JD 与画像</span></li>
-                <li><span className="num">02</span><span>招聘漏斗 · 转化率用数据说话</span></li>
-                <li><span className="num">03</span><span>合同社保 · 到期自动提醒</span></li>
-              </ul>
-              <div className="login-kpis">
-                <div><b className="num">6+</b><span>核心模块</span></div>
-                <div><b className="num">110+</b><span>人事模板</span></div>
+            <header className="login-card-head">
+              <span className="login-logo-mark">HR</span>
+              <div className="login-card-head-text">
+                <div className="login-card-brand">HR 工作台</div>
+                <div className="login-card-tagline">
+                  让 <span className="login-hl">AI</span> 替你跑招聘全流程
+                </div>
               </div>
-            </aside>
+            </header>
 
-            <main className="login-form">
-              <div className="login-tabs">
-                <button type="button" className={mode === "login" ? "on" : ""} onClick={() => switchMode("login")}>登录</button>
-                <button type="button" className={mode === "register" ? "on" : ""} onClick={() => switchMode("register")}>注册</button>
-              </div>
+            <div className="login-tabs">
+              <button type="button" className={mode === "login" ? "on" : ""} onClick={() => switchMode("login")}>登录</button>
+              <button type="button" className={mode === "register" ? "on" : ""} onClick={() => switchMode("register")}>注册</button>
+            </div>
 
-              <h2 className="login-title">
-                {mode === "login" ? "欢迎回来" : mode === "register" ? "创建账号" : "找回密码"}
-              </h2>
-              <p className="login-sub">
-                {mode === "login"
-                  ? "登录你的 AI 招聘工作台"
-                  : mode === "register"
-                    ? "注册后管理员会收到通知，审批通过即可登录"
-                    : "提交申请，由管理员核对后为你设置新密码"}
-              </p>
+            <h2 className="login-title">
+              {mode === "login" ? "欢迎回来" : mode === "register" ? "创建账号" : "找回密码"}
+            </h2>
+            <p className="login-sub">
+              {mode === "login"
+                ? "登录你的 AI 招聘工作台"
+                : mode === "register"
+                  ? "注册后管理员会收到通知，审批通过即可登录"
+                  : "提交申请，由管理员核对后为你设置新密码"}
+            </p>
 
-              {error && <Alert message={error} type="error" showIcon className="login-alert" />}
-              {success && <Alert message={success} type="success" showIcon className="login-alert" />}
+            {error && <Alert message={error} type="error" showIcon className="login-alert" />}
+            {success && <Alert message={success} type="success" showIcon className="login-alert" />}
 
+            {mode === "login" && (
+              <Form form={loginForm} onFinish={handleLogin} layout="vertical">
+                <Form.Item
+                  name="phone"
+                  rules={[
+                    { required: true, message: "请输入手机号" },
+                    { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
+                  ]}
+                >
+                  <Input placeholder="手机号" maxLength={11} />
+                </Form.Item>
+
+                <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
+                  <Input.Password placeholder="密码" />
+                </Form.Item>
+
+                {captchaField}
+
+                <Form.Item style={{ marginBottom: 6 }}>
+                  <Button type="primary" htmlType="submit" block loading={loading}>
+                    登录
+                  </Button>
+                </Form.Item>
+              </Form>
+            )}
+
+            {mode === "register" && (
+              <Form form={registerForm} onFinish={handleRegister} layout="vertical">
+                <Form.Item
+                  name="phone"
+                  rules={[
+                    { required: true, message: "请输入手机号" },
+                    { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
+                  ]}
+                >
+                  <Input placeholder="手机号" maxLength={11} />
+                </Form.Item>
+
+                <Form.Item name="name" rules={[{ required: true, message: "请输入姓名" }]}>
+                  <Input placeholder="姓名" maxLength={20} />
+                </Form.Item>
+
+                <Form.Item
+                  name="password"
+                  rules={[
+                    { required: true, message: "请输入密码" },
+                    { min: 6, message: "密码至少 6 位" },
+                  ]}
+                >
+                  <Input.Password placeholder="密码（至少 6 位）" />
+                </Form.Item>
+
+                <Form.Item
+                  name="confirm"
+                  dependencies={["password"]}
+                  rules={[
+                    { required: true, message: "请再次输入密码" },
+                    ({ getFieldValue }) => ({
+                      validator(_, value) {
+                        if (!value || getFieldValue("password") === value) return Promise.resolve();
+                        return Promise.reject(new Error("两次输入的密码不一致"));
+                      },
+                    }),
+                  ]}
+                >
+                  <Input.Password placeholder="确认密码" />
+                </Form.Item>
+
+                {captchaField}
+
+                <Form.Item style={{ marginBottom: 6 }}>
+                  <Button type="primary" htmlType="submit" block loading={loading}>
+                    创建账号
+                  </Button>
+                </Form.Item>
+              </Form>
+            )}
+
+            {mode === "forgot" && (
+              <Form form={forgotForm} onFinish={handleForgot} layout="vertical">
+                <Alert
+                  type="info"
+                  showIcon
+                  className="login-alert"
+                  message="本系统未接入短信服务，提交申请后需由管理员核对身份并为你设置新密码。"
+                />
+
+                <Form.Item
+                  name="phone"
+                  rules={[
+                    { required: true, message: "请输入手机号" },
+                    { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
+                  ]}
+                >
+                  <Input placeholder="手机号" maxLength={11} />
+                </Form.Item>
+
+                <Form.Item name="name" rules={[{ required: true, message: "请输入姓名" }]}>
+                  <Input placeholder="姓名（用于核对身份）" maxLength={20} />
+                </Form.Item>
+
+                {captchaField}
+
+                <Form.Item style={{ marginBottom: 6 }}>
+                  <Button type="primary" htmlType="submit" block loading={loading}>
+                    提交申请
+                  </Button>
+                </Form.Item>
+              </Form>
+            )}
+
+            <div className="login-switch">
               {mode === "login" && (
-                <Form form={loginForm} onFinish={handleLogin} layout="vertical">
-                  <Form.Item
-                    name="phone"
-                    rules={[
-                      { required: true, message: "请输入手机号" },
-                      { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
-                    ]}
-                  >
-                    <Input placeholder="手机号" maxLength={11} />
-                  </Form.Item>
-
-                  <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
-                    <Input.Password placeholder="密码" />
-                  </Form.Item>
-
-                  {captchaField}
-
-                  <Form.Item style={{ marginBottom: 8 }}>
-                    <Button type="primary" htmlType="submit" block loading={loading}>
-                      登录
-                    </Button>
-                  </Form.Item>
-                </Form>
+                <>
+                  <a onClick={() => switchMode("register")}>立即注册</a>
+                  <span className="login-switch-sep">·</span>
+                  <a onClick={() => switchMode("forgot")}>忘记密码？</a>
+                </>
               )}
-
-              {mode === "register" && (
-                <Form form={registerForm} onFinish={handleRegister} layout="vertical">
-                  <Form.Item
-                    name="phone"
-                    rules={[
-                      { required: true, message: "请输入手机号" },
-                      { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
-                    ]}
-                  >
-                    <Input placeholder="手机号" maxLength={11} />
-                  </Form.Item>
-
-                  <Form.Item name="name" rules={[{ required: true, message: "请输入姓名" }]}>
-                    <Input placeholder="姓名" maxLength={20} />
-                  </Form.Item>
-
-                  <Form.Item
-                    name="password"
-                    rules={[
-                      { required: true, message: "请输入密码" },
-                      { min: 6, message: "密码至少 6 位" },
-                    ]}
-                  >
-                    <Input.Password placeholder="密码（至少 6 位）" />
-                  </Form.Item>
-
-                  <Form.Item
-                    name="confirm"
-                    dependencies={["password"]}
-                    rules={[
-                      { required: true, message: "请再次输入密码" },
-                      ({ getFieldValue }) => ({
-                        validator(_, value) {
-                          if (!value || getFieldValue("password") === value) return Promise.resolve();
-                          return Promise.reject(new Error("两次输入的密码不一致"));
-                        },
-                      }),
-                    ]}
-                  >
-                    <Input.Password placeholder="确认密码" />
-                  </Form.Item>
-
-                  {captchaField}
-
-                  <Form.Item style={{ marginBottom: 8 }}>
-                    <Button type="primary" htmlType="submit" block loading={loading}>
-                      创建账号
-                    </Button>
-                  </Form.Item>
-                </Form>
-              )}
-
-              {mode === "forgot" && (
-                <Form form={forgotForm} onFinish={handleForgot} layout="vertical">
-                  <Alert
-                    type="info"
-                    showIcon
-                    className="login-alert"
-                    message="本系统未接入短信服务，提交申请后需由管理员核对身份并为你设置新密码。"
-                  />
-
-                  <Form.Item
-                    name="phone"
-                    rules={[
-                      { required: true, message: "请输入手机号" },
-                      { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
-                    ]}
-                  >
-                    <Input placeholder="手机号" maxLength={11} />
-                  </Form.Item>
-
-                  <Form.Item name="name" rules={[{ required: true, message: "请输入姓名" }]}>
-                    <Input placeholder="姓名（用于核对身份）" maxLength={20} />
-                  </Form.Item>
-
-                  {captchaField}
-
-                  <Form.Item style={{ marginBottom: 8 }}>
-                    <Button type="primary" htmlType="submit" block loading={loading}>
-                      提交申请
-                    </Button>
-                  </Form.Item>
-                </Form>
-              )}
-
-              <div className="login-switch">
-                {mode === "login" && (
-                  <>
-                    <a onClick={() => switchMode("register")}>立即注册</a>
-                    <span className="login-switch-sep">·</span>
-                    <a onClick={() => switchMode("forgot")}>忘记密码？</a>
-                  </>
-                )}
-                {mode === "register" && <a onClick={() => switchMode("login")}>已有账号？返回登录</a>}
-                {mode === "forgot" && <a onClick={() => switchMode("login")}>← 返回登录</a>}
-              </div>
-            </main>
+              {mode === "register" && <a onClick={() => switchMode("login")}>已有账号？返回登录</a>}
+              {mode === "forgot" && <a onClick={() => switchMode("login")}>← 返回登录</a>}
+            </div>
           </div>
 
           <div className="login-foot">
