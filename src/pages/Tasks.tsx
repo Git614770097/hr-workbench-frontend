@@ -427,7 +427,11 @@ export default function Tasks() {
               // 非受控：选中态交给组件内部，翻月不会受外部 value 干扰
               defaultValue={dayjs()}
               onSelect={(d, info) => {
-                if (info.source === "date") setSelected(d.format("YYYY-MM-DD"));
+                if (info.source !== "date") return;
+                const ymd = d.format("YYYY-MM-DD");
+                setSelected(ymd);
+                // 这天一条待办都没有 → 直接弹「新建待办」并预填该日期（空白格点击即建，少一步）
+                if (!(byDate[ymd] || []).length) openCreate(ymd);
               }}
               onPanelChange={(d) => setViewMonth(d.startOf("month"))}
               cellRender={cellRender}
