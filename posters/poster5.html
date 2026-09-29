@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>poster5</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#e9edf6; font-family:"Microsoft YaHei","PingFang SC","Hiragino Sans GB",sans-serif; }
+  #poster{ width:1080px; height:1440px; position:relative; overflow:hidden;
+    background:linear-gradient(180deg,#f3f7ff 0%,#ffffff 52%,#f6f2ff 100%); }
+  .blob{ position:absolute; border-radius:50%; }
+  .b1{ width:560px; height:560px; left:-170px; top:-170px;
+    background:radial-gradient(circle,#dce7ff 0%,rgba(220,231,255,0) 68%); }
+  .b2{ width:500px; height:500px; right:-150px; bottom:-130px;
+    background:radial-gradient(circle,#e8ddff 0%,rgba(232,221,255,0) 68%); }
+  .wrap{ position:relative; z-index:2; height:100%; padding:56px 72px 0; display:flex; flex-direction:column; }
+  .brandrow{ display:flex; justify-content:space-between; align-items:center; }
+  .brand{ font-size:30px; font-weight:800; color:#2563eb; letter-spacing:3px; }
+  .domain{ font-size:23px; color:#4c5f8f; background:#eef3ff; border:2px solid #d8e3ff;
+    padding:8px 24px; border-radius:999px; font-weight:700; }
+  .tag{ margin-top:40px; align-self:flex-start; font-size:26px; font-weight:700; color:#fff;
+    background:linear-gradient(90deg,#2563eb,#7c3aed); padding:10px 30px; border-radius:999px; }
+  h1{ margin-top:28px; font-size:78px; line-height:1.3; color:#101d3d; font-weight:900; letter-spacing:2px; }
+  .hl{ background:linear-gradient(90deg,#2563eb,#7c3aed); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .sub{ margin-top:22px; font-size:30px; line-height:1.65; color:#5a6a8f; font-weight:500; }
+  .shotwrap{ margin-top:32px; position:relative; }
+  .frame{ border-radius:20px; overflow:hidden; border:1px solid #dce5f5; background:#fff;
+    box-shadow:0 34px 64px rgba(124,58,237,.16), 0 10px 26px rgba(16,29,61,.08); }
+  .frame img{ display:block; width:100%; height:auto; }
+  .ribbon{ position:absolute; top:-16px; right:22px; background:#101d3d; color:#fff;
+    font-size:22px; font-weight:700; padding:8px 20px; border-radius:999px;
+    box-shadow:0 8px 18px rgba(16,29,61,.25); }
+  .pills{ margin-top:30px; display:flex; gap:18px; }
+  .pill{ flex:1; text-align:center; font-size:26px; font-weight:700; color:#2c3f6e;
+    background:#fff; border:2px solid #e4dcff; border-radius:16px; padding:16px 0;
+    box-shadow:0 8px 18px rgba(124,58,237,.06); }
+  .foot{ margin-top:auto; height:92px; display:flex; align-items:center; justify-content:space-between;
+    border-top:2px solid #e9e4f9; }
+  .fl{ font-size:26px; font-weight:800; color:#101d3d; letter-spacing:1px; }
+  .fr{ font-size:22px; color:#7b88a8; font-weight:600; }
+</style>
+</head>
+<body>
+<div id="poster">
+  <div class="blob b1"></div><div class="blob b2"></div>
+  <div class="wrap">
+    <div class="brandrow">
+      <div class="brand">HR 工作台</div>
+      <div class="domain">hr-work.club</div>
+    </div>
+    <div class="tag">招人最怕的，是进度失联</div>
+    <h1>候选人卡在哪一环，<br>不用群里问一圈，<br><span class="hl">拖一眼就全清楚</span></h1>
+    <div class="sub">Excel 记阶段、微信群催跟进，人招到第几步全靠回忆。<br>看板拖拽即流转，停留天数自动算，到期事项自动提醒。</div>
+    <div class="shotwrap">
+      <div class="ribbon">真实界面实拍</div>
+      <div class="frame"><img src="../screenshots/02-pipeline.png" alt=""></div>
+    </div>
+    <div class="pills">
+      <div class="pill">拖拽流转留痕</div>
+      <div class="pill">停留天数自动算</div>
+      <div class="pill">到期自动提醒</div>
+    </div>
+    <div class="foot">
+      <div class="fl">招聘全生命周期管理系统</div>
+      <div class="fr">不需要服务器 · 不需要域名 · 打开就能用</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
