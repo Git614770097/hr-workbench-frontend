@@ -387,9 +387,19 @@ export default function Users() {
       title: "操作",
       key: "action",
       width: 200,
-      render: (_: unknown, record: UserRow) => (
+      render: (_: unknown, record: UserRow) => {
+        // 长期有效（如 2099 回填）且未到期的非管理员用户，无需重复开通 → 禁用「开通」
+        const st = memberState(record.paid_until);
+        const openDisabled = st.status === "active" && st.label === "长期有效" && record.role !== "admin";
+        return (
         <Space size={4}>
-          <Button type="link" size="small" onClick={() => { setMembering(record); setMemberMonths(12); setMemberDate(""); }}>开通</Button>
+          <Button
+            type="link"
+            size="small"
+            disabled={openDisabled}
+            title={openDisabled ? "该用户已长期有效，无需重复开通" : undefined}
+            onClick={() => { if (openDisabled) return; setMembering(record); setMemberMonths(12); setMemberDate(""); }}
+          >开通</Button>
           {record.paid_until ? (
             <Popconfirm
               title={`清空「${record.name}」的会员有效期？`}
@@ -409,7 +419,8 @@ export default function Users() {
             </>
           )}
         </Space>
-      ),
+        );
+      },
     },
   ];
 
