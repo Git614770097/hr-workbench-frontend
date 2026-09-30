@@ -12,7 +12,10 @@ import {
 import type { MenuProps } from "antd";
 import { api } from "../api";
 import type { Talent, User, ComplianceItem, ComplianceResponse } from "../types";
-import { STATUS_LABELS, STATUS_COLORS, EDUCATION_OPTIONS } from "../types";
+import {
+  STATUS_LABELS, STATUS_COLORS, EDUCATION_OPTIONS,
+  ENTRY_TYPE_LABELS, ENTRY_TYPE_COLORS, ENTRY_TYPE_OPTIONS,
+} from "../types";
 import ImportModal from "../components/ImportModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
 import TalentFormModal from "../components/TalentFormModal";
@@ -28,11 +31,13 @@ interface Filters {
   title: string;
   status: string;
   owner_id: string;
+  entry_type: string;
 }
 
 const EMPTY_FILTERS: Filters = {
   name: "", phone: "", education: "",
   years: null, title: "", status: "", owner_id: "",
+  entry_type: "",
 };
 
 // 搜索条件 → 查询参数。列表查询与导出共用一份，
@@ -46,6 +51,7 @@ function buildFilterParams(f: Filters): Record<string, string | number> {
   if (f.title) params.title = f.title;
   if (f.status) params.status = f.status;
   if (f.owner_id) params.owner_id = f.owner_id;
+  if (f.entry_type) params.entry_type = f.entry_type;
   return params;
 }
 
@@ -180,6 +186,8 @@ export default function TalentList() {
     { key: "skills", title: "技能", get: (t) => (t.skills || []).join("、") },
     { key: "status", title: "状态", get: (t) => STATUS_LABELS[t.status] || t.status || "" },
     { key: "owner_name", title: "创建人", get: (t) => t.owner_name || "" },
+    { key: "entry_type", title: "录入方式", get: (t) => ENTRY_TYPE_LABELS[t.entry_type || "manual"] || "手动录入" },
+    { key: "source", title: "来源渠道", get: (t) => t.source || "" },
     { key: "created_at", title: "创建时间", get: (t) => t.created_at || "" },
   ];
 
@@ -279,6 +287,7 @@ export default function TalentList() {
     { key: "education", label: "学历", control: <Select style={controlStyle} value={draft.education || undefined} onChange={(v) => setField("education", v || "")} allowClear placeholder="请选择学历" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} /> },
     { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "status", label: "状态", control: <Select style={controlStyle} value={draft.status || undefined} onChange={(v) => setField("status", v || "")} allowClear placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} /> },
+    { key: "entry_type", label: "录入方式", control: <Select style={controlStyle} value={draft.entry_type || undefined} onChange={(v) => setField("entry_type", v || "")} allowClear placeholder="全部方式" options={ENTRY_TYPE_OPTIONS} /> },
     ...(isAdmin && users.length > 0
       ? [{ key: "owner_id", label: "创建人", control: <Select style={controlStyle} value={draft.owner_id || undefined} onChange={(v) => setField("owner_id", v || "")} allowClear placeholder="请选择创建人" options={users.map((u) => ({ label: u.name, value: u.id }))} /> }]
       : []),
@@ -327,6 +336,23 @@ export default function TalentList() {
           {STATUS_LABELS[status] || status}
         </Tag>
       ),
+    },
+    {
+      title: "来源",
+      dataIndex: "entry_type",
+      key: "entry_type",
+      width: 168,
+      render: (_: string, record: Talent) => {
+        const t = record.entry_type || "manual";
+        return (
+          <Space size={4} wrap>
+            <Tag color={ENTRY_TYPE_COLORS[t] || ENTRY_TYPE_COLORS.manual} style={{ marginInlineEnd: 0 }}>
+              {ENTRY_TYPE_LABELS[t] || "手动录入"}
+            </Tag>
+            {record.source ? <Tag style={{ marginInlineEnd: 0 }}>{record.source}</Tag> : <span>—</span>}
+          </Space>
+        );
+      },
     },
     ...(isAdmin ? [{
       title: "创建人",

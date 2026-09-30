@@ -15,6 +15,12 @@ function dateOrNull(v: unknown): string | null {
   return m ? m[1] : null;
 }
 
+// 录入方式归一化：只允许 manual/import/sync，未知或缺失回落 fallback
+function normalizeEntryType(v: unknown, fallback = "manual"): string {
+  const s = typeof v === "string" ? v.trim().toLowerCase() : "";
+  return ["manual", "import", "sync"].includes(s) ? s : fallback;
+}
+
 // ---- 合同/试用期到期 → 待办提醒（幂等同步）----
 // 规则：pending 的「合同到期：X」「试用期到期：X」待办与人才当前日期对齐——
 // 有日期且无待办 → 新建（priority high、source system）；日期变更 → 更新待办 due；
@@ -156,6 +162,7 @@ talents.get("/", async (c) => {
   const school = (c.req.query("school") || "").trim();
   const years = c.req.query("years");
   const title = (c.req.query("title") || "").trim();
+  const entryType = c.req.query("entry_type");
 
   const offset = (page - 1) * limit;
   const conditions: string[] = [];
@@ -182,6 +189,7 @@ talents.get("/", async (c) => {
   if (years && !isNaN(parseInt(years, 10))) { conditions.push("t.years_experience = ?"); params.push(parseInt(years, 10)); }
   if (title) { conditions.push("t.current_title LIKE ?"); params.push(`%${title}%`); }
   if (status) { conditions.push("t.status = ?"); params.push(status); }
+  if (entryType) { conditions.push("t.entry_type = ?"); params.push(entryType); }
   if (city) { conditions.push("t.city LIKE ?"); params.push(`%${city}%`); }
 
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
@@ -600,8 +608,8 @@ talents.post("/", async (c) => {
   const body = await c.req.json<any>();
   const id = genId();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
-  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, hire_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.source || null, body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date)).run();
+  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, hire_date, entry_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.source || null, body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), normalizeEntryType(body.entry_type)).run();
 
   return c.json({ id, ...body });
 });
@@ -796,8 +804,8 @@ talents.post("/import", async (c) => {
   for (const item of items) {
     const id = genId();
     const skills = item.skills ? JSON.stringify(item.skills) : null;
-    await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, session.userId, item.name || "", item.phone || null, item.email || null, item.age ?? null, item.gender || null, item.education || null, item.school || null, item.current_company || null, item.current_title || null, item.years_experience || null, item.city || null, skills, item.industry || null, item.expected_salary || null, item.expected_city || null, item.status || "active", item.source || null, item.resume_url || null, item.notes || null, dateOrNull(item.birth_date), dateOrNull(item.contract_end), dateOrNull(item.probation_end), dateOrNull(item.resignation_date)).run();
+    await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, entry_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(id, session.userId, item.name || "", item.phone || null, item.email || null, item.age ?? null, item.gender || null, item.education || null, item.school || null, item.current_company || null, item.current_title || null, item.years_experience || null, item.city || null, skills, item.industry || null, item.expected_salary || null, item.expected_city || null, item.status || "active", item.source || null, item.resume_url || null, item.notes || null, dateOrNull(item.birth_date), dateOrNull(item.contract_end), dateOrNull(item.probation_end), dateOrNull(item.resignation_date), normalizeEntryType(item.entry_type, "import")).run();
     count++;
     created.push({ id, name: item.name || "" });
   }

@@ -78,6 +78,7 @@ export interface Talent {
   notes: string | null;
   stage: string | null;      // 全局招聘阶段
   source: string | null;     // 来源渠道
+  entry_type?: string | null; // 录入方式: manual=手动录入 / import=简历导入 / sync=平台同步
   birth_date: string | null;
   contract_end: string | null;
   probation_end: string | null;
@@ -174,6 +175,25 @@ export const STATUS_COLORS: Record<string, string> = {
   placed: "#3b82f6",
   do_not_contact: "#ef4444",
 };
+
+// 录入方式：人才是怎么进库的（具体来自哪个平台看 source 字段）
+export const ENTRY_TYPE_LABELS: Record<string, string> = {
+  manual: "手动录入",
+  import: "简历导入",
+  sync: "平台同步",
+};
+
+export const ENTRY_TYPE_COLORS: Record<string, string> = {
+  manual: "#8c8c8c",
+  import: "#1677ff",
+  sync: "#722ed1",
+};
+
+export const ENTRY_TYPE_OPTIONS = [
+  { label: "手动录入", value: "manual" },
+  { label: "简历导入", value: "import" },
+  { label: "平台同步", value: "sync" },
+];
 
 export const ROLE_LABELS: Record<string, string> = {
   admin: "管理员",
