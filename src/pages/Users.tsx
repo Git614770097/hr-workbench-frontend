@@ -377,6 +377,8 @@ export default function Users() {
       width: 160,
       render: (v: string | null, record: UserRow) => {
         if (record.status === "frozen") return <Tag color="orange">已冻结（只读）</Tag>;
+        // 管理员本就长期有效：不需要会员、永不冻结
+        if (record.role === "admin") return <Tag color="green">长期有效</Tag>;
         const st = memberState(record.paid_until);
         if (st.status === "active") return <Tag color="green">{st.label}</Tag>;
         if (st.status === "expired") return <Tag color="red">{st.label}</Tag>;
@@ -388,9 +390,9 @@ export default function Users() {
       key: "action",
       width: 200,
       render: (_: unknown, record: UserRow) => {
-        // 长期有效（如 2099 回填）且未到期的非管理员用户，无需重复开通 → 禁用「开通」
+        // 长期有效（如 2099 回填、或管理员本就长期有效）且未到期 → 无需重复开通，禁用「开通」
         const st = memberState(record.paid_until);
-        const openDisabled = st.status === "active" && st.label === "长期有效" && record.role !== "admin";
+        const openDisabled = (st.status === "active" && st.label === "长期有效") || record.role === "admin";
         return (
         <Space size={4}>
           <Button
