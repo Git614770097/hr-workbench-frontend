@@ -12,6 +12,42 @@ type Stage = (typeof STAGES)[number];
 // 终态：不再计入「进行中」
 const TERMINAL: Stage[] = ["hired", "rejected", "withdrawn"];
 
+// 进行中阶段的推进顺序（用于派生人才全局阶段时取「最靠前」的一档）
+const PROGRESS_ORDER: Stage[] = ["screening", "interview1", "interview2", "offer"];
+
+/**
+ * 同步人才全局阶段 talents.stage —— 该字段是冗余缓存，唯一真源是 talent_jobs.stage
+ * （一个人在不同岗位可以处于不同阶段，全局阶段表示「整体推进到哪一步」）。
+ * 规则：任一投递已入职 → hired 且 status='placed'；否则取所有进行中投递里最靠前的阶段；
+ *      全部为终态（淘汰/放弃）→ archived。任何阶段变更后调用，避免出现「A 岗位已入职、
+ *      全局却还是初试」这类双轨不一致。
+ */
+async function syncTalentStage(db: D1Database, talentId: string): Promise<void> {
+  const rows = await db.prepare("SELECT stage FROM talent_jobs WHERE talent_id = ?")
+    .bind(talentId).all<{ stage: string }>();
+  const stages = ((rows.results || []) as { stage: string }[]).map((r) => r.stage);
+  if (stages.length === 0) return;
+
+  if (stages.includes("hired")) {
+    await db.prepare("UPDATE talents SET stage = 'hired', status = 'placed', updated_at = datetime('now') WHERE id = ?")
+      .bind(talentId).run();
+    return;
+  }
+
+  const active = stages.filter((s) => (PROGRESS_ORDER as string[]).includes(s));
+  if (active.length === 0) {
+    // 全部终态（淘汰 / 放弃）：回到人才库待激活状态
+    await db.prepare("UPDATE talents SET stage = 'archived', updated_at = datetime('now') WHERE id = ?")
+      .bind(talentId).run();
+    return;
+  }
+
+  const furthest = active.reduce((a, b) =>
+    PROGRESS_ORDER.indexOf(b as Stage) > PROGRESS_ORDER.indexOf(a as Stage) ? b : a);
+  await db.prepare("UPDATE talents SET stage = ?, updated_at = datetime('now') WHERE id = ?")
+    .bind(furthest, talentId).run();
+}
+
 // 阶段展示元信息（与前端 types.ts 的 PIPELINE_STAGES 保持一致）
 const STAGE_LABELS: Record<Stage, { label: string; color: string }> = {
   screening:  { label: "简历筛选", color: "#0ea5e9" },
@@ -58,6 +94,8 @@ pipeline.get("/", async (c) => {
     SELECT tj.id as link_id, tj.stage, tj.rating, tj.notes as stage_notes, tj.updated_at as stage_updated_at,
            t.id as talent_id, t.name, t.phone, t.current_title, t.current_company,
            t.years_experience, t.education, t.city, t.resume_url, t.source,
+           (SELECT MIN(tt.due_date) FROM talent_tasks tt
+              WHERE tt.talent_id = t.id AND tt.status = 'pending' AND tt.due_date IS NOT NULL) as next_follow,
            j.id as job_id, j.title as job_title, j.department as job_department, j.city as job_city,
            u.name as owner_name
     FROM talent_jobs tj
@@ -535,9 +573,8 @@ pipeline.post("/", async (c) => {
   await c.env.DB.prepare("INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, NULL, ?, ?, ?)")
     .bind(genId(), id, stage, session.userId, "加入招聘看板").run();
 
-  // 同步人才全局阶段（若是新录入状态）
-  await c.env.DB.prepare("UPDATE talents SET stage = CASE WHEN stage IN ('new','archived') OR stage IS NULL THEN ? ELSE stage END, updated_at = datetime('now') WHERE id = ?")
-    .bind(stage === "screening" ? "screening" : stage, body.talent_id).run();
+  // 同步人才全局阶段（冗余字段，派生自 talent_jobs）
+  await syncTalentStage(c.env.DB, body.talent_id);
 
   return c.json({ id, talent_name: talent.name, job_title: job.title, stage });
 });
@@ -590,11 +627,12 @@ pipeline.post("/batch", async (c) => {
         .bind(id, t.id, body.job_id, stage, body.notes || null),
       c.env.DB.prepare("INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, NULL, ?, ?, ?)")
         .bind(genId(), id, stage, session.userId, "加入招聘看板"),
-      c.env.DB.prepare("UPDATE talents SET stage = CASE WHEN stage IN ('new','archived') OR stage IS NULL THEN ? ELSE stage END, updated_at = datetime('now') WHERE id = ?")
-        .bind(stage, t.id),
     ];
   });
   await c.env.DB.batch(stmts);
+
+  // 同步各人才的全局阶段（冗余字段，派生自 talent_jobs）
+  for (const t of added) await syncTalentStage(c.env.DB, t.id);
 
   return c.json({
     added: added.length,
@@ -677,6 +715,9 @@ pipeline.post("/batch-stage", async (c) => {
     await c.env.DB.batch(hiredStmts);
   }
 
+  // 同步各人才的全局阶段（冗余字段，派生自 talent_jobs）
+  for (const r of targets) await syncTalentStage(c.env.DB, r.talent_id);
+
   return c.json({
     updated: targets.length,
     skipped,
@@ -721,9 +762,6 @@ pipeline.put("/:linkId/stage", async (c) => {
   // 并生成一条「试用期跟进」待办（防重：同人才已有未完成的同前缀待办则跳过）
   let taskCreated = false;
   if (body.stage === "hired") {
-    await c.env.DB.prepare("UPDATE talents SET status = 'placed', stage = 'hired', updated_at = datetime('now') WHERE id = ?")
-      .bind(link.talent_id).run();
-
     const dupTask = await c.env.DB.prepare(
       "SELECT id FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND title LIKE '试用期跟进%'"
     ).bind(link.talent_id).first();
@@ -741,6 +779,9 @@ pipeline.put("/:linkId/stage", async (c) => {
       taskCreated = true;
     }
   }
+
+  // 同步人才全局阶段（冗余字段，派生自 talent_jobs）
+  await syncTalentStage(c.env.DB, link.talent_id);
 
   return c.json({ ok: true, stage: body.stage, task_created: taskCreated });
 });

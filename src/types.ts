@@ -317,6 +317,8 @@ export interface PipelineCard {
   city: string | null;
   resume_url: string | null;
   source: string | null;
+  /** 下次跟进日期：该候选人最早的未完成待办 due_date（没有待办则为 null） */
+  next_follow: string | null;
   job_id: string | null;
   job_title: string | null;
   job_department: string | null;

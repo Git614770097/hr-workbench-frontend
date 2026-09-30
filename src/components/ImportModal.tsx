@@ -4,7 +4,7 @@ import {
 } from "antd";
 import { InboxOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import { SOURCE_OPTIONS } from "../types";
+import { useDict } from "../dict";
 import ImportPreviewModal from "./ImportPreviewModal";
 import {
   parseResumeToTalent, recordToData,
@@ -20,6 +20,7 @@ interface Props {
 }
 
 export default function ImportModal({ open, onClose, onSuccess }: Props) {
+  const { sources } = useDict();
   const [parsing, setParsing] = useState(false);
   const [records, setRecords] = useState<ParsedTalent[]>([]);
   const [error, setError] = useState("");
@@ -293,7 +294,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
           placeholder="选择后应用到本批全部录入"
           value={batchSource}
           onChange={setBatchSource}
-          options={SOURCE_OPTIONS.map((s) => ({ label: s, value: s }))}
+          options={sources.map((s) => ({ label: s, value: s }))}
         />
       </div>
 

@@ -10,14 +10,16 @@ import {
   ClockCircleOutlined, FilePdfOutlined, SwapOutlined, DeleteOutlined,
   HistoryOutlined, UserOutlined, MessageOutlined,
   SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, BarsOutlined,
-  PhoneOutlined,
+  PhoneOutlined, CalendarOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
 import type { PipelineCard, PipelineResponse, Stage, StageLog, User, Job } from "../types";
 import {
-  PIPELINE_STAGES, STAGE_META, SOURCE_OPTIONS, PRIORITY_LABELS, REJECT_REASONS,
+  PIPELINE_STAGES, STAGE_META, PRIORITY_LABELS,
 } from "../types";
+import { useDict } from "../dict";
+import { fmtDate } from "../utils/time";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { DemoSeedButton } from "../components/DemoSeed";
@@ -37,6 +39,7 @@ const copyText = async (text: string, label: string) => {
 };
 
 export default function Pipeline() {
+  const { rejectReasons } = useDict();
   const [columns, setColumns] = useState<Record<string, PipelineCard[]>>(EMPTY_COLUMNS);
   const [stats, setStats] = useState({ total: 0, active: 0, hired: 0, rejected: 0 });
   const [jobs, setJobs] = useState<Pick<Job, "id" | "title" | "status">[]>([]);
@@ -507,12 +510,13 @@ export default function Pipeline() {
                         </div>
 
                         {/* 静态属性合并为一行次要文字，降噪（原先 3 个 Tag） */}
-                        {(card.years_experience != null || card.education || card.city) && (
+                        {(card.years_experience != null || card.education || card.city || card.source) && (
                           <div className="pipe-card-meta">
                             {[
                               card.years_experience != null ? `${card.years_experience}年经验` : null,
                               card.education,
                               card.city,
+                              card.source ? `来源 ${card.source}` : null,
                             ].filter(Boolean).join(" · ")}
                           </div>
                         )}
@@ -537,6 +541,13 @@ export default function Pipeline() {
                               <span className="pipe-stale">
                                 {card.days_in_stage === 0 ? "今天更新" : `停留 ${card.days_in_stage} 天`}
                               </span>
+                            )}
+                            {card.next_follow && (
+                              <Tooltip title={`有未完成的跟进待办，最早到期日 ${fmtDate(card.next_follow)}`}>
+                                <span className="pipe-next">
+                                  <CalendarOutlined /> 跟进 {fmtDate(card.next_follow)}
+                                </span>
+                              </Tooltip>
                             )}
                             {card.owner_name && (
                               <Tooltip title="负责人">
@@ -657,7 +668,7 @@ export default function Pipeline() {
           style={{ width: "100%" }}
           value={rejectReason || undefined}
           onChange={(v) => setRejectReason(v || "")}
-          options={REJECT_REASONS.map((r) => ({ label: r, value: r }))}
+          options={rejectReasons.map((r) => ({ label: r, value: r }))}
         />
         <Input.TextArea
           rows={2}

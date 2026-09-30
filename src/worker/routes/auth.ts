@@ -649,6 +649,80 @@ auth.put("/settings/pay", async (c) => {
   return c.json({ ok: true });
 });
 
+// ---- 数据字典（来源渠道 / 淘汰原因）：可配置，服务于不同公司的叫法差异 ----
+// 同样存 site_settings：值为 JSON 字符串数组；未配置时回落到代码内置默认值。
+const DICT_KEYS = ["dict_sources", "dict_reject_reasons"] as const;
+
+const DEFAULT_DICT: Record<string, string[]> = {
+  dict_sources: [
+    "BOSS直聘", "猎聘", "智联招聘", "前程无忧", "内推", "校招",
+    "官网投递", "猎头推荐", "社交平台", "其他",
+  ],
+  dict_reject_reasons: [
+    "薪资不匹配", "能力不达标", "经验不符", "稳定性存疑",
+    "文化/团队匹配", "候选人放弃", "企业侧暂停", "其他",
+  ],
+};
+
+// 读取字典（登录即可）：无配置时返回默认值
+auth.get("/settings/dict", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const rows = await c.env.DB.prepare(
+    "SELECT key, value FROM site_settings WHERE key IN ('dict_sources','dict_reject_reasons')"
+  ).all<{ key: string; value: string }>();
+  const map: Record<string, string> = {};
+  (rows.results || []).forEach((r) => { map[r.key] = r.value; });
+
+  const parse = (k: string): string[] => {
+    const raw = map[k];
+    if (!raw) return DEFAULT_DICT[k];
+    try {
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return DEFAULT_DICT[k];
+      const list = arr.map((x) => String(x).trim()).filter(Boolean);
+      return list.length > 0 ? list : DEFAULT_DICT[k];
+    } catch {
+      return DEFAULT_DICT[k];
+    }
+  };
+
+  return c.json({
+    sources: parse("dict_sources"),
+    reject_reasons: parse("dict_reject_reasons"),
+  });
+});
+
+// ---- 管理员：保存数据字典 ----
+auth.put("/settings/dict", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const body = await c.req.json<{ sources?: unknown; reject_reasons?: unknown }>()
+    .catch(() => ({}) as { sources?: unknown; reject_reasons?: unknown });
+
+  const normalize = (v: unknown): string[] | null => {
+    if (!Array.isArray(v)) return null;
+    const list = v.map((x) => String(x).trim()).filter(Boolean);
+    return list.length > 0 ? [...new Set(list)] : null;
+  };
+  const sources = normalize(body.sources);
+  const reasons = normalize(body.reject_reasons);
+  if (!sources && !reasons) return c.json({ error: "至少需要提供一项非空字典" }, 400);
+
+  const items: [string, string][] = [];
+  if (sources) items.push(["dict_sources", JSON.stringify(sources)]);
+  if (reasons) items.push(["dict_reject_reasons", JSON.stringify(reasons)]);
+  for (const [k, v] of items) {
+    await c.env.DB.prepare(
+      "INSERT INTO site_settings (key, value) VALUES (?, ?) " +
+      "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    ).bind(k, v).run();
+  }
+  return c.json({ ok: true });
+});
+
 export { auth as authRoutes };
 
 // ---- 会话工具 ----

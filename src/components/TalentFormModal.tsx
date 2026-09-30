@@ -5,7 +5,8 @@ import {
 import { UploadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
-import { STATUS_LABELS, EDUCATION_OPTIONS, SOURCE_OPTIONS } from "../types";
+import { STATUS_LABELS, EDUCATION_OPTIONS } from "../types";
+import { useDict } from "../dict";
 
 interface Props {
   open: boolean;
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function TalentFormModal({ open, talentId, onClose, onSuccess }: Props) {
+  const { sources } = useDict();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -143,7 +145,7 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
               <DatePicker style={{ width: "100%" }} placeholder="选择入职日期" allowClear />
             </Form.Item>
             <Form.Item name="source" label="来源渠道">
-              <Select allowClear showSearch placeholder="请选择来源渠道" options={SOURCE_OPTIONS.map((s) => ({ label: s, value: s }))} />
+              <Select allowClear showSearch placeholder="请选择来源渠道" options={sources.map((s) => ({ label: s, value: s }))} />
             </Form.Item>
             <Form.Item name="skills" label="技能">
               <Input placeholder="逗号分隔，如 Java, Spring" />

@@ -130,6 +130,11 @@ export const api = {
     request<{ wechat_qr: string | null; alipay_qr: string | null; note: string | null }>("/auth/settings/pay"),
   setPayConfig: (data: { wechat_qr?: string; alipay_qr?: string; note?: string }) =>
     request("/auth/settings/pay", { method: "PUT", body: JSON.stringify(data) }),
+  // 数据字典（来源渠道 / 淘汰原因），管理员可配置
+  getDictConfig: () =>
+    request<{ sources: string[]; reject_reasons: string[] }>("/auth/settings/dict"),
+  setDictConfig: (data: { sources?: string[]; reject_reasons?: string[] }) =>
+    request<{ ok: boolean }>("/auth/settings/dict", { method: "PUT", body: JSON.stringify(data) }),
   // 当前用户付款后申请开通会员（推送通知管理员）
   requestMembership: () =>
     request<{ ok: boolean; message?: string; error?: string }>("/auth/me/membership-request", { method: "POST" }),

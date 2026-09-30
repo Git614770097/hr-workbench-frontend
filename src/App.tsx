@@ -4,6 +4,7 @@ import { Spin, Button, Alert } from "antd";
 import type { User } from "./types";
 import type { ThemeState } from "./theme";
 import { api } from "./api";
+import { DictProvider } from "./dict";
 // 登录页与落地页保持同步加载（未登录时的首屏，避免白屏闪烁）
 import Login from "./pages/Login";
 import Landing from "./pages/Landing";
@@ -138,6 +139,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
   }
 
   return (
+    <DictProvider>
     <Layout user={user} onLogout={logout} theme={theme} onChangeTheme={onChangeTheme} onUserChange={setUser}>
       <Suspense fallback={pageFallback}>
         <Routes>
@@ -161,5 +163,6 @@ export default function App({ theme, onChangeTheme }: AppProps) {
         </Routes>
       </Suspense>
     </Layout>
+    </DictProvider>
   );
 }

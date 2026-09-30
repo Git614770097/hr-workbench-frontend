@@ -24,6 +24,7 @@ import {
   LockOutlined,
   CrownOutlined,
   QrcodeOutlined,
+  TagsOutlined,
 } from "@ant-design/icons";
 import { QuestionCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import type { User } from "../types";
@@ -36,6 +37,7 @@ import PushplusModal from "./PushplusModal";
 import PasswordModal from "./PasswordModal";
 import MembershipModal from "./MembershipModal";
 import PayConfigModal from "./PayConfigModal";
+import DictConfigModal from "./DictConfigModal";
 
 // 引导只自动播放一次，之后靠顶栏问号按钮手动唤出
 // 「已看过」按用户维度记录（换账号后新账号仍会走一次首次引导）
@@ -101,6 +103,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   // 会员续费（全员）与收款码设置（管理员）
   const [memberOpen, setMemberOpen] = useState(false);
   const [payConfigOpen, setPayConfigOpen] = useState(false);
+  const [dictConfigOpen, setDictConfigOpen] = useState(false);
   useEffect(() => {
     // URL 开关：reset 先清标记，force 只跳过抑制，随后把参数从地址栏抹掉避免重复触发
     const flag = readOnbFlag();
@@ -253,6 +256,12 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
             icon: <QrcodeOutlined />,
             label: "收款码设置",
             onClick: () => setPayConfigOpen(true),
+          },
+          {
+            key: "dictconfig",
+            icon: <TagsOutlined />,
+            label: "数据字典",
+            onClick: () => setDictConfigOpen(true),
           },
         ]
       : []),
@@ -457,6 +466,11 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
         open={payConfigOpen}
         onClose={() => setPayConfigOpen(false)}
         onSaved={() => {}}
+      />
+
+      <DictConfigModal
+        open={dictConfigOpen}
+        onClose={() => setDictConfigOpen(false)}
       />
     </div>
   );

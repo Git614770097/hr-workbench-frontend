@@ -407,10 +407,21 @@ html[data-theme-mode="dark"] .resume-doc-preview,
   font-size: 0.72rem; display: inline-flex; align-items: center; gap: 2px;
   color: #a8adb5; white-space: nowrap;
 }
+/* 下次跟进日期（来自该候选人最早的未完成待办）：比负责人更靠前，便于一眼排优先级 */
+.pipe-next {
+  font-size: 0.72rem; display: inline-flex; align-items: center; gap: 3px;
+  color: #1677ff; white-space: nowrap;
+}
+html[data-theme-mode="dark"] .pipe-next { color: #4a9eff; }
 /* 底部操作按钮：悬停卡片才出现，减少常驻噪音（focus-within 兜底键盘/触屏焦点） */
 .pipe-card-acts .ant-btn { opacity: 0; transition: opacity 0.15s ease; }
 .pipe-card:hover .pipe-card-acts .ant-btn,
 .pipe-card:focus-within .pipe-card-acts .ant-btn { opacity: 1; }
+/* 触屏设备没有 hover：上面的显形规则会让操作按钮在手机上永远隐形（仍可点但看不见）。
+   这里对「无悬停能力」的设备改为常显，配合卡片内「快速流转」下拉（click 触发）即可完成手机端流转。 */
+@media (hover: none) {
+  .pipe-card-acts .ant-btn { opacity: 1; }
+}
 /* 卡片停留状态：普通灰 / 偏久黄 / 超时红（语义色走类，暗色双档在下方） */
 .pipe-stale { font-size: 0.72rem; display: inline-flex; align-items: center; gap: 3px; color: #a8adb5; }
 .pipe-stale.warn { color: #d48806; font-weight: 600; }
@@ -892,6 +903,16 @@ html[data-theme-mode="dark"] .funnel-note.is-active { background: rgba(96, 165, 
 }
 .funnel-branch { display: flex; align-items: center; gap: 6px; }
 .funnel-branch-tip { color: #a8adb5; font-size: 0.76rem; }
+/* 统计口径常显说明：避免把「曾到达人数」误读成「当前停留人数」 */
+.funnel-caliber {
+  margin-top: 10px; padding: 8px 12px;
+  border-radius: 8px; background: #f5f7fa;
+  font-size: 0.78rem; line-height: 1.6; color: #595959;
+}
+.funnel-caliber b { color: #1677ff; }
+.funnel-caliber .anticon { margin-right: 6px; color: #8c8c8c; }
+html[data-theme-mode="dark"] .funnel-caliber { background: #1f1f1f; color: #b0b6c0; }
+html[data-theme-mode="dark"] .funnel-caliber b { color: #4a9eff; }
 
 /* 周期 KPI 卡 */
 .funnel-kpi-grid {

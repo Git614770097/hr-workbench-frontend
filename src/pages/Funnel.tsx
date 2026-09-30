@@ -4,6 +4,7 @@ import { Card, Button, Select, Space, Row, Col, Empty, Spin, Tooltip, message, T
 import {
   ReloadOutlined, SearchOutlined, FunnelPlotOutlined, DownloadOutlined,
   ThunderboltOutlined, RiseOutlined, ClockCircleOutlined, TeamOutlined,
+  InfoCircleOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import { downloadBlob, dateStamp, csvCell } from "../utils/file";
@@ -314,6 +315,11 @@ export default function Funnel() {
               <span className="funnel-branch-tip">
                 （终态分支不计入漏斗主线，人才可能在任何一级进入终态）
               </span>
+            </div>
+
+            {/* 口径常显：避免把「曾到达人数」误读成「当前停留人数」 */}
+            <div className="funnel-caliber">
+              <InfoCircleOutlined /> 统计口径：各阶段人数按「<b>曾到达</b>」统计 —— 候选人只要到过该阶段就计入，因此漏斗逐级递减、不会因后期淘汰而回退；已淘汰 / 已放弃属于终态分支，单独计列，不计入主线。
             </div>
           </Card>
           </Col>
