@@ -1284,3 +1284,47 @@ html[data-theme-mode="dark"] .btn-as-link {
   background: #262626; border-color: #303030; color: #e5e7eb;
 }
 html[data-theme-mode="dark"] .btn-as-link:hover { border-color: var(--color-primary, #1677ff); color: var(--color-primary, #1677ff); }
+
+/* ===== 人才库快捷分组（列表顶部区域）=====
+   胶囊标签条，置于列表卡片内、工具栏上方；选中态蓝色填充。
+   浅色/暗色均自带适配，不依赖父作用域。主色与侧栏 active、表格 hover 主色条一致。 */
+.talent-groups {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  margin-bottom: 12px;
+}
+.talent-group-item {
+  appearance: none; -webkit-appearance: none;
+  border: 1px solid #e3e7ee; background: #fff; color: #4b5563;
+  height: 32px; padding: 0 14px; border-radius: 999px;
+  font-size: 13px; line-height: 1; font-family: inherit; cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  white-space: nowrap;
+}
+.talent-group-item:hover {
+  color: #3b82f6; border-color: #3b82f6; background: #f0f7ff;
+}
+.talent-group-item.is-active {
+  color: #fff; background: #3b82f6; border-color: #3b82f6; font-weight: 600;
+  box-shadow: 0 4px 12px -4px rgba(59, 130, 246, 0.5);
+}
+.talent-group-item:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.4); outline-offset: 1px;
+}
+/* 暗色模式适配 */
+html[data-theme-mode="dark"] .talent-groups { background: transparent; }
+html[data-theme-mode="dark"] .talent-group-item {
+  background: #1f1f1f; border-color: #303030; color: #b0b6c0;
+}
+html[data-theme-mode="dark"] .talent-group-item:hover {
+  background: #262626; color: #3b82f6; border-color: #3b82f6;
+}
+html[data-theme-mode="dark"] .talent-group-item.is-active {
+  background: #3b82f6; color: #fff; border-color: #3b82f6;
+  box-shadow: 0 4px 12px -4px rgba(59, 130, 246, 0.45);
+}
+/* 手机：分组条可横向滚动，避免换行挤压工具行 */
+@media (max-width: 768px) {
+  .talent-groups { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+  .talent-groups::-webkit-scrollbar { height: 0; }
+  .talent-group-item { flex: 0 0 auto; }
+}

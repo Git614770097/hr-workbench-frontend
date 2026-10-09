@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
   Popconfirm, message, Dropdown, Alert, Modal, Empty, Form, Radio,
-  Segmented,
 } from "antd";
 import {
   ImportOutlined, FilePdfOutlined, ExportOutlined,
@@ -504,20 +503,6 @@ export default function TalentList() {
         />
       )}
 
-      {/* 快捷分组：点击即筛选，复用列表查询 group 参数；与「状态」下拉互斥 */}
-      <div className="group-bar" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <span style={{ color: "#6b7280", fontSize: 13, flexShrink: 0 }}>分组</span>
-        <Segmented
-          options={GROUP_OPTIONS}
-          value={applied.group}
-          onChange={(g) => {
-            setApplied((a) => ({ ...a, status: "", group: g as string }));
-            setDraft((d) => ({ ...d, status: "" }));
-            setPage(1);
-          }}
-        />
-      </div>
-
       {/* 顶部搜索区域：label 左 + 控件右，一行 4 个，超过一行可展开/收起（复用 search-card 约定类） */}
       <Card className="search-card" style={{ marginBottom: 16 }}>
         <div className="search-grid">
@@ -533,6 +518,26 @@ export default function TalentList() {
       <Card className="list-card">
         {/* 示例数据提示条：列表含 is_demo 数据时显示，一键清除 */}
         <DemoBanner items={talents} onChanged={fetchTalents} />
+        {/* 快捷分组：列表顶部区域，点击即筛选，复用列表查询 group 参数；
+            与「状态」下拉互斥——点分组会清空 status，避免两个条件叠加。 */}
+        <div className="talent-groups" role="tablist" aria-label="人才分组">
+          {GROUP_OPTIONS.map((g) => (
+            <button
+              key={g.value}
+              type="button"
+              role="tab"
+              aria-selected={applied.group === g.value}
+              className={`talent-group-item${applied.group === g.value ? " is-active" : ""}`}
+              onClick={() => {
+                setApplied((a) => ({ ...a, status: "", group: g.value }));
+                setDraft((d) => ({ ...d, status: "" }));
+                setPage(1);
+              }}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
         {/* 布局约定（全站统一）：搜索 Card 只放搜索字段（label 左 / 控件右，一行 4 个）；
             顶部工具行左侧是「导入/导出」等数据操作，右侧是「展开收起 / 重置 / 查询」，
             两者形成一条对齐的右侧操作区，不要另起一行。 */}
