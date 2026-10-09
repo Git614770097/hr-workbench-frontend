@@ -414,6 +414,37 @@ export default function Tasks() {
             </Space>
           }
         >
+          {/* 统计 + 视图切换（原右下角悬浮卡迁移至此，随日历同宽不遮挡内容） */}
+          <div className="task-cal-summary">
+            <div className="task-cal-summary-stats">
+              <span className="tcs-item"><b style={{ color: "#3b82f6" }}>{summary.pending}</b><span className="tcs-label">待办</span></span>
+              <i className="tcs-divider" />
+              <span className="tcs-item"><b style={{ color: "#ff4d4f" }}>{summary.overdue}</b><span className="tcs-label">逾期</span></span>
+              <i className="tcs-divider" />
+              <span className="tcs-item"><b style={{ color: "#faad14" }}>{summary.today}</b><span className="tcs-label">今日到期</span></span>
+            </div>
+            <Segmented
+              className="app-pill-seg"
+              size="small"
+              value={scope}
+              onChange={(v) => setScope(v as "todo" | "done" | "all")}
+              options={[
+                { label: "待办中", value: "todo" },
+                { label: "已完成", value: "done" },
+                { label: "全部", value: "all" },
+              ]}
+            />
+            {talentFilter && (
+              <Tag
+                closable
+                color="blue"
+                className="tcs-filter-tag"
+                onClose={() => { searchParams.delete("talent_id"); setSearchParams(searchParams); }}
+              >
+                仅看该人才的待办
+              </Tag>
+            )}
+          </div>
           {missingHoliday && (
             <div className="task-cal-tip">
               未内置 {viewYear} 年节假日安排，当前节假日标记仅按周六周日判断
@@ -485,36 +516,6 @@ export default function Tasks() {
             </div>
           )}
         </Card>
-      </div>
-
-      {/* 右下角悬浮卡：统计 + 视图切换，常驻显示 */}
-      <div className="task-fab-card">
-        <div className="task-fab-stats">
-          <div><b style={{ color: "#3b82f6" }}>{summary.pending}</b><span>待办</span></div>
-          <div><b style={{ color: "#ff4d4f" }}>{summary.overdue}</b><span>逾期</span></div>
-          <div><b style={{ color: "#faad14" }}>{summary.today}</b><span>今日到期</span></div>
-        </div>
-        <Segmented
-          className="app-pill-seg"
-          block
-          value={scope}
-          onChange={(v) => setScope(v as "todo" | "done" | "all")}
-          options={[
-            { label: "待办中", value: "todo" },
-            { label: "已完成", value: "done" },
-            { label: "全部", value: "all" },
-          ]}
-        />
-        {talentFilter && (
-          <Tag
-            closable
-            color="blue"
-            style={{ marginTop: 10, marginRight: 0 }}
-            onClose={() => { searchParams.delete("talent_id"); setSearchParams(searchParams); }}
-          >
-            仅看该人才的待办
-          </Tag>
-        )}
       </div>
 
       {/* 新建 / 编辑待办 */}

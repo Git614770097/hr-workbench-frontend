@@ -643,25 +643,25 @@ html[data-theme-mode="dark"] .task-cal-dnd .ant-picker-cell.task-drop-target { o
   display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #8c8c8c;
 }
 
-/* ===== 待办页右下角悬浮卡：统计 + 视图切换，常驻显示 ===== */
-.task-fab-card {
-  position: fixed; right: 24px; bottom: 24px; z-index: 520;
-  width: 280px; padding: 12px 14px 14px;
-  background: #fff; border: 1px solid #eef0f3; border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
+/* ===== 待办日历顶部汇总条：统计 + 视图切换（原右下角悬浮卡迁移至此） ===== */
+.task-cal-summary {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 0 0 10px; padding: 2px 2px 0;
 }
-.task-fab-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.task-fab-stats > div {
-  background: #f8f9fb; border-radius: 8px; padding: 7px 0 8px; text-align: center;
+.task-cal-summary-stats { display: flex; align-items: center; gap: 16px; }
+.task-cal-summary-stats .tcs-item { display: inline-flex; align-items: baseline; gap: 5px; }
+.task-cal-summary-stats b { font-size: 18px; line-height: 24px; font-weight: 600; }
+.task-cal-summary-stats .tcs-label { font-size: 12px; color: #8c8c8c; }
+.tcs-divider { width: 1px; height: 12px; background: #e5e7eb; }
+.task-cal-summary .app-pill-seg { margin-left: auto; }
+.task-cal-summary .tcs-filter-tag { margin-right: 0; }
+html[data-theme-mode="dark"] .task-cal-summary-stats .tcs-label { color: #8c8c8c; }
+html[data-theme-mode="dark"] .tcs-divider { background: #303030; }
+@media (max-width: 768px) {
+  .task-cal-summary { gap: 10px; }
+  .task-cal-summary-stats { gap: 12px; }
+  .task-cal-summary .app-pill-seg { margin-left: 0; width: 100%; }
 }
-.task-fab-stats b { display: block; font-size: 20px; line-height: 26px; }
-.task-fab-stats span { font-size: 11px; color: #8c8c8c; }
-.task-fab-card .ant-segmented { margin-top: 10px; }
-html[data-theme-mode="dark"] .task-fab-card {
-  background: #1f1f1f; border-color: #303030;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
-}
-html[data-theme-mode="dark"] .task-fab-stats > div { background: #262626; }
 
 /* 日历卡片左上角：日期 + 新建按钮，柔和化（不再用生硬蓝色文字链接） */
 .task-cal-head-date {
