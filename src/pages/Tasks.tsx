@@ -386,65 +386,37 @@ export default function Tasks() {
           className="task-calendar-card"
           styles={{ body: { padding: "12px 16px 16px" } }}
           title={
-            <Space size={12} align="center" wrap={false}>
-              <span className="task-cal-head-date">今天 · {dayjs().format("M月D日")}</span>
-              <Button
-                className="task-new-btn"
-                size="small"
-                icon={<PlusOutlined />}
-                data-onb-action="new-task"
-                onClick={() => openCreate(selected)}
-              >
-                新建待办
-              </Button>
-            </Space>
+            <Button
+              className="task-new-btn"
+              size="small"
+              icon={<PlusOutlined />}
+              data-onb-action="new-task"
+              onClick={() => openCreate(selected)}
+            >
+              新建待办
+            </Button>
           }
           extra={
-            <Space size={12} wrap style={{ fontSize: 12, color: "#8c8c8c" }}>
-              <Space size={4}>
-                <span className="task-cal-badge is-today">今</span>
-                <span className="task-cal-badge is-holiday">休</span>
-                <span className="task-cal-badge is-makeup">班</span>
-              </Space>
-              <Space size={8}>
-                <span className="task-legend"><i className="task-cal-dot p-high" />高</span>
-                <span className="task-legend"><i className="task-cal-dot p-normal" />中</span>
-                <span className="task-legend"><i className="task-cal-dot p-low" />低</span>
-              </Space>
-            </Space>
-          }
-        >
-          {/* 统计 + 视图切换（原右下角悬浮卡迁移至此，随日历同宽不遮挡内容） */}
-          <div className="task-cal-summary">
-            <div className="task-cal-summary-stats">
+            <div className="task-card-extra-stats">
               <span className="tcs-item"><b style={{ color: "#3b82f6" }}>{summary.pending}</b><span className="tcs-label">待办</span></span>
               <i className="tcs-divider" />
               <span className="tcs-item"><b style={{ color: "#ff4d4f" }}>{summary.overdue}</b><span className="tcs-label">逾期</span></span>
               <i className="tcs-divider" />
               <span className="tcs-item"><b style={{ color: "#faad14" }}>{summary.today}</b><span className="tcs-label">今日到期</span></span>
             </div>
-            <Segmented
-              className="app-pill-seg"
-              size="small"
-              value={scope}
-              onChange={(v) => setScope(v as "todo" | "done" | "all")}
-              options={[
-                { label: "待办中", value: "todo" },
-                { label: "已完成", value: "done" },
-                { label: "全部", value: "all" },
-              ]}
-            />
-            {talentFilter && (
+          }
+        >
+          {talentFilter && (
+            <div className="task-cal-filter-row">
               <Tag
                 closable
                 color="blue"
-                className="tcs-filter-tag"
                 onClose={() => { searchParams.delete("talent_id"); setSearchParams(searchParams); }}
               >
                 仅看该人才的待办
               </Tag>
-            )}
-          </div>
+            </div>
+          )}
           {missingHoliday && (
             <div className="task-cal-tip">
               未内置 {viewYear} 年节假日安排，当前节假日标记仅按周六周日判断
@@ -462,6 +434,51 @@ export default function Tasks() {
               className="task-calendar"
               // 非受控：选中态交给组件内部，翻月不会受外部 value 干扰
               defaultValue={dayjs()}
+              headerRender={(config) => {
+                const { value, type, onChange, onTypeChange } = config;
+                const years = Array.from({ length: 36 }, (_, i) => ({ label: `${2000 + i}年`, value: 2000 + i }));
+                const months = Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1}月`, value: i }));
+                return (
+                  <div className="task-cal-header">
+                    <Segmented
+                      className="app-pill-seg"
+                      size="small"
+                      value={scope}
+                      onChange={(v) => setScope(v as "todo" | "done" | "all")}
+                      options={[
+                        { label: "待办中", value: "todo" },
+                        { label: "已完成", value: "done" },
+                        { label: "全部", value: "all" },
+                      ]}
+                    />
+                    <Space size={8} className="task-cal-header-picker">
+                      <Select
+                        size="small"
+                        value={value.year()}
+                        onChange={(y) => onChange(value.year(y))}
+                        options={years}
+                      />
+                      {type === "month" && (
+                        <Select
+                          size="small"
+                          value={value.month()}
+                          onChange={(m) => onChange(value.month(m))}
+                          options={months}
+                        />
+                      )}
+                      <Segmented
+                        size="small"
+                        value={type}
+                        onChange={(t) => onTypeChange(t as "month" | "year")}
+                        options={[
+                          { label: "月", value: "month" },
+                          { label: "年", value: "year" },
+                        ]}
+                      />
+                    </Space>
+                  </div>
+                );
+              }}
               onSelect={(d, info) => {
                 if (info.source !== "date") return;
                 const ymd = d.format("YYYY-MM-DD");

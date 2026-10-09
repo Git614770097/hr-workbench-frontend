@@ -643,46 +643,36 @@ html[data-theme-mode="dark"] .task-cal-dnd .ant-picker-cell.task-drop-target { o
   display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #8c8c8c;
 }
 
-/* ===== 待办日历顶部汇总条：统计 + 视图切换（原右下角悬浮卡迁移至此） ===== */
-.task-cal-summary {
-  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  margin: 0 0 10px; padding: 2px 2px 0;
+/* ===== 待办日历头部：scope 切换 + 年月选择器 同行 ===== */
+.task-cal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 8px;
 }
-.task-cal-summary-stats { display: flex; align-items: center; gap: 16px; }
-.task-cal-summary-stats .tcs-item { display: inline-flex; align-items: baseline; gap: 5px; }
-.task-cal-summary-stats b { font-size: 18px; line-height: 24px; font-weight: 600; }
-.task-cal-summary-stats .tcs-label { font-size: 12px; color: #8c8c8c; }
-.tcs-divider { width: 1px; height: 12px; background: #e5e7eb; }
-.task-cal-summary .app-pill-seg { margin-left: auto; }
-.task-cal-summary .tcs-filter-tag { margin-right: 0; }
-html[data-theme-mode="dark"] .task-cal-summary-stats .tcs-label { color: #8c8c8c; }
-html[data-theme-mode="dark"] .tcs-divider { background: #303030; }
+.task-cal-header-picker { flex-shrink: 0; }
 @media (max-width: 768px) {
-  .task-cal-summary { gap: 10px; }
-  .task-cal-summary-stats { gap: 12px; }
-  .task-cal-summary .app-pill-seg { margin-left: 0; width: 100%; }
+  .task-cal-header { flex-wrap: wrap; }
+  .task-cal-header .app-pill-seg { width: 100%; }
 }
 
-/* 日历卡片左上角：日期 + 新建按钮，柔和化（不再用生硬蓝色文字链接） */
-.task-cal-head-date {
-  font-size: 15px; font-weight: 600; color: #1f2937; letter-spacing: 0.2px;
-}
+/* ===== 卡片右上角统计（待办 / 逾期 / 今日到期） ===== */
+.task-card-extra-stats { display: flex; align-items: center; gap: 14px; }
+.task-card-extra-stats .tcs-item { display: inline-flex; align-items: baseline; gap: 5px; }
+.task-card-extra-stats b { font-size: 17px; line-height: 22px; font-weight: 600; }
+.task-card-extra-stats .tcs-label { font-size: 12px; color: #8c8c8c; }
+.task-card-extra-stats .tcs-divider { width: 1px; height: 12px; background: #e5e7eb; }
+html[data-theme-mode="dark"] .task-card-extra-stats .tcs-label { color: #8c8c8c; }
+html[data-theme-mode="dark"] .task-card-extra-stats .tcs-divider { background: #303030; }
+
+/* 人才筛选 Tag 单独一行 */
+.task-cal-filter-row { margin-bottom: 10px; }
+
+/* 日历右上角「新建待办」按钮：浅蓝柔和，避免生硬蓝色文字链接 */
 .task-new-btn {
   background: #eef4ff; border-color: #d6e4ff; color: #2563eb;
   border-radius: 8px; box-shadow: none; font-weight: 500;
 }
 .task-new-btn:hover {
   background: #e0ecff !important; border-color: #bcd3ff !important; color: #2563eb !important;
-}
-/* antd 日历头部年月标题柔化：加大加粗，弱化默认灰感 */
-.task-calendar .ant-picker-calendar-header .ant-picker-calendar-year-select,
-.task-calendar .ant-picker-calendar-header .ant-picker-calendar-month-select {
-  font-weight: 600; color: #1f2937;
-}
-html[data-theme-mode="dark"] .task-cal-head-date { color: #e5e7eb; }
-html[data-theme-mode="dark"] .task-calendar .ant-picker-calendar-header .ant-picker-calendar-year-select,
-html[data-theme-mode="dark"] .task-calendar .ant-picker-calendar-header .ant-picker-calendar-month-select {
-  color: #e5e7eb;
 }
 html[data-theme-mode="dark"] .task-new-btn {
   background: #16233a; border-color: #1f3a5f; color: #6ea8fe;
