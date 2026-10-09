@@ -160,6 +160,7 @@ talents.get("/", async (c) => {
   const page = parseInt(c.req.query("page") || "1", 10);
   const limit = Math.min(parseInt(c.req.query("limit") || "20", 10), 100);
   const status = c.req.query("status");
+  const group = c.req.query("group");
   const city = c.req.query("city");
   const ownerId = c.req.query("owner_id");
   // 分字段筛选
@@ -197,8 +198,31 @@ talents.get("/", async (c) => {
   if (school) { conditions.push("t.school LIKE ?"); params.push(`%${school}%`); }
   if (years && !isNaN(parseInt(years, 10))) { conditions.push("t.years_experience = ?"); params.push(parseInt(years, 10)); }
   if (title) { conditions.push("t.current_title LIKE ?"); params.push(`%${title}%`); }
-  if (status) { conditions.push("t.status = ?"); params.push(status); }
+  if (status && !group) { conditions.push("t.status = ?"); params.push(status); }
   if (entryType) { conditions.push("t.entry_type = ?"); params.push(entryType); }
+  // 人才库快捷分组：与单值 status 互斥（前端点分组会清空 status）。
+  // 各分组基于招聘流程阶段 / 面试记录 / 入职状态 / 离职日期，复用同一列表查询。
+  if (group) {
+    if (group === "active_pipeline") {
+      // 招聘进行中：在流程里且未结束（初筛~Offer）
+      conditions.push("EXISTS (SELECT 1 FROM talent_jobs tj WHERE tj.talent_id = t.id AND tj.stage IN ('screening','interview1','interview2','offer'))");
+    } else if (group === "interviewed") {
+      // 面试过的：安排过面试记录，或阶段到过面试轮
+      conditions.push("EXISTS (SELECT 1 FROM interviews iv JOIN talent_jobs tj ON iv.talent_job_id = tj.id WHERE tj.talent_id = t.id) OR EXISTS (SELECT 1 FROM talent_jobs tj WHERE tj.talent_id = t.id AND tj.stage IN ('interview1','interview2'))");
+    } else if (group === "placed") {
+      // 已入职（在职）：status=placed 或 全局阶段 hired
+      conditions.push("(t.status = 'placed' OR t.stage = 'hired')");
+    } else if (group === "left") {
+      // 已离职：录了离职日期（resignation_date 非空）
+      conditions.push("(t.resignation_date IS NOT NULL AND t.resignation_date <> '')");
+    } else if (group === "ended") {
+      // 已淘汰·放弃：流程终态
+      conditions.push("t.stage IN ('rejected','withdrawn')");
+    } else if (group === "inactive") {
+      // 待激活：没进任何流程，且未入职、未离职
+      conditions.push("((t.stage = 'archived' OR NOT EXISTS (SELECT 1 FROM talent_jobs tj WHERE tj.talent_id = t.id)) AND t.status <> 'placed' AND (t.resignation_date IS NULL OR t.resignation_date = ''))");
+    }
+  }
   if (city) { conditions.push("t.city LIKE ?"); params.push(`%${city}%`); }
   // 标签筛选：tags 是 JSON 数组字符串，模糊匹配包含该标签的记录
   const tag = (c.req.query("tags") || "").trim();

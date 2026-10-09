@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
   Popconfirm, message, Dropdown, Alert, Modal, Empty, Form, Radio,
+  Segmented,
 } from "antd";
 import {
   ImportOutlined, FilePdfOutlined, ExportOutlined,
@@ -34,13 +35,26 @@ interface Filters {
   owner_id: string;
   entry_type: string;
   tags: string;
+  group: string;
 }
 
 const EMPTY_FILTERS: Filters = {
   name: "", phone: "", education: "",
   years: null, title: "", status: "", owner_id: "",
-  entry_type: "", tags: "",
+  entry_type: "", tags: "", group: "all",
 };
+
+// 人才库快捷分组：点击即筛选，复用列表查询的 group 参数。
+// 与「状态」下拉互斥——点分组会清空 status，避免两个条件叠加。
+const GROUP_OPTIONS = [
+  { label: "全部", value: "all" },
+  { label: "招聘进行中", value: "active_pipeline" },
+  { label: "面试过的", value: "interviewed" },
+  { label: "已入职", value: "placed" },
+  { label: "已离职", value: "left" },
+  { label: "已淘汰·放弃", value: "ended" },
+  { label: "待激活", value: "inactive" },
+];
 
 // 搜索条件 → 查询参数。列表查询与导出共用一份，
 // 避免两处各写一遍导致「导出的数据和列表看到的不一致」。
@@ -55,6 +69,8 @@ function buildFilterParams(f: Filters): Record<string, string | number> {
   if (f.owner_id) params.owner_id = f.owner_id;
   if (f.entry_type) params.entry_type = f.entry_type;
   if (f.tags) params.tags = f.tags;
+  // 快捷分组：与 status 互斥（applied.status 在切分组时已清空；后端也以 group 优先）
+  if (f.group && f.group !== "all") params.group = f.group;
   return params;
 }
 
@@ -149,7 +165,8 @@ export default function TalentList() {
 
   const handleSearch = () => {
     setPage(1);
-    setApplied({ ...draft });
+    // 手动选了「状态」就退出分组高亮，避免两个条件叠加
+    setApplied((a) => ({ ...draft, group: draft.status ? "all" : a.group }));
   };
 
   const handleReset = () => {
@@ -486,6 +503,20 @@ export default function TalentList() {
           }
         />
       )}
+
+      {/* 快捷分组：点击即筛选，复用列表查询 group 参数；与「状态」下拉互斥 */}
+      <div className="group-bar" style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <span style={{ color: "#6b7280", fontSize: 13, flexShrink: 0 }}>分组</span>
+        <Segmented
+          options={GROUP_OPTIONS}
+          value={applied.group}
+          onChange={(g) => {
+            setApplied((a) => ({ ...a, status: "", group: g as string }));
+            setDraft((d) => ({ ...d, status: "" }));
+            setPage(1);
+          }}
+        />
+      </div>
 
       {/* 顶部搜索区域：label 左 + 控件右，一行 4 个，超过一行可展开/收起（复用 search-card 约定类） */}
       <Card className="search-card" style={{ marginBottom: 16 }}>
