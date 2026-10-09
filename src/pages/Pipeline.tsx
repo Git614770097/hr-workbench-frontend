@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Button, Select, Input, Space, Tag, Dropdown, message, Empty,
   Segmented, Spin, Tooltip, Modal, Timeline, Rate, Descriptions, Alert, Typography,
@@ -10,7 +10,7 @@ import {
   ClockCircleOutlined, FilePdfOutlined, SwapOutlined, DeleteOutlined,
   HistoryOutlined, UserOutlined, MessageOutlined,
   SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, BarsOutlined,
-  PhoneOutlined, CalendarOutlined,
+  PhoneOutlined, CalendarOutlined, DownloadOutlined, FileTextOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -23,6 +23,10 @@ import { fmtDate } from "../utils/time";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { DemoSeedButton } from "../components/DemoSeed";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
+import { downloadBlob, dateStamp, csvCell, escapeHtml } from "../utils/file";
+import OfferModal from "../components/OfferModal";
 
 const EMPTY_COLUMNS: Record<string, PipelineCard[]> = Object.fromEntries(
   PIPELINE_STAGES.map((s) => [s.key, []])
@@ -39,7 +43,9 @@ const copyText = async (text: string, label: string) => {
 };
 
 export default function Pipeline() {
+  const profile = useIdentityProfile();
   const { rejectReasons } = useDict();
+  const navigate = useNavigate();
   const [columns, setColumns] = useState<Record<string, PipelineCard[]>>(EMPTY_COLUMNS);
   const [stats, setStats] = useState({ total: 0, active: 0, hired: 0, rejected: 0 });
   const [jobs, setJobs] = useState<Pick<Job, "id" | "title" | "status">[]>([]);
@@ -54,6 +60,8 @@ export default function Pipeline() {
   const [view, setView] = useState<"active" | "all">("active");
 
   const [dragging, setDragging] = useState<string | null>(null);
+  // Offer 一键生成 / 发起审批 / 入职办理
+  const [offerCard, setOfferCard] = useState<PipelineCard | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
 
   const [addOpen, setAddOpen] = useState(false);
@@ -165,7 +173,7 @@ export default function Pipeline() {
       const res = await api.updateStage(linkId, toStage);
       if (toStage === "hired") {
         message.success(
-          `「${talentName}」已入职，人才状态已同步为「已入职」${res.task_created ? "，并生成试用期跟进待办" : ""}`
+          `「${talentName}」已入职，${termFor(profile, "人才状态")}已同步为「已入职」${res.task_created ? "，并生成试用期跟进待办" : ""}`
         );
       } else {
         message.success(`「${talentName}」已流转到「${STAGE_META[toStage].label}」`);
@@ -200,15 +208,15 @@ export default function Pipeline() {
 
   const handleRemove = (card: PipelineCard) => {
     Modal.confirm({
-      title: `确认将「${card.name}」移出该岗位？`,
-      content: "人才档案本身不会删除，仅解除与本岗位的招聘看板关联。",
+      title: termFor(profile, `确认将「${card.name}」移出该岗位？`),
+      content: termFor(profile, "人才档案本身不会删除，仅解除与本岗位的招聘看板关联。"),
       okText: "移出",
       okButtonProps: { danger: true },
       cancelText: "取消",
       onOk: async () => {
         try {
           await api.removeFromPipeline(card.link_id);
-          message.success("已移出招聘看板");
+          message.success(termFor(profile, "已移出招聘看板"));
           fetchPipeline();
         } catch (err) {
           message.error((err as Error).message);
@@ -243,7 +251,7 @@ export default function Pipeline() {
       }));
     items.push({ type: "divider" });
     items.push({ key: "logs", label: "查看流转记录", icon: <HistoryOutlined /> });
-    items.push({ key: "remove", label: "移出该岗位", icon: <DeleteOutlined />, danger: true });
+    items.push({ key: "remove", label: termFor(profile, "移出该岗位"), icon: <DeleteOutlined />, danger: true });
     return items;
   };
 
@@ -259,6 +267,44 @@ export default function Pipeline() {
   );
 
   const filtered = !!(jobFilter || ownerFilter || appliedQ);
+
+  /** 导出当前视图下的看板明细（人才 × 岗位 × 阶段）为 CSV */
+  const exportPipeline = () => {
+    const rows: string[] = [];
+    const stageKeys = visibleStages.map((s) => s.key);
+    const total = stageKeys.reduce((n, k) => n + (columns[k] || []).length, 0);
+    if (!total) { message.warning("当前视图下没有可导出的数据"); return; }
+
+    const jobLabel = jobs.find((j) => j.id === jobFilter)?.title || termFor(profile, "全部岗位");
+    const viewLabel = view === "active" ? "进行中" : "全部阶段";
+    rows.push(termFor(profile, "招聘看板导出"));
+    rows.push([termFor(profile, `岗位：${jobLabel}`), `视图：${viewLabel}`, `导出时间：${new Date().toLocaleString("zh-CN")}`].map(csvCell).join(","));
+    rows.push("");
+
+    rows.push(termFor(profile, "候选人,当前阶段,岗位,评分,当前职位,当前公司,年限,学历,城市,来源渠道,阶段停留(天),联系电话"));
+    for (const k of stageKeys) {
+      for (const c of columns[k] || []) {
+        rows.push([
+          c.name,
+          STAGE_META[c.stage]?.label || c.stage,
+          c.job_title || "—",
+          c.rating != null ? c.rating : "—",
+          c.current_title || "—",
+          c.current_company || "—",
+          c.years_experience != null ? c.years_experience : "—",
+          c.education || "—",
+          c.city || "—",
+          c.source || "—",
+          c.days_in_stage != null ? c.days_in_stage : "—",
+          c.phone || "—",
+        ].map(csvCell).join(","));
+      }
+    }
+
+    const blob = new Blob(["\ufeff" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    downloadBlob(blob, `${termFor(profile, "招聘看板")}_${dateStamp()}.csv`);
+    message.success(`已导出 ${total} 条看板记录`);
+  };
 
   return (
     <div className="page-fill">
@@ -304,8 +350,9 @@ export default function Pipeline() {
             ]}
           />
           <Button icon={<ReloadOutlined />} onClick={fetchPipeline} loading={loading}>刷新</Button>
+          <Button icon={<DownloadOutlined />} onClick={exportPipeline}>导出</Button>
           <Button type="primary" icon={<UserAddOutlined />} onClick={() => setAddOpen(true)}>
-            加入招聘看板
+            {termFor(profile, "加入招聘看板")}
           </Button>
         </Space>
       </div>
@@ -314,10 +361,10 @@ export default function Pipeline() {
       <Card className="search-card" style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
         <div className="search-grid">
           <div className="search-field">
-            <span className="search-label">岗位</span>
+            <span className="search-label">{termFor(profile, "岗位")}</span>
             <div className="search-control">
             <Select
-              style={{ width: "100%" }} allowClear placeholder="全部岗位"
+              style={{ width: "100%" }} allowClear placeholder={termFor(profile, "全部岗位")}
               value={jobFilter || undefined}
               onChange={(v) => setJobFilter(v || "")}
               options={jobs.map((j) => ({
@@ -400,14 +447,14 @@ export default function Pipeline() {
             description={
               filtered
                 ? "当前筛选条件下没有候选人"
-                : "招聘看板还是空的，点击右上角「加入招聘看板」把人才挂到岗位上"
+                : termFor(profile, "招聘看板还是空的，点右上角把人才挂到岗位上")
             }
           >
             {!filtered && (
               <div style={{ marginTop: 8 }}>
                 <DemoSeedButton onDone={fetchPipeline} />
                 <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-                  载入后即可体验拖拽流转与招聘漏斗，数据可一键清除
+                  {termFor(profile, "载入后即可体验拖拽流转与招聘漏斗，数据可一键清除")}
                 </div>
               </div>
             )}
@@ -488,7 +535,7 @@ export default function Pipeline() {
 
                         <div className="pipe-card-tags">
                           {card.job_title && (
-                            <Tooltip title="点击聚焦该岗位的候选人">
+                            <Tooltip title={termFor(profile, "点击聚焦该岗位的候选人")}>
                               <Tag
                                 color="blue"
                                 style={{ fontSize: 11, marginInlineEnd: 0, cursor: "pointer" }}
@@ -502,7 +549,7 @@ export default function Pipeline() {
                             <Tag
                               color={card.rating >= 4 ? "gold" : card.rating === 3 ? "orange" : undefined}
                               style={{ fontSize: 11, marginInlineEnd: 0 }}
-                              title="阶段评分（1-5）：可在人才详情的投递记录中调整"
+                              title={termFor(profile, "阶段评分（1-5）：可在人才详情的投递记录中调整")}
                             >
                               ★ {card.rating}
                             </Tag>
@@ -549,6 +596,13 @@ export default function Pipeline() {
                                 </span>
                               </Tooltip>
                             )}
+                            {card.next_interview_at && (
+                              <Tooltip title={`有待面试安排：${fmtDate(card.next_interview_at)}${card.next_interview_mode === "online" ? "（线上面试）" : card.next_interview_mode === "onsite" ? "（线下面试）" : "（电话面试）"}`}>
+                                <span className="pipe-next">
+                                  <CalendarOutlined /> 面试 {fmtDate(card.next_interview_at)}
+                                </span>
+                              </Tooltip>
+                            )}
                             {card.owner_name && (
                               <Tooltip title="负责人">
                                 <span className="pipe-owner"><UserOutlined /> {card.owner_name}</span>
@@ -556,6 +610,16 @@ export default function Pipeline() {
                             )}
                           </div>
                           <Space size={2} className="pipe-card-acts">
+                            {card.stage === "offer" && (
+                              <Tooltip title="生成 Offer / 发起审批">
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<FileTextOutlined />}
+                                  onClick={() => setOfferCard(card)}
+                                />
+                              </Tooltip>
+                            )}
                             {card.phone && (
                               <Tooltip title={`复制电话 ${card.phone}`}>
                                 <Button
@@ -568,9 +632,14 @@ export default function Pipeline() {
                             )}
                             {card.resume_url && (
                               <Tooltip title="查看简历">
-                                <Link to={`/talents/${card.talent_id}`}>
-                                  <Button type="text" size="small" icon={<FilePdfOutlined />} />
-                                </Link>
+                                {/* 用 navigate 而非 <Link><Button/></Link>：<a> 里嵌 <button> 是非法 HTML，
+                                    部分浏览器下点击会被外层 <a> 抢走，表现为「点了没反应」。 */}
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  icon={<FilePdfOutlined />}
+                                  onClick={() => navigate(`/talents/${card.talent_id}`)}
+                                />
                               </Tooltip>
                             )}
                             <Tooltip title="快速流转">
@@ -678,6 +747,13 @@ export default function Pipeline() {
           onChange={(e) => setRejectNote(e.target.value)}
         />
       </Modal>
+
+      <OfferModal
+        card={offerCard}
+        open={!!offerCard}
+        onClose={() => setOfferCard(null)}
+        onApproved={fetchPipeline}
+      />
     </div>
   );
 }

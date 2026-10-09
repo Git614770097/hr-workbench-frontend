@@ -1,3 +1,8 @@
+import type { IdentityProfile } from "../identityProfiles";
+import { termFor } from "../identityProfiles";
+import type { User } from "../types";
+import { canAccessPath } from "../utils/routeAccess";
+
 export interface OnbStep {
   /** 高亮目标元素的 CSS 选择器；不传则居中展示（用于开场/收尾） */
   target?: string;
@@ -23,11 +28,14 @@ export interface OnbStep {
 }
 
 /**
- * 新手指引：不只是一路讲解，而是「讲一句 → 让你亲手做一次」。
+ * 新手指引（文案基准，默认 HR 口径）：不只是一路讲解，而是「讲一句 → 让你亲手做一次」。
  * 三个核心动作（新增岗位 / 新增人才 / 新建待办）均为动手任务，
  * 点中目标按钮后自动进入下一步，做错的可以点「跳过这步」继续。
+ *
+ * ⚠️ 加步骤只改这里；数组下标会被 identityProfiles 的 onboardingCopy 引用作为覆盖位，
+ *    所以**在中间插入步骤会错位**——新增请追加到末尾，或同步更新各身份的 onboardingCopy。
  */
-export const ONBOARDING_STEPS: OnbStep[] = [
+const BASE_STEPS: OnbStep[] = [
   {
     center: true,
     title: "欢迎，接下来 1 分钟边讲边练",
@@ -97,3 +105,36 @@ export const ONBOARDING_STEPS: OnbStep[] = [
     desc: "右上角这个问号就是提醒按钮，任何时候点它都能重看这份引导。\n看完就可以放心用了——增删改查、导入导出、到期提醒，都在这个框架里。",
   },
 ];
+
+/**
+ * 按身份 + 实际权限生成新手指引：
+ * 1. 先套用 profile.onboardingCopy 的逐条覆盖 / skip（下标按 BASE_STEPS 原序，过滤不会影响下标）；
+ * 2. 剔除用户无权访问的步骤 —— 引导里的 goTo 是真实跳转，指向无权页面会撞 403/重定向，
+ *    高亮锚点也永远找不到（例如猎头没有合同/社保/模板权限）；
+ * 3. 剩下的 title / desc / 引导语统一过 termFor（岗位→职位、人才→候选人、招聘看板→推进管道…）。
+ * 注意 termFor 放在覆盖之后：覆盖文案里若含 HR 词也应被一并替换，不必手写两遍。
+ */
+export function onboardingStepsFor(profile: IdentityProfile, user?: User | null): OnbStep[] {
+  const copy = profile.onboardingCopy || {};
+  const out: OnbStep[] = [];
+  BASE_STEPS.forEach((s, i) => {
+    const ov = copy[i];
+    if (ov?.skip) return;
+    // 无权访问的目标页 → 整步隐藏（传了 user 才做权限判断，方便单独预览引导文案）
+    if (user && s.goTo && !canAccessPath(user, s.goTo)) return;
+    out.push({
+      ...s,
+      title: termFor(profile, ov?.title ?? s.title),
+      desc: termFor(profile, ov?.desc ?? s.desc),
+      goToLabel: s.goToLabel ? termFor(profile, s.goToLabel) : undefined,
+      action: s.action
+        ? {
+            ...s.action,
+            label: termFor(profile, s.action.label),
+            name: s.action.name ? termFor(profile, s.action.name) : undefined,
+          }
+        : undefined,
+    });
+  });
+  return out;
+}

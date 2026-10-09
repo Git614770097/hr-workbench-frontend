@@ -6,6 +6,8 @@ import {
 import { VERDICT_COLORS } from "../types";
 import type { MatchResult } from "../types";
 import type { ParsedTalent } from "../utils/resumeImport";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 interface Props {
   rank: number;
@@ -114,6 +116,7 @@ function Panel({
 export default function MatchResultCard({
   rank, talent, result, savedId, importing, fromLibrary, onViewText, onImport, onAddToPipeline, onCreateTask,
 }: Props) {
+  const profile = useIdentityProfile();
   const { hard } = result;
   const color = VERDICT_COLORS[result.verdict] || "#3b82f6";
   const bg = VERDICT_BG[result.verdict] || "rgba(59,130,246,.08)";
@@ -187,7 +190,7 @@ export default function MatchResultCard({
                 <Tag style={{ marginInlineEnd: 0 }}>规则估算</Tag>
               </Tooltip>
             )}
-            {savedId && <Tag color="blue" style={{ marginInlineEnd: 0 }}>已录入人才库</Tag>}
+            {savedId && <Tag color="blue" style={{ marginInlineEnd: 0 }}>{termFor(profile, "已录入人才库")}</Tag>}
           </Space>
         </div>
       </div>
@@ -291,30 +294,30 @@ export default function MatchResultCard({
               disabled={!!savedId}
               onClick={onImport}
             >
-              {savedId ? "已录入" : "录入人才库"}
+              {savedId ? termFor(profile, "已录入") : termFor(profile, "录入人才库")}
             </Button>
           )}
           <Button
             size="small"
             icon={<SendOutlined />}
             disabled={!savedId}
-            title={savedId ? "" : "请先录入人才库，再加入招聘看板"}
+            title={savedId ? "" : termFor(profile, "请先录入人才库，再加入招聘看板")}
             onClick={onAddToPipeline}
           >
-            加入招聘看板
+            {termFor(profile, "加入招聘看板")}
           </Button>
           <Button
             size="small"
             icon={<CalendarOutlined />}
             disabled={!savedId}
-            title={savedId ? "预填该人才与匹配结论，3 天后到期" : "请先录入人才库，再生成面试待办"}
+            title={savedId ? termFor(profile, "预填该人才与匹配结论，3 天后到期") : termFor(profile, "请先录入人才库，再生成面试待办")}
             onClick={onCreateTask}
           >
             生成面试待办
           </Button>
           <span style={{ color: "#9ca3af", fontSize: 12, marginLeft: "auto" }}>
             {fromLibrary
-              ? "来自人才库（已有记录）"
+              ? termFor(profile, "来自人才库（已有记录）")
               : `来自 ${talent.fileName}${talent._ai ? "（AI 解析）" : "（本地规则解析）"}`}
           </span>
         </div>

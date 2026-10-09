@@ -3,7 +3,7 @@
    - 浅蓝色画布（蓝/青/天蓝多色柔光）+ 点阵 + 两枚漂浮装饰圆
    - 双栏卡片：左侧蓝色渐变品牌区 / 右侧白色表单区
    - 主色统一在蓝色域（#1d4ed8 / #2563eb / #0ea5e9 / #3b82f6）
-   - 紧凑布局：register 5 字段在 720px 视口下也不滚动
+   - 紧凑布局：注册 7 字段靠「身份 2×2 网格 + 关联字段两列 + 邀请码折叠」压进常见视口，不滚动
    独立于后台 global.css，固定浅色呈现。
    ========================================================================== */
 
@@ -249,7 +249,7 @@
   align-self: flex-start;
   display: inline-flex; gap: 4px;
   background: #eff6ff; border-radius: 999px; padding: 4px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
   border: 1px solid rgba(37, 99, 235, 0.10);
 }
 .login-tabs button {
@@ -270,38 +270,62 @@
 .login-sub { color: #64748b; font-size: 0.85rem; margin: 0 0 14px; line-height: 1.55; }
 
 /* antd 表单 */
-.login-form .ant-form-item { margin-bottom: 12px; }
+.login-form .ant-form-item { margin-bottom: 10px; }
 .login-form .ant-input,
 .login-form .ant-input-affix-wrapper {
   height: 42px; border-radius: 10px;
   border-color: #dbeafe;
   background: #f8fbff;
+  /* 强制深色文字：登录页固定浅色呈现，不受全局暗色主题影响 */
+  color: #0f172a;
   font-size: 0.92rem;
   transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.22s ease;
 }
+.login-form .ant-input::placeholder,
+.login-form .ant-input-affix-wrapper input::placeholder { color: #94a3b8; }
 .login-form .ant-input:focus,
 .login-form .ant-input-affix-wrapper:focus,
 .login-form .ant-input-affix-wrapper:focus-within {
   background: #fff;
   border-color: #2563eb;
+  color: #0f172a;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 .login-form .ant-input:hover,
 .login-form .ant-input-affix-wrapper:hover { border-color: #93c5fd; }
+
+/* 修复 Chrome 自动填充（:-webkit-autofill）在聚焦时把输入框刷成一块实白底、
+   盖住浅蓝设计、且暗色主题下文字变白不可见的问题。
+   手机/密码等被浏览器记住的字段会触发；短信验证码字段不会，属正常差异。 */
+.login-form input:-webkit-autofill,
+.login-form input:-webkit-autofill:hover,
+.login-form input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #0f172a;
+  caret-color: #0f172a;
+  -webkit-box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15), 0 0 0 1000px #f8fbff inset;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15), 0 0 0 1000px #f8fbff inset;
+  border-color: #2563eb;
+  border-radius: 10px;
+  transition: background-color 9999s ease-in-out 0s;
+}
 .login-form .ant-btn {
   height: 42px; border-radius: 10px;
   font-size: 0.94rem; font-weight: 700;
+}
+/* 渐变底只给主按钮（提交类）；link 型按钮（如「获取验证码」）保持透明底，
+   否则蓝底配 .login-sms-btn 的蓝字会变成「蓝底蓝字」不可读 */
+.login-form .ant-btn-primary {
   background: linear-gradient(135deg, #1d4ed8, #2563eb 50%, #0ea5e9);
   border-color: transparent;
   box-shadow: 0 12px 28px -10px rgba(37, 99, 235, 0.55);
   transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, filter 0.18s ease;
 }
-.login-form .ant-btn:hover {
+.login-form .ant-btn-primary:hover {
   transform: translateY(-1px);
   filter: brightness(1.04);
   box-shadow: 0 18px 32px -10px rgba(37, 99, 235, 0.65);
 }
-.login-form .ant-btn:active { transform: translateY(0); filter: brightness(0.98); }
+.login-form .ant-btn-primary:active { transform: translateY(0); filter: brightness(0.98); }
 .login-alert { margin-bottom: 12px; border-radius: 10px; font-size: 0.84rem; }
 
 /* 验证码行 */
@@ -337,6 +361,20 @@
 .login-captcha-refresh.spinning { animation: loginSpin 0.6s linear infinite; }
 @keyframes loginSpin { to { transform: rotate(360deg); } }
 
+/* 注册：短信验证码「获取验证码」按钮 */
+.login-sms-btn {
+  flex-shrink: 0;
+  height: 42px;
+  padding: 0 12px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #2563eb !important;
+  white-space: nowrap;
+  transition: color 0.16s ease;
+}
+.login-sms-btn:hover:not(:disabled) { color: #1d4ed8 !important; }
+.login-sms-btn:disabled { color: #94a3b8 !important; cursor: not-allowed; opacity: 1; }
+
 /* 切换链接 */
 .login-switch {
   margin-top: 12px;
@@ -360,6 +398,68 @@
 .login-foot a { color: #1e40af; cursor: pointer; text-decoration: none; transition: color 0.16s ease; }
 .login-foot a:hover { color: #1d4ed8; }
 
+/* ---- 注册：身份选择（卡片式单选）----
+   身份只是意向标记，用来给管理员一个「该给什么角色」的提示，
+   所以样式上要一眼能看出是「选择」而不是「填表」。
+   用两列网格：4 个选项由 4 行压成 2 行——这是注册页最高的单项，必须收紧。 */
+.login-form .reg-role-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: 100%;
+}
+/* antd 相邻按钮自带 margin-inline-start:-1px（用于拼接边框），在网格里会造成错位 */
+.login-form .reg-role-group .ant-radio-button-wrapper { margin-inline-start: 0; }
+/* 关键：1fr 默认是 minmax(auto,1fr)，若子项内是 nowrap 文本会被 min-content 撑宽并溢出容器。
+   min-width:0 打开收缩能力，列宽才会真正均分（文案过长时由 ellipsis 兜底）。 */
+.login-form .reg-role-group > .ant-radio-button-wrapper { min-width: 0; }
+.login-form .reg-role-item {
+  width: 100%;
+  height: auto;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.4;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+.login-form .reg-role-item .reg-role-label {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+.login-form .reg-role-item .reg-role-desc {
+  display: block;
+  font-size: 0.72rem;
+  color: #64748b;
+  /* 文案已控制在 ~12 字内，此处仅作兜底，保证卡片高度整齐 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.login-form .reg-role-item-checked .reg-role-desc { color: #1d4ed8; }
+.login-form .reg-role-group .ant-radio-button-wrapper::before { display: none; }
+
+/* ---- 注册：两列并排字段（手机号+姓名 / 密码+确认密码）---- */
+.login-form .reg-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 10px;
+}
+
+/* ---- 注册：邀请码折叠态（默认收起，只留一行提示）---- */
+.login-ref-toggle {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;
+  margin: -2px 0 10px;
+  font-size: 0.76rem; color: #94a3b8;
+}
+.login-ref-toggle a {
+  color: #2563eb; font-weight: 600; cursor: pointer;
+  text-decoration: none; transition: color 0.16s ease;
+}
+.login-ref-toggle a:hover { color: #1d4ed8; }
+
 /* ---- 响应式 ---- */
 @media (max-width: 900px) {
   .login-card { grid-template-columns: 1fr; min-height: auto; }
@@ -374,6 +474,10 @@
   .login-form .ant-input-affix-wrapper { height: 42px; }
   .login-form .ant-btn { height: 42px; }
   .login-captcha-img { width: 108px; }
+  /* 窄屏输入框太挤，两列回落单列（手机上滚动是常态，优先保证可输入） */
+  .login-form .reg-2col { grid-template-columns: 1fr; column-gap: 0; }
+  /* 身份卡两列在此宽度下仅 ~148px，描述单行会被截断显示成「…」，改为换行保信息完整 */
+  .login-form .reg-role-item .reg-role-desc { white-space: normal; }
 }
 
 /* 尊重「减弱动效」偏好 */

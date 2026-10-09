@@ -49,6 +49,53 @@ body {
 .sidebar.collapsed .sidebar-nav { padding: 0 0.5rem; }
 .sidebar.collapsed .sidebar-nav a { justify-content: center; padding: 0.6rem 0; }
 
+/* ===== 一级/二级菜单（2026-10-08） =====
+   一级 = .nav-group-title（<button>，带 .nav-caret 折叠箭头）；二级 = .nav-sub 里的 <a>。
+   ⚠️ 上面的规则全是 `.sidebar-nav a`，只匹配 <a>；一级是 <button> 命不中，必须另写。
+   二级覆盖用 `.sidebar-nav .nav-sub a`（3 类），优先级高于 `.sidebar-nav a`（2 类）。 */
+.sidebar-nav .nav-group { margin-bottom: 0.25rem; }
+.sidebar-nav .nav-group-title {
+  width: 100%; display: flex; align-items: center; gap: 0.7rem;
+  padding: 0.6rem 0.75rem; margin: 0; border: 0; border-radius: 10px;
+  background: none; color: #5b6472; font-family: inherit; font-size: 0.9rem;
+  text-align: left; white-space: nowrap; cursor: pointer; transition: all 0.15s;
+}
+.sidebar-nav .nav-group-title:hover { color: #1f2937; background: #f3f4f6; }
+.sidebar-nav .nav-group-title.is-open { color: #1f2937; font-weight: 600; }
+.sidebar-nav .nav-group-title .nav-label { flex: 1; }
+.sidebar-nav .nav-caret {
+  width: 0; height: 0; flex-shrink: 0; opacity: 0.55;
+  border-left: 4px solid transparent; border-right: 4px solid transparent;
+  border-top: 5px solid currentColor; transition: transform 0.15s;
+}
+.sidebar-nav .nav-group-title.is-open .nav-caret { transform: rotate(180deg); }
+.sidebar-nav .nav-sub {
+  display: flex; flex-direction: column;
+  margin: 0.1rem 0 0.25rem 0.85rem; padding-left: 0.45rem;
+  border-left: 1px solid #eef0f3;
+}
+.sidebar-nav .nav-sub a { padding: 0.45rem 0.6rem; margin-bottom: 0.1rem; font-size: 0.85rem; }
+.sidebar-nav .nav-sub a .nav-icon { width: 26px; height: 26px; border-radius: 7px; font-size: 0.82rem; }
+.sidebar-nav .nav-sub a.active .nav-icon { box-shadow: none; }
+/* 收缩态：一级只留图标居中，文字与箭头都收起来 */
+.sidebar.collapsed .sidebar-nav .nav-group-title { justify-content: center; padding: 0.6rem 0; }
+.sidebar.collapsed .sidebar-nav .nav-caret { display: none; }
+
+/* 收缩态一级分组的 hover 浮层（挂在 body 上，不在 .sidebar-nav 内，尺寸需单独定义） */
+.nav-pop { display: flex; flex-direction: column; gap: 1px; min-width: 148px; }
+.nav-pop .nav-pop-title { padding: 0 0.5rem 0.4rem; font-size: 0.72rem; color: #98a2b3; }
+.nav-pop .nav-pop-item {
+  display: flex; align-items: center; gap: 0.55rem;
+  padding: 0.4rem 0.5rem; border-radius: 8px; font-size: 0.85rem;
+  color: #5b6472; text-decoration: none; white-space: nowrap; transition: all 0.15s;
+}
+.nav-pop .nav-pop-item:hover { color: #1f2937; background: #f3f4f6; }
+.nav-pop .nav-pop-item.active { color: #3b82f6; background: #eff6ff; font-weight: 600; }
+.nav-pop .nav-pop-item .nav-icon {
+  width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 0.8rem;
+}
+
 /* 顶栏（右上角用户信息） */
 .topbar {
   height: 56px; background: #ffffff; border-bottom: 1px solid #eef0f3;
@@ -126,6 +173,13 @@ html[data-theme-mode="dark"] .theme-mode-btn.is-active { color: #fff; }
   }
   /* 手机忽略桌面折叠态（localStorage 恢复的 collapsed 宽度在抽屉里没有意义） */
   .sidebar.collapsed { width: 264px; }
+  /* 抽屉里一律按展开态呈现：宽度已是 264px，若还隐藏文字/挤成图标会变成「空侧栏」。
+     JS 侧同样用 navCollapsed 兜底（≤768px 不渲染收缩态），这里再补一层防容器残留。 */
+  .sidebar.collapsed .nav-label { display: block; }
+  .sidebar.collapsed .sidebar-nav { padding: 0 0.75rem; }
+  .sidebar.collapsed .sidebar-nav a { justify-content: flex-start; padding: 0.6rem 0.75rem; }
+  .sidebar.collapsed .sidebar-logo { padding: 1.4rem 1.5rem 1rem; }
+  .sidebar.collapsed .logo-text { opacity: 1; width: auto; }
   .app-layout.nav-open .sidebar { transform: translateX(0); }
   .app-layout.nav-open .app-nav-mask { display: block; }
   .main-content { padding: 0.75rem; }
@@ -240,6 +294,16 @@ html[data-theme-mode="dark"] .sidebar {
 html[data-theme-mode="dark"] .sidebar-nav a { color: #b0b6c0; }
 html[data-theme-mode="dark"] .sidebar-nav a:hover { color: #fff; background: #2a2a2a; }
 html[data-theme-mode="dark"] .sidebar-nav a.active { color: var(--color-primary, #3b82f6); background: #262626; }
+/* 一级/二级菜单：一级是 <button>，上面针对 `a` 的暗色规则覆盖不到 */
+html[data-theme-mode="dark"] .sidebar-nav .nav-group-title { color: #b0b6c0; }
+html[data-theme-mode="dark"] .sidebar-nav .nav-group-title:hover { color: #fff; background: #2a2a2a; }
+html[data-theme-mode="dark"] .sidebar-nav .nav-group-title.is-open { color: #e5e7eb; }
+html[data-theme-mode="dark"] .sidebar-nav .nav-sub { border-left-color: #303030; }
+/* hover 浮层挂在 body 上，不受 .sidebar 的暗色规则影响，需单独覆盖 */
+html[data-theme-mode="dark"] .nav-pop .nav-pop-title { color: #7d8694; }
+html[data-theme-mode="dark"] .nav-pop .nav-pop-item { color: #b0b6c0; }
+html[data-theme-mode="dark"] .nav-pop .nav-pop-item:hover { color: #fff; background: #2a2a2a; }
+html[data-theme-mode="dark"] .nav-pop .nav-pop-item.active { color: var(--color-primary, #3b82f6); background: #262626; }
 
 html[data-theme-mode="dark"] .topbar { background: #1f1f1f; border-bottom-color: #303030; }
 html[data-theme-mode="dark"] .topbar-user-trigger:hover { background: #2a2a2a; }
@@ -455,7 +519,7 @@ html[data-theme-mode="dark"] .pipe-next { color: #4a9eff; }
 
 /* ===== 待办日历 ===== */
 .tasks-layout {
-  display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 16px; align-items: start;
+  display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; align-items: start;
 }
 @media (max-width: 1200px) {
   .tasks-layout { grid-template-columns: minmax(0, 1fr); }
@@ -478,7 +542,7 @@ html[data-theme-mode="dark"] .pipe-next { color: #4a9eff; }
 }
 /* 内容区默认固定 86px 且 overflow-y:auto，会撑高整月日历；改为自适应 + 最小高度 */
 .ant-picker-calendar.task-calendar .ant-picker-cell .ant-picker-calendar-date-content {
-  height: auto; min-height: 52px; overflow: visible;
+  height: auto; min-height: 62px; overflow: visible;
 }
 /* 注意：这里不能给 .task-cal-cell 设 position:relative，
    否则色块/角标只会相对「内容区」定位，铺不满整个格子。 */
@@ -706,6 +770,8 @@ html[data-theme-mode="dark"] .task-undated-head { color: #b0b6c0; }
   font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
 }
 .stat-label { font-size: 0.74rem; color: #8c8c8c; margin-top: 0.25rem; }
+/* 宽版统计卡：占满一整行（入职办理的进度卡内嵌 Progress，需要整行宽度才画得开） */
+.page-stats .stat.stat-wide { flex: 1 1 auto; min-width: 220px; }
 .stat-sep { width: 1px; height: 28px; background: #eef0f3; }
 /* 卡片化后竖线分隔退场（个税计算器 .tax-stat 仍 column 布局，不受影响） */
 .page-stats .stat-sep { display: none; }
@@ -1084,6 +1150,8 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
      必须先占满一行，内部 stat 的 50% basis 才有确定基准，否则整体超宽挤出视口 */
   .page-stats { width: 100%; }
   .page-stats .stat { flex: 1 1 calc(50% - 0.5rem); }
+  /* 宽版统计卡在手机上必须独占整行，否则 min-width 会把页面撑出横向滚动 */
+  .page-stats .stat.stat-wide { flex: 1 1 100%; }
   .toolbar { flex-wrap: wrap; gap: 8px; }
   /* antd Space 默认 nowrap：手机上按钮组超宽时会溢出视口，放开换行兜底
      （内容不超宽时不换行，行为不变） */
@@ -1124,3 +1192,95 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 /* 待办日卡参与 grid 等高拉伸后，body 要撑满卡片，Empty 才有居中空间 */
 .tasks-page .task-day-card { display: flex; flex-direction: column; }
 .tasks-page .task-day-card > .ant-card-body { flex: 1; }
+
+/* ===== 我的推广（邀请码）弹窗 ===== */
+.referral-code-box {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 14px 16px; border-radius: 10px;
+  background: var(--color-background-secondary);
+  border: 1px dashed var(--color-border-secondary);
+}
+.referral-code-label { font-size: 13px; color: var(--color-text-secondary); }
+.referral-code-value {
+  flex: 1; min-width: 140px;
+  font-size: 24px; font-weight: 700; letter-spacing: 3px;
+  font-family: Consolas, "SF Mono", monospace;
+  color: var(--color-text-primary);
+}
+.referral-link-box {
+  margin-top: 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.referral-link-text {
+  flex: 1; min-width: 180px;
+  font-size: 12px; color: var(--color-text-secondary);
+  word-break: break-all;
+}
+@media (max-width: 576px) {
+  .referral-code-value { font-size: 20px; letter-spacing: 2px; }
+}
+
+/* ===== 招聘概览：各阶段当前停留（已并入招聘漏斗页顶部）=====
+   ⚠️ 原独立概览首页的 KPI 行 / 本周转化 / 待办汇总已按需求删除，
+      对应样式（.dash-head/.dash-title/.dash-date/.dash-kpis/.dash-stat/
+      .dash-week-*/.dash-task-*）一并清掉，只保留下面这段条形图。 */
+
+.dash-cards { margin-top: 0; }
+.dash-card { border: 1px solid #eef0f3; }
+.dash-card .ant-card-head { border-bottom-color: #f0f2f5; }
+html[data-theme-mode="dark"] .dash-card { background: #1f1f1f; border-color: #303030; }
+html[data-theme-mode="dark"] .dash-card .ant-card-head { border-bottom-color: #303030; }
+
+/* 阶段条形分布 */
+.dash-bars { display: flex; flex-direction: column; gap: 0.55rem; }
+.dash-bar-row { display: flex; align-items: center; gap: 0.7rem; }
+.dash-bar-label { flex: 0 0 64px; font-size: 0.8rem; font-weight: 500; text-align: right; white-space: nowrap; }
+.dash-bar-track {
+  flex: 1; min-width: 0; height: 10px; border-radius: 5px;
+  background: #f0f2f5; overflow: hidden;
+}
+.dash-bar-fill { display: block; height: 100%; border-radius: 5px; transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+.dash-bar-num {
+  flex: 0 0 34px; text-align: right; font-size: 0.85rem; font-weight: 600; color: #4b5563;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+}
+html[data-theme-mode="dark"] .dash-bar-track { background: #2b2b2b; }
+html[data-theme-mode="dark"] .dash-bar-num { color: #c4c9d2; }
+
+/* 手机：条形图标签与数字不换行挤压 */
+@media (max-width: 576px) {
+  .dash-bar-row { gap: 6px; }
+  .dash-bar-num { flex: 0 0 28px; font-size: 0.8rem; }
+}
+
+/* ---- 链接伪装成按钮 ----
+   修 <Link><Button/></Link> 的非法嵌套：<a> 里嵌 <button> 在部分浏览器下点击会被外层 <a>
+   抢走，表现为「点了没反应」。改为给 <Link> 本身套按钮样式。 */
+.btn-as-link,
+.btn-as-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 15px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #d9d9d9);
+  background: transparent;
+  color: var(--color-primary, #1677ff);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.btn-as-primary {
+  background: var(--color-primary, #1677ff);
+  border-color: var(--color-primary, #1677ff);
+  color: #fff;
+}
+.btn-as-link:hover { color: var(--color-primary-hover, #4096ff); border-color: var(--color-primary-hover, #4096ff); }
+.btn-as-primary:hover { opacity: 0.85; color: #fff; }
+html[data-theme-mode="dark"] .btn-as-link {
+  background: #262626; border-color: #303030; color: #e5e7eb;
+}
+html[data-theme-mode="dark"] .btn-as-link:hover { border-color: var(--color-primary, #1677ff); color: var(--color-primary, #1677ff); }

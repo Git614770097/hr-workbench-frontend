@@ -13,6 +13,8 @@ import type { Task, TalentDetailData, TalentStageLog, User } from "../types";
 import { STATUS_LABELS, STATUS_COLORS, STAGE_META, PRIORITY_LABELS, PRIORITY_COLORS } from "../types";
 import TalentFormModal from "../components/TalentFormModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 /** 后端 datetime('now') 是 UTC 且无时区后缀，解析时补 T+Z（全站统一做法） */
 function fmtUtc(s: string): Date {
@@ -61,6 +63,7 @@ function CopyBtn({ text, label }: { text: string; label: string }) {
 }
 
 export default function TalentDetail() {
+  const profile = useIdentityProfile();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [talent, setTalent] = useState<TalentDetailData | null>(null);
@@ -143,7 +146,7 @@ export default function TalentDetail() {
   };
 
   if (loading) return <div style={{ textAlign: "center", padding: "3rem" }}><Spin size="large" /></div>;
-  if (!talent) return <Empty description="人才不存在" />;
+  if (!talent) return <Empty description={termFor(profile, "人才不存在")} />;
 
   const tasks = talent.tasks || [];
   const pipeline = talent.pipeline || [];
@@ -242,8 +245,9 @@ export default function TalentDetail() {
             title={`相关待办${tasks.length > 0 ? `（${tasks.filter((t) => t.status !== "done").length}）` : ""}`}
             style={{ marginBottom: 16 }}
             extra={
-              <Link to="/tasks">
-                <Button size="small" icon={<CalendarOutlined />}>去待办日历</Button>
+              /* 不要 <Link><Button/></Link>：<a> 内嵌 <button> 是非法 HTML，点击易被外层吞掉。 */
+              <Link to="/tasks" className="btn-as-link">
+                <CalendarOutlined /> 去待办日历
               </Link>
             }
           >
@@ -298,7 +302,7 @@ export default function TalentDetail() {
           {/* 投递进程：每个岗位一条，含当前阶段与流转时间线 */}
           <Card title={`投递进程${pipeline.length > 0 ? `（${pipeline.length}）` : ""}`}>
             {pipeline.length === 0 ? (
-              <Empty description="尚未进入招聘看板" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty description={termFor(profile, "尚未进入招聘看板")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ) : (
               pipeline.map((p, idx) => {
                 const meta = STAGE_META[p.stage];

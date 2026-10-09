@@ -1,4 +1,5 @@
 import { Card, Collapse, Divider, Typography } from "antd";
+import { cloneElement, Fragment, isValidElement, type ReactElement, type ReactNode } from "react";
 import {
   RocketOutlined,
   DatabaseOutlined,
@@ -7,6 +8,9 @@ import {
   FileProtectOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
+import { useCurrentUser, useIdentityProfile } from "../useIdentity";
+import { termFor, type IdentityProfile } from "../identityProfiles";
+import { canAccessPath } from "../utils/routeAccess";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -14,17 +18,25 @@ const { Title, Paragraph, Text } = Typography;
  * 帮助中心：分类手风琴 FAQ。
  * 内容基于系统真实功能与使用中沉淀的说明（如漏斗「曾到达」口径、
  * 渠道来源依赖、扫描件日期降级手填等），帮助新用户快速建立正确预期。
+ *
+ * 身份适配（两层，都不改鉴权）：
+ * 1. 分类级：visibleWhen 声明该分类需要哪个菜单权限，无权限整块隐藏
+ *    —— 猎头看不到「合同与社保」的 FAQ，也不会读到与己无关的模块说明；
+ * 2. 文案级：所有文本经 termFor 按身份替换（人才→候选人、岗位→职位…），
+ *    与菜单、页面内术语保持一致。
  */
 
 interface QA {
   q: string;
-  a: React.ReactNode;
+  a: ReactNode;
 }
 
 interface Category {
   key: string;
   label: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
+  /** 该分类涉及的桌面菜单路径；用户可访问其中任意一个即显示。不传=始终显示 */
+  visibleWhen?: string[];
   items: QA[];
 }
 
@@ -38,7 +50,8 @@ const CATEGORIES: Category[] = [
         q: "这个系统是做什么的？",
         a: (
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            一套面向招聘团队的管理系统，覆盖「候选人从入库到入职」的全过程：人才库、岗位管理、人才画像与智能匹配、招聘流程看板、招聘漏斗分析、跟进待办、合同与社保过渡管理、模板库。不含员工花名册、薪资绩效等入职之后的模块。
+            一套面向招聘业务的人才管理系统，覆盖「人才从入库到入职」的全过程：建立岗位、沉淀人才库、AI 画像与智能匹配、流程看板推进、转化复盘与到期跟进。
+            不含员工花名册、薪资绩效等入职之后的模块。不同角色开放的模块以侧栏菜单为准（见下方「账号与权限」）。
           </Paragraph>
         ),
       },
@@ -54,8 +67,8 @@ const CATEGORIES: Category[] = [
               <li><Text type="secondary">「人才画像」新建画像：填目标职位 → AI 生成 JD → AI 生成画像 → 保存</Text></li>
               <li><Text type="secondary">「人才库管理」录入或批量导入简历</Text></li>
               <li><Text type="secondary">「人才库管理」工具栏进入智能匹配，挑出合适候选人</Text></li>
-              <li><Text type="secondary">「招聘流程」看板推进候选人阶段</Text></li>
-              <li><Text type="secondary">「招聘漏斗」查看各环节转化与渠道效果</Text></li>
+              <li><Text type="secondary">「招聘看板」推进候选人阶段</Text></li>
+              <li><Text type="secondary">「招聘概览」查看各环节转化与渠道效果</Text></li>
             </ul>
             <Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 8 }}>
               也可以先在人才库、岗位或招聘流程的空状态页点「载入示例数据」，用一套演示数据熟悉各页面，随时可一键清除，不影响真实数据。
@@ -93,6 +106,7 @@ const CATEGORIES: Category[] = [
     key: "talents",
     label: "人才库",
     icon: <DatabaseOutlined />,
+    visibleWhen: ["/talents"],
     items: [
       {
         q: "人才库支持哪些搜索条件？",
@@ -106,7 +120,7 @@ const CATEGORIES: Category[] = [
         q: "为什么「来源渠道」字段很重要？",
         a: (
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            渠道来源统计（见「招聘漏斗」页）完全依赖这个字段。录入或导入时没有记录来源的候选人会计入「未记录」，占比过高时系统会提示统计可能失真。新导入的简历可在导入时统一选择来源，存量数据可在人才编辑弹窗中补录。
+            渠道来源统计（见「招聘概览」页）完全依赖这个字段。录入或导入时没有记录来源的候选人会计入「未记录」，占比过高时系统会提示统计可能失真。新导入的简历可在导入时统一选择来源，存量数据可在人才编辑弹窗中补录。
           </Paragraph>
         ),
       },
@@ -114,7 +128,7 @@ const CATEGORIES: Category[] = [
         q: "删除人才会删掉什么？",
         a: (
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            该人才的阶段轨迹、应聘岗位记录、沟通记录会一并删除，关联的跟进待办会解除关联，且操作不可恢复，请谨慎执行。
+            该人才的阶段轨迹、应聘岗位记录会一并删除，关联的跟进待办会解除关联，且操作不可恢复，请谨慎执行。
           </Paragraph>
         ),
       },
@@ -130,11 +144,12 @@ const CATEGORIES: Category[] = [
   },
   {
     key: "funnel",
-    label: "看板与漏斗",
+    label: "看板与概览",
     icon: <FunnelPlotOutlined />,
+    visibleWhen: ["/pipeline", "/funnel"],
     items: [
       {
-        q: "招聘漏斗的数字为什么和「当前在招人数」对不上？",
+        q: "招聘概览的数字为什么和「当前在招人数」对不上？",
         a: (
           <>
             <Paragraph type="secondary" style={{ marginBottom: 0 }}>
@@ -163,7 +178,7 @@ const CATEGORIES: Category[] = [
         q: "候选人阶段流转错了怎么办？",
         a: (
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            在「招聘流程」看板把候选人拖回或移动到正确阶段即可，历史轨迹会完整保留，漏斗统计以轨迹为准，不会因为移错再移回而产生重复计数。
+            在「招聘看板」把候选人拖回或移动到正确阶段即可，历史轨迹会完整保留，漏斗统计以轨迹为准，不会因为移错再移回而产生重复计数。
           </Paragraph>
         ),
       },
@@ -180,7 +195,9 @@ const CATEGORIES: Category[] = [
           <ul style={{ margin: 0, paddingLeft: 20 }}>
             <li><Text type="secondary">人才画像页：「AI 生成 JD」「AI 生成画像」</Text></li>
             <li><Text type="secondary">导入简历：自动解析简历内容并填入核对弹窗</Text></li>
-            <li><Text type="secondary">合同管理：从合同文件中智能提取签订日期</Text></li>
+            <IfPerm any={["/contracts"]}>
+              <li><Text type="secondary">合同管理：从合同文件中智能提取签订日期</Text></li>
+            </IfPerm>
           </ul>
         ),
       },
@@ -206,6 +223,7 @@ const CATEGORIES: Category[] = [
     key: "contract",
     label: "合同与社保",
     icon: <FileProtectOutlined />,
+    visibleWhen: ["/contracts", "/social"],
     items: [
       {
         q: "合同管理能做什么？",
@@ -288,7 +306,40 @@ const CATEGORIES: Category[] = [
   },
 ];
 
+/** 仅在用户可访问 any 中任一菜单时渲染（用于 FAQ 里按模块分条的条目） */
+function IfPerm({ any, children }: { any: string[]; children: ReactNode }) {
+  const user = useCurrentUser();
+  const ok = any.some((p) => canAccessPath(user, p));
+  return ok ? <>{children}</> : null;
+}
+
+/**
+ * 递归把 React 树里的字符串文本过一遍 termFor。
+ * FAQ 答案是 JSX（含列表、加粗），无法对整块做字符串替换，
+ * 因此渲染时遍历到文本叶子逐个替换 —— 内容是静态的，克隆安全。
+ */
+function termify(node: ReactNode, profile: IdentityProfile): ReactNode {
+  if (typeof node === "string") return termFor(profile, node);
+  if (Array.isArray(node)) {
+    return node.map((child, i) => <Fragment key={i}>{termify(child, profile)}</Fragment>);
+  }
+  if (isValidElement(node)) {
+    const el = node as ReactElement<{ children?: ReactNode }>;
+    if (el.props.children === undefined) return el;
+    return cloneElement(el, undefined, termify(el.props.children, profile));
+  }
+  return node;
+}
+
 export default function Help() {
+  const brand = useIdentityProfile();
+  const user = useCurrentUser();
+
+  // 按权限隐藏整块分类：无权访问的模块，其 FAQ 对用户只会造成困扰
+  const categories = CATEGORIES.filter(
+    (cat) => !cat.visibleWhen || cat.visibleWhen.some((p) => canAccessPath(user, p)),
+  );
+
   return (
     <div className="help-page" style={{ maxWidth: 900, margin: "0 auto" }}>
       <Card styles={{ body: { padding: 24 } }}>
@@ -300,12 +351,12 @@ export default function Help() {
         </Paragraph>
         <Collapse
           defaultActiveKey={["start"]}
-          items={CATEGORIES.map((cat) => ({
+          items={categories.map((cat) => ({
             key: cat.key,
             label: (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 {cat.icon}
-                <span style={{ fontWeight: 600 }}>{cat.label}</span>
+                <span style={{ fontWeight: 600 }}>{termFor(brand, cat.label)}</span>
                 <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
                   {cat.items.length} 个问题
                 </Text>
@@ -314,9 +365,9 @@ export default function Help() {
             children: cat.items.map((qa, i) => (
               <div key={i}>
                 <Paragraph strong style={{ marginBottom: 6 }}>
-                  {qa.q}
+                  {termFor(brand, qa.q)}
                 </Paragraph>
-                <div>{qa.a}</div>
+                <div>{termify(qa.a, brand)}</div>
                 {i < cat.items.length - 1 && <Divider style={{ margin: "16px 0" }} />}
               </div>
             )),

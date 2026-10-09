@@ -3,6 +3,8 @@ import { Modal, Form, Select, Input, message, Alert, Button } from "antd";
 import { api } from "../api";
 import type { Talent, Job } from "../types";
 import { PIPELINE_STAGES } from "../types";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 interface Props {
   open: boolean;
@@ -18,6 +20,7 @@ interface Props {
 
 export default function AddToPipelineModal({ open, presetJobId, presetTalentId, presetTalentIds, onClose, onSuccess }: Props) {
   const [form] = Form.useForm();
+  const profile = useIdentityProfile();
   const [talents, setTalents] = useState<Talent[]>([]);
   const [jobs, setJobs] = useState<Pick<Job, "id" | "title" | "department" | "status">[]>([]);
   const [loading, setLoading] = useState(false);
@@ -65,7 +68,7 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
         message.success(`已把 ${res.added} 人加入「${res.job_title}」${skip}`);
       } else {
         const res = await api.addToPipeline(values);
-        message.success(`「${res.talent_name}」已加入「${res.job_title}」的招聘看板`);
+        message.success(termFor(profile, `「${res.talent_name}」已加入「${res.job_title}」的招聘看板`));
       }
       form.resetFields();
       onSuccess();
@@ -81,7 +84,7 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
 
   return (
     <Modal
-      title="加入招聘看板"
+      title={termFor(profile, "加入招聘看板")}
       open={open}
       onCancel={onClose}
       width={560}
@@ -92,13 +95,13 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
         <Alert
           type="warning"
           showIcon
-          message="还没有岗位"
-          description="招聘看板需要先有岗位。请先到「岗位管理」创建一个在招岗位，再回来添加候选人。"
+          message={termFor(profile, "还没有岗位")}
+          description={termFor(profile, "招聘看板需要先有岗位。请先到「岗位管理」创建一个在招岗位，再回来添加候选人。")}
         />
       ) : (
         <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSubmit} initialValues={{ stage: "screening" }}>
           {batchIds ? (
-            <Form.Item label="已选人才">
+            <Form.Item label={termFor(profile, "已选人才")}>
               <div>
                 <span style={{ fontWeight: 600, marginRight: 8 }}>{batchIds.length} 人</span>
                 {(() => {
@@ -113,10 +116,10 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
               </div>
             </Form.Item>
           ) : (
-            <Form.Item name="talent_id" label="人才" rules={[{ required: true, message: "请选择人才" }]}>
+            <Form.Item name="talent_id" label={termFor(profile, "人才")} rules={[{ required: true, message: termFor(profile, "请选择人才") }]}>
               <Select
                 showSearch
-                placeholder="搜索并选择人才（姓名 / 职位 / 公司）"
+                placeholder={termFor(profile, "搜索并选择人才（姓名 / 职位 / 公司）")}
                 loading={loading}
                 optionFilterProp="label"
                 options={talents.map((t) => ({
@@ -127,10 +130,10 @@ export default function AddToPipelineModal({ open, presetJobId, presetTalentId, 
             </Form.Item>
           )}
 
-          <Form.Item name="job_id" label="应聘岗位" rules={[{ required: true, message: "请选择岗位" }]}>
+          <Form.Item name="job_id" label={termFor(profile, "应聘岗位")} rules={[{ required: true, message: termFor(profile, "请选择岗位") }]}>
             <Select
               showSearch
-              placeholder="搜索并选择岗位"
+              placeholder={termFor(profile, "搜索并选择岗位")}
               optionFilterProp="label"
               options={[
                 ...openJobs.map((j) => ({

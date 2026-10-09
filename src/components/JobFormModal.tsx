@@ -5,7 +5,10 @@ import {
 import dayjs from "dayjs";
 import { api } from "../api";
 import type { Job } from "../types";
-import { EDUCATION_OPTIONS, JOB_TYPE_LABELS, PRIORITY_LABELS } from "../types";
+import { PRIORITY_LABELS } from "../types";
+import { useDict } from "../dict";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 interface Props {
   open: boolean;
@@ -18,6 +21,8 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [departments, setDepartments] = useState<string[]>([]);
+  const { education: educationOptions, jobTypeLabels } = useDict();
+  const profile = useIdentityProfile();
   const isEdit = !!jobId;
 
   useEffect(() => {
@@ -52,10 +57,10 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
       };
       if (isEdit && jobId) {
         await api.updateJob(jobId, data);
-        message.success("岗位已更新");
+        message.success(termFor(profile, "岗位已更新"));
       } else {
         await api.createJob(data);
-        message.success("岗位已创建");
+        message.success(termFor(profile, "岗位已创建"));
       }
       form.resetFields();
       onSuccess();
@@ -68,12 +73,12 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
 
   return (
     <Modal
-      title={isEdit ? "编辑岗位" : "新增岗位"}
+      title={termFor(profile, isEdit ? "编辑岗位" : "新增岗位")}
       open={open}
       onCancel={onClose}
       width={720}
       destroyOnClose
-      okText={isEdit ? "保存修改" : "创建岗位"}
+      okText={termFor(profile, isEdit ? "保存修改" : "创建岗位")}
       cancelText="取消"
       confirmLoading={saving}
       onOk={() => form.submit()}
@@ -84,7 +89,7 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
            所以无论 Input / Select / DatePicker / InputNumber，右侧边界都对齐、宽度完全一致。 */}
         <div className="form-grid">
           <Form.Item
-            name="title" label="岗位名称" rules={[{ required: true, message: "请输入岗位名称" }]}
+            name="title" label={termFor(profile, "岗位名称")} rules={[{ required: true, message: termFor(profile, "请输入岗位名称") }]}
           >
             <Input placeholder="如 高级前端工程师" />
           </Form.Item>
@@ -104,7 +109,7 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
             <Input placeholder="如 深圳" />
           </Form.Item>
           <Form.Item name="job_type" label="用工类型">
-            <Select options={Object.entries(JOB_TYPE_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
+            <Select options={Object.entries(jobTypeLabels).map(([k, v]) => ({ label: v, value: k }))} />
           </Form.Item>
 
           <Form.Item name="headcount" label="招聘人数">
@@ -132,7 +137,7 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
             <Input placeholder="如 25-40K·14薪" />
           </Form.Item>
           <Form.Item name="education" label="学历要求">
-            <Select allowClear placeholder="不限" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} />
+            <Select allowClear placeholder="不限" options={educationOptions.map((e) => ({ label: e, value: e }))} />
           </Form.Item>
 
           <Form.Item name="experience" label="经验要求">
@@ -143,10 +148,10 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
         </div>
 
         <Divider orientation="left" orientationMargin={0} style={{ fontSize: 13, color: "#8c8c8c", margin: "4px 0 16px" }}>
-          岗位说明
+          {termFor(profile, "岗位说明")}
         </Divider>
 
-        <Form.Item name="description" label="岗位职责" labelCol={{ flex: "88px" }}>
+        <Form.Item name="description" label={termFor(profile, "岗位职责")} labelCol={{ flex: "88px" }}>
           <Input.TextArea rows={3} placeholder="一行一条，或用编号书写…" />
         </Form.Item>
 
@@ -159,7 +164,7 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message="关闭岗位时系统会自动记录关闭日期；重新开放会自动清空。"
+            message={termFor(profile, "关闭岗位时系统会自动记录关闭日期；重新开放会自动清空。")}
           />
         )}
       </Form>

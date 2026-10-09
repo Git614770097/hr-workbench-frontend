@@ -14,6 +14,8 @@ import { extractContractText } from "../utils/contractFile";
 import { downloadBlob, dateStamp, csvCell, escapeHtml } from "../utils/file";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 // 日期快捷预设（从今天起算）：试用期按月、合同按年。
 // 三个弹窗（新增合同 / 合同文件 / 编辑日期）共用，保证体验一致。
@@ -504,6 +506,7 @@ function AddContractModal({
 }
 
 export default function Contracts() {
+  const profile = useIdentityProfile();
   const [items, setItems] = useState<ContractItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -609,7 +612,7 @@ export default function Contracts() {
   const exportColumns: { title: string; get: (r: ContractItem) => string }[] = [
     { title: "姓名", get: (r) => r.name || "" },
     { title: "手机号", get: (r) => r.phone || "" },
-    { title: "人才状态", get: (r) => STATUS_LABELS[r.status as keyof typeof STATUS_LABELS] || r.status || "" },
+    { title: termFor(profile, "人才状态"), get: (r) => STATUS_LABELS[r.status as keyof typeof STATUS_LABELS] || r.status || "" },
     { title: "合同到期日", get: (r) => r.contract_end || "" },
     { title: "合同剩余天数", get: (r) => fmtDays(daysUntil(r.contract_end)) },
     { title: "试用期到期日", get: (r) => r.probation_end || "" },
@@ -670,7 +673,7 @@ export default function Contracts() {
     },
     { title: "手机号", dataIndex: "phone", key: "phone", width: 140, render: (v: string | null) => v || "—" },
     {
-      title: "人才状态", dataIndex: "status", key: "status", width: 100,
+      title: termFor(profile, "人才状态"), dataIndex: "status", key: "status", width: 100,
       render: (v: string) => STATUS_LABELS[v as keyof typeof STATUS_LABELS] || v,
     },
     {

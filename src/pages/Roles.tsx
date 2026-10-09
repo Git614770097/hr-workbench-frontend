@@ -128,7 +128,12 @@ export default function Roles() {
           <Form.Item name="permissions" label="可见菜单">
             <Checkbox.Group style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {MENU_PERMISSIONS.filter((m) => m.key !== "users").map((m) => (
-                <Checkbox key={m.key} value={m.key}>{m.label}</Checkbox>
+                <Checkbox key={m.key} value={m.key}>
+                  {m.label}
+                  {m.hint ? (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>（{m.hint}）</Typography.Text>
+                  ) : null}
+                </Checkbox>
               ))}
             </Checkbox.Group>
           </Form.Item>

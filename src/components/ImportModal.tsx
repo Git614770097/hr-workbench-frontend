@@ -10,6 +10,8 @@ import {
   parseResumeToTalent, recordToData,
 } from "../utils/resumeImport";
 import type { ParsedTalent } from "../utils/resumeImport";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 const { Dragger } = Upload;
 
@@ -21,6 +23,7 @@ interface Props {
 
 export default function ImportModal({ open, onClose, onSuccess }: Props) {
   const { sources } = useDict();
+  const profile = useIdentityProfile();
   const [parsing, setParsing] = useState(false);
   const [records, setRecords] = useState<ParsedTalent[]>([]);
   const [error, setError] = useState("");
@@ -142,7 +145,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       setRecords([]);
       setReviewKey(null);
       message.success(savedCount.current > 0
-        ? `已录入 ${savedCount.current} 份，人才库列表已更新`
+        ? termFor(profile, `已录入 ${savedCount.current} 份，人才库列表已更新`)
         : "已处理完全部简历");
       onSuccess();
       onClose();
@@ -173,7 +176,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
               zIndex: 1100,
               getContainer: () => document.body,
               title: "可能重复录入",
-              content: `手机号 ${rec.phone} 已存在人才「${hit.name}」，仍要再录一条吗？`,
+              content: termFor(profile, `手机号 ${rec.phone} 已存在人才「${hit.name}」，仍要再录一条吗？`),
               okText: "仍然录入",
               cancelText: "返回修改",
               onOk: () => resolve(true),
@@ -193,7 +196,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       savedCount.current += 1;
       // 每录一份就刷新一次人才库列表，而不是等全部处理完
       onSuccess();
-      message.success(`已录入「${rec.name || rec.fileName || "未命名"}」（第 ${reviewIndex + 1}/${records.length} 份），人才库列表已更新`);
+      message.success(termFor(profile, `已录入「${rec.name || rec.fileName || "未命名"}」（第 ${reviewIndex + 1}/${records.length} 份），人才库列表已更新`));
       advanceReview(rec.key);
     } catch (err) {
       // 错误 Alert 在上传弹窗里，核对弹窗盖住时用户根本看不到；
@@ -262,7 +265,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       zIndex: 1100,
       getContainer: () => document.body,
       title: "放弃剩余简历？",
-      content: `还有 ${rest} 份未处理，关闭后不会写入人才库（已录入的不受影响）。`,
+      content: termFor(profile, `还有 ${rest} 份未处理，关闭后不会写入人才库（已录入的不受影响）。`),
       okText: "放弃并关闭",
       cancelText: "继续核对",
       okButtonProps: { danger: true },
@@ -278,7 +281,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     <Modal title="导入简历" open={open} onCancel={onClose} width={720} destroyOnClose footer={null}>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
         上传 PDF 或 Word（.docx）简历，解析完成后会<b>自动弹出核对窗口</b>：
-        左边看简历原文，右边改字段，点「保存并录入」即写入人才库并更新列表。
+        左边看简历原文，右边改字段，点「保存并录入」即写入{termFor(profile, "人才库")}并更新列表。
         可一次上传多份，会依次核对。
       </Typography.Paragraph>
 

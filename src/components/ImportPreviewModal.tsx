@@ -3,8 +3,11 @@ import {
   Modal, Button, Input, InputNumber, Select, Typography, Spin, Alert, Tag, Tooltip,
 } from "antd";
 import mammoth from "mammoth";
-import { EDUCATION_OPTIONS, STATUS_LABELS } from "../types";
+import { STATUS_LABELS } from "../types";
+import { useDict } from "../dict";
 import type { ParsedTalent } from "../utils/resumeImport";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 interface Props {
   record: ParsedTalent | null;
@@ -28,6 +31,8 @@ interface Props {
 export default function ImportPreviewModal({
   record, index, total, saving, batchProgress, onChange, onSave, onConfirmAll, onSkip, onClose,
 }: Props) {
+  const { education: educationOptions } = useDict();
+  const profile = useIdentityProfile();
   const [pdfUrl, setPdfUrl] = useState("");
   const [docHtml, setDocHtml] = useState("");
   const [docLoading, setDocLoading] = useState(false);
@@ -86,7 +91,7 @@ export default function ImportPreviewModal({
       footer={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            确认无误点「保存并录入」即写入人才库{file ? "并保存原始简历" : ""}；不想要的点「移除」。
+            确认无误点「保存并录入」即写入{termFor(profile, "人才库")}{file ? "并保存原始简历" : ""}；不想要的点「移除」。
           </Typography.Text>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             <Button onClick={onClose}>关闭</Button>
@@ -172,7 +177,7 @@ export default function ImportPreviewModal({
               <Select size="small" value={record.gender || undefined} allowClear placeholder="性别" style={{ width: "100%" }} onChange={(v) => onChange("gender", v || "")} options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} />
 
               <label style={{ fontSize: 13, color: "#5b6472" }}>学历</label>
-              <Select size="small" value={record.education || undefined} allowClear placeholder="请选择学历" style={{ width: "100%" }} onChange={(v) => onChange("education", v || "")} options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} />
+              <Select size="small" value={record.education || undefined} allowClear placeholder="请选择学历" style={{ width: "100%" }} onChange={(v) => onChange("education", v || "")} options={educationOptions.map((e) => ({ label: e, value: e }))} />
 
               <label style={{ fontSize: 13, color: "#5b6472" }}>院校</label>
               <Input size="small" value={record.school} placeholder="请输入院校" onChange={(e) => onChange("school", e.target.value)} />

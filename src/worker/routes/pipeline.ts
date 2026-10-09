@@ -2,51 +2,21 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { genId } from "../helpers";
+import { syncTalentStage, ensureOnboardingItems } from "../talentFlow";
 
 const pipeline = new Hono<{ Bindings: Env }>();
 
 // 阶段定义与前端 types.ts 的 PIPELINE_STAGES 保持一致
-const STAGES = ["screening", "interview1", "interview2", "offer", "hired", "rejected", "withdrawn"] as const;
+export const STAGES = ["screening", "interview1", "interview2", "offer", "hired", "rejected", "withdrawn"] as const;
 type Stage = (typeof STAGES)[number];
 
 // 终态：不再计入「进行中」
 const TERMINAL: Stage[] = ["hired", "rejected", "withdrawn"];
 
-// 进行中阶段的推进顺序（用于派生人才全局阶段时取「最靠前」的一档）
-const PROGRESS_ORDER: Stage[] = ["screening", "interview1", "interview2", "offer"];
+// syncTalentStage 已抽到 ../talentFlow（面试通过 / 审批通过也要复用），
+// 这里继续 re-export，避免改动手动流转与 talents.ts 的既有引用。
+export { syncTalentStage };
 
-/**
- * 同步人才全局阶段 talents.stage —— 该字段是冗余缓存，唯一真源是 talent_jobs.stage
- * （一个人在不同岗位可以处于不同阶段，全局阶段表示「整体推进到哪一步」）。
- * 规则：任一投递已入职 → hired 且 status='placed'；否则取所有进行中投递里最靠前的阶段；
- *      全部为终态（淘汰/放弃）→ archived。任何阶段变更后调用，避免出现「A 岗位已入职、
- *      全局却还是初试」这类双轨不一致。
- */
-async function syncTalentStage(db: D1Database, talentId: string): Promise<void> {
-  const rows = await db.prepare("SELECT stage FROM talent_jobs WHERE talent_id = ?")
-    .bind(talentId).all<{ stage: string }>();
-  const stages = ((rows.results || []) as { stage: string }[]).map((r) => r.stage);
-  if (stages.length === 0) return;
-
-  if (stages.includes("hired")) {
-    await db.prepare("UPDATE talents SET stage = 'hired', status = 'placed', updated_at = datetime('now') WHERE id = ?")
-      .bind(talentId).run();
-    return;
-  }
-
-  const active = stages.filter((s) => (PROGRESS_ORDER as string[]).includes(s));
-  if (active.length === 0) {
-    // 全部终态（淘汰 / 放弃）：回到人才库待激活状态
-    await db.prepare("UPDATE talents SET stage = 'archived', updated_at = datetime('now') WHERE id = ?")
-      .bind(talentId).run();
-    return;
-  }
-
-  const furthest = active.reduce((a, b) =>
-    PROGRESS_ORDER.indexOf(b as Stage) > PROGRESS_ORDER.indexOf(a as Stage) ? b : a);
-  await db.prepare("UPDATE talents SET stage = ?, updated_at = datetime('now') WHERE id = ?")
-    .bind(furthest, talentId).run();
-}
 
 // 阶段展示元信息（与前端 types.ts 的 PIPELINE_STAGES 保持一致）
 const STAGE_LABELS: Record<Stage, { label: string; color: string }> = {
@@ -96,6 +66,11 @@ pipeline.get("/", async (c) => {
            t.years_experience, t.education, t.city, t.resume_url, t.source,
            (SELECT MIN(tt.due_date) FROM talent_tasks tt
               WHERE tt.talent_id = t.id AND tt.status = 'pending' AND tt.due_date IS NOT NULL) as next_follow,
+           (SELECT MIN(iv.scheduled_at) FROM interviews iv
+              WHERE iv.talent_job_id = tj.id AND iv.status = 'scheduled' AND iv.scheduled_at IS NOT NULL) as next_interview_at,
+           (SELECT iv2.mode FROM interviews iv2
+              WHERE iv2.talent_job_id = tj.id AND iv2.status = 'scheduled' AND iv2.scheduled_at IS NOT NULL
+              ORDER BY iv2.scheduled_at ASC LIMIT 1) as next_interview_mode,
            j.id as job_id, j.title as job_title, j.department as job_department, j.city as job_city,
            u.name as owner_name
     FROM talent_jobs tj
@@ -713,6 +688,13 @@ pipeline.post("/batch-stage", async (c) => {
       }
     }
     await c.env.DB.batch(hiredStmts);
+
+    // 入职办理自动化：批量流转到已入职时同样自动生成材料清单（幂等）
+    for (const r of targets) {
+      await ensureOnboardingItems(c.env.DB, {
+        ownerId: r.owner_id, talentId: r.talent_id, talentJobId: r.id,
+      });
+    }
   }
 
   // 同步各人才的全局阶段（冗余字段，派生自 talent_jobs）
@@ -778,6 +760,10 @@ pipeline.put("/:linkId/stage", async (c) => {
       ).run();
       taskCreated = true;
     }
+    // 入职办理自动化：流转到已入职即自动生成材料清单（幂等，已存在则跳过）
+    await ensureOnboardingItems(c.env.DB, {
+      ownerId: link.owner_id, talentId: link.talent_id, talentJobId: linkId,
+    });
   }
 
   // 同步人才全局阶段（冗余字段，派生自 talent_jobs）

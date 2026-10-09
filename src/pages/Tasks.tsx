@@ -16,6 +16,8 @@ import { api } from "../api";
 import type { Task, User } from "../types";
 import { PRIORITY_LABELS, PRIORITY_COLORS, TASK_SOURCE_LABELS } from "../types";
 import { dayInfo, hasHolidayData, knownYears } from "../utils/holidays";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 const todayYmd = () => dayjs().format("YYYY-MM-DD");
 
@@ -53,6 +55,7 @@ const CAL_LINE_MAX = 2;
 const prioOf = (p: string) => (p === "high" ? "high" : p === "low" ? "low" : "normal");
 
 export default function Tasks() {
+  const profile = useIdentityProfile();
   const [searchParams, setSearchParams] = useSearchParams();
   const talentFilter = searchParams.get("talent_id") || "";
 
@@ -540,7 +543,7 @@ export default function Tasks() {
                 options={talents.map((t) => ({ label: t.name, value: t.id }))}
               />
             </Form.Item>
-            <Form.Item name="job_id" label="关联岗位">
+            <Form.Item name="job_id" label={termFor(profile, "关联岗位")}>
               <Select
                 showSearch allowClear placeholder="可选"
                 optionFilterProp="label"

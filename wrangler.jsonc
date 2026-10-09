@@ -2,6 +2,11 @@
   "name": "hr-workbench",
   "compatibility_date": "2026-09-18",
   "main": "./src/worker/index.ts",
+  "vars": {
+    // 阿里云短信认证·赠送签名与模板（非机密）。如与控制台不一致，请改为你账号下「赠送签名配置 / 赠送模板配置」里的实际值。
+    "ALIBABA_SMS_SIGN_NAME": "恒创联众",
+    "ALIBABA_SMS_TEMPLATE_CODE": "100001"
+  },
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",

@@ -10,6 +10,9 @@ import { api } from "../api";
 import { downloadBlob, dateStamp, csvCell } from "../utils/file";
 import type { FunnelResponse, FunnelStayItem, Job, User } from "../types";
 import FunnelChartView from "../components/FunnelChart";
+import OverviewPanel from "../components/OverviewPanel";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 // 周期指标的配色（与漏斗同一套柔和色系，暗色模式取亮档）
 // 顺序即流程顺序：入库→首面 / 首面→Offer / Offer→入职 / 全流程
@@ -58,6 +61,7 @@ const numText = (v: number | null) => (v == null ? "—" : `${v}`);
 const r1 = (v: number) => Math.round(v * 10) / 10;
 // 时间戳（本地）
 export default function Funnel() {
+  const profile = useIdentityProfile();
   const [data, setData] = useState<FunnelResponse | null>(null);
   const [jobs, setJobs] = useState<Pick<Job, "id" | "title" | "status">[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
@@ -147,10 +151,10 @@ export default function Funnel() {
     if (!data || !s) return;
     const rows: string[] = [];
     const timeLabel = TIME_RANGES.find((t) => t.value === daysFilter)?.label || "全部时间";
-    const jobLabel = jobs.find((j) => j.id === jobFilter)?.title || "全部岗位";
+    const jobLabel = jobs.find((j) => j.id === jobFilter)?.title || termFor(profile, "全部岗位");
 
-    rows.push("招聘漏斗数据导出");
-    rows.push([`岗位：${jobLabel}`, `时间范围：${timeLabel}`, `导出时间：${new Date().toLocaleString("zh-CN")}`].map(csvCell).join(","));
+    rows.push(termFor(profile, "招聘漏斗数据导出"));
+    rows.push([termFor(profile, `岗位：${jobLabel}`), `时间范围：${timeLabel}`, `导出时间：${new Date().toLocaleString("zh-CN")}`].map(csvCell).join(","));
     rows.push("");
 
     rows.push("【漏斗概览】");
@@ -174,7 +178,7 @@ export default function Funnel() {
     }
     rows.push("");
 
-    rows.push("【渠道效果】（人·岗位口径：同一人才多岗位分别计）");
+    rows.push(termFor(profile, "【渠道效果】（人·岗位口径：同一人才多岗位分别计）"));
     rows.push("来源渠道,进入流程,进行中,已入职,已淘汰,已放弃,入职转化率,平均周期(天)");
     for (const src of data.sources || []) {
       rows.push([
@@ -204,8 +208,8 @@ export default function Funnel() {
     }
 
     const blob = new Blob(["\ufeff" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" });
-    downloadBlob(blob, `招聘漏斗_${dateStamp()}.csv`);
-    message.success("已导出招聘漏斗数据");
+    downloadBlob(blob, `${termFor(profile, "招聘漏斗")}_${dateStamp()}.csv`);
+    message.success(termFor(profile, "已导出招聘漏斗数据"));
   };
 
   return (
@@ -214,10 +218,10 @@ export default function Funnel() {
       <Card className="search-card" style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
         <div className="search-grid">
           <div className="search-field">
-            <span className="search-label">岗位</span>
+            <span className="search-label">{termFor(profile, "岗位")}</span>
             <div className="search-control">
             <Select
-              style={{ width: "100%" }} allowClear placeholder="全部岗位"
+              style={{ width: "100%" }} allowClear placeholder={termFor(profile, "全部岗位")}
               value={draftJob || undefined}
               onChange={(v) => setDraftJob(v || "")}
               options={jobs.map((j) => ({
@@ -270,22 +274,23 @@ export default function Funnel() {
           <Empty
             description={
               filtered
-                ? "当前筛选条件下没有数据，试试放宽岗位或时间范围"
-                : "还没有候选人进入招聘看板，先去「招聘看板」把人才挂到岗位上，这里就会有数据了"
+                ? termFor(profile, "当前筛选条件下没有数据，试试放宽岗位或时间范围")
+                : termFor(profile, "还没有人才进入招聘看板，先去把人挂到岗位上，这里就会有数据了")
             }
           >
-            <Link to="/pipeline">
-              <Button type="primary">去招聘看板录入</Button>
+            {/* 不要 <Link><Button/></Link>：<a> 内嵌 <button> 是非法 HTML，点击易被外层吞掉。 */}
+            <Link to="/pipeline" className="btn-as-primary">
+              {termFor(profile, "去招聘看板录入")}
             </Link>
           </Empty>
         </Card>
       ) : (
+        <>
         <Row gutter={[16, 16]}>
           {/* ===== 左：漏斗展示 ===== */}
           <Col xs={24} xl={14}>
           <Card
             title={<Space><FunnelPlotOutlined />转化漏斗</Space>}
-            style={{ marginBottom: 16 }}
             styles={{ body: { padding: "20px 24px" } }}
             extra={
               <Tooltip title="阶段人数按「曾到达」统计：只要候选人到过该阶段就计入，因此漏斗逐级递减，不会因为后期淘汰而回退">
@@ -313,7 +318,7 @@ export default function Funnel() {
                 <b style={{ color: "#94a3b8", marginLeft: 6 }}>{s.withdrawn}</b> 人
               </div>
               <span className="funnel-branch-tip">
-                （终态分支不计入漏斗主线，人才可能在任何一级进入终态）
+                {termFor(profile, "（终态分支不计入漏斗主线，人才可能在任何一级进入终态）")}
               </span>
             </div>
 
@@ -322,6 +327,64 @@ export default function Funnel() {
               <InfoCircleOutlined /> 统计口径：各阶段人数按「<b>曾到达</b>」统计 —— 候选人只要到过该阶段就计入，因此漏斗逐级递减、不会因后期淘汰而回退；已淘汰 / 已放弃属于终态分支，单独计列，不计入主线。
             </div>
           </Card>
+
+          {/* ===== 渠道效果：与上方「转化漏斗」同栏同宽，紧随漏斗下方 =====
+              各来源「进入 → 进行中 → 入职」+ 转化率 + 平均周期。 */}
+          {data!.sources.length > 0 && (
+            <Card
+              title={<Space><TeamOutlined />渠道效果</Space>}
+              style={{ marginTop: 16 }}
+              styles={{ body: { padding: "16px 18px" } }}
+              extra={
+                <Tooltip title={termFor(profile, "按人才来源统计各阶段分布与入职转化、平均招聘周期；同一人才投多个岗位按投递记录分别计入，与漏斗口径一致。来源在人才库「来源渠道」字段或导入简历时维护。")}>
+                  <span style={{ fontSize: 12, color: "#8c8c8c" }}>口径说明</span>
+                </Tooltip>
+              }
+            >
+              {(() => {
+                // 数据质量提示：「未记录」占比过高时报表失真，提醒用户补录
+                const unknown = data!.sources.find((s) => s.source === "未记录");
+                const total = data!.sources.reduce((a, s) => a + s.entered, 0);
+                if (!unknown || total === 0 || unknown.entered / total <= 0.4) return null;
+                return (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 12 }}
+                    message={termFor(profile, `有 ${unknown.entered} 条候选人未记录来源（占 ${pct(unknown.entered / total)}），统计可能失真。新导入可在「导入简历」时选择本批来源，存量可在人才库编辑补录`)}
+                  />
+                );
+              })()}
+              <Table
+                size="small"
+                pagination={false}
+                rowKey="source"
+                dataSource={data!.sources}
+                columns={[
+                  {
+                    title: "来源渠道", dataIndex: "source",
+                    render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span>,
+                  },
+                  { title: "进入", dataIndex: "entered", align: "right" },
+                  { title: "进行中", dataIndex: "in_progress", align: "right" },
+                  {
+                    title: "入职", dataIndex: "hired", align: "right",
+                    render: (v: number) => <b style={{ color: "#10b981" }}>{v}</b>,
+                  },
+                  {
+                    title: "转化率", dataIndex: "rate", align: "right",
+                    render: (v: number) => (
+                      <b style={{ color: v >= 0.3 ? "#10b981" : v > 0 ? "#d48806" : "#8c8c8c" }}>{pct(v)}</b>
+                    ),
+                  },
+                  {
+                    title: "平均周期", dataIndex: "avg_cycle_days", align: "right",
+                    render: (v: number | null) => (v == null ? "—" : `${v} 天`),
+                  },
+                ]}
+              />
+            </Card>
+          )}
           </Col>
 
           {/* ===== 右：数据分析 ===== */}
@@ -489,96 +552,45 @@ export default function Funnel() {
             </div>
           </Card>
 
-          </Col>
+          {/* 各阶段当前停留：放在右栏「招聘周期」下方 —— 与上方漏斗/周期同属“看数据”，
+              不再占用页面顶部（顶部留给筛选器，进来先看到能操作的东西）。 */}
+          <OverviewPanel />
 
-          {/* ===== 渠道效果：各来源「进入 → 进行中 → 入职」+ 平均周期 ===== */}
-          {data!.sources.length > 0 && (
-            <Col xs={24} xl={14}>
-              <Card
-                title={<Space><TeamOutlined />渠道效果</Space>}
-                styles={{ body: { padding: "16px 18px" } }}
-                extra={
-                  <Tooltip title="按人才来源统计各阶段分布与入职转化、平均招聘周期；同一人才投多个岗位按投递记录分别计入，与漏斗口径一致。来源在人才库「来源渠道」字段或导入简历时维护。">
-                    <span style={{ fontSize: 12, color: "#8c8c8c" }}>口径说明</span>
-                  </Tooltip>
-                }
-              >
-                {(() => {
-                  // 数据质量提示：「未记录」占比过高时报表失真，提醒用户补录
-                  const unknown = data!.sources.find((s) => s.source === "未记录");
-                  const total = data!.sources.reduce((a, s) => a + s.entered, 0);
-                  if (!unknown || total === 0 || unknown.entered / total <= 0.4) return null;
-                  return (
-                    <Alert
-                      type="warning"
-                      showIcon
-                      style={{ marginBottom: 12 }}
-                      message={`有 ${unknown.entered} 条候选人未记录来源（占 ${pct(unknown.entered / total)}），统计可能失真。新导入可在「导入简历」时选择本批来源，存量可在人才库编辑补录`}
-                    />
-                  );
-                })()}
-                <Table
-                  size="small"
-                  pagination={false}
-                  rowKey="source"
-                  dataSource={data!.sources}
-                  columns={[
-                    {
-                      title: "来源渠道", dataIndex: "source",
-                      render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span>,
-                    },
-                    { title: "进入", dataIndex: "entered", align: "right" },
-                    { title: "进行中", dataIndex: "in_progress", align: "right" },
-                    {
-                      title: "入职", dataIndex: "hired", align: "right",
-                      render: (v: number) => <b style={{ color: "#10b981" }}>{v}</b>,
-                    },
-                    {
-                      title: "转化率", dataIndex: "rate", align: "right",
-                      render: (v: number) => (
-                        <b style={{ color: v >= 0.3 ? "#10b981" : v > 0 ? "#d48806" : "#8c8c8c" }}>{pct(v)}</b>
-                      ),
-                    },
-                    {
-                      title: "平均周期", dataIndex: "avg_cycle_days", align: "right",
-                      render: (v: number | null) => (v == null ? "—" : `${v} 天`),
-                    },
-                  ]}
-                />
-              </Card>
-            </Col>
-          )}
-
-          {/* ===== 淘汰原因分布：反哺 JD 与画像修正 ===== */}
+          {/* ===== 淘汰原因分布：反哺 JD 与画像修正，与左栏「渠道效果」左右呼应 ===== */}
           {data!.reject_reasons.length > 0 && (
-            <Col xs={24} xl={10}>
-              <Card
-                title="淘汰原因分布"
-                styles={{ body: { padding: "16px 18px" } }}
-                extra={
-                  <Tooltip title="看板把候选人拖入「已淘汰」时选择的标准原因，自动按流转日志汇总；高频原因可用于修正 JD 与画像">
-                    <span style={{ fontSize: 12, color: "#8c8c8c" }}>说明</span>
-                  </Tooltip>
-                }
-              >
-                {data!.reject_reasons.map((r, i) => (
-                  <div key={r.reason} style={{ marginBottom: i === data!.reject_reasons.length - 1 ? 0 : 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                      <span>{r.reason}</span>
-                      <b style={{ color: "#ef4444" }}>{r.count} 人</b>
-                    </div>
-                    <div className="funnel-analysis-bar">
-                      <div
-                        className="funnel-analysis-fill"
-                        style={{ width: `${Math.max(3, (r.count / data!.reject_reasons[0].count) * 100)}%`, background: "#ef4444" }}
-                      />
-                    </div>
+            <Card
+              title="淘汰原因分布"
+              style={{ marginTop: 16 }}
+              styles={{ body: { padding: "16px 18px" } }}
+              extra={
+                <Tooltip title="看板把候选人拖入「已淘汰」时选择的标准原因，自动按流转日志汇总；高频原因可用于修正 JD 与画像">
+                  <span style={{ fontSize: 12, color: "#8c8c8c" }}>说明</span>
+                </Tooltip>
+              }
+            >
+              {data!.reject_reasons.map((r, i) => (
+                <div key={r.reason} style={{ marginBottom: i === data!.reject_reasons.length - 1 ? 0 : 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                    <span>{r.reason}</span>
+                    <b style={{ color: "#ef4444" }}>{r.count} 人</b>
                   </div>
-                ))}
-              </Card>
-            </Col>
+                  <div className="funnel-analysis-bar">
+                    <div
+                      className="funnel-analysis-fill"
+                      style={{ width: `${Math.max(3, (r.count / data!.reject_reasons[0].count) * 100)}%`, background: "#ef4444" }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </Card>
           )}
+
+          </Col>
         </Row>
+
+        {/* 说明：渠道效果 / 淘汰原因分布 已并入上面的左右两栏（左栏漏斗之下、右栏分析末尾），
+            不再单独占一行，避免条件渲染时整块留白。 */}
+        </>
       )}
     </div>
   );

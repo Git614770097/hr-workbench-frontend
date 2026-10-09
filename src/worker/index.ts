@@ -8,10 +8,15 @@ import { templateRoutes } from "./routes/templates";
 import { roleRoutes } from "./routes/roles";
 import { jobRoutes } from "./routes/jobs";
 import { pipelineRoutes } from "./routes/pipeline";
+import { interviewRoutes } from "./routes/interviews";
+import { requisitionRoutes } from "./routes/requisitions";
+import { approvalRoutes } from "./routes/approvals";
+import { onboardingRoutes } from "./routes/onboarding";
 import { taskRoutes } from "./routes/tasks";
 import aiParseRoutes from "./routes/aiParse";
 import matchRoutes from "./routes/match";
 import demoRoutes from "./routes/demo";
+import { overview } from "./routes/overview";
 import { parsePermissions } from "./permissions";
 import { runReminders, freezeExpiredAccounts } from "./reminders";
 
@@ -22,9 +27,30 @@ export interface Env {
   RESUMES: KVNamespace;
   DEEPSEEK_API_KEY?: string;
   PUSHPLUS_TOKEN?: string;
+  // 阿里云「短信认证」（号码认证服务 Dypnsapi）——个人实名即可用
+  ALIBABA_CLOUD_ACCESS_KEY_ID?: string;
+  ALIBABA_CLOUD_ACCESS_KEY_SECRET?: string;
+  ALIBABA_SMS_SIGN_NAME?: string;
+  ALIBABA_SMS_TEMPLATE_CODE?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>();
+
+// ---- 统一错误出口 ----
+// 关键：大量 handler 里直接 `await c.req.json()`，请求体为空/非法 JSON 时会抛
+// SyntaxError，被 Hono 默认处理器兜成 500「Internal Server Error」——用户看到的是
+// 一句英文报错而不是「参数不合法」。这里统一拦截：解析类错误回 400，其余回 500，
+// 且都返回结构化中文 message，前端可直接 toast 展示。
+app.onError((err, c) => {
+  const isJsonParse =
+    err instanceof SyntaxError ||
+    /JSON|Unexpected end of|unexpected token/i.test(err?.message || "");
+  if (isJsonParse) {
+    return c.json({ error: "请求参数格式不正确" }, 400);
+  }
+  console.error("[api] unhandled error:", err);
+  return c.json({ error: "服务器开小差了，请稍后重试" }, 500);
+});
 
 app.use("*", logger());
 app.use("/api/*", cors());
@@ -83,9 +109,19 @@ async function menuGuard(c: any, menuKey: string) {
   return null;
 }
 
-// 人才库 / 模板 的路径前缀即菜单 key
+// 人才库 / 模板 的路径前缀即菜单 key。
+// 合同管理（/api/talents/contracts/*）与社保公积金（/api/talents/social/*）
+// 已从 talents 拆为独立菜单权限，必须在「同一个中间件内」分流：
+// Hono 的 "/api/talents/*" 也匹配裸路径 /api/talents，若各自再注册一个 app.use，
+// 两个守卫会叠加执行 → 变成「必须同时拥有两个权限」才放行。
 app.use("/api/talents/*", async (c, next) => {
-  const blocked = await menuGuard(c, "talents");
+  const p = c.req.path;
+  const menuKey = p.startsWith("/api/talents/contracts")
+    ? "contracts"
+    : p.startsWith("/api/talents/social")
+      ? "social"
+      : "talents";
+  const blocked = await menuGuard(c, menuKey);
   if (blocked) return blocked;
   return next();
 });
@@ -116,6 +152,30 @@ app.use("/api/pipeline", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
+// 面试管理：与「招聘看板」同权限（面试就是看板阶段的延伸，看不了看板也用不了面试）
+app.use("/api/interviews/*", async (c, next) => {
+  const blocked = await menuGuard(c, "interviews");
+  if (blocked) return blocked;
+  return next();
+});
+app.use("/api/interviews", async (c, next) => {
+  const blocked = await menuGuard(c, "interviews");
+  if (blocked) return blocked;
+  return next();
+});
+// 招聘需求 / 审批 / 入职办理：与「招聘看板」同权限
+for (const p of ["/api/requisitions", "/api/approvals", "/api/onboarding"]) {
+  app.use(`${p}/*`, async (c, next) => {
+    const blocked = await menuGuard(c, "pipeline");
+    if (blocked) return blocked;
+    return next();
+  });
+  app.use(p, async (c, next) => {
+    const blocked = await menuGuard(c, "pipeline");
+    if (blocked) return blocked;
+    return next();
+  });
+}
 // 招聘漏斗：与「招聘看板」同源数据，但页面是独立菜单。
 // 只统计、不修改数据，因此不额外要求 funnel 权限 ——
 // 有 pipeline 权限即可查看（避免存量角色看不到数据）。
@@ -177,10 +237,16 @@ app.route("/api/templates", templateRoutes);
 app.route("/api/roles", roleRoutes);
 app.route("/api/jobs", jobRoutes);
 app.route("/api/pipeline", pipelineRoutes);
+app.route("/api/interviews", interviewRoutes);
+// 招聘需求 / 审批 / 入职办理 都挂在「岗位 + 看板」语义下，跟随 pipeline 权限
+app.route("/api/requisitions", requisitionRoutes);
+app.route("/api/approvals", approvalRoutes);
+app.route("/api/onboarding", onboardingRoutes);
 app.route("/api/tasks", taskRoutes);
 app.route("/api/parse-resume", aiParseRoutes);
 app.route("/api/match", matchRoutes);
 app.route("/api/demo", demoRoutes);
+app.route("/api/overview", overview);
 
 // ---- Health check ----
 app.get("/api/health", (c) =>

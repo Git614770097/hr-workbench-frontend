@@ -44,6 +44,17 @@ function dueLabel(ymdStr: string, today: string): string {
   return `${d} 天后到期`;
 }
 
+// 面试时间展示：今天/明天带具体时刻，更远的直接给日期
+function interviewWhen(scheduledAt: string, today: string): string {
+  const date = scheduledAt.slice(0, 10);
+  const time = scheduledAt.slice(11, 16);
+  const d = diffDays(date, today);
+  if (d === 0) return `今天 ${time}`;
+  if (d === 1) return `明天 ${time}`;
+  if (d < 0) return `已逾期（${date.slice(5)} ${time}）`;
+  return `${date.slice(5)} ${time}`;
+}
+
 // 推单条消息到 PushPlus（个人微信），返回是否成功。
 // 供定时任务逐人推送 + auth 里的「测试推送」接口复用。
 export async function sendPushPlus(
@@ -138,18 +149,55 @@ export async function notifyAdmins(
 // 事件①：有人提交注册申请 → 催管理员去审批
 export async function notifyNewRegistration(
   env: Env,
-  info: { name: string; phone: string }
+  info: { name: string; phone: string; referrerName?: string; intendedRole?: string }
 ): Promise<AdminNotifyResult> {
+  // 身份只作提示，帮助管理员判断该给什么角色；取值非法/缺失时不显示该行
+  const INTENDED_LABELS: Record<string, string> = {
+    hr: "HR 人事",
+    headhunter: "猎头",
+    team: "团队负责人",
+    other: "其他",
+  };
+  const intended = info.intendedRole ? INTENDED_LABELS[info.intendedRole] : "";
   const lines = [
     "<b>有人提交了注册申请，正等待审批</b>",
     `姓名：${escapeHtml(info.name)}`,
     `手机号：${escapeHtml(info.phone)}`,
+    ...(intended ? [`自报身份：${intended}（仅供参考，权限仍需你确认角色）`] : []),
+    ...(info.referrerName
+      ? [`推荐人：${escapeHtml(info.referrerName)}（该用户付费开通后，双方会员时长会自动顺延）`]
+      : []),
     `提交时间：${nowCn()}`,
     "<br>",
     "处理入口：登录后台 → 用户管理 →「待审批注册申请」→ 通过（顺手把角色分配了）。",
     "在审批通过前，这个账号无法登录。",
   ];
   return notifyAdmins(env, "新用户注册待审批", lines.join("<br>"));
+}
+
+/**
+ * 事件①b：审批通过后提醒管理员「去通知用户」。
+ *
+ * 为什么是提醒管理员而不是直接通知用户：注册表单只收手机号，
+ * 平台没有短信资质、用户也没配 PushPlus token，所以不存在能直达用户的通道。
+ * 唯一现实的做法是把「该联系用户了」这件事推给站长，并附上手机号，方便他
+ * 从闲鱼/微信里找到人。这也是当前用户注册后不回来的最大断点。
+ */
+export async function notifyUserApproved(
+  env: Env,
+  info: { name: string; phone: string; roleName?: string | null }
+): Promise<AdminNotifyResult> {
+  const lines = [
+    "<b>已给一位新用户开通，记得告诉他可以登录了</b>",
+    `姓名：${escapeHtml(info.name)}`,
+    `手机号：${escapeHtml(info.phone)}`,
+    ...(info.roleName ? [`角色：${escapeHtml(info.roleName)}`] : []),
+    `开通时间：${nowCn()}`,
+    "<br>",
+    "⚠️ 系统无法主动通知他（只有手机号，无短信通道），需要你从闲鱼/微信里跟他说一声。",
+    "否则他不知道自己已经通过了，很可能就一直不回来。",
+  ];
+  return notifyAdmins(env, "新用户已开通，请通知他登录", lines.join("<br>"));
 }
 
 // 事件②：有人提交「忘记密码」申请 → 催管理员去核对身份
@@ -198,6 +246,8 @@ export interface ReminderResult {
   taskCount: number;
   contractCount: number;
   probationCount: number;
+  /** 未来 3 天内的面试安排条数 */
+  interviewCount: number;
   /** 成功推送给几个人 */
   pushedTo: number;
   /** 因负责人未配置 token 而没能推送的待办条数 */
@@ -246,16 +296,39 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
     .bind(today, soon)
     .all<{ name: string; probation_end: string }>();
 
+  // 面试安排：未来 3 天内的「待面试」，按负责人定向推送（scheduled_at 是 'YYYY-MM-DD HH:mm' 本地时区串）
+  const interviewRows = await env.DB.prepare(
+    `SELECT iv.scheduled_at, iv.round, iv.mode, iv.location, iv.meeting_url,
+            t.name AS talent_name, j.title AS job_title,
+            iv.owner_id, u.name AS owner_name, u.pushplus_token
+     FROM interviews iv
+     JOIN talents t ON iv.talent_id = t.id
+     LEFT JOIN jobs j ON iv.job_id = j.id
+     LEFT JOIN users u ON iv.owner_id = u.id
+     WHERE iv.status = 'scheduled' AND iv.scheduled_at IS NOT NULL
+       AND substr(iv.scheduled_at, 1, 10) >= ? AND substr(iv.scheduled_at, 1, 10) <= ?
+     ORDER BY iv.scheduled_at ASC`
+  )
+    .bind(today, soon)
+    .all<{
+      scheduled_at: string; round: string; mode: string;
+      location: string | null; meeting_url: string | null;
+      talent_name: string; job_title: string | null;
+      owner_id: string; owner_name: string | null; pushplus_token: string | null;
+    }>();
+
   const tasks = taskRows.results || [];
   const contracts = contractRows.results || [];
   const probations = probationRows.results || [];
+  const interviews = interviewRows.results || [];
 
-  if (tasks.length === 0 && contracts.length === 0 && probations.length === 0) {
+  if (tasks.length === 0 && contracts.length === 0 && probations.length === 0 && interviews.length === 0) {
     return {
       sent: false,
       taskCount: 0,
       contractCount: 0,
       probationCount: 0,
+      interviewCount: 0,
       pushedTo: 0,
       skippedNoToken: 0,
       message: "无未来 3 天内到期的提醒",
@@ -279,6 +352,21 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
   for (const t of tasks) {
     if (!tasksByOwner.has(t.owner_id)) tasksByOwner.set(t.owner_id, { owner_name: t.owner_name, items: [] });
     tasksByOwner.get(t.owner_id)!.items.push({ title: t.title, due_date: t.due_date });
+  }
+
+  // 面试按负责人分组（面试是「负责人自己的事」，不进公司级全局段）
+  const ROUND_CN: Record<string, string> = { interview1: "初试", interview2: "复试", final: "终面" };
+  const interviewsByOwner = new Map<string, string[]>();
+  for (const iv of interviews) {
+    const place = iv.mode === "online"
+      ? (iv.meeting_url ? escapeHtml(iv.meeting_url) : "线上")
+      : iv.mode === "onsite"
+        ? (iv.location ? escapeHtml(iv.location) : "线下")
+        : "电话";
+    const line = `${escapeHtml(iv.talent_name)}${iv.job_title ? `（${escapeHtml(iv.job_title)}）` : ""}` +
+      ` · ${ROUND_CN[iv.round] || iv.round} · ${interviewWhen(iv.scheduled_at, today)} · ${place}`;
+    if (!interviewsByOwner.has(iv.owner_id)) interviewsByOwner.set(iv.owner_id, []);
+    interviewsByOwner.get(iv.owner_id)!.push(line);
   }
 
   // 所有 active 且配了 token 的用户（这些是「可接收」的人）
@@ -316,12 +404,26 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
     r.lines = [...taskLines, ...r.lines];
   }
 
+  // ③ 负责人收自己的「面试安排」（最紧急的放最前面，今天/明天的面试最容易被漏掉）
+  for (const [ownerId, items] of interviewsByOwner) {
+    const u = users.find((x) => x.id === ownerId);
+    if (!u) continue; // 负责人没配 token：面试是个人事项，静默跳过
+    const r = ensure(ownerId, u.name, u.pushplus_token);
+    const ivLines = [`<b>面试安排（${items.length} 场）</b>`];
+    for (const it of items) ivLines.push(`&nbsp;&nbsp;· ${it}`);
+    r.lines = [...ivLines, ...r.lines];
+  }
+
   // 兜底：如果没有任何用户配置 token，但存在全局 PUSHPLUS_TOKEN，则整体推给全局（兼容旧行为）
   if (recipientMap.size === 0 && env.PUSHPLUS_TOKEN) {
     const allLines: string[] = [];
     for (const [ownerId, grp] of tasksByOwner) {
       allLines.push(`<b>待办提醒（${grp.items.length} 条${grp.owner_name ? `，负责人 ${grp.owner_name}` : ""}）</b>`);
       for (const it of grp.items) allLines.push(`&nbsp;&nbsp;· ${it.title} — ${dueLabel(it.due_date, today)}`);
+    }
+    for (const [, items] of interviewsByOwner) {
+      allLines.push(`<b>面试安排（${items.length} 场）</b>`);
+      for (const it of items) allLines.push(`&nbsp;&nbsp;· ${it}`);
     }
     if (globalHtml) allLines.push(globalHtml);
     const res = await sendPushPlus(env.PUSHPLUS_TOKEN, "待办到期提醒", allLines.join("<br>"));
@@ -330,6 +432,7 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
       taskCount: tasks.length,
       contractCount: contracts.length,
       probationCount: probations.length,
+      interviewCount: interviews.length,
       pushedTo: res.ok ? 1 : 0,
       skippedNoToken: 0,
       message: res.ok ? "已通过全局 token 推送（当前无用户单独配置 token）" : res.message,
@@ -351,6 +454,7 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
     taskCount: tasks.length,
     contractCount: contracts.length,
     probationCount: probations.length,
+    interviewCount: interviews.length,
     pushedTo,
     skippedNoToken,
     message: pushedTo > 0

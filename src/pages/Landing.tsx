@@ -1,6 +1,17 @@
-import { useEffect, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
+import { IDENTITY_PROFILES, DEFAULT_PROFILE } from "../identityProfiles";
 import "../styles/landing.css";
+
+/**
+ * 落地页分版本：用 ?for=headhunter 切换猎头版卖点（默认 HR 版）。
+ * 未带参数时是默认（HR）版。这样同一个链接可以按投放渠道给不同人群，
+ * 而不用维护两套落地页代码。
+ */
+function profileFromUrl() {
+  const key = new URLSearchParams(window.location.search).get("for")?.trim() || "";
+  return IDENTITY_PROFILES[key] || DEFAULT_PROFILE;
+}
 
 /* 招聘漏斗演示数据（首屏可视化，等宽数字） */
 const FUNNEL = [
@@ -110,7 +121,7 @@ const PLANS = [
     name: "会员续费", kind: "plan",
     symbol: "¥", price: "49.9", period: "每年",
     desc: "到期未续费转为只读，续费即恢复全功能",
-    feats: ["全部招聘模块", "合同与社保台账", "待办与到期提醒", "招聘漏斗分析", "不限在招岗位"],
+    feats: ["全部招聘模块", "合同与到期台账", "待办与到期提醒", "招聘漏斗分析", "不限在招岗位"],
     featured: false,
     cta: "立即续费",
   },
@@ -137,6 +148,8 @@ const CUSTOM_ITEMS = [
 const CONTACT = { email: "", wechat: "" };
 
 export default function Landing() {
+  // 品牌档案：?for=xxx 指定版本，否则默认（HR）
+  const [brand, setBrand] = useState(profileFromUrl);
   // 滚动 reveal：进入视口后加 .in 触发淡入上浮
   useEffect(() => {
     const els = document.querySelectorAll(".land-reveal");
@@ -159,19 +172,56 @@ export default function Landing() {
     return () => io.disconnect();
   }, []);
 
+  // 页面标题跟随当前版本（含首屏直接带 ?for= 进入的情况）
+  useEffect(() => {
+    document.title = `${brand.name} · ${brand.tagline}`;
+  }, [brand.name, brand.tagline]);
+
+  // 版本切换：改 URL 参数但不刷新页面（保持滚动位置与动画状态）
+  const switchVersion = (key: string) => {
+    const url = new URL(window.location.href);
+    if (key === "hr") url.searchParams.delete("for");
+    else url.searchParams.set("for", key);
+    window.history.replaceState({}, "", url.toString());
+    setBrand(key === "hr" ? DEFAULT_PROFILE : IDENTITY_PROFILES[key] || DEFAULT_PROFILE);
+  };
+
+  // 所有「登录 / 注册」入口都带上当前版本的 ?for=：
+  // 登录页按它决定品牌文案，注册表单按它预选「我的身份」。
+  // 不带这一段，猎头版落地页点进注册会退回 HR 版（曾经的真实断链）。
+  const loginTo = brand.key === "hr" ? "/login" : `/login?for=${brand.key}`;
+
   return (
     <div className="land">
       {/* 顶部导航 */}
       <header className="land-nav">
         <div className="land-nav-inner">
           <Link to="/" className="land-logo">
-            <span className="land-logo-mark">HR</span>
-            <span>HR 工作台</span>
-            <span className="land-logo-sub land-nav-sub">招聘全生命周期管理</span>
+            <span className="land-logo-mark">{brand.mark}</span>
+            <span>{brand.name}</span>
+            <span className="land-logo-sub land-nav-sub">{brand.tagline}</span>
           </Link>
+          {/* 版本切换：同一套落地页，按人群切卖点（不刷新页面） */}
+          <div className="land-version-switch" role="tablist" aria-label="选择你的身份">
+            {[
+              { key: "hr", label: "我是 HR" },
+              { key: "headhunter", label: "我是猎头" },
+            ].map((v) => (
+              <button
+                key={v.key}
+                type="button"
+                role="tab"
+                aria-selected={brand.key === v.key}
+                className={"land-version-tab" + (brand.key === v.key ? " on" : "")}
+                onClick={() => switchVersion(v.key)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
           <div className="land-nav-actions">
-            <Link to="/login" className="land-nav-link">登录</Link>
-            <Link to="/login" className="land-btn land-btn-primary land-btn-sm">免费试用</Link>
+            <Link to={loginTo} className="land-nav-link">登录</Link>
+            <Link to={loginTo} className="land-btn land-btn-primary land-btn-sm">免费试用</Link>
           </div>
         </div>
       </header>
@@ -182,21 +232,21 @@ export default function Landing() {
           <div className="land-wrap land-hero-grid">
             <div>
               <span className="land-eyebrow land-hero-anim">
-                <span className="land-eyebrow-dot" />招聘 · 人事 · 薪酬，一个工作台
+                <span className="land-eyebrow-dot" />{brand.eyebrow}
               </span>
               <h1 className="land-hero-anim">
-                一个人，也能顶<br />一整个 <span className="land-hl">HR 部门</span>
+                {brand.heroTitle}<br /><span className="land-hl">{brand.heroHighlight}</span>
               </h1>
               <p className="land-hero-lead land-hero-anim">
-                从发布岗位、收简历、推进流程，到合同归档、社保参保、个税计算——招聘的全生命周期，一个系统全部搞定。不再用 Excel 东拼西凑，不再漏掉任何一个到期日。
+                {brand.heroLead}
               </p>
               <div className="land-hero-cta land-hero-anim">
-                <Link to="/login" className="land-btn land-btn-primary">免费试用 30 天</Link>
+                <Link to={loginTo} className="land-btn land-btn-primary">免费试用 30 天</Link>
                 <a href="#features" className="land-btn land-btn-ghost-hero">查看功能</a>
               </div>
               <div className="land-hero-kpis land-hero-anim">
                 <div className="land-hero-kpi"><b className="num">6+</b><span>核心模块</span></div>
-                <div className="land-hero-kpi"><b className="num">110+</b><span>人事模板</span></div>
+                <div className="land-hero-kpi"><b className="num">110+</b><span>{brand.templateKpiLabel}</span></div>
                 <div className="land-hero-kpi"><b className="num">0</b><span>部署成本</span></div>
               </div>
             </div>
@@ -238,24 +288,40 @@ export default function Landing() {
               <p className="land-section-desc">
                 不是一个"简历表格"，而是一套把招人这件事从"凭感觉"变成"有数据"的完整工作台。
               </p>
+              {brand.key === "headhunter" && (
+                <p className="land-section-desc" style={{ marginTop: 6 }}>
+                  对独立顾问来说，它是你一个人的交付中枢。
+                </p>
+              )}
+              {brand.key === "hr" && (
+                <p className="land-section-desc" style={{ marginTop: 6 }}>
+                  对企业 HR 来说，它是把招聘全流程收进一个工作台。
+                </p>
+              )}
             </div>
             <div className="land-features-grid">
-              {FEATURES.map((f, i) => (
+              {FEATURES.map((f, i) => {
+                const ov = brand.featureCopy?.[i];
+                const title = ov?.title ?? f.title;
+                const desc = ov?.desc ?? f.desc;
+                const tags = ov?.tags ?? f.tags;
+                return (
                 <div
                   className="land-feature land-reveal"
-                  key={f.title}
+                  key={title}
                   style={{ "--feat-c1": f.c1, "--feat-c2": f.c2, "--feat-i": i } as CSSProperties}
                 >
                   <span className="land-feature-glow" aria-hidden="true" />
                   <div className="land-feature-icon" aria-hidden="true">{f.icon}</div>
                   <span className="land-feature-idx">{String(i + 1).padStart(2, "0")}</span>
-                  <h3>{f.title}</h3>
-                  <p>{f.desc}</p>
+                  <h3>{title}</h3>
+                  <p>{desc}</p>
                   <div className="land-feature-tags">
-                    {f.tags.map((t) => <span className="land-feature-tag" key={t}>{t}</span>)}
+                    {tags.map((t) => <span className="land-feature-tag" key={t}>{t}</span>)}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </section>
@@ -265,20 +331,24 @@ export default function Landing() {
           <div className="land-wrap">
             <div className="land-section-head land-reveal">
               <span className="land-section-kicker">工作流</span>
-              <h2 className="land-section-title">从招人到离职，一条线走到底</h2>
+              <h2 className="land-section-title">{brand.flowCopy?.title ?? "从招人到离职，一条线走到底"}</h2>
               <p className="land-section-desc">
-                招聘不是割裂的动作，而是一条连续的生命周期。每一步都有对应的模块兜底。
+                {brand.flowCopy?.desc ?? "招聘不是割裂的动作，而是一条连续的生命周期。每一步都有对应的模块兜底。"}
               </p>
             </div>
             <div className="land-flow-track">
-              {FLOW.map((s, i) => (
-                <div className="land-flow-step land-reveal" key={s.title}>
+              {FLOW.map((s, i) => {
+                const ov = brand.flowCopy?.steps?.[i];
+                const title = ov?.title ?? s.title;
+                return (
+                <div className="land-flow-step land-reveal" key={title}>
                   <span className="land-flow-dot" />
                   <span className="land-flow-num">STEP {String(i + 1).padStart(2, "0")}</span>
-                  <h3>{s.title}</h3>
-                  <p>{s.desc}</p>
+                  <h3>{title}</h3>
+                  <p>{ov?.desc ?? s.desc}</p>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </section>
@@ -290,7 +360,7 @@ export default function Landing() {
               <span className="land-section-kicker">数据安全</span>
               <h2 className="land-section-title">企业数据，交给你才安心</h2>
               <p className="land-section-desc">
-                简历与人事信息是企业的核心资产，也是敏感个人信息。我们把安全与合规做在默认值里。
+                简历与候选人信息是企业的核心资产，也是敏感个人信息。我们把安全与合规做在默认值里。
               </p>
             </div>
             <div className="land-security-grid">
@@ -338,12 +408,12 @@ export default function Landing() {
                         {p.cta}
                       </a>
                     ) : (
-                      <Link to="/login" className={`land-btn ${p.featured ? "land-btn-primary" : "land-btn-ghost"}`}>
+                      <Link to={loginTo} className={`land-btn ${p.featured ? "land-btn-primary" : "land-btn-ghost"}`}>
                         {p.cta}
                       </Link>
                     )
                   ) : (
-                    <Link to="/login" className={`land-btn ${p.featured ? "land-btn-primary" : "land-btn-ghost"}`}>
+                    <Link to={loginTo} className={`land-btn ${p.featured ? "land-btn-primary" : "land-btn-ghost"}`}>
                       {p.cta}
                     </Link>
                   )}
@@ -392,7 +462,7 @@ export default function Landing() {
               ) : null}
               {!CONTACT.email && !CONTACT.wechat ? (
                 <>
-                  <Link to="/login" className="land-btn land-btn-primary">注册后提需求</Link>
+                  <Link to={loginTo} className="land-btn land-btn-primary">注册后提需求</Link>
                   <p style={{ margin: 0, color: "var(--land-muted)", fontSize: "0.95rem" }}>
                     先免费用起来，真正的痛点往往在用起来之后才出现——那时再告诉我们。
                   </p>
@@ -409,10 +479,10 @@ export default function Landing() {
           <div className="land-footer-grid">
             <div className="land-footer-brand">
               <Link to="/" className="land-logo">
-                <span className="land-logo-mark">HR</span>
-                <span>HR 工作台</span>
+                <span className="land-logo-mark">{brand.mark}</span>
+                <span>{brand.name}</span>
               </Link>
-              <p>让中小企业用一个人、一份预算，拥有规范的人事与招聘管理能力。</p>
+              <p>{brand.footerDesc}</p>
             </div>
             <div className="land-footer-links">
               <div className="land-footer-col">
@@ -428,7 +498,7 @@ export default function Landing() {
             </div>
           </div>
           <div className="land-footer-legal">
-            <span>© {new Date().getFullYear()} HR 工作台 · 招聘全生命周期管理系统</span>
+            <span>© {new Date().getFullYear()} {brand.name} · {brand.tagline}</span>
             <span className="num">Powered by Cloudflare</span>
           </div>
         </div>

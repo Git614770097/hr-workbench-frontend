@@ -13,6 +13,8 @@ export interface User {
   paid_until?: string | null;
   /** 账号状态：active=正常 / frozen=已冻结(只读，到期未续费) / pending / rejected / disabled */
   status?: string | null;
+  /** 注册时自报身份（hr/headhunter/team/other）—— 只驱动品牌文案，不参与鉴权 */
+  intended_role?: string | null;
 }
 
 /** 用户管理列表行（管理员视角，含审批与重置申请状态） */
@@ -30,18 +32,44 @@ export interface UserRow {
   must_change_password: number;
   /** 会员有效期（NULL=未开通；时间串=已过期/有效） */
   paid_until: string | null;
+  /** 注册时自报身份（hr/headhunter/team/other），仅作审批参考，不参与鉴权 */
+  intended_role?: string | null;
 }
+
+/**
+ * 注册时可选的身份。**只是意向标记，不授予任何权限** ——
+ * 真正能看到什么菜单由管理员审批时分配的角色决定。
+ * 目前仅 HR 人事 / 猎头顾问 两档，文案口径不同、功能一致。
+ */
+// desc 刻意控制在 ~12 字内：注册页身份选项为两列卡片，过长会换行撑高表单
+export const INTENDED_ROLES: { key: string; label: string; desc: string }[] = [
+  { key: "hr", label: "HR 人事", desc: "企业内部招聘与人才管理" },
+  { key: "headhunter", label: "猎头 / 顾问", desc: "为多家客户寻访并交付" },
+];
+
+/** 身份 key → 中文标签（列表与提示复用） */
+export const INTENDED_ROLE_LABELS: Record<string, string> = Object.fromEntries(
+  INTENDED_ROLES.map((r) => [r.key, r.label])
+);
 
 // 菜单权限 key（与后端 src/worker/permissions.ts 保持一致）
 export type MenuKey =
-  | "talents" | "pipeline" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "users";
+  | "talents" | "contracts" | "social"
+  | "pipeline" | "interviews" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "users";
 
-export const MENU_PERMISSIONS: { key: MenuKey; label: string }[] = [
+export const MENU_PERMISSIONS: { key: MenuKey; label: string; hint?: string }[] = [
   { key: "tasks", label: "待办日历" },
   { key: "jobs", label: "岗位管理" },
   { key: "pipeline", label: "招聘看板" },
-  { key: "funnel", label: "招聘漏斗" },
+  { key: "interviews", label: "面试管理", hint: "需同时勾选「招聘看板」" },
+  { key: "funnel", label: "招聘概览" },
   { key: "talents", label: "人才库管理" },
+  // 合同管理 / 社保公积金 已从 talents 拆为独立权限：
+  // 猎头等角色可以只保留人才库、关掉这两个 HR 台账菜单。
+  // 但两者主体数据仍取自 talents 表（合同期、试用期、社保基数都挂在人才上），
+  // 接口层也需要 talents 权限才能读到人才列表，故需一并勾选。
+  { key: "contracts", label: "合同管理", hint: "需同时勾选「人才库管理」" },
+  { key: "social", label: "社保公积金", hint: "需同时勾选「人才库管理」" },
   { key: "profiles", label: "人才画像" },
   { key: "templates", label: "模板库管理" },
   { key: "users", label: "用户管理" },
@@ -70,6 +98,7 @@ export interface Talent {
   years_experience: number | null;
   city: string | null;
   skills: string[];
+  tags: string[];
   industry: string | null;
   expected_salary: string | null;
   expected_city: string | null;
@@ -84,6 +113,7 @@ export interface Talent {
   probation_end: string | null;
   resignation_date: string | null;
   hire_date: string | null;   // 入职日期（社保增员待办基准日）
+  next_follow_at: string | null; // 下次跟进/提醒时间，到期自动生成待办并推送
   is_demo?: number;           // 示例数据标记：1=一键载入的演示数据
   created_at: string;
   updated_at: string;
@@ -113,6 +143,27 @@ export interface SocialItem {
   si_city: string | null;
   si_base: number | null;
   hf_base: number | null;
+  si_rate_personal: number | null;
+  si_rate_company: number | null;
+  hf_rate_personal: number | null;
+  hf_rate_company: number | null;
+}
+
+// 参保城市费率模板（按城市存默认缴费比例，编辑参保信息时自动带出）
+export interface SocialRateTemplate {
+  id: string;
+  owner_id: string;
+  city: string;
+  si_rate_personal: number | null;
+  si_rate_company: number | null;
+  hf_rate_personal: number | null;
+  hf_rate_company: number | null;
+  /** true = 系统内置参考值（不可删，只能用同名城市覆盖），需按当地政策核对 */
+  is_system?: boolean;
+}
+
+export interface SocialRateInput {
+  city: string;
   si_rate_personal: number | null;
   si_rate_company: number | null;
   hf_rate_personal: number | null;
@@ -339,6 +390,10 @@ export interface PipelineCard {
   source: string | null;
   /** 下次跟进日期：该候选人最早的未完成待办 due_date（没有待办则为 null） */
   next_follow: string | null;
+  /** 最近一场待面试时间：该投递下最早的 scheduled 面试（没有则为 null） */
+  next_interview_at: string | null;
+  /** 最近一场待面试的方式（online/onsite/phone），与 next_interview_at 配套 */
+  next_interview_mode: string | null;
   job_id: string | null;
   job_title: string | null;
   job_department: string | null;
@@ -349,6 +404,173 @@ export interface PipelineCard {
 export interface PipelineResponse {
   columns: Record<string, PipelineCard[]>;
   stats: { total: number; active: number; hired: number; rejected: number };
+}
+
+// ---- 招聘需求 ----
+export interface Requisition {
+  id: string;
+  owner_id: string;
+  department: string;
+  title: string;
+  headcount: number;
+  job_type: string;
+  city: string | null;
+  salary_range: string | null;
+  education: string | null;
+  experience: string | null;
+  reason: string | null;
+  expect_date: string | null;
+  priority: string;
+  status: "pending" | "approved" | "rejected" | "closed";
+  job_id: string | null;
+  reject_reason: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  status_label: string;
+  priority_label: string;
+}
+
+export const REQUISITION_STATUS_LABELS: Record<string, string> = {
+  pending: "待审批",
+  approved: "已通过",
+  rejected: "已驳回",
+  closed: "已关闭",
+};
+
+// ---- 审批流 ----
+export interface ApprovalFlow {
+  id: string;
+  owner_id: string;
+  name: string;
+  scene: string;
+  steps: { name: string; approver_id?: string }[];
+  enabled: number;
+  created_at: string;
+}
+
+export interface ApprovalStepRecord {
+  id: string;
+  instance_id: string;
+  step_index: number;
+  step_name: string;
+  approver_id: string | null;
+  decision: "approve" | "reject" | null;
+  comment: string | null;
+  acted_at: string | null;
+}
+
+export interface ApprovalInstance {
+  id: string;
+  owner_id: string;
+  flow_id: string | null;
+  scene: string;
+  talent_id: string;
+  talent_job_id: string | null;
+  title: string;
+  current_step: number;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  status_label: string;
+  payload: string | null;
+  created_at: string;
+  updated_at: string;
+  talent_name: string;
+  job_title: string | null;
+  owner_name: string;
+  steps: ApprovalStepRecord[];
+}
+
+// ---- 入职办理 ----
+export interface OnboardingItem {
+  id: string;
+  owner_id: string;
+  talent_id: string;
+  talent_job_id: string | null;
+  name: string;
+  category: string | null;
+  required: number;
+  status: "pending" | "submitted" | "verified";
+  status_label: string;
+  submitted_at: string | null;
+  remark: string | null;
+  sort_order: number;
+  talent_name?: string;
+  job_title?: string | null;
+}
+
+export const ONBOARDING_STATUS_LABELS: Record<string, string> = {
+  pending: "待提交",
+  submitted: "已提交",
+  verified: "已核验",
+};
+
+// ---- 面试管理 ----
+export type InterviewRound = "interview1" | "interview2" | "final";
+export type InterviewMode = "online" | "onsite" | "phone";
+export type InterviewStatus = "scheduled" | "done" | "cancelled" | "no_show";
+export type InterviewResult = "pass" | "fail" | "pending";
+
+export const INTERVIEW_ROUND_LABELS: Record<InterviewRound, string> = {
+  interview1: "初试",
+  interview2: "复试",
+  final: "终面",
+};
+
+export const INTERVIEW_MODE_LABELS: Record<InterviewMode, string> = {
+  online: "线上",
+  onsite: "线下",
+  phone: "电话",
+};
+
+export const INTERVIEW_STATUS_LABELS: Record<InterviewStatus, string> = {
+  scheduled: "待面试",
+  done: "已完成",
+  cancelled: "已取消",
+  no_show: "未到",
+};
+
+export const INTERVIEW_RESULT_LABELS: Record<InterviewResult, string> = {
+  pass: "通过",
+  fail: "不通过",
+  pending: "待定",
+};
+
+export interface Interview {
+  id: string;
+  owner_id: string;
+  talent_id: string;
+  job_id: string | null;
+  talent_job_id: string | null;
+  round: InterviewRound;
+  mode: InterviewMode;
+  /** 'YYYY-MM-DD HH:mm'（本地时区字符串，不存 UTC） */
+  scheduled_at: string | null;
+  duration: number;
+  location: string | null;
+  meeting_url: string | null;
+  interviewer: string | null;
+  status: InterviewStatus;
+  result: InterviewResult | null;
+  score: number | null;
+  evaluation: string | null;
+  created_at: string;
+  updated_at: string;
+  // 联表带出
+  talent_name: string;
+  talent_phone: string | null;
+  current_title: string | null;
+  current_company: string | null;
+  job_title: string | null;
+  job_department: string | null;
+  owner_name: string;
+  // 派生字段
+  round_label: string;
+  mode_label: string;
+  status_label: string;
+  result_label: string;
+  days_from_today: number | null;
+  is_today: boolean;
+  is_overdue: boolean;
 }
 
 export interface StageLog {
@@ -567,6 +789,24 @@ export interface TaskSummary {
   pending: number;
   overdue: number;
   today: number;
+}
+
+// ---- 招聘概览首页聚合（GET /api/overview）----
+export interface OverviewResponse {
+  /** 在招职位数（status=open） */
+  openJobs: number;
+  /** 人才库总数 */
+  totalTalents: number;
+  /** 进行中候选人数（talent_jobs 非终态阶段之和） */
+  activeCandidates: number;
+  /** 当前各阶段人数（talent_jobs 当前停留阶段），键为阶段 key */
+  stageCounts: Record<string, number>;
+  /** 本周新增人才数（中国时区周一为界） */
+  weeklyNewTalents: number;
+  /** 本周各阶段「到达」人次（job_stage_logs.to_stage），键为阶段 key */
+  weeklyStageReached: Record<string, number>;
+  /** 待办汇总 */
+  tasks: { pending: number; overdue: number; today: number };
 }
 
 export const TASK_SOURCE_LABELS: Record<string, string> = {

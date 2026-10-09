@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Form, Input, Button, Alert, ConfigProvider, theme as antdTheme } from "antd";
+import { Form, Input, Button, Alert, ConfigProvider, theme as antdTheme, Radio } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
+import { INTENDED_ROLES } from "../types";
+import { IDENTITY_PROFILES, DEFAULT_PROFILE, type IdentityProfile } from "../identityProfiles";
 import "../styles/login.css";
 
 interface Props {
@@ -10,12 +12,39 @@ interface Props {
 
 type Mode = "login" | "register" | "forgot";
 
+// 邀请码：支持从 /?r=CODE 邀请链接进入注册页时自动带上。
+// 后端对非法/不存在的邀请码静默忽略，不影响注册结果。
+//
+// ⚠️ 必须写成「函数 + 组件挂载时调用」，不能用模块级常量：
+// Login 是同步 import 的，模块常量会在应用启动时求值一次；而落地页切换版本用的是
+// history.replaceState（不刷新页面），之后 SPA 导航到 /login 时模块不会重新求值，
+// 读到的仍是首屏那一刻的 URL —— 于是「切到猎头版 → 点注册」还是 HR 版（曾经的断链）。
+function refCodeFromUrl() {
+  return new URLSearchParams(window.location.search).get("r")?.trim().toUpperCase() || "";
+}
+
+// 身份分版本：未登录时读不到用户身份，用链接参数 ?for=headhunter 指定版本。
+// 落地页的「登录 / 注册」入口会带上它，注册表单据此预选「我的身份」。
+function profileFromUrl(): IdentityProfile | null {
+  const key = new URLSearchParams(window.location.search).get("for")?.trim() || "";
+  return IDENTITY_PROFILES[key] || null;
+}
+
 // 图形验证码有效期（与后端 SESSIONS.put(`captcha:${id}`, code, { expirationTtl: 60 }) 保持一致）
 const CAPTCHA_TTL = 60;
 // 剩余多少秒开始显示「即将过期」预警
 const CAPTCHA_WARN_AT = 10;
 
 export default function Login({ onLogin }: Props) {
+  // 品牌档案：带 ?for=xxx 时用指定版本，否则用默认（HR）版本。
+  // 惰性 state 在挂载时读一次 URL，保证「落地页切版本 → 点登录/注册」能拿到正确版本。
+  const [brand] = useState<IdentityProfile>(() => profileFromUrl() || DEFAULT_PROFILE);
+  // 邀请码：同样在挂载时读一次
+  const [refCode] = useState(refCodeFromUrl);
+  // 浏览器标签页标题跟随品牌（猎头版不该是「招聘全生命周期管理系统」）
+  useEffect(() => {
+    document.title = `${brand.name} · ${brand.tagline}`;
+  }, [brand.name, brand.tagline]);
   const [mode, setMode] = useState<Mode>("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -25,6 +54,11 @@ export default function Login({ onLogin }: Props) {
   const [captchaLoading, setCaptchaLoading] = useState(false);
   // 当前验证码剩余有效秒数
   const [captchaLeft, setCaptchaLeft] = useState(CAPTCHA_TTL);
+  // 邀请码默认收起（选填项，避免占满注册表单高度）；带 ?r= 进来自动展开
+  const [refOpen, setRefOpen] = useState(!!refCode);
+  // 注册短信验证码：发送中 + 60 秒重发倒计时
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsLeft, setSmsLeft] = useState(0);
 
   const [loginForm] = Form.useForm();
   const [registerForm] = Form.useForm();
@@ -65,6 +99,13 @@ export default function Login({ onLogin }: Props) {
     return () => window.clearInterval(timer);
   }, []);
 
+  // 短信验证码重发倒计时
+  useEffect(() => {
+    if (smsLeft <= 0) return;
+    const t = window.setTimeout(() => setSmsLeft((v) => v - 1), 1000);
+    return () => window.clearTimeout(t);
+  }, [smsLeft]);
+
   // 归零即自动刷新，无需用户手动点击
   useEffect(() => {
     if (captchaLeft > 0) return;
@@ -96,37 +137,55 @@ export default function Login({ onLogin }: Props) {
       onLogin();
     } catch (err) {
       setError((err as Error).message);
-      // 验证码一次性，失败后自动刷新
-      refreshCaptcha();
     }
     setLoading(false);
   };
 
   const handleRegister = async (values: {
-    phone: string; name: string; password: string; confirm: string; captcha: string;
+    phone: string; name: string; password: string; confirm: string; sms_code: string; ref?: string; intended_role?: string;
   }) => {
     setError("");
     setSuccess("");
     setLoading(true);
     try {
-      const res = await api.register({
+      await api.register({
         phone: values.phone,
         name: values.name,
         password: values.password,
-        captcha_id: captchaId,
-        captcha: values.captcha,
+        sms_code: values.sms_code,
+        ref: (values.ref || "").trim(),
+        intended_role: values.intended_role || "hr",
       });
-      setSuccess(res.message || "注册已提交，管理员已收到通知，审批通过后即可登录");
+      setSuccess("注册成功，审核通过后用同一手机号登录即可");
       registerForm.resetFields();
     } catch (err) {
       setError((err as Error).message);
     }
-    // 验证码一次性（无论成功失败都已消费），刷新以备重试
-    refreshCaptcha();
     setLoading(false);
   };
 
-  const handleForgot = async (values: { phone: string; name: string; captcha: string }) => {
+  // 发送短信验证码（手机号合法后才能发，60 秒倒计时内禁用）。
+  // 注册、登录共用同一发送逻辑，仅读取的表单不同。
+  const sendSms = async (phone: string) => {
+    if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {
+      setError("请输入正确的手机号后再获取验证码");
+      return;
+    }
+    setError("");
+    setSmsSending(true);
+    try {
+      await api.sendSms(phone);
+      setSmsLeft(60);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+    setSmsSending(false);
+  };
+
+  const handleSendRegisterSms = () => sendSms(registerForm.getFieldValue("phone"));
+  const handleSendForgotSms = () => sendSms(forgotForm.getFieldValue("phone"));
+
+  const handleForgot = async (values: { phone: string; name: string; sms_code: string }) => {
     setError("");
     setSuccess("");
     setLoading(true);
@@ -134,8 +193,7 @@ export default function Login({ onLogin }: Props) {
       const res = await api.forgotPassword({
         phone: values.phone,
         name: values.name,
-        captcha_id: captchaId,
-        captcha: values.captcha,
+        sms_code: values.sms_code,
       });
       setSuccess(res.message || "重置申请已提交，管理员会尽快核对处理");
       forgotForm.resetFields();
@@ -194,16 +252,16 @@ export default function Login({ onLogin }: Props) {
           <div className="login-card">
             <aside className="login-brand">
               <span className="login-brand-tag"><i />云端部署 · 打开浏览器即用</span>
-              <h1>让 <span className="login-hl">AI</span> 替你<br />跑招聘全流程</h1>
-              <p className="login-brand-lead">写 JD、筛简历、盯到期、算个税，一个人也能有整个 HR 部门的效率。</p>
+              <h1>让 <span className="login-hl">AI</span> 替你<br />{brand.loginHeroTail}</h1>
+              <p className="login-brand-lead">{brand.loginLead}</p>
               <ul className="login-points">
-                <li><span className="num">01</span><span>AI 招聘助手 · 一键生成 JD 与画像</span></li>
-                <li><span className="num">02</span><span>招聘漏斗 · 转化率用数据说话</span></li>
-                <li><span className="num">03</span><span>合同社保 · 到期自动提醒</span></li>
+                {brand.loginPoints.map((t, i) => (
+                  <li key={i}><span className="num">{String(i + 1).padStart(2, "0")}</span><span>{t}</span></li>
+                ))}
               </ul>
               <div className="login-kpis">
                 <div><b className="num">6+</b><span>核心模块</span></div>
-                <div><b className="num">110+</b><span>人事模板</span></div>
+                <div><b className="num">110+</b><span>{brand.templateKpiLabel}</span></div>
               </div>
             </aside>
 
@@ -220,7 +278,7 @@ export default function Login({ onLogin }: Props) {
                 {mode === "login"
                   ? "登录你的 AI 招聘工作台"
                   : mode === "register"
-                    ? "注册后管理员会收到通知，审批通过即可登录"
+                    ? "注册后管理员会尽快开通，开通后用同一手机号直接登录"
                     : "提交申请，由管理员核对后为你设置新密码"}
               </p>
 
@@ -243,6 +301,7 @@ export default function Login({ onLogin }: Props) {
                     <Input.Password placeholder="密码" />
                   </Form.Item>
 
+                  {/* 登录：图文验证码（避免每次登录都发短信产生费用；注册仍用短信） */}
                   {captchaField}
 
                   <Form.Item style={{ marginBottom: 6 }}>
@@ -256,46 +315,105 @@ export default function Login({ onLogin }: Props) {
               {mode === "register" && (
                 <Form form={registerForm} onFinish={handleRegister} layout="vertical">
                   <Form.Item
-                    name="phone"
-                    rules={[
-                      { required: true, message: "请输入手机号" },
-                      { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
-                    ]}
+                    name="intended_role"
+                    label="我的身份"
+                    initialValue={brand.key}
+                    rules={[{ required: true, message: "请选择身份" }]}
                   >
-                    <Input placeholder="手机号" maxLength={11} />
+                    <Radio.Group className="reg-role-group">
+                      {INTENDED_ROLES.map((r) => (
+                        <Radio.Button key={r.key} value={r.key} className="reg-role-item">
+                          <span className="reg-role-label">{r.label}</span>
+                          <span className="reg-role-desc">{r.desc}</span>
+                        </Radio.Button>
+                      ))}
+                    </Radio.Group>
                   </Form.Item>
 
-                  <Form.Item name="name" rules={[{ required: true, message: "请输入姓名" }]}>
-                    <Input placeholder="姓名" maxLength={20} />
-                  </Form.Item>
+                  {/* 两列并排：注册字段多，纵向堆叠会把卡片撑到需要滚动（窄屏自动回落单列） */}
+                  <div className="reg-2col">
+                    <Form.Item
+                      name="phone"
+                      rules={[
+                        { required: true, message: "请输入手机号" },
+                        { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
+                      ]}
+                    >
+                      <Input placeholder="手机号" maxLength={11} />
+                    </Form.Item>
 
+                    <Form.Item name="name" rules={[{ required: true, message: "请输入姓名" }]}>
+                      <Input placeholder="姓名" maxLength={20} />
+                    </Form.Item>
+                  </div>
+
+                  <div className="reg-2col">
+                    <Form.Item
+                      name="password"
+                      rules={[
+                        { required: true, message: "请输入密码" },
+                        { min: 6, message: "密码至少 6 位" },
+                      ]}
+                    >
+                      <Input.Password placeholder="设置密码（至少 6 位）" />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="confirm"
+                      dependencies={["password"]}
+                      rules={[
+                        { required: true, message: "请再次输入密码" },
+                        ({ getFieldValue }) => ({
+                          validator(_, value) {
+                            if (!value || getFieldValue("password") === value) return Promise.resolve();
+                            return Promise.reject(new Error("两次密码不一致"));
+                          },
+                        }),
+                      ]}
+                    >
+                      <Input.Password placeholder="确认密码" />
+                    </Form.Item>
+                  </div>
+
+                  {refOpen ? (
+                    <Form.Item
+                      name="ref"
+                      initialValue={refCode}
+                      extra={refCode ? "已通过邀请链接自动填入" : "填写后双方会员时长都有赠送"}
+                    >
+                      <Input placeholder="邀请码" maxLength={12} />
+                    </Form.Item>
+                  ) : (
+                    <div className="login-ref-toggle">
+                      <a onClick={() => setRefOpen(true)}>有邀请码？</a>
+                      <span>填写后双方会员时长都有赠送</span>
+                    </div>
+                  )}
+
+                  {/* 注册：短信验证码（替代图形验证码，确保手机号真实可用） */}
                   <Form.Item
-                    name="password"
+                    name="sms_code"
+                    // 重新发送会让旧码立即失效（阿里云只认最新一条）——这是「明明收到了
+                    // 短信却报验证码错误」的最常见原因，必须在输入框旁边讲清楚。
+                    extra={smsLeft > 0 ? "验证码已发送，5 分钟内有效；若收到多条短信，请只使用最新一条" : undefined}
                     rules={[
-                      { required: true, message: "请输入密码" },
-                      { min: 6, message: "密码至少 6 位" },
+                      { required: true, message: "请输入短信验证码" },
+                      { pattern: /^\d{4,8}$/, message: "验证码格式不正确" },
                     ]}
                   >
-                    <Input.Password placeholder="密码（至少 6 位）" />
+                    <div className="login-captcha">
+                      <Input placeholder="短信验证码" maxLength={8} className="login-captcha-input" />
+                      <Button
+                        type="link"
+                        className="login-sms-btn"
+                        disabled={smsLeft > 0 || smsSending}
+                        loading={smsSending}
+                        onClick={handleSendRegisterSms}
+                      >
+                        {smsLeft > 0 ? `${smsLeft}s 后重发` : "获取验证码"}
+                      </Button>
+                    </div>
                   </Form.Item>
-
-                  <Form.Item
-                    name="confirm"
-                    dependencies={["password"]}
-                    rules={[
-                      { required: true, message: "请再次输入密码" },
-                      ({ getFieldValue }) => ({
-                        validator(_, value) {
-                          if (!value || getFieldValue("password") === value) return Promise.resolve();
-                          return Promise.reject(new Error("两次输入的密码不一致"));
-                        },
-                      }),
-                    ]}
-                  >
-                    <Input.Password placeholder="确认密码" />
-                  </Form.Item>
-
-                  {captchaField}
 
                   <Form.Item style={{ marginBottom: 6 }}>
                     <Button type="primary" htmlType="submit" block loading={loading}>
@@ -307,13 +425,6 @@ export default function Login({ onLogin }: Props) {
 
               {mode === "forgot" && (
                 <Form form={forgotForm} onFinish={handleForgot} layout="vertical">
-                  <Alert
-                    type="info"
-                    showIcon
-                    className="login-alert"
-                    message="本系统未接入短信服务，提交申请后需由管理员核对身份并为你设置新密码。"
-                  />
-
                   <Form.Item
                     name="phone"
                     rules={[
@@ -328,7 +439,28 @@ export default function Login({ onLogin }: Props) {
                     <Input placeholder="姓名（用于核对身份）" maxLength={20} />
                   </Form.Item>
 
-                  {captchaField}
+                  {/* 忘记密码：短信验证码（与注册一致） */}
+                  <Form.Item
+                    name="sms_code"
+                    extra={smsLeft > 0 ? "验证码已发送，5 分钟内有效；若收到多条短信，请只使用最新一条" : undefined}
+                    rules={[
+                      { required: true, message: "请输入短信验证码" },
+                      { pattern: /^\d{4,8}$/, message: "验证码格式不正确" },
+                    ]}
+                  >
+                    <div className="login-captcha">
+                      <Input placeholder="短信验证码" maxLength={8} className="login-captcha-input" />
+                      <Button
+                        type="link"
+                        className="login-sms-btn"
+                        disabled={smsLeft > 0 || smsSending}
+                        loading={smsSending}
+                        onClick={handleSendForgotSms}
+                      >
+                        {smsLeft > 0 ? `${smsLeft}s 后重发` : "获取验证码"}
+                      </Button>
+                    </div>
+                  </Form.Item>
 
                   <Form.Item style={{ marginBottom: 6 }}>
                     <Button type="primary" htmlType="submit" block loading={loading}>
@@ -353,7 +485,7 @@ export default function Login({ onLogin }: Props) {
           </div>
 
           <div className="login-foot">
-            <span>© {new Date().getFullYear()} HR 工作台 · AI 驱动的人力资源管理系统</span>
+            <span>© {new Date().getFullYear()} {brand.name} · {brand.loginFooterTail}</span>
           </div>
         </div>
       </div>

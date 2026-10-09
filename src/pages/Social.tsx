@@ -2,17 +2,20 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, Select, Button, Space, Tag, Modal,
-  Form, message, InputNumber, AutoComplete, Alert, Typography,
+  Form, message, InputNumber, AutoComplete, Alert, Typography, Popconfirm,
 } from "antd";
 import {
   SearchOutlined, ReloadOutlined, BellOutlined, CalculatorOutlined,
-  UserAddOutlined, UserDeleteOutlined, SafetyCertificateOutlined, InfoCircleOutlined, DollarOutlined,
+  UserAddOutlined, UserDeleteOutlined, SafetyCertificateOutlined, InfoCircleOutlined,
+  DollarOutlined, SettingOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
-import type { SocialItem } from "../types";
+import type { SocialItem, SocialRateTemplate } from "../types";
 import { SI_STATUS_LABELS, SI_STATUS_COLORS } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 /** 待办动作推导（与后端 socialTaskStmts 同口径）：onboarded=已入职、si=参保状态 */
 function deriveAction(r: SocialItem): "add" | "stop" | null {
@@ -161,17 +164,173 @@ function TaxCalculatorModal({ open, onClose }: { open: boolean; onClose: () => v
   );
 }
 
-/** 编辑参保信息弹窗 */
-function SocialEditModal({
-  item, cities, onClose, onSaved,
+/** 参保城市费率模板：内置参考值 + 自己维护的（同城自己的优先，可覆盖参考值） */
+function RateTemplateModal({
+  open, rates, onClose, onSaved,
 }: {
-  item: SocialItem | null;
-  cities: string[];
+  open: boolean;
+  rates: SocialRateTemplate[];
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [city, setCity] = useState("");
+  const [vals, setVals] = useState<{
+    si_rate_personal: number | null; si_rate_company: number | null;
+    hf_rate_personal: number | null; hf_rate_company: number | null;
+  }>({ si_rate_personal: null, si_rate_company: null, hf_rate_personal: null, hf_rate_company: null });
+  const [saving, setSaving] = useState(false);
+
+  const numBox = (key: keyof typeof vals, placeholder: string) => (
+    <InputNumber
+      style={{ width: "100%" }} min={0} max={100} step={0.5} placeholder={placeholder}
+      value={vals[key]} onChange={(v) => setVals({ ...vals, [key]: v ?? null })}
+    />
+  );
+
+  const pick = (r: SocialRateTemplate) => {
+    setCity(r.city);
+    setVals({
+      si_rate_personal: r.si_rate_personal, si_rate_company: r.si_rate_company,
+      hf_rate_personal: r.hf_rate_personal, hf_rate_company: r.hf_rate_company,
+    });
+  };
+
+  const save = async () => {
+    if (!city.trim()) { message.warning("先填参保城市"); return; }
+    setSaving(true);
+    try {
+      await api.saveSocialRate({ city: city.trim(), ...vals });
+      message.success(`${city} 的默认比例已保存`);
+      setCity("");
+      setVals({ si_rate_personal: null, si_rate_company: null, hf_rate_personal: null, hf_rate_company: null });
+      onSaved();
+    } catch (e: any) {
+      message.error(e?.message || "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (r: SocialRateTemplate) => {
+    try {
+      await api.deleteSocialRate(r.id);
+      message.success("已删除");
+      onSaved();
+    } catch (e: any) {
+      message.error(e?.message || "删除失败");
+    }
+  };
+
+  const cols = [
+    {
+      title: "城市", dataIndex: "city", key: "city", width: 110,
+      render: (v: string, r: SocialRateTemplate) => (
+        <Space size={4}>
+          <span>{v}</span>
+          {r.is_system ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>参考值</Tag> : null}
+        </Space>
+      ),
+    },
+    { title: "社保个人", dataIndex: "si_rate_personal", key: "p1", render: (v: number | null) => (v != null ? `${v}%` : "—") },
+    { title: "社保单位", dataIndex: "si_rate_company", key: "p2", render: (v: number | null) => (v != null ? `${v}%` : "—") },
+    { title: "公积金个人", dataIndex: "hf_rate_personal", key: "p3", render: (v: number | null) => (v != null ? `${v}%` : "—") },
+    { title: "公积金单位", dataIndex: "hf_rate_company", key: "p4", render: (v: number | null) => (v != null ? `${v}%` : "—") },
+    {
+      title: "操作", key: "op", width: 140,
+      render: (_: unknown, r: SocialRateTemplate) => (
+        <Space size={4}>
+          <Button type="link" size="small" onClick={() => pick(r)}>载入</Button>
+          <Popconfirm
+            title={r.is_system ? "内置参考值不可删除，可填同名城市覆盖" : `删除「${r.city}」的默认比例？`}
+            okText="确定" cancelText="取消"
+            onConfirm={() => (r.is_system ? undefined : remove(r))}
+          >
+            <Button type="link" size="small" danger disabled={!!r.is_system}>删除</Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <Modal
+      title="参保城市费率模板" open={open} onCancel={onClose} footer={null} width={760} destroyOnClose
+    >
+      <Alert
+        type="warning" showIcon style={{ marginBottom: 16 }}
+        message="内置值仅为参考起点（养老 8% + 医疗约 2% + 失业 0.5% 的全国框架），各地单位侧比例与公积金区间差异较大，请按当地社保 / 公积金中心最新口径核对后再用。"
+      />
+      <Table
+        size="small" columns={cols} dataSource={rates} rowKey="id" pagination={false}
+        style={{ marginBottom: 16 }} scroll={{ x: 560 }}
+      />
+      <Typography.Text strong>新增 / 覆盖</Typography.Text>
+      <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ width: 120 }}>
+          <div className="m-field-label" style={{ margin: "0 0 6px" }}>城市</div>
+          <AutoComplete
+            style={{ width: "100%" }} value={city} onChange={setCity}
+            options={rates.map((r) => ({ value: r.city }))}
+            placeholder="如 上海"
+            filterOption={(input, option) => (option?.value ?? "").includes(input)}
+          />
+        </div>
+        <div style={{ width: 110 }}>
+          <div className="m-field-label" style={{ margin: "0 0 6px" }}>社保个人%</div>
+          {numBox("si_rate_personal", "10.5")}
+        </div>
+        <div style={{ width: 110 }}>
+          <div className="m-field-label" style={{ margin: "0 0 6px" }}>社保单位%</div>
+          {numBox("si_rate_company", "26.5")}
+        </div>
+        <div style={{ width: 110 }}>
+          <div className="m-field-label" style={{ margin: "0 0 6px" }}>公积金个人%</div>
+          {numBox("hf_rate_personal", "7")}
+        </div>
+        <div style={{ width: 110 }}>
+          <div className="m-field-label" style={{ margin: "0 0 6px" }}>公积金单位%</div>
+          {numBox("hf_rate_company", "7")}
+        </div>
+        <div style={{ alignSelf: "flex-end" }}>
+          <Button type="primary" loading={saving} onClick={save}>保存</Button>
+        </div>
+      </div>
+      <Typography.Text type="secondary" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
+        保存后编辑参保信息时选该城市会自动带出；同名城市已有的会直接覆盖。
+      </Typography.Text>
+    </Modal>
+  );
+}
+
+/** 编辑参保信息弹窗 */
+function SocialEditModal({
+  item, cities, rates, onClose, onSaved,
+}: {
+  item: SocialItem | null;
+  cities: string[];
+  rates: SocialRateTemplate[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const profile = useIdentityProfile();
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [tplHint, setTplHint] = useState<SocialRateTemplate | null>(null);
+
+  const RATE_KEYS = ["si_rate_personal", "si_rate_company", "hf_rate_personal", "hf_rate_company"] as const;
+
+  /** 选城市后按模板带出比例：只填当前为空的字段，避免覆盖 HR 手工调过的值 */
+  const applyRates = (city?: string | null) => {
+    const tpl = city ? rates.find((r) => r.city === city) : undefined;
+    if (!tpl) { setTplHint(null); return; }
+    const cur = form.getFieldsValue();
+    const patch: Record<string, number> = {};
+    for (const k of RATE_KEYS) {
+      if (cur[k] == null && tpl[k] != null) patch[k] = tpl[k] as number;
+    }
+    if (Object.keys(patch).length) form.setFieldsValue(patch);
+    setTplHint(tpl);
+  };
 
   useEffect(() => {
     if (!item) return;
@@ -185,7 +344,11 @@ function SocialEditModal({
       hf_rate_personal: item.hf_rate_personal ?? undefined,
       hf_rate_company: item.hf_rate_company ?? undefined,
     });
-  }, [item, form]);
+    setTplHint(null);
+    // 已有参保城市但还没填比例的存量记录，打开时顺手带出
+    if (item.si_city) applyRates(item.si_city);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item, form, rates]);
 
   const handleSave = async () => {
     if (!item) return;
@@ -231,7 +394,7 @@ function SocialEditModal({
           style={{ marginBottom: 16 }}
           message={
             item.hire_date
-              ? `${item.name} 入职日期：${item.hire_date}（在「编辑人才」中可改）`
+              ? termFor(profile, `${item.name} 入职日期：${item.hire_date}（在「编辑人才」中可改）`)
               : `${item.name} 尚未填入职日期，标记「已入职」或补填入职日期后才会生成社保增员待办`
           }
         />
@@ -240,13 +403,21 @@ function SocialEditModal({
         <Form.Item name="si_status" label="参保状态">
           <Select options={Object.entries(SI_STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
         </Form.Item>
-        <Form.Item name="si_city" label="参保地">
+        <Form.Item name="si_city" label="参保地" extra="选城市后自动带出该城市的默认缴费比例（可在下方改）">
           <AutoComplete
-            options={cities.map((c) => ({ value: c }))}
+            options={Array.from(new Set([...cities, ...rates.map((r) => r.city)])).map((c) => ({ value: c }))}
             placeholder="输入或选择参保城市"
             filterOption={(input, option) => (option?.value ?? "").includes(input)}
+            onChange={(v) => { form.setFieldsValue({ si_city: v }); applyRates(v); }}
           />
         </Form.Item>
+        {tplHint ? (
+          <Alert
+            type="info" showIcon style={{ marginBottom: 16 }}
+            message={`已按「${tplHint.city}」${tplHint.is_system ? "内置参考值" : "你的模板"}带出：社保 ${tplHint.si_rate_personal ?? "—"}% / ${tplHint.si_rate_company ?? "—"}%，公积金 ${tplHint.hf_rate_personal ?? "—"}% / ${tplHint.hf_rate_company ?? "—"}%`}
+            description={tplHint.is_system ? "参考值，请按当地社保 / 公积金中心最新口径核对" : undefined}
+          />
+        ) : null}
         <Form.Item name="si_base" label="社保基数" extra="月缴费基数，按当地政策填写">
           <InputNumber style={{ width: "100%" }} min={0} step={100} placeholder="如 8000" />
         </Form.Item>
@@ -271,6 +442,7 @@ function SocialEditModal({
 }
 
 export default function Social() {
+  const profile = useIdentityProfile();
   const [items, setItems] = useState<SocialItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -278,7 +450,15 @@ export default function Social() {
   const [actionFilter, setActionFilter] = useState("all");
   const [editing, setEditing] = useState<SocialItem | null>(null);
   const [taxOpen, setTaxOpen] = useState(false);
+  const [rates, setRates] = useState<SocialRateTemplate[]>([]);
+  const [rateOpen, setRateOpen] = useState(false);
   const intro = useDismissible("social.intro");
+
+  const loadRates = useCallback(async () => {
+    try {
+      setRates(await api.getSocialRates());
+    } catch { /* 模板拉不到不影响主流程，只是不自动带出 */ }
+  }, []);
 
   const fetchList = useCallback(async (keyword: string) => {
     setLoading(true);
@@ -301,8 +481,9 @@ export default function Social() {
         }
       } catch { /* 同步失败不阻塞页面 */ }
       fetchList("");
+      loadRates();
     })();
-  }, [fetchList]);
+  }, [fetchList, loadRates]);
 
   const filtered = items.filter((r) => {
     const action = deriveAction(r);
@@ -425,7 +606,7 @@ export default function Social() {
       {!intro.dismissed && (
         <Alert
           type="info" showIcon closable style={{ marginBottom: 16 }}
-          message="标记「已入职」或填了入职日期、但未参保的人才 → 自动生成「社保增员」待办；填了离职日期且仍在缴 → 生成「社保减员」待办。基数与比例由你按参保地政策填写，系统不维护费率规则库；「个人月缴 / 单位月缴」由基数 × 对应比例自动算出（社保 + 公积金）。"
+          message={termFor(profile, "标记「已入职」或填了入职日期、但未参保的人才 → 自动生成「社保增员」待办；填了离职日期且仍在缴 → 生成「社保减员」待办。基数与比例由你按参保地政策填写，系统不维护费率规则库；「个人月缴 / 单位月缴」由基数 × 对应比例自动算出（社保 + 公积金）。")}
           onClose={intro.dismiss}
         />
       )}
@@ -467,6 +648,7 @@ export default function Social() {
             {intro.dismissed && (
               <Button icon={<InfoCircleOutlined />} onClick={intro.restore}>说明</Button>
             )}
+            <Button icon={<SettingOutlined />} onClick={() => setRateOpen(true)}>费率模板</Button>
             <Button icon={<CalculatorOutlined />} onClick={() => setTaxOpen(true)}>个税计算器</Button>
             <Button icon={<BellOutlined />} onClick={manualSync}>同步提醒</Button>
             <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setActionFilter("all"); fetchList(""); }}>重置</Button>
@@ -507,8 +689,15 @@ export default function Social() {
       <SocialEditModal
         item={editing}
         cities={cities}
+        rates={rates}
         onClose={() => setEditing(null)}
         onSaved={() => fetchList(appliedQ)}
+      />
+      <RateTemplateModal
+        open={rateOpen}
+        rates={rates}
+        onClose={() => setRateOpen(false)}
+        onSaved={loadRates}
       />
       <TaxCalculatorModal open={taxOpen} onClose={() => setTaxOpen(false)} />
     </div>

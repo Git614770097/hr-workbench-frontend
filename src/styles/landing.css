@@ -100,6 +100,30 @@
 }
 .land-logo-sub { color: var(--land-faint); font-weight: 500; font-size: var(--land-fs-small); margin-left: 2px; }
 .land-nav-actions { display: flex; align-items: center; gap: var(--land-s2); }
+
+/* 落地页版本切换（我是 HR / 猎头 / 带团队）——同一套页面按人群换卖点 */
+.land-version-switch {
+  display: flex; align-items: center; gap: 2px;
+  padding: 3px; border-radius: 999px;
+  background: rgba(29, 78, 216, 0.07);
+  border: 1px solid rgba(29, 78, 216, 0.12);
+}
+.land-version-tab {
+  appearance: none; border: 0; cursor: pointer;
+  padding: 5px 13px; border-radius: 999px;
+  font-size: 0.8rem; font-weight: 600; line-height: 1.4;
+  color: #4b5675; background: transparent;
+  transition: background 0.16s ease, color 0.16s ease;
+  white-space: nowrap;
+}
+.land-version-tab:hover { color: var(--land-brand); }
+.land-version-tab.on {
+  background: #fff; color: var(--land-brand);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.12);
+}
+@media (max-width: 860px) {
+  .land-version-switch { display: none; }
+}
 .land-nav-link {
   padding: 8px 14px; border-radius: var(--land-r-md); font-size: var(--land-fs-small);
   color: var(--land-muted); font-weight: 500; transition: color var(--land-dur-fast) ease, background var(--land-dur-fast) ease;

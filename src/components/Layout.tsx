@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Avatar, Button, Tag, Dropdown, Tooltip, Popover, Alert } from "antd";
 import {
   LogoutOutlined,
+  MobileOutlined,
   TeamOutlined,
   FileTextOutlined,
   UserOutlined,
@@ -15,6 +16,8 @@ import {
   FunnelPlotOutlined,
   SolutionOutlined,
   CarryOutOutlined,
+  CalendarOutlined,
+  AuditOutlined,
   UserSwitchOutlined,
   FileProtectOutlined,
   SafetyCertificateOutlined,
@@ -23,8 +26,11 @@ import {
   BellOutlined,
   LockOutlined,
   CrownOutlined,
-  QrcodeOutlined,
-  TagsOutlined,
+  GiftOutlined,
+  SettingOutlined,
+  RocketOutlined,
+  AppstoreOutlined,
+  ProfileOutlined,
 } from "@ant-design/icons";
 import { QuestionCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import type { User } from "../types";
@@ -32,12 +38,14 @@ import { ROLE_LABELS } from "../types";
 import { api } from "../api";
 import { THEME_COLORS, type ThemeState } from "../theme";
 import Onboarding from "./Onboarding";
-import { ONBOARDING_STEPS } from "./onboardingSteps";
+import { onboardingStepsFor } from "./onboardingSteps";
 import PushplusModal from "./PushplusModal";
 import PasswordModal from "./PasswordModal";
 import MembershipModal from "./MembershipModal";
-import PayConfigModal from "./PayConfigModal";
-import DictConfigModal from "./DictConfigModal";
+import ReferralModal from "./ReferralModal";
+import { isTouchDevice, setDeviceOverride } from "../utils/device";
+import { useIdentityProfile, notifyIdentityChanged } from "../useIdentity";
+import { navLabelFor } from "../identityProfiles";
 
 // 引导只自动播放一次，之后靠顶栏问号按钮手动唤出
 // 「已看过」按用户维度记录（换账号后新账号仍会走一次首次引导）
@@ -70,6 +78,134 @@ const clearOnboardMarks = () => {
   } catch {}
 };
 
+/* ===================== 侧栏菜单树（一级 / 二级） =====================
+ * 这里**只描述结构与显示**，不做权限判断：
+ *   · 可见性一律由叶子节点的 perm（或 adminOnly）决定 —— 与改造前的
+ *     `.filter(item => canSee(item.perm))` 逐条等价，没有新增/删除任何权限语义。
+ *   · 一级分组**自身没有 perm**：组内叶子被过滤光时整组消失，不会留下空壳。
+ * ⚠️ 改动本文件时请勿修改叶子节点的 to / perm —— 它们与
+ *    types.ts(MENU_PERMISSIONS) / worker/permissions.ts(MENU_KEYS) /
+ *    utils/routeAccess.ts(DESKTOP_ROUTES) 一一对应，属菜单权限 5 处接线。
+ */
+interface NavLeaf {
+  to: string;
+  label: string;
+  icon: React.ReactNode;
+  color: string;
+  perm: string;
+  /** 仅管理员可见（角色/用户/系统设置），等价于旧版的 user.role === "admin" 判断 */
+  adminOnly?: boolean;
+  /** 动态角标（待办数），运行时注入 */
+  badge?: number;
+}
+
+interface NavGroup {
+  /** 分组 id：仅作展开状态的 key，不参与路由 */
+  id: string;
+  /** 身份化显示名的查找键（不是路由）。写进 identityProfiles.navLabels 即可按身份改名 */
+  labelKey: string;
+  label: string;
+  icon: React.ReactNode;
+  color: string;
+  /** 组内角标合计（当前只有待办有角标，机制先留好） */
+  badge?: number;
+  children: NavLeaf[];
+}
+
+const NAV_TREE: (NavGroup | NavLeaf)[] = [
+  // —— 高频：每天第一眼看，独立平铺不折叠 ——
+  { to: "/tasks", label: "待办日历", icon: <CarryOutOutlined />, color: "#f97316", perm: "tasks" },
+
+  // —— 招聘主循环：建岗 → 推人 → 面试 → 审批 → 入职 ——
+  {
+    id: "recruit",
+    labelKey: "group-recruit",
+    label: "招聘推进",
+    icon: <RocketOutlined />,
+    color: "#0ea5e9",
+    children: [
+      { to: "/jobs", label: "岗位管理", icon: <SolutionOutlined />, color: "#6366f1", perm: "jobs" },
+      { to: "/pipeline", label: "招聘看板", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
+      { to: "/interviews", label: "面试管理", icon: <CalendarOutlined />, color: "#8b5cf6", perm: "interviews" },
+      // 审批中心 / 入职办理：权限跟随 pipeline，不新增菜单 key
+      { to: "/approvals", label: "审批中心", icon: <AuditOutlined />, color: "#d97706", perm: "pipeline" },
+      { to: "/onboarding", label: "入职办理", icon: <SolutionOutlined />, color: "#059669", perm: "pipeline" },
+    ],
+  },
+
+  // —— 可复用的存量资产 ——
+  {
+    id: "talent-assets",
+    labelKey: "group-talent",
+    label: "人才资产",
+    icon: <AppstoreOutlined />,
+    color: "#10b981",
+    children: [
+      { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
+      { to: "/profiles", label: "人才画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },
+      { to: "/templates", label: "模板库管理", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
+    ],
+  },
+
+  // —— 人事台账：合同 / 社保 已拆为独立权限，主体数据仍取自 talents 表 ——
+  {
+    id: "hr-ledger",
+    labelKey: "group-ledger",
+    label: "人事台账",
+    icon: <ProfileOutlined />,
+    color: "#0d9488",
+    children: [
+      { to: "/contracts", label: "合同管理", icon: <FileProtectOutlined />, color: "#d97706", perm: "contracts" },
+      { to: "/social", label: "社保公积金", icon: <SafetyCertificateOutlined />, color: "#0d9488", perm: "social" },
+    ],
+  },
+
+  // —— 分析复盘：独立页，不折叠 ——
+  { to: "/funnel", label: "招聘概览", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
+
+  // —— 系统管理：全部仅管理员 ——
+  // 系统设置的 perm 用 "settings"，刻意不进 MENU_PERMISSIONS：与「角色管理」一样走
+  // admin 硬放行，不需要给存量角色回填权限，也不开放给普通角色勾选。
+  {
+    id: "system",
+    labelKey: "group-system",
+    label: "系统管理",
+    icon: <SettingOutlined />,
+    color: "#64748b",
+    children: [
+      { to: "/roles", label: "角色管理", icon: <SafetyOutlined />, color: "#f59e0b", perm: "roles", adminOnly: true },
+      { to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users", adminOnly: true },
+      { to: "/settings", label: "系统设置", icon: <SettingOutlined />, color: "#64748b", perm: "settings", adminOnly: true },
+    ],
+  },
+];
+
+/** 分组展开状态的持久化键：只存「用户显式点开/收起」的选择 */
+const GROUP_OPEN_KEY = "sidebar-groups-open";
+const readOpenGroups = (): string[] => {
+  try {
+    const raw = localStorage.getItem(GROUP_OPEN_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+};
+const writeOpenGroups = (ids: string[]) => {
+  try {
+    localStorage.setItem(GROUP_OPEN_KEY, JSON.stringify(ids));
+  } catch {}
+};
+
+/** 当前路由落在哪个一级分组下（/talents/xxx 也能命中 /talents） */
+const groupIdForPath = (path: string): string | null => {
+  for (const node of NAV_TREE) {
+    if (!("children" in node)) continue;
+    if (node.children.some((c) => path === c.to || path.startsWith(c.to + "/"))) return node.id;
+  }
+  return null;
+};
+
 interface Props {
   user: User;
   onLogout: () => void;
@@ -82,6 +218,16 @@ interface Props {
 
 export default function Layout({ user, onLogout, theme, onChangeTheme, onUserChange, children }: Props) {
   const navigate = useNavigate();
+  // 当前路由：用于「自动展开所在的一级分组」（见下方 isGroupOpen）
+  const location = useLocation();
+  // 品牌档案：按当前用户身份取（猎头/团队版会换品牌名与部分菜单名）
+  const brand = useIdentityProfile();
+  // 新手指引按身份 + 实际权限生成（文案过 termFor，并按权限剔除无权访问的步骤），
+  // 用 useMemo 固定引用，避免每次 render 生成新数组导致引导弹窗重置。
+  // 依赖用「权限指纹」字符串而非 user 对象：静默刷新会换 user 引用，
+  // 直接依赖 user 会在用户切回窗口时把引导重置回第一步。
+  const permFingerprint = `${user.role}|${(user.permissions || []).join(",")}`;
+  const onbSteps = useMemo(() => onboardingStepsFor(brand, user), [brand.key, permFingerprint]);
   // 侧栏待办角标（逾期 + 今日到期），失败静默
   const [taskBadge, setTaskBadge] = useState(0);
   // 侧栏折叠状态，记住用户偏好
@@ -102,8 +248,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   const [forcePassword, setForcePassword] = useState(false);
   // 会员续费（全员）与收款码设置（管理员）
   const [memberOpen, setMemberOpen] = useState(false);
-  const [payConfigOpen, setPayConfigOpen] = useState(false);
-  const [dictConfigOpen, setDictConfigOpen] = useState(false);
+  const [referralOpen, setReferralOpen] = useState(false);
   useEffect(() => {
     // URL 开关：reset 先清标记，force 只跳过抑制，随后把参数从地址栏抹掉避免重复触发
     const flag = readOnbFlag();
@@ -176,28 +321,98 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   // 判断某菜单是否可见（admin 全可见；普通用户看 permissions）
   // 见上方提前定义的 canSee
 
-  // 菜单顺序按「日常使用频率」排列：
-  //   高频业务（每天要用）→ 中频管理（每周/按需）→ 低频配置（仅管理员）。
-  // 同类里以「岗位为中心」的招聘动线排序：先建岗（岗位管理）→ 再找人（人才库）
-  // → 再推进（招聘看板）→ 日常跟进（待办）→ 复盘（漏斗/画像）→ 支撑（模板库）。
-  const navItems: { to: string; label: string; icon: React.ReactNode; color: string; badge?: number; perm: string }[] = [
-    // —— 每日待办优先，其后是招聘主循环（岗位 → 流程 → 漏斗）——
-    { to: "/tasks", label: "待办日历", icon: <CarryOutOutlined />, color: "#f97316", badge: taskBadge, perm: "tasks" },
-    { to: "/jobs", label: "岗位管理", icon: <SolutionOutlined />, color: "#6366f1", perm: "jobs" },
-    { to: "/pipeline", label: "招聘看板", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
-    { to: "/funnel", label: "招聘漏斗", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
-    // 合同管理与人才库同源数据（talents 表的合同/试用期字段），复用 talents 权限，不新增菜单 key
-    { to: "/contracts", label: "合同管理", icon: <FileProtectOutlined />, color: "#d97706", perm: "talents" },
-    // 社保公积金台账同样复用 talents 权限
-    { to: "/social", label: "社保公积金", icon: <SafetyCertificateOutlined />, color: "#0d9488", perm: "talents" },
-    // —— 按需查阅与产出 ——
-    { to: "/profiles", label: "人才画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },
-    { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
-    { to: "/templates", label: "模板库管理", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
-    // —— 基础配置与系统管理，频率最低 ——
-    ...(user.role === "admin" ? [{ to: "/roles", label: "角色管理", icon: <SafetyOutlined />, color: "#f59e0b", perm: "roles" }] : []),
-    ...(user.role === "admin" ? [{ to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users" }] : []),
-  ].filter((item) => canSee(item.perm));
+  // ===== 侧栏菜单：可见性过滤 + 身份化改名 + 角标注入 =====
+  // 与改造前逐条等价：叶子仍按 canSee(perm)（系统管理另加 adminOnly）过滤，
+  // 只是外面多套了一层分组容器 —— 不新增、不删除任何权限语义。
+  // 菜单显示名按身份微调（如猎头版「招聘概览」→「业绩概览」），只改文字不增删权限。
+  const visibleNav = useMemo<(NavGroup | NavLeaf)[]>(() => {
+    const decorate = (leaf: NavLeaf): NavLeaf => ({
+      ...leaf,
+      label: navLabelFor(brand, leaf.to, leaf.label),
+      badge: leaf.to === "/tasks" ? taskBadge : undefined,
+    });
+    const out: (NavGroup | NavLeaf)[] = [];
+    for (const node of NAV_TREE) {
+      if ("children" in node) {
+        const kids = node.children
+          .filter((c) => (c.adminOnly ? user.role === "admin" : canSee(c.perm)))
+          .map(decorate);
+        // 组内一项都看不到 → 整组不渲染，避免出现「打开是空的」分组
+        if (kids.length === 0) continue;
+        out.push({
+          ...node,
+          // 一级标题也走身份化：labelKey 不是路由，只作 navLabels 的查找键，
+          // 两档身份都未收录时回落到原 label（显示与改造前一致）
+          label: navLabelFor(brand, node.labelKey, node.label),
+          badge: kids.reduce((n, k) => n + (k.badge || 0), 0) || undefined,
+          children: kids,
+        });
+      } else {
+        if (node.adminOnly ? user.role !== "admin" : !canSee(node.perm)) continue;
+        out.push(decorate(node));
+      }
+    }
+    return out;
+    // permFingerprint 已含 role + permissions 指纹，等价于依赖 canSee 的结果
+  }, [brand.key, permFingerprint, taskBadge]);
+
+  // ===== 一级分组展开状态 =====
+  // 两个来源合并，避免「路由自动展开」把用户偏好污染进 localStorage：
+  //   · userOpen  用户显式点开的（落盘，下次进系统仍保持）
+  //   · routeOpen 当前路由所在分组（仅本次会话，逛到哪自动展开到哪）
+  const [userOpen, setUserOpen] = useState<string[]>(readOpenGroups);
+  const [routeOpen, setRouteOpen] = useState<string[]>(() => {
+    const g = groupIdForPath(window.location.pathname);
+    return g ? [g] : [];
+  });
+  useEffect(() => {
+    const g = groupIdForPath(location.pathname);
+    if (!g) return;
+    setRouteOpen((prev) => (prev.includes(g) ? prev : [...prev, g]));
+  }, [location.pathname]);
+
+  // 新手指引靠 [data-onb] 高亮侧栏项，而分组收起时锚点不在 DOM 里（measure 会退化成
+  // 居中卡片）→ 引导打开期间强制「全部分组展开 + 展开态布局」，保证一定找得到目标。
+  const isGroupOpen = (id: string) => onbOpen || userOpen.includes(id) || routeOpen.includes(id);
+
+  const toggleGroup = (id: string) => {
+    if (userOpen.includes(id) || routeOpen.includes(id)) {
+      // 显式收起：用户选择与路由自动展开都要清掉，否则会出现「点了没反应」
+      setUserOpen((prev) => {
+        const next = prev.filter((x) => x !== id);
+        writeOpenGroups(next);
+        return next;
+      });
+      setRouteOpen((prev) => prev.filter((x) => x !== id));
+    } else {
+      setUserOpen((prev) => {
+        if (prev.includes(id)) return prev;
+        const next = [...prev, id];
+        writeOpenGroups(next);
+        return next;
+      });
+    }
+  };
+
+  // ≤768px 时侧栏是抽屉（CSS 已强制 264px 宽），一律按展开态渲染：
+  // 否则在桌面折叠过的用户（localStorage=1）打开手机抽屉会看到一个只剩图标的空壳。
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const sync = () => setIsNarrow(mq.matches);
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  // 侧栏是否按「收缩态」渲染：引导期间强制展开，保证锚点可见
+  const navCollapsed = collapsed && !isNarrow && !onbOpen;
+
+  // 浏览器标签页标题跟随品牌（猎头版不该显示 HR 工作台）
+  useEffect(() => {
+    document.title = `${brand.name} · ${brand.tagline}`;
+  }, [brand.name, brand.tagline]);
 
   // 退出后的跳转交给 App.logout（整页跳 /login），避免与「清空用户态」抢时序
   const handleLogout = () => {
@@ -249,23 +464,28 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
       label: "会员续费",
       onClick: () => setMemberOpen(true),
     },
-    ...(user.role === "admin"
+    {
+      key: "referral",
+      icon: <GiftOutlined />,
+      label: "我的推广",
+      onClick: () => setReferralOpen(true),
+    },
+    { type: "divider" as const },
+    // 反向入口：手机上切到完整版后要能切回移动版（桌面设备不显示，避免无意义入口）
+    ...(isTouchDevice()
       ? [
           {
-            key: "payconfig",
-            icon: <QrcodeOutlined />,
-            label: "收款码设置",
-            onClick: () => setPayConfigOpen(true),
-          },
-          {
-            key: "dictconfig",
-            icon: <TagsOutlined />,
-            label: "数据字典",
-            onClick: () => setDictConfigOpen(true),
+            key: "mobile",
+            icon: <MobileOutlined />,
+            label: "切换到手机版",
+            onClick: () => {
+              // 与「切完整版」同理：整页跳转，让 App 重新挂载并按新的偏好分流
+              setDeviceOverride("mobile");
+              window.location.href = "/m/tasks";
+            },
           },
         ]
       : []),
-    { type: "divider" as const },
     {
       key: "logout",
       icon: <LogoutOutlined />,
@@ -316,40 +536,103 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
     </div>
   );
 
+  // 叶子菜单项（二级项 / 独立项共用）
+  const leafNode = (leaf: NavLeaf, nested: boolean) => {
+    const link = (
+      <NavLink
+        key={leaf.to}
+        to={leaf.to}
+        data-onb={leaf.to}
+        className={({ isActive }) => (isActive ? "active" : "")}
+        title={navCollapsed ? leaf.label : undefined}
+        onClick={() => setMobileNavOpen(false)}
+      >
+        <span className="nav-icon" style={{ background: leaf.color + "1a", color: leaf.color }}>
+          {leaf.icon}
+        </span>
+        <span className="nav-label">{leaf.label}</span>
+        {!navCollapsed && leaf.badge ? <span className="nav-badge">{leaf.badge}</span> : null}
+      </NavLink>
+    );
+    // 收缩态下补一个右侧提示（二级项始终在展开容器里，不需要）
+    if (nested || !navCollapsed) return link;
+    return (
+      <Tooltip key={leaf.to} title={leaf.label} placement="right">
+        {link}
+      </Tooltip>
+    );
+  };
+
+  // 一级分组项
+  const groupNode = (group: NavGroup) => {
+    // 收缩态：侧栏只有 68px，inline 展开没地方放 → 图标 hover 弹浮层
+    if (navCollapsed) {
+      return (
+        <Popover
+          key={group.id}
+          placement="rightTop"
+          trigger="hover"
+          arrow={false}
+          content={
+            <div className="nav-pop">
+              <div className="nav-pop-title">{group.label}</div>
+              {group.children.map((child) => (
+                <NavLink
+                  key={child.to}
+                  to={child.to}
+                  data-onb={child.to}
+                  className={({ isActive }) => "nav-pop-item" + (isActive ? " active" : "")}
+                  onClick={() => setMobileNavOpen(false)}
+                >
+                  <span className="nav-icon" style={{ background: child.color + "1a", color: child.color }}>
+                    {child.icon}
+                  </span>
+                  <span>{child.label}</span>
+                </NavLink>
+              ))}
+            </div>
+          }
+        >
+          <button type="button" className="nav-group-title" aria-label={group.label}>
+            <span className="nav-icon" style={{ background: group.color + "1a", color: group.color }}>
+              {group.icon}
+            </span>
+          </button>
+        </Popover>
+      );
+    }
+
+    const open = isGroupOpen(group.id);
+    return (
+      <div className="nav-group" key={group.id}>
+        <button
+          type="button"
+          className={"nav-group-title" + (open ? " is-open" : "")}
+          aria-expanded={open}
+          onClick={() => toggleGroup(group.id)}
+        >
+          <span className="nav-icon" style={{ background: group.color + "1a", color: group.color }}>
+            {group.icon}
+          </span>
+          <span className="nav-label">{group.label}</span>
+          {group.badge ? <span className="nav-badge">{group.badge}</span> : null}
+          <span className="nav-caret" />
+        </button>
+        {open ? <div className="nav-sub">{group.children.map((c) => leafNode(c, true))}</div> : null}
+      </div>
+    );
+  };
+
   return (
     <div className={"app-layout" + (mobileNavOpen ? " nav-open" : "")}>
       <div className="app-nav-mask" onClick={() => setMobileNavOpen(false)} />
-      <aside className={`sidebar${collapsed ? " collapsed" : ""}${mobileNavOpen ? " nav-open" : ""}`}>
+      <aside className={`sidebar${navCollapsed ? " collapsed" : ""}${mobileNavOpen ? " nav-open" : ""}`}>
         <div className="sidebar-logo">
-          <span className="logo-text">人力资源管理系统</span>
+          <span className="logo-text">{brand.name}</span>
         </div>
 
         <nav className="sidebar-nav">
-          {navItems.map((item) => {
-            const link = (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                data-onb={item.to}
-                className={({ isActive }) => (isActive ? "active" : "")}
-                title={collapsed ? item.label : undefined}
-                onClick={() => setMobileNavOpen(false)}
-              >
-                <span className="nav-icon" style={{ background: item.color + "1a", color: item.color }}>
-                  {item.icon}
-                </span>
-                <span className="nav-label">{item.label}</span>
-                {!collapsed && item.badge ? <span className="nav-badge">{item.badge}</span> : null}
-              </NavLink>
-            );
-            return collapsed ? (
-              <Tooltip key={item.to} title={item.label} placement="right">
-                {link}
-              </Tooltip>
-            ) : (
-              link
-            );
-          })}
+          {visibleNav.map((node) => ("children" in node ? groupNode(node) : leafNode(node, false)))}
         </nav>
       </aside>
 
@@ -359,7 +642,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
           <Button
             type="text"
             className="topbar-collapse"
-            icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            icon={navCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={toggleMenu}
           />
           <div className="topbar-right">
@@ -432,7 +715,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
       </div>
 
       <Onboarding
-        steps={ONBOARDING_STEPS}
+        steps={onbSteps}
         open={onbOpen}
         onClose={closeOnboarding}
         onNavigate={navigate}
@@ -462,16 +745,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
         onClose={() => setMemberOpen(false)}
       />
 
-      <PayConfigModal
-        open={payConfigOpen}
-        onClose={() => setPayConfigOpen(false)}
-        onSaved={() => {}}
-      />
-
-      <DictConfigModal
-        open={dictConfigOpen}
-        onClose={() => setDictConfigOpen(false)}
-      />
+      <ReferralModal open={referralOpen} onClose={() => setReferralOpen(false)} />
     </div>
   );
 }

@@ -16,6 +16,7 @@ import "dayjs/locale/zh-cn";
 import App from "./App";
 import { getThemeState, applyTheme, getColorDef, saveThemeState, type ThemeState } from "./theme";
 import "./styles/global.css";
+import "./styles/mobile.css";
 
 dayjs.locale("zh-cn");
 

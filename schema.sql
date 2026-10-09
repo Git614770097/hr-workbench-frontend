@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS users (
   must_change_password INTEGER NOT NULL DEFAULT 0, -- 管理员设临时密码后置 1，下次登录需自行修改
   pushplus_token TEXT,                   -- 个人 PushPlus 推送 token（用于到期提醒推送到本人）
   paid_until TEXT,                       -- 会员有效期（NULL=未开通；过期时间串=已过期/有效），手动开通制
+  intended_role TEXT,                    -- 注册时自报身份（hr/headhunter/team/other），仅作意向参考，不参与鉴权
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -61,6 +62,7 @@ CREATE TABLE IF NOT EXISTS talents (
   probation_end TEXT,       -- 试用期结束日
   resignation_date TEXT,    -- 预计离职日期（离职倒计时）
   hire_date TEXT,           -- 入职日期（社保增员待办基准日）
+  next_follow_at TEXT,      -- 下次跟进/提醒时间（录入表单可填，到期自动生成待办）
   is_demo INTEGER DEFAULT 0, -- 示例数据标记：1=一键载入的演示数据，可整批清除
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
@@ -227,6 +229,111 @@ CREATE TABLE IF NOT EXISTS talent_social (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- 面试安排与评价表（挂在 talent_jobs 上：同一候选人应聘多个岗位时，
+-- 面试属于「某岗位的某轮面试」，故关联 talent_job_id 而非仅 talent_id）
+CREATE TABLE IF NOT EXISTS interviews (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  talent_id TEXT NOT NULL REFERENCES talents(id),
+  job_id TEXT,                            -- 冗余存一份，便于按岗位筛选面试
+  talent_job_id TEXT REFERENCES talent_jobs(id) ON DELETE CASCADE,
+  round TEXT NOT NULL DEFAULT 'interview1', -- interview1 初试 / interview2 复试 / final 终面
+  mode TEXT NOT NULL DEFAULT 'online',   -- online 线上 / onsite 线下 / phone 电话
+  scheduled_at TEXT,                      -- 面试时间 'YYYY-MM-DD HH:mm'
+  duration INTEGER DEFAULT 60,            -- 时长（分钟）
+  location TEXT,                          -- 线下地点
+  meeting_url TEXT,                       -- 线上会议链接
+  interviewer TEXT,                       -- 面试官（多人用顿号分隔）
+  status TEXT NOT NULL DEFAULT 'scheduled', -- scheduled 待面试 / done 已完成 / cancelled 已取消 / no_show 未到
+  result TEXT,                            -- pass 通过 / fail 不通过 / pending 待定
+  score INTEGER,                          -- 综合评分 1-5
+  evaluation TEXT,                        -- 评价内容
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ---- 招聘需求（用人部门提需求 → HR 审批 → 一键转正式岗位）----
+CREATE TABLE IF NOT EXISTS requisitions (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id),   -- 创建人（用人部门 HRBP）
+  department TEXT NOT NULL,                      -- 需求部门
+  title TEXT NOT NULL,                           -- 拟招岗位名称
+  headcount INTEGER DEFAULT 1,                   -- 需求人数
+  job_type TEXT DEFAULT 'fulltime',
+  city TEXT,
+  salary_range TEXT,
+  education TEXT,
+  experience TEXT,
+  reason TEXT,                                   -- 需求原因 / 背景
+  expect_date TEXT,                              -- 期望到岗时间
+  priority TEXT DEFAULT 'normal',                -- high/normal/low
+  status TEXT NOT NULL DEFAULT 'pending',        -- pending 待审批 / approved 已通过转岗位 / rejected 已驳回 / closed 已关闭
+  job_id TEXT,                                   -- 审批通过后生成的岗位 id
+  reject_reason TEXT,                            -- 驳回原因
+  approved_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ---- 审批流（可自建模板；Offer 审批 / 入职审批共用一套引擎）----
+-- flow_steps 以 JSON 存步骤数组：[{ "name": "HR 主管审批", "role": "admin" }, ...]
+CREATE TABLE IF NOT EXISTS approval_flows (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,                            -- 流程名，如「Offer 审批」
+  scene TEXT NOT NULL DEFAULT 'offer',           -- offer / onboard / other
+  flow_steps TEXT NOT NULL DEFAULT '[]',         -- JSON 步骤数组
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 审批实例：once 一个候选人的一次审批（biz_id = talent_jobs.id）
+CREATE TABLE IF NOT EXISTS approval_instances (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id),   -- 发起人
+  flow_id TEXT REFERENCES approval_flows(id),
+  scene TEXT NOT NULL DEFAULT 'offer',
+  talent_id TEXT NOT NULL REFERENCES talents(id),
+  talent_job_id TEXT REFERENCES talent_jobs(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,                           -- 标题，如「张三 - 前端工程师 Offer 审批」
+  current_step INTEGER NOT NULL DEFAULT 0,       -- 当前处在第几步（0 起）
+  status TEXT NOT NULL DEFAULT 'pending',        -- pending 进行中 / approved 已通过 / rejected 已驳回 / cancelled 已取消
+  payload TEXT,                                  -- 快照 JSON（Offer 金额等）
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 审批记录：每一步谁批的、批了什么
+CREATE TABLE IF NOT EXISTS approval_steps (
+  id TEXT PRIMARY KEY,
+  instance_id TEXT NOT NULL REFERENCES approval_instances(id) ON DELETE CASCADE,
+  step_index INTEGER NOT NULL,
+  step_name TEXT NOT NULL,
+  approver_id TEXT,                              -- 指定审批人；为空表示该步骤由管理员/发起人上级处理
+  decision TEXT,                                 -- approve / reject
+  comment TEXT,
+  acted_at TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ---- 入职办理材料清单（模板可自定，逐项勾选跟进）----
+CREATE TABLE IF NOT EXISTS onboarding_items (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  talent_id TEXT NOT NULL REFERENCES talents(id) ON DELETE CASCADE,
+  talent_job_id TEXT REFERENCES talent_jobs(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,                            -- 材料/事项名称，如「身份证复印件」
+  category TEXT,                                 -- 分组，如「身份材料」「财务」
+  required INTEGER NOT NULL DEFAULT 1,          -- 1=必交 0=选交
+  status TEXT NOT NULL DEFAULT 'pending',        -- pending 待提交 / submitted 已提交 / verified 已核验
+  submitted_at TEXT,
+  remark TEXT,
+  sort_order INTEGER DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_talents_owner ON talents(owner_id);
 CREATE INDEX IF NOT EXISTS idx_talent_social_talent ON talent_social(talent_id);
@@ -245,3 +352,6 @@ CREATE INDEX IF NOT EXISTS idx_tasks_due ON talent_tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_match_profiles_owner ON match_profiles(owner_id);
 CREATE INDEX IF NOT EXISTS idx_match_profile_levels_profile ON match_profile_levels(profile_id);
 CREATE INDEX IF NOT EXISTS idx_contract_files_talent ON contract_files(talent_id);
+CREATE INDEX IF NOT EXISTS idx_interviews_talent_job ON interviews(talent_job_id);
+CREATE INDEX IF NOT EXISTS idx_interviews_owner ON interviews(owner_id);
+CREATE INDEX IF NOT EXISTS idx_interviews_scheduled ON interviews(scheduled_at);

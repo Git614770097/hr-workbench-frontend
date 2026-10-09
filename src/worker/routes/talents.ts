@@ -3,6 +3,7 @@ import { getCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { genId } from "../helpers";
+import { STAGES, syncTalentStage } from "./pipeline";
 import { deepseekJson } from "../ai";
 
 const talents = new Hono<{ Bindings: Env }>();
@@ -25,7 +26,7 @@ function normalizeEntryType(v: unknown, fallback = "manual"): string {
 // 规则：pending 的「合同到期：X」「试用期到期：X」待办与人才当前日期对齐——
 // 有日期且无待办 → 新建（priority high、source system）；日期变更 → 更新待办 due；
 // 日期被清空 → 取消残留提醒。编辑保存（PUT）与批量同步（/contracts/sync-tasks）共用。
-type TalentContractRow = { id: string; owner_id: string; name: string; contract_end: string | null; probation_end: string | null };
+type TalentContractRow = { id: string; owner_id: string; name: string; contract_end: string | null; probation_end: string | null; next_follow_at?: string | null };
 type ExistingTask = { id: string; title: string; due_date: string | null };
 
 function contractTaskStmts(db: any, t: TalentContractRow, existing: ExistingTask[]) {
@@ -40,6 +41,13 @@ function contractTaskStmts(db: any, t: TalentContractRow, existing: ExistingTask
       due: t.probation_end,
       content: `${t.name} 的试用期将于 ${t.probation_end} 到期，请提前完成转正评估。`,
     },
+    {
+      // 录入表单填的「下次跟进时间」：提醒自己（推到负责人），由 PushPlus 推微信
+      prefix: "跟进提醒",
+      due: t.next_follow_at ? String(t.next_follow_at).slice(0, 10) : null,
+      content: `${t.name} 的跟进时间已到（${t.next_follow_at}），请及时联系候选人并推进流程。`,
+      priority: "normal" as const,
+    },
   ];
   const stmts: any[] = [];
   let created = 0, updated = 0, cancelled = 0;
@@ -51,7 +59,8 @@ function contractTaskStmts(db: any, t: TalentContractRow, existing: ExistingTask
       continue;
     }
     if (!dup) {
-      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, 'high', 'pending', 'system')`).bind(genId(), t.owner_id, t.id, title, content, due));
+      const pr = (kinds.find((x) => x.prefix === prefix) as any)?.priority || 'high';
+      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 'system')`).bind(genId(), t.owner_id, t.id, title, content, due, pr));
       created++;
       continue;
     }
@@ -191,6 +200,9 @@ talents.get("/", async (c) => {
   if (status) { conditions.push("t.status = ?"); params.push(status); }
   if (entryType) { conditions.push("t.entry_type = ?"); params.push(entryType); }
   if (city) { conditions.push("t.city LIKE ?"); params.push(`%${city}%`); }
+  // 标签筛选：tags 是 JSON 数组字符串，模糊匹配包含该标签的记录
+  const tag = (c.req.query("tags") || "").trim();
+  if (tag) { conditions.push("t.tags LIKE ?"); params.push(`%${tag}%`); }
 
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
@@ -198,7 +210,7 @@ talents.get("/", async (c) => {
   const rows = await c.env.DB.prepare(`SELECT t.*, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id ${where} ORDER BY t.updated_at DESC LIMIT ? OFFSET ?`).bind(...params, limit, offset).all();
 
   const items = rows.results.map((r: any) => ({
-    ...r, skills: r.skills ? JSON.parse(r.skills) : [],
+    ...r, skills: r.skills ? JSON.parse(r.skills) : [], tags: r.tags ? JSON.parse(r.tags) : [],
   }));
 
   return c.json({ items, total: countResult?.total || 0, page, limit, pages: Math.ceil((countResult?.total || 0) / limit) });
@@ -548,7 +560,192 @@ talents.post("/social/sync-tasks", async (c) => {
   return c.json({ checked: talentsRows.length, created, updated, cancelled });
 });
 
+// ---- 参保城市费率模板 ----
+// 分层沿用模板库的思路：owner_id='system' 是内置参考值（所有人可读），
+// 用户自己的同名城市覆盖参考值。这样「选城市自动带出比例」不用每次手填 4 个数字。
+talents.get("/social/rates", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const rows = (await c.env.DB.prepare(
+    `SELECT id, owner_id, city, si_rate_personal, si_rate_company, hf_rate_personal, hf_rate_company
+       FROM social_rate_templates
+      WHERE owner_id = 'system' OR owner_id = ?
+      ORDER BY city, CASE WHEN owner_id = 'system' THEN 1 ELSE 0 END`
+  ).bind(session.userId).all<any>()).results || [];
+
+  // 同城去重：自己的排在系统参考值前面（上面的 ORDER BY 已保证），保留第一条
+  const seen = new Set<string>();
+  const list: any[] = [];
+  for (const r of rows) {
+    if (seen.has(r.city)) continue;
+    seen.add(r.city);
+    list.push({ ...r, is_system: r.owner_id === "system" });
+  }
+  return c.json(list);
+});
+
+// 新增 / 覆盖自己城市下的默认比例（同名城市 upsert）
+talents.post("/social/rates", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const body = await c.req.json<any>().catch(() => null);
+  const city = typeof body?.city === "string" ? body.city.trim() : "";
+  if (!city) return c.json({ error: "请填写参保城市" }, 400);
+  if (city.length > 40) return c.json({ error: "城市名称过长" }, 400);
+
+  const num = (v: unknown) => (typeof v === "number" && !isNaN(v) ? v : null);
+  const vals = [
+    num(body.si_rate_personal), num(body.si_rate_company),
+    num(body.hf_rate_personal), num(body.hf_rate_company),
+  ];
+
+  await c.env.DB.prepare(
+    `INSERT INTO social_rate_templates (id, owner_id, city, si_rate_personal, si_rate_company, hf_rate_personal, hf_rate_company)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(owner_id, city) DO UPDATE SET
+       si_rate_personal = excluded.si_rate_personal, si_rate_company = excluded.si_rate_company,
+       hf_rate_personal = excluded.hf_rate_personal, hf_rate_company = excluded.hf_rate_company,
+       updated_at = datetime('now')`
+  ).bind(genId(), session.userId, city, ...vals).run();
+
+  return c.json({ ok: true, city });
+});
+
+// 删除自己维护的模板（系统内置参考值不允许删，只能用自己的同名城市覆盖）
+talents.delete("/social/rates/:id", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const id = c.req.param("id");
+  const r = await c.env.DB.prepare(
+    "DELETE FROM social_rate_templates WHERE id = ? AND owner_id = ?"
+  ).bind(id, session.userId).run();
+  if (!r.success || (r.meta?.changes ?? 0) === 0) {
+    return c.json({ error: "模板不存在，或内置参考值不可删除（可用同名城市覆盖）" }, 404);
+  }
+  return c.json({ ok: true });
+});
+
 // ---- 人才详情（聚合：本体 + 相关待办 + 投递进程 + 阶段日志）----
+// ---- 批量打标签：收人才 id，replace=直接设 / add=合并去重 ----
+// 静态路由须注册在 GET /:id 之前。一次最多 200 人。
+talents.post("/batch/tags", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const body = await c.req.json<{ ids?: string[]; tags?: string[]; mode?: "replace" | "add" }>();
+  const ids = [...new Set((body.ids || []).filter(Boolean))];
+  const tags = (body.tags || []).filter(Boolean);
+  if (ids.length === 0) return c.json({ error: "请选择人才" }, 400);
+  if (ids.length > 200) return c.json({ error: "一次最多批量操作 200 人" }, 400);
+  const mode = body.mode === "add" ? "add" : "replace";
+
+  const ph = ids.map(() => "?").join(",");
+  const rows = await c.env.DB.prepare(`SELECT id, owner_id, tags FROM talents WHERE id IN (${ph})`).bind(...ids).all<any>();
+  const targets = (rows.results as any[]).filter((r) => session.role === "admin" || r.owner_id === session.userId);
+  const stmts = targets.map((r) => {
+    const cur = r.tags ? JSON.parse(r.tags) : [];
+    const next = mode === "add" ? [...new Set([...cur, ...tags])] : tags;
+    return c.env.DB.prepare("UPDATE talents SET tags = ?, updated_at = datetime('now') WHERE id = ?").bind(JSON.stringify(next), r.id);
+  });
+  if (stmts.length) await c.env.DB.batch(stmts);
+  return c.json({ updated: targets.length, skipped: ids.length - targets.length });
+});
+
+// ---- 批量删除：复用单删的级联清理（顺序反了会触发外键 500）----
+talents.post("/batch/delete", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const body = await c.req.json<{ ids?: string[] }>();
+  const ids = [...new Set((body.ids || []).filter(Boolean))];
+  if (ids.length === 0) return c.json({ error: "请选择人才" }, 400);
+  if (ids.length > 200) return c.json({ error: "一次最多批量操作 200 人" }, 400);
+
+  let deleted = 0;
+  for (const id of ids) {
+    let checkSql = "SELECT id, resume_url FROM talents WHERE id = ?";
+    const checkParams: string[] = [id];
+    if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+    const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first<{ id: string; resume_url: string | null }>();
+    if (!existing) continue;
+    if (existing.resume_url) await c.env.RESUMES.delete(existing.resume_url);
+    const contractFileKeys = (await c.env.DB.prepare("SELECT kv_key FROM contract_files WHERE talent_id = ?").bind(id).all<{ kv_key: string }>()).results;
+    for (const f of contractFileKeys) await c.env.RESUMES.delete(f.kv_key);
+    await c.env.DB.batch([
+      c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(id),
+      c.env.DB.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id),
+    ]);
+    deleted++;
+  }
+  return c.json({ deleted });
+});
+
+// ---- 批量推进阶段：收人才 id，内部查其 talent_jobs 逐个推进 + 写阶段日志 ----
+// 复用 syncTalentStage 重算全局阶段（记忆约束：别手写派生缓存）；推进到 hired 时
+// 与单卡流转一致地写入「试用期跟进」待办。无招聘流程（无 talent_jobs）的纯人才跳过。
+talents.post("/batch/stage", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const body = await c.req.json<{ ids?: string[]; stage?: string }>();
+  const ids = [...new Set((body.ids || []).filter(Boolean))];
+  const stage = body.stage || "";
+  if (ids.length === 0 || !(STAGES as readonly string[]).includes(stage)) return c.json({ error: "参数不合法" }, 400);
+  if (ids.length > 200) return c.json({ error: "一次最多批量操作 200 人" }, 400);
+
+  const ph = ids.map(() => "?").join(",");
+  const links = (await c.env.DB.prepare(
+    `SELECT tj.id, tj.stage as old_stage, tj.talent_id, tj.job_id, t.name as talent_name, t.owner_id
+     FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.talent_id IN (${ph})`
+  ).bind(...ids).all<any>()).results as any[];
+  const allowed = links.filter((r: any) => session.role === "admin" || r.owner_id === session.userId);
+  const talentIdsWithJob = [...new Set(allowed.map((r: any) => r.talent_id))];
+  const skipped = ids.length - talentIdsWithJob.length;
+
+  const stmts: any[] = [];
+  const hiredLinks: any[] = [];
+  for (const r of allowed) {
+    if (r.old_stage === stage) continue; // 已在目标阶段，不重复写日志
+    stmts.push(c.env.DB.prepare("UPDATE talent_jobs SET stage = ?, updated_at = datetime('now') WHERE id = ?").bind(stage, r.id));
+    stmts.push(c.env.DB.prepare(
+      "INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, ?, ?, ?, ?)"
+    ).bind(genId(), r.id, r.old_stage, stage, session.userId, "批量推进"));
+    if (stage === "hired") hiredLinks.push(r);
+  }
+  if (stmts.length) await c.env.DB.batch(stmts);
+
+  // hired 联动：与单卡流转一致的「试用期跟进」待办（防重）
+  for (const h of hiredLinks) {
+    const dup = await c.env.DB.prepare(
+      "SELECT id FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND title LIKE '试用期跟进%'"
+    ).bind(h.talent_id).first();
+    if (!dup) {
+      const due = new Date(Date.now() + 90 * 86400000);
+      const p = (n: number) => String(n).padStart(2, "0");
+      await c.env.DB.prepare(
+        "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
+      ).bind(
+        genId(), h.owner_id, h.talent_id, h.job_id,
+        `试用期跟进：${h.talent_name}`,
+        "候选人已入职，关注试用期表现与融入情况，到期前完成转正评估。",
+        `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`
+      ).run();
+    }
+  }
+
+  for (const tid of talentIdsWithJob) await syncTalentStage(c.env.DB, tid);
+
+  return c.json({ updated: talentIdsWithJob.length, skipped });
+});
+
 talents.get("/:id", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
@@ -594,6 +791,7 @@ talents.get("/:id", async (c) => {
   return c.json({
     ...(row as any),
     skills: (row as any).skills ? JSON.parse((row as any).skills) : [],
+    tags: (row as any).tags ? JSON.parse((row as any).tags) : [],
     tasks,
     pipeline,
     stage_logs: stageLogs,
@@ -608,8 +806,9 @@ talents.post("/", async (c) => {
   const body = await c.req.json<any>();
   const id = genId();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
-  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, hire_date, entry_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.source || null, body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), normalizeEntryType(body.entry_type)).run();
+  const tags = body.tags ? JSON.stringify(body.tags) : null;
+  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, tags, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, hire_date, next_follow_at, entry_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, tags, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.source || null, body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), dateOrNull(body.next_follow_at), normalizeEntryType(body.entry_type)).run();
 
   return c.json({ id, ...body });
 });
@@ -629,7 +828,7 @@ talents.put("/:id", async (c) => {
   const body = await c.req.json<any>();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
   // 日期字段动态拼 SET：传了才更新（含清空 ""→NULL），未传保持原值——COALESCE 无法区分这两种情况
-  const dateFields = ["birth_date", "contract_end", "probation_end", "resignation_date", "hire_date"] as const;
+  const dateFields = ["birth_date", "contract_end", "probation_end", "resignation_date", "hire_date", "next_follow_at"] as const;
   let dateSet = "";
   const dateParams: (string | null)[] = [];
   for (const f of dateFields) {
@@ -643,7 +842,7 @@ talents.put("/:id", async (c) => {
   const scalars: (string | number | null)[] = [
     body.name, body.phone, body.email, body.age, body.gender, body.education,
     body.school, body.current_company, body.current_title, body.years_experience,
-    body.city, skills, body.industry, body.expected_salary, body.expected_city,
+    body.city, skills, body.tags ? JSON.stringify(body.tags) : null, body.industry, body.expected_salary, body.expected_city,
     body.status, body.source, body.resume_url, body.notes,
   ].map((v) => (v === undefined ? null : v));
   await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), source = COALESCE(?, source), resume_url = COALESCE(?, resume_url), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)

@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem } from "./types";
 
 const BASE = "/api";
 
@@ -27,9 +27,14 @@ async function request<T>(
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, { ...options, headers, signal: controller.signal });
-  } catch {
+  } catch (e) {
     clearTimeout(timer);
-    throw new Error("请求超时或网络异常，请稍后重试");
+    // 区分两种失败：主动超时（abort）与真正的网络不可达。
+    // 之前一律报「请求超时或网络异常」，把真实原因盖掉了，排障时非常误导。
+    if ((e as Error)?.name === "AbortError") {
+      throw new Error(`请求超时（超过 ${Math.round(timeoutMs / 1000)} 秒），请稍后重试`);
+    }
+    throw new Error("网络异常，无法连接服务器，请检查网络后重试");
   }
   clearTimeout(timer);
 
@@ -56,6 +61,7 @@ export const api = {
   getCaptcha: () =>
     request<{ captcha_id: string; svg: string }>("/auth/captcha"),
 
+  // 登录：手机号 + 密码 + 图文验证码（登录不发短信，省费用；注册仍用短信验证）
   login: (data: { phone: string; password: string; captcha_id: string; captcha: string }) =>
     request<{ id: string; phone: string; name: string; role: string; token: string }>("/auth/login", {
       method: "POST",
@@ -69,14 +75,36 @@ export const api = {
   logout: () => request("/auth/logout", { method: "POST" }),
 
   // 自助注册（注册后为 pending 状态，需管理员审批）
-  register: (data: { phone: string; name: string; password: string; captcha_id: string; captcha: string }) =>
+  // ref 为选填邀请码：非法码后端静默忽略，不影响注册结果
+  // intended_role 为自报身份（hr/headhunter），仅作审批参考，不授予权限
+  // sms_code 为短信验证码（注册用短信校验替代图形验证码）
+  register: (data: { phone: string; name: string; password: string; sms_code: string; ref?: string; intended_role?: string }) =>
     request<{ ok: boolean; message: string }>("/auth/register", {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
-  // 忘记密码：提交重置申请（无短信通道，由管理员核对后处理）
-  forgotPassword: (data: { phone: string; name: string; captcha_id: string; captcha: string }) =>
+  // 注册短信验证码下发（公开，无需登录）
+  sendSms: (phone: string) =>
+    request<{ ok: boolean }>("/auth/sms/send", {
+      method: "POST",
+      body: JSON.stringify({ phone }),
+    }),
+
+  // 我的推广：邀请码 / 邀请链接 / 已邀请列表 / 奖励规则
+  getReferral: () =>
+    request<{
+      code: string;
+      link: string;
+      config: { enabled: boolean; referrerMonths: number; inviteeMonths: number; capMonthsPerYear: number };
+      invited: {
+        name: string; phone: string; status: string;
+        created_at: string; rewarded_at: string | null; reward_months: number | null;
+      }[];
+    }>("/auth/me/referral"),
+
+  // 忘记密码：提交重置申请（短信验证码校验，由管理员核对后处理）
+  forgotPassword: (data: { phone: string; name: string; sms_code: string }) =>
     request<{ ok: boolean; message: string }>("/auth/forgot-password", {
       method: "POST",
       body: JSON.stringify(data),
@@ -117,6 +145,9 @@ export const api = {
     request(`/auth/users/${id}/reject`, { method: "PUT" }),
   updateUserRole: (id: string, role_id: string | null) =>
     request(`/auth/users/${id}/role`, { method: "PUT", body: JSON.stringify({ role_id }) }),
+  // 修改用户「身份」（hr/headhunter/team/other）—— 只影响品牌文案，不影响权限
+  updateUserIntendedRole: (id: string, intended_role: string | null) =>
+    request(`/auth/users/${id}/intended-role`, { method: "PUT", body: JSON.stringify({ intended_role }) }),
   resetUserPassword: (id: string, password: string) =>
     request(`/auth/users/${id}/password`, { method: "PUT", body: JSON.stringify({ password }) }),
   deleteUser: (id: string) =>
@@ -130,10 +161,20 @@ export const api = {
     request<{ wechat_qr: string | null; alipay_qr: string | null; note: string | null }>("/auth/settings/pay"),
   setPayConfig: (data: { wechat_qr?: string; alipay_qr?: string; note?: string }) =>
     request("/auth/settings/pay", { method: "PUT", body: JSON.stringify(data) }),
-  // 数据字典（来源渠道 / 淘汰原因），管理员可配置
+  // 数据字典（来源渠道 / 淘汰原因 / 学历 / 职位类型），管理员可配置
   getDictConfig: () =>
-    request<{ sources: string[]; reject_reasons: string[] }>("/auth/settings/dict"),
-  setDictConfig: (data: { sources?: string[]; reject_reasons?: string[] }) =>
+    request<{
+      sources: string[];
+      reject_reasons: string[];
+      education: string[];
+      job_types: Record<string, string>;
+    }>("/auth/settings/dict"),
+  setDictConfig: (data: {
+    sources?: string[];
+    reject_reasons?: string[];
+    education?: string[];
+    job_types?: Record<string, string>;
+  }) =>
     request<{ ok: boolean }>("/auth/settings/dict", { method: "PUT", body: JSON.stringify(data) }),
   // 当前用户付款后申请开通会员（推送通知管理员）
   requestMembership: () =>
@@ -323,6 +364,20 @@ export const api = {
   syncSocialTasks: () =>
     request<ContractSyncResult>("/talents/social/sync-tasks", { method: "POST" }),
 
+  // 参保城市费率模板：内置参考值（is_system）+ 自己维护的，同城自己的优先
+  getSocialRates: () =>
+    request<SocialRateTemplate[]>("/talents/social/rates"),
+
+  // 新增 / 覆盖自己城市下的默认比例
+  saveSocialRate: (data: SocialRateInput) =>
+    request<{ ok: true; city: string }>("/talents/social/rates", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deleteSocialRate: (id: string) =>
+    request<{ ok: true }>(`/talents/social/rates/${id}`, { method: "DELETE" }),
+
   // 智能匹配（简历 + 人才画像 → 排序推荐）
   // 按职位生成招聘 JD（AI 起草，用户可改后再提炼画像）
   generateJd: (jobTitle: string, city?: string) =>
@@ -455,6 +510,14 @@ export const api = {
       { method: "POST", body: JSON.stringify(data) }
     ),
 
+  // 人才库批量操作（收人才 id，与看板批量流转区分路由）
+  batchTags: (data: { ids: string[]; tags: string[]; mode?: "replace" | "add" }) =>
+    request<{ updated: number; skipped: number }>("/talents/batch/tags", { method: "POST", body: JSON.stringify(data) }),
+  batchStageTalents: (data: { ids: string[]; stage: string }) =>
+    request<{ updated: number; skipped: number }>("/talents/batch/stage", { method: "POST", body: JSON.stringify(data) }),
+  batchDeleteTalents: (data: { ids: string[] }) =>
+    request<{ deleted: number }>("/talents/batch/delete", { method: "POST", body: JSON.stringify(data) }),
+
   // ---- 招聘漏斗 ----
   getFunnel: (params: { job_id?: string; owner_id?: string; days?: number } = {}) => {
     const qs = new URLSearchParams(
@@ -473,6 +536,8 @@ export const api = {
     return request<{ items: Task[]; total: number }>(`/tasks${qs ? `?${qs}` : ""}`);
   },
   getTaskSummary: () => request<TaskSummary>("/tasks/summary"),
+  // 招聘概览首页聚合（全员可看，按 owner 隔离）
+  getOverview: () => request<OverviewResponse>("/overview"),
   createTask: (data: Partial<Task>) =>
     request<{ id: string }>("/tasks", { method: "POST", body: JSON.stringify(data) }),
   updateTask: (id: string, data: Partial<Task>) =>
@@ -480,4 +545,68 @@ export const api = {
   updateTaskStatus: (id: string, status: string) =>
     request(`/tasks/${id}/status`, { method: "PUT", body: JSON.stringify({ status }) }),
   deleteTask: (id: string) => request(`/tasks/${id}`, { method: "DELETE" }),
+
+  // 面试管理（面试安排 + 面试评价）
+  // filters: talent_job_id / talent_id / job_id / status / owner_id(admin)
+  getInterviews: (params: { talent_job_id?: string; talent_id?: string; job_id?: string; status?: string; owner_id?: string } = {}) => {
+    const qs = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join("&");
+    return request<{ items: Interview[] }>(`/interviews${qs ? `?${qs}` : ""}`);
+  },
+  createInterview: (data: Partial<Interview>) =>
+    request<{ ok: boolean; item: Interview; advanced_to?: string | null }>("/interviews", { method: "POST", body: JSON.stringify(data) }),
+  updateInterview: (id: string, data: Partial<Interview>) =>
+    request<{ ok: boolean; item: Interview; advanced_to?: string | null }>(`/interviews/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteInterview: (id: string) => request<{ ok: boolean }>(`/interviews/${id}`, { method: "DELETE" }),
+
+  // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
+  getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {
+    const qs = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join("&");
+    return request<{ items: Requisition[] }>(`/requisitions${qs ? `?${qs}` : ""}`);
+  },
+  createRequisition: (data: Partial<Requisition>) =>
+    request<{ ok: boolean; id: string }>("/requisitions", { method: "POST", body: JSON.stringify(data) }),
+  approveRequisition: (id: string) =>
+    request<{ ok: boolean; job_id: string }>(`/requisitions/${id}/approve`, { method: "POST", body: "{}" }),
+  rejectRequisition: (id: string, reason?: string) =>
+    request<{ ok: boolean }>(`/requisitions/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+
+  // 审批流
+  getApprovalFlows: () => request<{ items: ApprovalFlow[] }>("/approvals/flows"),
+  createApprovalFlow: (data: { name: string; scene: string; steps: { name: string }[] }) =>
+    request<{ ok: boolean; id: string }>("/approvals/flows", { method: "POST", body: JSON.stringify(data) }),
+  deleteApprovalFlow: (id: string) => request<{ ok: boolean }>(`/approvals/flows/${id}`, { method: "DELETE" }),
+  getApprovalInstances: (params: { status?: string } = {}) => {
+    const qs = params.status ? `?status=${encodeURIComponent(params.status)}` : "";
+    return request<{ items: ApprovalInstance[] }>(`/approvals/instances${qs}`);
+  },
+  createApprovalInstance: (data: { talent_job_id: string; scene?: string; flow_id?: string; title?: string; payload?: unknown }) =>
+    request<{ ok: boolean; id: string; total_steps: number }>("/approvals/instances", { method: "POST", body: JSON.stringify(data) }),
+  decideApproval: (id: string, decision: "approve" | "reject", comment?: string) =>
+    request<{ ok: boolean; status: string; downstream?: string[] }>(`/approvals/instances/${id}/decide`, { method: "POST", body: JSON.stringify({ decision, comment }) }),
+  cancelApproval: (id: string) =>
+    request<{ ok: boolean }>(`/approvals/instances/${id}/cancel`, { method: "POST", body: "{}" }),
+
+  // 入职办理（材料清单）
+  getOnboardingItems: (params: { talent_id?: string; talent_job_id?: string } = {}) => {
+    const qs = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join("&");
+    return request<{ items: OnboardingItem[]; progress: { total: number; done: number; percent: number } }>(
+      `/onboarding${qs ? `?${qs}` : ""}`
+    );
+  },
+  initOnboarding: (talent_id: string, talent_job_id?: string) =>
+    request<{ ok: boolean; created: number }>("/onboarding/init", { method: "POST", body: JSON.stringify({ talent_id, talent_job_id }) }),
+  createOnboardingItem: (data: Partial<OnboardingItem>) =>
+    request<{ ok: boolean; id: string }>("/onboarding", { method: "POST", body: JSON.stringify(data) }),
+  updateOnboardingItem: (id: string, data: Partial<OnboardingItem>) =>
+    request<{ ok: boolean }>(`/onboarding/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteOnboardingItem: (id: string) => request<{ ok: boolean }>(`/onboarding/${id}`, { method: "DELETE" }),
 };

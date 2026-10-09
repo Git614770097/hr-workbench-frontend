@@ -5,8 +5,10 @@ import {
 import { UploadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
-import { STATUS_LABELS, EDUCATION_OPTIONS } from "../types";
+import { STATUS_LABELS } from "../types";
 import { useDict } from "../dict";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 interface Props {
   open: boolean;
@@ -16,7 +18,8 @@ interface Props {
 }
 
 export default function TalentFormModal({ open, talentId, onClose, onSuccess }: Props) {
-  const { sources } = useDict();
+  const { sources, education: educationOptions } = useDict();
+  const profile = useIdentityProfile();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -34,6 +37,7 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
             ...t,
             skills: t.skills.join(", "),
             hire_date: t.hire_date ? dayjs(t.hire_date) : null,
+            next_follow_at: t.next_follow_at ? dayjs(t.next_follow_at) : null,
           });
         } else {
           form.resetFields();
@@ -54,6 +58,9 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
         years_experience: values.years_experience ?? undefined,
         skills: values.skills ? values.skills.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
         hire_date: values.hire_date ? values.hire_date.format("YYYY-MM-DD") : (values.hire_date === null ? null : undefined),
+        next_follow_at: values.next_follow_at
+          ? values.next_follow_at.format("YYYY-MM-DD HH:mm")
+          : (values.next_follow_at === null ? null : undefined),
       };
       let result;
       if (isEdit && talentId) {
@@ -61,7 +68,7 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
         message.success("修改已保存");
       } else {
         result = await api.createTalent(data);
-        message.success("人才已创建");
+        message.success(termFor(profile, "人才已创建"));
       }
       // 上传简历文件
       if (resumeFile && result?.id) {
@@ -84,10 +91,10 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
 
   return (
     <Modal
-      title={isEdit ? "编辑人才" : "新增人才"}
+      title={termFor(profile, isEdit ? "编辑人才" : "新增人才")}
       open={open}
       onCancel={onClose}
-      width={680}
+      width={880}
       destroyOnClose
       footer={null}
     >
@@ -95,7 +102,7 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
         <div style={{ textAlign: "center", padding: "3rem" }}><Spin size="large" /></div>
       ) : (
         <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSubmit} initialValues={{ status: "active" }}>
-          <div className="form-grid">
+          <div className="form-grid cols-3">
             <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入姓名" }]}>
               <Input placeholder="请输入姓名" />
             </Form.Item>
@@ -112,7 +119,7 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
               <Select allowClear placeholder="请选择性别" options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} />
             </Form.Item>
             <Form.Item name="education" label="学历">
-              <Select allowClear placeholder="请选择学历" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} />
+              <Select allowClear placeholder="请选择学历" options={educationOptions.map((e) => ({ label: e, value: e }))} />
             </Form.Item>
             <Form.Item name="school" label="毕业院校">
               <Input placeholder="请输入毕业院校" />
@@ -144,13 +151,15 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
             <Form.Item name="hire_date" label="入职日期" extra="标记「已入职」或填写此日期后，自动生成社保增员待办">
               <DatePicker style={{ width: "100%" }} placeholder="选择入职日期" allowClear />
             </Form.Item>
+            <Form.Item name="next_follow_at" label="下次跟进时间" extra="到期当天自动生成跟进待办并推送提醒（提醒自己）">
+              <DatePicker style={{ width: "100%" }} placeholder="选择下次跟进时间" allowClear showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" />
+            </Form.Item>
             <Form.Item name="source" label="来源渠道">
               <Select allowClear showSearch placeholder="请选择来源渠道" options={sources.map((s) => ({ label: s, value: s }))} />
             </Form.Item>
             <Form.Item name="skills" label="技能">
               <Input placeholder="逗号分隔，如 Java, Spring" />
             </Form.Item>
-            <div className="form-row-filler" />
           </div>
           <Form.Item name="notes" label="备注">
             <Input.TextArea rows={3} placeholder="补充说明…" />
@@ -169,7 +178,7 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Button onClick={onClose}>取消</Button>
             <Button type="primary" htmlType="submit" loading={saving}>
-              {isEdit ? "保存修改" : "创建人才"}
+              {termFor(profile, isEdit ? "保存修改" : "创建人才")}
             </Button>
           </div>
         </Form>

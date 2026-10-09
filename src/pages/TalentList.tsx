@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
-  Popconfirm, message, Dropdown, Alert, Modal, Empty,
+  Popconfirm, message, Dropdown, Alert, Modal, Empty, Form, Radio,
 } from "antd";
 import {
   ImportOutlined, FilePdfOutlined, ExportOutlined,
@@ -13,7 +13,7 @@ import type { MenuProps } from "antd";
 import { api } from "../api";
 import type { Talent, User, ComplianceItem, ComplianceResponse } from "../types";
 import {
-  STATUS_LABELS, STATUS_COLORS, EDUCATION_OPTIONS,
+  STATUS_LABELS, STATUS_COLORS,
   ENTRY_TYPE_LABELS, ENTRY_TYPE_COLORS, ENTRY_TYPE_OPTIONS,
 } from "../types";
 import ImportModal from "../components/ImportModal";
@@ -21,6 +21,7 @@ import ResumePreviewModal from "../components/ResumePreviewModal";
 import TalentFormModal from "../components/TalentFormModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import { DemoSeedButton, DemoBanner } from "../components/DemoSeed";
+import { useDict } from "../dict";
 
 // 搜索条件（draft = 编辑中，applied = 已生效）
 interface Filters {
@@ -32,12 +33,13 @@ interface Filters {
   status: string;
   owner_id: string;
   entry_type: string;
+  tags: string;
 }
 
 const EMPTY_FILTERS: Filters = {
   name: "", phone: "", education: "",
   years: null, title: "", status: "", owner_id: "",
-  entry_type: "",
+  entry_type: "", tags: "",
 };
 
 // 搜索条件 → 查询参数。列表查询与导出共用一份，
@@ -52,6 +54,7 @@ function buildFilterParams(f: Filters): Record<string, string | number> {
   if (f.status) params.status = f.status;
   if (f.owner_id) params.owner_id = f.owner_id;
   if (f.entry_type) params.entry_type = f.entry_type;
+  if (f.tags) params.tags = f.tags;
   return params;
 }
 
@@ -62,8 +65,12 @@ const COLLAPSED_COUNT = 4;
 const PAGE_SIZE = 10;
 
 import { escapeHtml, downloadBlob, dateStamp } from "../utils/file";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
 
 export default function TalentList() {
+  const profile = useIdentityProfile();
+  const { education: educationOptions } = useDict();
   const [talents, setTalents] = useState<Talent[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [total, setTotal] = useState(0);
@@ -77,10 +84,19 @@ export default function TalentList() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [previewTalent, setPreviewTalent] = useState<Talent | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   // 批量加入招聘看板：受控多选（跨页保留选中）+ 弹窗
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
   const [batchOpen, setBatchOpen] = useState(false);
+
+  // 批量操作：打标签 / 推进阶段 / 删除
+  const [tagsOpen, setTagsOpen] = useState(false);
+  const [stageOpen, setStageOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [tagsForm] = Form.useForm();
+  const [stageForm] = Form.useForm();
 
   // 合规到期提醒：合同 / 试用期 30 天内到期
   const [compliance, setCompliance] = useState<ComplianceResponse | null>(null);
@@ -162,6 +178,64 @@ export default function TalentList() {
     }
   };
 
+  // 批量打标签：追加或替换
+  const handleBatchTags = async () => {
+    try {
+      const values = await tagsForm.validateFields();
+      if (!values.tags || values.tags.length === 0) {
+        message.warning("请至少输入一个标签");
+        return;
+      }
+      setBatchSaving(true);
+      const res = await api.batchTags({ ids: selectedKeys.map(String), tags: values.tags, mode: values.mode });
+      message.success(termFor(profile, `已为 ${res.updated} 位人才打标签${res.skipped ? `，跳过 ${res.skipped} 人（无权限）` : ""}`));
+      setTagsOpen(false);
+      tagsForm.resetFields();
+      setSelectedKeys([]);
+      fetchTalents();
+    } catch (err) {
+      if (err instanceof Error) message.error(err.message);
+    } finally {
+      setBatchSaving(false);
+    }
+  };
+
+  // 批量推进阶段：复用后端批量接口（推进到 hired 自动写入职联动）
+  const handleBatchStage = async () => {
+    try {
+      const values = await stageForm.validateFields();
+      setBatchSaving(true);
+      const res = await api.batchStageTalents({ ids: selectedKeys.map(String), stage: values.stage });
+      message.success(
+        `已推进 ${res.updated} 人${res.skipped ? `，跳过 ${res.skipped} 人（未加入招聘流程）` : ""}`
+      );
+      setStageOpen(false);
+      stageForm.resetFields();
+      setSelectedKeys([]);
+      fetchTalents();
+    } catch (err) {
+      if (err instanceof Error) message.error(err.message);
+    } finally {
+      setBatchSaving(false);
+    }
+  };
+
+  // 批量删除：复用后端级联清理
+  const handleBatchDelete = async () => {
+    try {
+      setBatchSaving(true);
+      const res = await api.batchDeleteTalents({ ids: selectedKeys.map(String) });
+      message.success(termFor(profile, `已删除 ${res.deleted} 位人才`));
+      setDeleteOpen(false);
+      setSelectedKeys([]);
+      fetchTalents();
+    } catch (err) {
+      if (err instanceof Error) message.error(err.message);
+    } finally {
+      setBatchSaving(false);
+    }
+  };
+
   // 拉取当前筛选条件下的全量数据（用于导出）
   const fetchAllForExport = async (): Promise<Talent[]> => {
     const params = { ...buildFilterParams(applied), page: 1, limit: 10000 };
@@ -199,7 +273,7 @@ export default function TalentList() {
       return `<tr>${tds}</tr>`;
     }).join("");
     return `<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>人才库导出</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>${termFor(profile, "人才库导出")}</title>
 <style>
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; margin: 24px; color: #333; }
   h1 { font-size: 20px; margin-bottom: 4px; }
@@ -209,7 +283,7 @@ export default function TalentList() {
   th { background: #f5f5f5; font-weight: 600; }
   tr:nth-child(even) td { background: #fafafa; }
 </style></head><body>
-<h1>人才库导出</h1>
+<h1>${termFor(profile, "人才库导出")}</h1>
 <div class="sub">共 ${rows.length} 人 · 导出时间 ${new Date().toLocaleString("zh-CN")}</div>
 <table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
 </body></html>`;
@@ -223,8 +297,8 @@ export default function TalentList() {
       if (rows.length === 0) { message.warning("暂无数据可导出"); return; }
       const html = buildExportHtml(rows);
       const blob = new Blob(["\ufeff" + html], { type: "application/msword;charset=utf-8" });
-      downloadBlob(blob, `人才库导出_${dateStamp()}.doc`);
-      message.success(`已导出 ${rows.length} 条人才（Word）`);
+      downloadBlob(blob, `${termFor(profile, "人才库导出")}_${dateStamp()}.doc`);
+      message.success(termFor(profile, `已导出 ${rows.length} 条人才（Word）`));
     } catch (err) {
       message.error((err as Error).message || "导出失败");
     } finally {
@@ -263,7 +337,7 @@ export default function TalentList() {
 
   // 导出单份简历：根据 resume_url 扩展名判断原文件格式，PDF 导出 PDF、Word 导出 Word
   const handleExportResume = (record: Talent) => {
-    if (!record.resume_url) { message.warning("该人才暂无简历文件"); return; }
+    if (!record.resume_url) { message.warning(termFor(profile, "该人才暂无简历文件")); return; }
     const ext = (record.resume_url.match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
     const isWord = ext === "docx" || ext === "doc";
     const isPdf = ext === "pdf";
@@ -275,7 +349,7 @@ export default function TalentList() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    message.success(`正在导出 ${record.name} 的${typeLabel}简历`);
+    message.success(termFor(profile, `正在导出 ${record.name} 的${typeLabel}简历`));
   };
 
   // ---- 搜索字段定义（label 左 + 控件右，一行 4 个）----
@@ -284,9 +358,10 @@ export default function TalentList() {
     { key: "name", label: "姓名", control: <Input style={controlStyle} placeholder="请输入姓名" value={draft.name} onChange={(e) => setField("name", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "title", label: "职位", control: <Input style={controlStyle} placeholder="请输入职位" value={draft.title} onChange={(e) => setField("title", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "years", label: "年限", control: <InputNumber style={controlStyle} value={draft.years} onChange={(v) => setField("years", v ?? null)} min={0} max={50} placeholder="请输入年限" /> },
-    { key: "education", label: "学历", control: <Select style={controlStyle} value={draft.education || undefined} onChange={(v) => setField("education", v || "")} allowClear placeholder="请选择学历" options={EDUCATION_OPTIONS.map((e) => ({ label: e, value: e }))} /> },
+    { key: "education", label: "学历", control: <Select style={controlStyle} value={draft.education || undefined} onChange={(v) => setField("education", v || "")} allowClear placeholder="请选择学历" options={educationOptions.map((e) => ({ label: e, value: e }))} /> },
     { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "status", label: "状态", control: <Select style={controlStyle} value={draft.status || undefined} onChange={(v) => setField("status", v || "")} allowClear placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} /> },
+    { key: "tags", label: "标签", control: <Select style={controlStyle} mode="tags" value={draft.tags ? draft.tags.split(",").filter(Boolean) : undefined} onChange={(v) => setField("tags", (v || []).join(","))} tokenSeparators={[","]} placeholder="按标签筛选" /> },
     { key: "entry_type", label: "录入方式", control: <Select style={controlStyle} value={draft.entry_type || undefined} onChange={(v) => setField("entry_type", v || "")} allowClear placeholder="全部方式" options={ENTRY_TYPE_OPTIONS} /> },
     ...(isAdmin && users.length > 0
       ? [{ key: "owner_id", label: "创建人", control: <Select style={controlStyle} value={draft.owner_id || undefined} onChange={(v) => setField("owner_id", v || "")} allowClear placeholder="请选择创建人" options={users.map((u) => ({ label: u.name, value: u.id }))} /> }]
@@ -353,6 +428,20 @@ export default function TalentList() {
           </Space>
         );
       },
+    },
+    {
+      title: "标签",
+      dataIndex: "tags",
+      key: "tags",
+      width: 170,
+      render: (tags: string[]) =>
+        tags && tags.length ? (
+          <Space size={4} wrap>
+            {tags.map((t) => (
+              <Tag key={t} color="blue" style={{ marginInlineEnd: 0 }}>{t}</Tag>
+            ))}
+          </Space>
+        ) : <span>—</span>,
     },
     ...(isAdmin ? [{
       title: "创建人",
@@ -421,9 +510,9 @@ export default function TalentList() {
             <Button
               type="primary" icon={<PlusOutlined />}
               data-onb-action="new-talent"
-              onClick={() => { setEditId(null); }}
+              onClick={() => setAddOpen(true)}
             >
-              新增人才
+              {termFor(profile, "新增人才")}
             </Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
             <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
@@ -436,6 +525,26 @@ export default function TalentList() {
             >
               加入流程{selectedKeys.length > 0 ? `（${selectedKeys.length} 人）` : ""}
             </Button>
+            <Dropdown
+              trigger={["click"]}
+              menu={{
+                items: [
+                  { key: "tags", label: "打标签", disabled: selectedKeys.length === 0 },
+                  { key: "stage", label: "推进阶段", disabled: selectedKeys.length === 0 },
+                  { type: "divider" },
+                  { key: "delete", label: "删除", danger: true, disabled: selectedKeys.length === 0 },
+                ],
+                onClick: ({ key }) => {
+                  if (key === "tags") setTagsOpen(true);
+                  else if (key === "stage") setStageOpen(true);
+                  else if (key === "delete") setDeleteOpen(true);
+                },
+              }}
+            >
+              <Button icon={<PlusOutlined />} disabled={selectedKeys.length === 0}>
+                批量操作{selectedKeys.length > 0 ? `（${selectedKeys.length}）` : ""}
+              </Button>
+            </Dropdown>
           </Space>
           <Space>
             {fieldDefs.length > COLLAPSED_COUNT && (
@@ -459,10 +568,10 @@ export default function TalentList() {
             // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」
             emptyText: (
               <div style={{ padding: "40px 0", textAlign: "center" }}>
-                <Empty description="人才库还是空的" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
+                <Empty description={termFor(profile, "人才库还是空的")} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
                 <DemoSeedButton onDone={fetchTalents} />
                 <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-                  也可以点左上角「新增人才」或「导入」录入真实数据
+                  {termFor(profile, "也可以点左上角「新增人才」或「导入」录入真实数据")}
                 </div>
               </div>
             ),
@@ -472,7 +581,7 @@ export default function TalentList() {
             total,
             pageSize: PAGE_SIZE,
             onChange: (p) => setPage(p),
-            showTotal: (t) => `共 ${t} 位人才`,
+            showTotal: (t) => termFor(profile, `共 ${t} 位人才`),
           }}
         />
       </Card>
@@ -494,9 +603,9 @@ export default function TalentList() {
 
       {/* 行内编辑：不跳详情页，改完即刷新列表 */}
       <TalentFormModal
-        open={!!editId}
+        open={addOpen || !!editId}
         talentId={editId}
-        onClose={() => setEditId(null)}
+        onClose={() => { setEditId(null); setAddOpen(false); }}
         onSuccess={fetchTalents}
       />
 
@@ -510,6 +619,78 @@ export default function TalentList() {
           fetchTalents();
         }}
       />
+
+      {/* 批量打标签：追加到现有 / 替换为指定 */}
+      <Modal
+        title={`批量打标签（${selectedKeys.length} 人）`}
+        open={tagsOpen}
+        onOk={handleBatchTags}
+        onCancel={() => setTagsOpen(false)}
+        confirmLoading={batchSaving}
+        okText="打标签"
+        destroyOnClose
+      >
+        <Form form={tagsForm} layout="vertical" initialValues={{ mode: "add" }}>
+          <Form.Item name="tags" label="标签" rules={[{ required: true, message: "请输入标签" }]}>
+            <Select mode="tags" placeholder="输入后回车添加，可多个" tokenSeparators={[","]} />
+          </Form.Item>
+          <Form.Item name="mode" label="方式">
+            <Radio.Group>
+              <Radio value="add">追加到现有标签</Radio>
+              <Radio value="replace">替换为以下标签</Radio>
+            </Radio.Group>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 批量推进阶段：将选中人才在其招聘流程中的阶段统一推进 */}
+      <Modal
+        title={`批量推进阶段（${selectedKeys.length} 人）`}
+        open={stageOpen}
+        onOk={handleBatchStage}
+        onCancel={() => setStageOpen(false)}
+        confirmLoading={batchSaving}
+        okText="推进"
+        destroyOnClose
+      >
+        <Form form={stageForm} layout="vertical">
+          <Form.Item name="stage" label="目标阶段" rules={[{ required: true, message: "请选择目标阶段" }]}>
+            <Select
+              placeholder="选择要推进到的阶段"
+              options={[
+                { value: "screening", label: "初筛" },
+                { value: "interview1", label: "面试一" },
+                { value: "interview2", label: "面试二" },
+                { value: "offer", label: "Offer" },
+                { value: "hired", label: "已入职" },
+                { value: "rejected", label: "淘汰" },
+                { value: "withdrawn", label: "放弃" },
+              ]}
+            />
+          </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            message="将把选中人才在其招聘流程中的阶段统一推进；未加入任何流程的人才会被跳过。推进到「已入职」会自动写入职日期并生成社保增员待办。"
+          />
+        </Form>
+      </Modal>
+
+      {/* 批量删除确认 */}
+      <Modal
+        title="确认批量删除"
+        open={deleteOpen}
+        onOk={handleBatchDelete}
+        onCancel={() => setDeleteOpen(false)}
+        confirmLoading={batchSaving}
+        okText="删除"
+        okButtonProps={{ danger: true }}
+      >
+        <p>确认删除选中的 <b>{selectedKeys.length}</b> {termFor(profile, "位人才？")}</p>
+        <p style={{ color: "#999", fontSize: 12, marginTop: 8 }}>
+          所有关联数据（投递记录、待办、合同、社保）将一并清除，不可恢复。
+        </p>
+      </Modal>
 
       {/* 合规到期名单：30 天内合同 / 试用期到期（含已过期），点姓名进详情 */}
       <Modal

@@ -2,28 +2,35 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Button, Space, Tag, Input, Select, Popconfirm, message, Tooltip,
-  Progress, Modal, Empty, Spin, Badge, Dropdown,
+  Progress, Modal, Empty, Spin, Badge, Dropdown, Tabs,
 } from "antd";
 import {
   PlusOutlined, SearchOutlined, ReloadOutlined,
   TeamOutlined, PlayCircleOutlined, PauseCircleOutlined, StopOutlined,
-  CheckOutlined,
+  CheckOutlined, DownloadOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
 import type { Job, JobDetail, JobCandidate, User } from "../types";
 import {
-  JOB_STATUS_LABELS, JOB_STATUS_COLORS, JOB_TYPE_LABELS, PRIORITY_LABELS,
+  JOB_STATUS_LABELS, JOB_STATUS_COLORS, PRIORITY_LABELS,
   PRIORITY_COLORS, PIPELINE_STAGES, STAGE_META,
 } from "../types";
 import JobFormModal from "../components/JobFormModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
+import RequisitionPanel from "../components/RequisitionPanel";
 import { DemoSeedButton } from "../components/DemoSeed";
+import { useDict } from "../dict";
+import { useIdentityProfile } from "../useIdentity";
+import { termFor } from "../identityProfiles";
+import { downloadBlob, dateStamp, csvCell } from "../utils/file";
 
 const PAGE_SIZE = 10;
 
 export default function Jobs() {
+  const profile = useIdentityProfile();
   const navigate = useNavigate();
+  const { jobTypeLabels } = useDict();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -126,7 +133,7 @@ export default function Jobs() {
         disabled: isCurrent,
         label: isCurrent
           ? `${JOB_STATUS_LABELS[s]}（当前）`
-          : s === "open" ? "设为在招" : s === "paused" ? "暂停招聘" : "关闭岗位",
+          : termFor(profile, s === "open" ? "设为在招" : s === "paused" ? "暂停招聘" : "关闭岗位"),
         icon: isCurrent
           ? <CheckOutlined />
           : s === "open" ? <PlayCircleOutlined /> : s === "paused" ? <PauseCircleOutlined /> : <StopOutlined />,
@@ -135,7 +142,7 @@ export default function Jobs() {
 
   const columns = [
     {
-      title: "岗位名称",
+      title: termFor(profile, "岗位名称"),
       dataIndex: "title",
       key: "title",
       width: 200,
@@ -147,7 +154,7 @@ export default function Jobs() {
     { title: "城市", dataIndex: "city", key: "city", width: 90, render: (v: string) => v || "—" },
     {
       title: "类型", dataIndex: "job_type", key: "job_type", width: 80,
-      render: (v: string) => JOB_TYPE_LABELS[v] || v,
+      render: (v: string) => jobTypeLabels[v] || v,
     },
     {
       title: "招聘进度", key: "progress", width: 150,
@@ -205,8 +212,8 @@ export default function Jobs() {
             <Button type="link" size="small">切换状态</Button>
           </Dropdown>
           <Popconfirm
-            title="确认删除该岗位？"
-            description="岗位下的候选人关联会被清除，人才档案保留。"
+            title={termFor(profile, "确认删除该岗位？")}
+            description={termFor(profile, "岗位下的候选人关联会被清除，人才档案保留。")}
             onConfirm={() => handleDelete(r)}
           >
             <Button type="link" size="small" danger>删除</Button>
@@ -216,15 +223,51 @@ export default function Jobs() {
     },
   ];
 
-  return (
-    <div className="page-fill">
+  /** 导出当前筛选下的岗位列表为 CSV（含招聘进度等聚合字段） */
+  const exportJobs = () => {
+    if (!jobs.length) { message.warning(termFor(profile, "当前没有可导出的岗位")); return; }
+    const rows: string[] = [];
+    const statusLabel = draftStatus ? (JOB_STATUS_LABELS[draftStatus] || draftStatus) : "全部状态";
+    const priorityLabel = draftPriority ? (PRIORITY_LABELS[draftPriority] || draftPriority) : "全部紧急度";
+
+    rows.push(termFor(profile, "岗位列表导出"));
+    rows.push([`状态：${statusLabel}`, `紧急度：${priorityLabel}`, `导出时间：${new Date().toLocaleString("zh-CN")}`].map(csvCell).join(","));
+    rows.push("");
+
+    rows.push(termFor(profile, "岗位名称,部门,城市,类型,招聘进度,流程中,紧急度,状态,薪资,学历,经验,创建人,创建时间"));
+    for (const j of jobs) {
+      rows.push([
+        j.title,
+        j.department || "—",
+        j.city || "—",
+        jobTypeLabels[j.job_type] || j.job_type,
+        `${j.hired || 0}/${j.headcount || 1}`,
+        j.active_count || 0,
+        PRIORITY_LABELS[j.priority] || j.priority,
+        JOB_STATUS_LABELS[j.status] || j.status,
+        j.salary_range || "—",
+        j.education || "—",
+        j.experience || "—",
+        j.owner_name || "—",
+        j.created_at || "—",
+      ].map(csvCell).join(","));
+    }
+
+    const blob = new Blob(["\ufeff" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    downloadBlob(blob, `${termFor(profile, "岗位列表")}_${dateStamp()}.csv`);
+    message.success(termFor(profile, `已导出 ${jobs.length} 个岗位`));
+  };
+
+  // 岗位管理 + 招聘需求（用人部门提需求 → 审批 → 自动生成岗位）合为一个页面两个 Tab
+  const jobsPane = (
+    <>
       <Card className="search-card" style={{ marginBottom: 16 }}>
         {/* 布局约定（全站统一）：搜索 Card 只放字段（label 左 / 控件右，一行 4 个）；
             筛选条件超过 4 个时自动换行，不另起按钮行。 */}
         <div className="search-grid">
-          <Field label="岗位">
+          <Field label={termFor(profile, "岗位")}>
             <Input
-              placeholder="岗位名称 / 部门 / 职责" value={draftQ}
+              placeholder={termFor(profile, "岗位名称 / 部门 / 职责")} value={draftQ}
               onChange={(e) => setDraftQ(e.target.value)} onPressEnter={handleSearch} allowClear
             />
           </Field>
@@ -264,11 +307,13 @@ export default function Jobs() {
               data-onb-action="new-job"
               onClick={() => { setEditingId(null); setFormOpen(true); }}
             >
-              新增岗位
+              {termFor(profile, "新增岗位")}
             </Button>
-            <Link to="/pipeline">
-              <Button icon={<TeamOutlined />}>查看招聘看板</Button>
+            {/* 不要 <Link><Button/></Link>：<a> 内嵌 <button> 是非法 HTML，点击易被外层吞掉。 */}
+            <Link to="/pipeline" className="btn-as-link">
+              <TeamOutlined /> {termFor(profile, "查看招聘看板")}
             </Link>
+            <Button icon={<DownloadOutlined />} onClick={exportJobs}>导出</Button>
           </Space>
           <Space>
             <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
@@ -287,10 +332,10 @@ export default function Jobs() {
             // 空库引导：新企业第一次进来，给一个一键看效果的入口
             emptyText: (
               <div style={{ padding: "40px 0", textAlign: "center" }}>
-                <Empty description="还没有岗位" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
+                <Empty description={termFor(profile, "还没有岗位")} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
                 <DemoSeedButton onDone={fetchJobs} />
                 <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-                  也可以点「新增岗位」创建真实岗位
+                  {termFor(profile, "也可以点「新增岗位」创建真实岗位")}
                 </div>
               </div>
             ),
@@ -300,7 +345,7 @@ export default function Jobs() {
             total,
             pageSize: PAGE_SIZE,
             onChange: (p) => setPage(p),
-            showTotal: (t) => `共 ${t} 个岗位`,
+            showTotal: (t) => termFor(profile, `共 ${t} 个岗位`),
           }}
         />
       </Card>
@@ -323,7 +368,7 @@ export default function Jobs() {
 
       {/* 岗位详情：候选人列表 */}
       <Modal
-        title={detail ? `${detail.title} · 候选人` : "岗位候选人"}
+        title={detail ? `${detail.title} · 候选人` : termFor(profile, "岗位候选人")}
         open={!!detail}
         onCancel={() => setDetail(null)}
         footer={<Button onClick={() => setDetail(null)}>关闭</Button>}
@@ -337,7 +382,7 @@ export default function Jobs() {
               <Tag color={JOB_STATUS_COLORS[detail.status]}>{JOB_STATUS_LABELS[detail.status]}</Tag>
               {detail.department && <Tag>{detail.department}</Tag>}
               {detail.city && <Tag>{detail.city}</Tag>}
-              <Tag>{JOB_TYPE_LABELS[detail.job_type] || detail.job_type}</Tag>
+              <Tag>{jobTypeLabels[detail.job_type] || detail.job_type}</Tag>
               <Tag color="blue">HC {detail.headcount}</Tag>
               {detail.salary_range && <Tag color="gold">{detail.salary_range}</Tag>}
             </Space>
@@ -364,7 +409,7 @@ export default function Jobs() {
             {(detail.description || detail.requirements) && (
               <div className="job-meta" style={{ marginBottom: 16 }}>
                 {detail.description && (
-                  <div><b>岗位职责：</b>{detail.description}</div>
+                  <div><b>{termFor(profile, "岗位职责：")}</b>{detail.description}</div>
                 )}
                 {detail.requirements && (
                   <div style={{ marginTop: 6 }}><b>任职要求：</b>{detail.requirements}</div>
@@ -373,7 +418,7 @@ export default function Jobs() {
             )}
 
             {detail.candidates.length === 0 ? (
-              <Empty description="该岗位还没有候选人" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty description={termFor(profile, "该岗位还没有候选人")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ) : (
               <Table
                 rowKey="link_id"
@@ -410,6 +455,17 @@ export default function Jobs() {
           </>
         ) : null}
       </Modal>
+    </>
+  );
+
+  return (
+    <div className="page-fill">
+      <Tabs
+        items={[
+          { key: "jobs", label: "岗位管理", children: jobsPane },
+          { key: "req", label: "招聘需求", children: <RequisitionPanel isAdmin={isAdmin} /> },
+        ]}
+      />
     </div>
   );
 }
