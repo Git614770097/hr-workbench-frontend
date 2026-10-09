@@ -339,23 +339,25 @@ export default function Tasks() {
       <div className="task-main">
         <div className="task-title">{t.title}</div>
         <div className="task-meta">
-          <span style={{ color: dueColor(t), fontWeight: t.overdue || t.due_today ? 600 : 400 }}>
+          <span className="task-due" style={{ color: dueColor(t), fontWeight: t.overdue || t.due_today ? 600 : 400 }}>
             <ClockCircleOutlined /> {dueText(t)}
           </span>
-          <Tag color={PRIORITY_COLORS[t.priority] || "default"} style={{ marginInlineEnd: 0 }}>
+          <Tag className="task-prio" color={PRIORITY_COLORS[t.priority] || "default"} bordered={false}>
             {PRIORITY_LABELS[t.priority] || t.priority}
           </Tag>
+        </div>
+        <div className="task-submeta">
           {t.talent_id && (
-            <Link to={`/talents/${t.talent_id}`} style={{ color: "#3b82f6" }}>
+            <Link to={`/talents/${t.talent_id}`} className="task-sub-link">
               <UserOutlined /> {t.talent_name || "关联人才"}
             </Link>
           )}
           {t.job_title && (
             <span><LinkOutlined /> {t.job_title}</span>
           )}
-          {t.status === "cancelled" && <Tag style={{ marginInlineEnd: 0 }}>已取消</Tag>}
-          {t.status === "done" && <Tag color="green" style={{ marginInlineEnd: 0 }}>已完成</Tag>}
-          <span style={{ color: "#c2c6cc" }}>
+          {t.status === "cancelled" && <span className="is-cancel">已取消</span>}
+          {t.status === "done" && <span className="is-done">已完成</span>}
+          <span>
             {TASK_SOURCE_LABELS[t.source] || t.source}
             {isAdmin && t.owner_name ? ` · ${t.owner_name}` : ""}
           </span>
