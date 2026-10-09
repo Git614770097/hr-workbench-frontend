@@ -84,11 +84,12 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  // 注册短信验证码下发（公开，无需登录）
-  sendSms: (phone: string) =>
+  // 注册/找回密码短信验证码下发（公开，无需登录）
+  // scene: "register" 仅新用户可发；"reset" 仅已注册用户可发（减少短信浪费）
+  sendSms: (phone: string, scene?: "register" | "reset") =>
     request<{ ok: boolean }>("/auth/sms/send", {
       method: "POST",
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, scene }),
     }),
 
   // 我的推广：邀请码 / 邀请链接 / 已邀请列表 / 奖励规则

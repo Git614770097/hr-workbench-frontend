@@ -97,8 +97,21 @@ auth.post("/sms/send", async (c) => {
   // 500「服务器开小差了，请稍后重试」——那句提示没有任何信息量，一旦出现就
   // 完全无法排查（此前正是被它带偏过）。这里统一转成 502 + 真实原因。
   try {
-    const { phone } = await c.req.json<{ phone?: string }>();
+    const { phone, scene } = await c.req.json<{ phone?: string; scene?: string }>();
     if (!phone || !/^1[3-9]\d{9}$/.test(phone)) return c.json({ error: "请输入正确的手机号" }, 400);
+
+    // 场景化存在性判定：注册仅限新用户、找回密码仅限已注册用户。
+    // 目的：减少短信浪费（老用户误点注册不再发码）+ 防滥用刷短信。
+    // 放在限频检查之前，命中即直接拒绝、不写任何 KV 限频键。
+    if (scene === "register" || scene === "reset") {
+      const existing = await c.env.DB.prepare("SELECT id FROM users WHERE phone = ?").bind(phone).first();
+      if (scene === "register" && existing) {
+        return c.json({ error: "该手机号已注册，请返回登录或使用忘记密码", code: "PHONE_REGISTERED" }, 409);
+      }
+      if (scene === "reset" && !existing) {
+        return c.json({ error: "该手机号尚未注册，请先进行注册", code: "PHONE_NOT_FOUND" }, 409);
+      }
+    }
 
     const cfg = getSmsConfig(c.env);
     if (!cfg) return c.json({ error: "短信服务未配置，请联系管理员" }, 500);

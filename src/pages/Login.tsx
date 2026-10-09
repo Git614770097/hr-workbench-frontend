@@ -166,7 +166,7 @@ export default function Login({ onLogin }: Props) {
 
   // 发送短信验证码（手机号合法后才能发，60 秒倒计时内禁用）。
   // 注册、登录共用同一发送逻辑，仅读取的表单不同。
-  const sendSms = async (phone: string) => {
+  const sendSms = async (phone: string, scene: "register" | "reset") => {
     if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {
       setError("请输入正确的手机号后再获取验证码");
       return;
@@ -174,7 +174,7 @@ export default function Login({ onLogin }: Props) {
     setError("");
     setSmsSending(true);
     try {
-      await api.sendSms(phone);
+      await api.sendSms(phone, scene);
       setSmsLeft(60);
     } catch (err) {
       setError((err as Error).message);
@@ -182,8 +182,8 @@ export default function Login({ onLogin }: Props) {
     setSmsSending(false);
   };
 
-  const handleSendRegisterSms = () => sendSms(registerForm.getFieldValue("phone"));
-  const handleSendForgotSms = () => sendSms(forgotForm.getFieldValue("phone"));
+  const handleSendRegisterSms = () => sendSms(registerForm.getFieldValue("phone"), "register");
+  const handleSendForgotSms = () => sendSms(forgotForm.getFieldValue("phone"), "reset");
 
   const handleForgot = async (values: { phone: string; name: string; sms_code: string }) => {
     setError("");
