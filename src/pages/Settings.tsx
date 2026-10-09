@@ -599,7 +599,7 @@ export default function Settings() {
   return (
     <div className="page-fill">
       <Card>
-        <Tabs items={items} />
+        <Tabs className="app-pill-tabs" items={items} />
       </Card>
     </div>
   );

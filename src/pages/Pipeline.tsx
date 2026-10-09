@@ -342,6 +342,7 @@ export default function Pipeline() {
         </div>
         <Space>
           <Segmented
+            className="app-pill-seg"
             value={view}
             onChange={(v) => setView(v as "active" | "all")}
             options={[

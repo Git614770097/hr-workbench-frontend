@@ -319,6 +319,7 @@ export default function Approvals() {
     <div className="page-fill profiles-page">
       <Card>
         <Tabs
+          className="app-pill-tabs"
           items={[
             { key: "todo", label: "审批待办", children: <InstanceList /> },
             { key: "flows", label: "流程配置", children: <FlowSettings /> },

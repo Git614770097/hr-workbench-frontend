@@ -493,6 +493,7 @@ export default function Tasks() {
           <div><b style={{ color: "#faad14" }}>{summary.today}</b><span>今日到期</span></div>
         </div>
         <Segmented
+          className="app-pill-seg"
           block
           value={scope}
           onChange={(v) => setScope(v as "todo" | "done" | "all")}

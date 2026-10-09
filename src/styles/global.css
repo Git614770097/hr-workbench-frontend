@@ -1328,3 +1328,56 @@ html[data-theme-mode="dark"] .talent-group-item.is-active {
   .talent-groups::-webkit-scrollbar { height: 0; }
   .talent-group-item { flex: 0 0 auto; }
 }
+
+/* ============================================================
+   全局圆角胶囊 Tab：与人才库分组 .talent-group-item 视觉一致
+   用法：给 antd <Tabs> 加 className="app-pill-tabs"
+   （保留 antd Tabs 的懒加载/内容渲染逻辑，仅重做导航外观）
+   ============================================================ */
+.app-pill-tabs > .ant-tabs-nav { margin-bottom: 16px; }
+.app-pill-tabs > .ant-tabs-nav::before { border-bottom: none; }
+.app-pill-tabs > .ant-tabs-nav .ant-tabs-ink-bar { display: none; }
+.app-pill-tabs > .ant-tabs-nav .ant-tabs-nav-list { gap: 8px; }
+.app-pill-tabs > .ant-tabs-nav .ant-tabs-tab {
+  border: 1px solid #e3e7ee;
+  background: #fff;
+  color: #4b5563;
+  border-radius: 999px;
+  padding: 5px 16px;
+  height: 32px;
+  margin: 0;
+  transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+.app-pill-tabs > .ant-tabs-nav .ant-tabs-tab:hover {
+  color: #3b82f6; border-color: #3b82f6; background: #f0f7ff;
+}
+.app-pill-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active {
+  background: #3b82f6; border-color: #3b82f6;
+  box-shadow: 0 4px 12px -4px rgba(59, 130, 246, 0.5);
+}
+.app-pill-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #fff; font-weight: 600;
+}
+.app-pill-tabs > .ant-tabs-nav .ant-tabs-tab:not(.ant-tabs-tab-active):focus-visible .ant-tabs-tab-btn {
+  color: #3b82f6;
+}
+/* 暗色模式适配 */
+html[data-theme-mode="dark"] .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab {
+  background: #1f1f1f; border-color: #303030; color: #b0b6c0;
+}
+html[data-theme-mode="dark"] .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab:hover {
+  background: #262626; color: #3b82f6; border-color: #3b82f6;
+}
+html[data-theme-mode="dark"] .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active {
+  background: #3b82f6; border-color: #3b82f6;
+}
+html[data-theme-mode="dark"] .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #fff;
+}
+
+/* 圆角分段筛选器：选中块统一为分组同款蓝（与胶囊一致），保留 antd Segmented 滑动交互 */
+.app-pill-seg { border-radius: 999px; }
+.app-pill-seg .ant-segmented-item { border-radius: 999px; }
+.app-pill-seg .ant-segmented-thumb { background: #3b82f6; }
+.app-pill-seg .ant-segmented-item-selected .ant-segmented-item-label { color: #fff; font-weight: 600; }
+html[data-theme-mode="dark"] .app-pill-seg .ant-segmented-thumb { background: #3b82f6; }

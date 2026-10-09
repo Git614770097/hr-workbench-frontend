@@ -295,6 +295,7 @@ ${body}
       <Card className="list-card">
         {/* 分类 Tab */}
         <Tabs
+          className="app-pill-tabs"
           activeKey={category || "all"}
           onChange={(key) => { setCategory(key === "all" ? "" : key); setPage(1); }}
           items={[

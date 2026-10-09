@@ -461,6 +461,7 @@ export default function Jobs() {
   return (
     <div className="page-fill">
       <Tabs
+        className="app-pill-tabs"
         items={[
           { key: "jobs", label: "岗位管理", children: jobsPane },
           { key: "req", label: "招聘需求", children: <RequisitionPanel isAdmin={isAdmin} /> },
