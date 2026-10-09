@@ -512,11 +512,88 @@ function DictSettings() {
   );
 }
 
+function ChangelogSettings() {
+  const [version, setVersion] = useState("");
+  const [title, setTitle] = useState("");
+  const [updatedAt, setUpdatedAt] = useState("");
+  const [itemsText, setItemsText] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api
+      .getChangelog()
+      .then((c) => {
+        setVersion(c.version || "");
+        setTitle(c.title || "");
+        setUpdatedAt(c.updated_at || "");
+        setItemsText((c.items || []).join("\n"));
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    if (!version.trim()) {
+      message.warning("请填写版本号");
+      return;
+    }
+    setSaving(true);
+    try {
+      await api.setChangelog({
+        version: version.trim(),
+        title: title.trim(),
+        updated_at: updatedAt.trim(),
+        items: itemsText.split("\n").map((s) => s.trim()).filter(Boolean),
+      });
+      message.success("更新公告已保存，用户下次打开即会弹窗");
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 20 }}
+        message="修改版本号并保存后，所有用户下次打开系统会弹出此公告（仅弹一次，直到版本号再次变化）。"
+      />
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel>版本号</FieldLabel>
+        <Input value={version} onChange={(e) => setVersion(e.target.value)} placeholder="例如：v1.1" />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel>标题</FieldLabel>
+        <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="例如：v1.1 更新公告" />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel extra="展示在公告下方，如 2026-10-09">更新日期</FieldLabel>
+        <Input value={updatedAt} onChange={(e) => setUpdatedAt(e.target.value)} placeholder="例如：2026-10-09" />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel extra="每行一条">更新内容</FieldLabel>
+        <Input.TextArea
+          value={itemsText}
+          onChange={(e) => setItemsText(e.target.value)}
+          rows={6}
+          placeholder={"每行一条，例如：\n新增 XX 功能\n优化 XX 体验"}
+        />
+      </div>
+      <Button type="primary" loading={saving} onClick={handleSave}>
+        保存
+      </Button>
+    </div>
+  );
+}
+
 export default function Settings() {
   // 后续再有全局配置（例如老带新奖励天数）直接加新 Tab，不必再动菜单
   const items = [
     { key: "pay", label: "收款码设置", children: <PaySettings /> },
     { key: "dict", label: "数据字典", children: <DictSettings /> },
+    { key: "changelog", label: "更新公告", children: <ChangelogSettings /> },
   ];
 
   return (

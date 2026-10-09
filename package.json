@@ -10,7 +10,10 @@
     "test:parser": "node scripts/test-resume-parser.mjs",
     "preview": "vite preview",
     "deploy": "wrangler deploy",
-    "db:init": "wrangler d1 execute hr-workbench --remote --file=./schema.sql"
+    "deploy:staging": "wrangler deploy --config wrangler.staging.jsonc",
+    "deploy:prod": "wrangler deploy",
+    "db:init": "wrangler d1 execute hr-workbench --remote --file=./schema.sql",
+    "db:init:staging": "npx wrangler d1 execute hr-workbench-staging --remote --file=./schema.sql"
   },
   "dependencies": {
     "@ant-design/icons": "^5.5.0",

@@ -1,0 +1,39 @@
+// 隔离的预发环境配置（独立 worker / D1 / KV，仅 *.workers.dev 可达，不挂生产自定义域）。
+// 用已构建产物直接部署，绕开 vite 插件的 env 重定向（插件不会把 env 资源内联进生成配置）。
+// 部署：npx wrangler deploy --config wrangler.staging.jsonc
+{
+  "name": "hr-workbench-staging",
+  "main": "./dist/hr_workbench/index.js",
+  "no_bundle": true,
+  "compatibility_date": "2026-09-18",
+  "vars": {
+    "ALIBABA_SMS_SIGN_NAME": "恒创联众",
+    "ALIBABA_SMS_TEMPLATE_CODE": "100001"
+  },
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "triggers": {
+    "crons": []
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hr-workbench-staging",
+      "database_id": "3d79dfec-b4bb-4d42-8409-1ad7e81ebcde"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "SESSIONS",
+      "id": "c12e877d530341e9bd0fe097224ee2fc"
+    },
+    {
+      "binding": "RESUMES",
+      "id": "d463b1842ec44b7081a11cd6dc65aa8a"
+    }
+  ]
+}

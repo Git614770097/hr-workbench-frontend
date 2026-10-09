@@ -1017,6 +1017,55 @@ auth.put("/settings/dict", async (c) => {
   return c.json({ ok: true });
 });
 
+// ---- 更新公告：存 site_settings（key = app_changelog，值为 JSON） ----
+// 前端首屏读取 version 与本地已读版本比对，不同则弹窗提示「本次更新了什么」。
+// GET 登录即可（所有用户都要看公告）；PUT 仅管理员（改版本号 + 说明即触发全员下次打开弹窗）。
+auth.get("/settings/changelog", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const row = await c.env.DB.prepare(
+    "SELECT value FROM site_settings WHERE key = 'app_changelog'"
+  ).first<{ value: string }>();
+  if (!row) return c.json({ version: null, title: null, updated_at: null, items: [] });
+  try {
+    const v = JSON.parse(row.value);
+    return c.json({
+      version: v.version || null,
+      title: v.title || null,
+      updated_at: v.updated_at || null,
+      items: Array.isArray(v.items) ? v.items.map(String) : [],
+    });
+  } catch {
+    return c.json({ version: null, title: null, updated_at: null, items: [] });
+  }
+});
+
+auth.put("/settings/changelog", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const body = await c.req.json<{ version?: string; title?: string; updated_at?: string; items?: unknown }>()
+    .catch(() => ({}) as { version?: string; title?: string; updated_at?: string; items?: unknown });
+
+  const version = String(body.version || "").trim();
+  if (!version) return c.json({ error: "请填写版本号" }, 400);
+  const items = Array.isArray(body.items)
+    ? (body.items as unknown[]).map((x) => String(x).trim()).filter(Boolean)
+    : [];
+  const value = JSON.stringify({
+    version,
+    title: String(body.title || "").trim(),
+    updated_at: String(body.updated_at || "").trim(),
+    items,
+  });
+  await c.env.DB.prepare(
+    "INSERT INTO site_settings (key, value) VALUES ('app_changelog', ?) " +
+    "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  ).bind(value).run();
+  return c.json({ ok: true });
+});
+
 export { auth as authRoutes };
 
 // ---- 会话工具 ----

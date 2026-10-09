@@ -176,6 +176,13 @@ export const api = {
     job_types?: Record<string, string>;
   }) =>
     request<{ ok: boolean }>("/auth/settings/dict", { method: "PUT", body: JSON.stringify(data) }),
+  // 更新公告（首屏弹窗用）：GET 登录可见，PUT 仅管理员
+  getChangelog: () =>
+    request<{ version: string | null; title: string | null; updated_at: string | null; items: string[] }>(
+      "/auth/settings/changelog"
+    ),
+  setChangelog: (data: { version: string; title?: string; updated_at?: string; items: string[] }) =>
+    request<{ ok: boolean }>("/auth/settings/changelog", { method: "PUT", body: JSON.stringify(data) }),
   // 当前用户付款后申请开通会员（推送通知管理员）
   requestMembership: () =>
     request<{ ok: boolean; message?: string; error?: string }>("/auth/me/membership-request", { method: "POST" }),

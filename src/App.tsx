@@ -24,6 +24,7 @@ function isMobilePath(pathname: string): boolean {
   return pathname === "/m" || pathname.startsWith("/m/");
 }
 import { notifyIdentityChanged } from "./useIdentity";
+import ChangelogModal from "./components/ChangelogModal";
 
 // 其余页面按路由懒加载：把 Quill 富文本编辑器、pdfjs 等重依赖
 // 推迟到真正访问对应页面时才下载，降低首屏体积。
@@ -234,6 +235,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
     const fallback = home ? <Navigate to={home} replace /> : <NoAccess />;
     return (
       <DictProvider>
+        <ChangelogModal />
         <Routes>
           <Route path="/m" element={<MobileLayout user={user} onLogout={logout} />}>
             <Route index element={fallback} />
@@ -250,6 +252,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
 
   return (
     <DictProvider>
+    <ChangelogModal />
     <Layout user={user} onLogout={logout} theme={theme} onChangeTheme={onChangeTheme} onUserChange={setUser}>
       <Suspense fallback={pageFallback}>
         <Routes>
