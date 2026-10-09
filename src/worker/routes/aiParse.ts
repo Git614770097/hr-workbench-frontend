@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { sanitizeField, sanitizeSkills } from "../../utils/fieldSanity";
+import { normalizeEducation } from "../../utils/resumeParser";
 
 import { deepseekJson } from "../ai";
 
@@ -83,9 +84,11 @@ async function callDeepSeek(apiKey: string, resumeText: string): Promise<Record<
 4. current_company 必须是公司名称。不要填年份、日期、时间段、学校名或学位，
    例如简历里写"2013.2-至今  广东行致互联科技有限公司"，应填"广东行致互联科技有限公司"而不是"2013"。
 5. name 必须是人的姓名。不要填城市、省份、职位或章节标题。
-6. 一律不要编造：拿不准的字段留空，比填一个错误的答案更有价值。`;
+6. 一律不要编造：拿不准的字段留空，比填一个错误的答案更有价值。
+7. 若简历有多段工作经历，current_company / current_title 取时间最新（含"至今/现在/在职"）的那一段，不要取最早一段或教育经历。
+8. skills 也要覆盖非技术岗位的能力与行业关键词（如"团队管理""招聘""薪酬体系"），不要只列技术栈。`;
 
-  const userPrompt = `请解析以下简历文本：\n\n${resumeText.slice(0, 6000)}`;
+  const userPrompt = `请解析以下简历文本：\n\n${resumeText.slice(0, 14000)}`;
 
   return deepseekJson(apiKey, systemPrompt, userPrompt);
 }
@@ -96,13 +99,16 @@ async function callDeepSeek(apiKey: string, resumeText: string): Promise<Record<
 // （name = "广州"）。这类值"看起来有值"，核对弹窗不会提示待填，比空值更危险，
 // 因此校验不通过就清空，让问题直接暴露在核对弹窗里。
 function normalizeAiResult(raw: Record<string, unknown>): ParsedResume {
+  const phone = normStr(raw.phone).replace(/\D/g, "");
+  const email = normStr(raw.email).toLowerCase();
+  const age = normNum(raw.age);
   return {
     name: sanitizeField("name", normStr(raw.name)),
-    phone: normStr(raw.phone).replace(/\D/g, ""),
-    email: normStr(raw.email).toLowerCase(),
-    age: normNum(raw.age),
+    phone: /^1[3-9]\d{9}$/.test(phone) ? phone : "",
+    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "",
+    age: age != null && age >= 16 && age <= 80 ? age : null,
     gender: normStr(raw.gender) === "女" ? "女" : normStr(raw.gender) === "男" ? "男" : "",
-    education: normStr(raw.education),
+    education: normalizeEducation(normStr(raw.education)),
     school: sanitizeField("school", normStr(raw.school)),
     current_company: sanitizeField("current_company", normStr(raw.current_company)),
     current_title: sanitizeField("current_title", normStr(raw.current_title)),

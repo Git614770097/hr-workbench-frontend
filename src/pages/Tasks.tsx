@@ -386,16 +386,18 @@ export default function Tasks() {
           className="task-calendar-card"
           styles={{ body: { padding: "12px 16px 16px" } }}
           title={
-            <Button
-              type="link"
-              size="small"
-              icon={<PlusOutlined />}
-              data-onb-action="new-task"
-              style={{ paddingInline: 0 }}
-              onClick={() => openCreate(selected)}
-            >
-              新建待办
-            </Button>
+            <Space size={12} align="center" wrap={false}>
+              <span className="task-cal-head-date">今天 · {dayjs().format("M月D日")}</span>
+              <Button
+                className="task-new-btn"
+                size="small"
+                icon={<PlusOutlined />}
+                data-onb-action="new-task"
+                onClick={() => openCreate(selected)}
+              >
+                新建待办
+              </Button>
+            </Space>
           }
           extra={
             <Space size={12} wrap style={{ fontSize: 12, color: "#8c8c8c" }}>
