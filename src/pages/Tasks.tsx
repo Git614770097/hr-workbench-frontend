@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, type DragEvent } fro
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Card, Button, Space, Tag, Input, Select, Checkbox, Popconfirm, message,
-  Modal, Form, DatePicker, Segmented, Empty, Spin, Tooltip, Dropdown, Calendar,
+  Modal, Form, DatePicker, Empty, Spin, Tooltip, Dropdown, Calendar,
 } from "antd";
 import type { CalendarProps } from "antd";
 import {
@@ -61,8 +61,6 @@ export default function Tasks() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [scope, setScope] = useState<"todo" | "done" | "all">("all");
-  const [summary, setSummary] = useState({ pending: 0, overdue: 0, today: 0 });
   const [talents, setTalents] = useState<{ id: string; name: string }[]>([]);
   const [jobs, setJobs] = useState<{ id: string; title: string }[]>([]);
 
@@ -84,17 +82,15 @@ export default function Tasks() {
     setLoading(true);
     try {
       const res = await api.getTasks({
-        scope,
+        scope: "all",
         talent_id: talentFilter || undefined,
       });
       setTasks(res.items);
-      const s = await api.getTaskSummary();
-      setSummary(s);
     } catch (err) {
       message.error((err as Error).message);
     }
     setLoading(false);
-  }, [scope, talentFilter]);
+  }, [talentFilter]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
@@ -386,18 +382,15 @@ export default function Tasks() {
           className="task-calendar-card"
           styles={{ body: { padding: "12px 16px 16px" } }}
           title={
-            <Space size={12} align="center" wrap={false}>
-              <span className="task-cal-head-date">今天 · {dayjs().format("M月D日")}</span>
-              <Button
-                className="task-new-btn"
-                size="small"
-                icon={<PlusOutlined />}
-                data-onb-action="new-task"
-                onClick={() => openCreate(selected)}
-              >
-                新建待办
-              </Button>
-            </Space>
+            <Button
+              className="task-new-btn"
+              size="small"
+              icon={<PlusOutlined />}
+              data-onb-action="new-task"
+              onClick={() => openCreate(selected)}
+            >
+              新建待办
+            </Button>
           }
           extra={
             <Space size={12} wrap style={{ fontSize: 12, color: "#8c8c8c" }}>
@@ -485,36 +478,6 @@ export default function Tasks() {
             </div>
           )}
         </Card>
-      </div>
-
-      {/* 右下角悬浮卡：统计 + 视图切换，常驻显示 */}
-      <div className="task-fab-card">
-        <div className="task-fab-stats">
-          <div><b style={{ color: "#3b82f6" }}>{summary.pending}</b><span>待办</span></div>
-          <div><b style={{ color: "#ff4d4f" }}>{summary.overdue}</b><span>逾期</span></div>
-          <div><b style={{ color: "#faad14" }}>{summary.today}</b><span>今日到期</span></div>
-        </div>
-        <Segmented
-          className="app-pill-seg"
-          block
-          value={scope}
-          onChange={(v) => setScope(v as "todo" | "done" | "all")}
-          options={[
-            { label: "待办中", value: "todo" },
-            { label: "已完成", value: "done" },
-            { label: "全部", value: "all" },
-          ]}
-        />
-        {talentFilter && (
-          <Tag
-            closable
-            color="blue"
-            style={{ marginTop: 10, marginRight: 0 }}
-            onClose={() => { searchParams.delete("talent_id"); setSearchParams(searchParams); }}
-          >
-            仅看该人才的待办
-          </Tag>
-        )}
       </div>
 
       {/* 新建 / 编辑待办 */}

@@ -643,30 +643,7 @@ html[data-theme-mode="dark"] .task-cal-dnd .ant-picker-cell.task-drop-target { o
   display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #8c8c8c;
 }
 
-/* ===== 待办页右下角悬浮卡：统计 + 视图切换，常驻显示 ===== */
-.task-fab-card {
-  position: fixed; right: 24px; bottom: 24px; z-index: 520;
-  width: 280px; padding: 12px 14px 14px;
-  background: #fff; border: 1px solid #eef0f3; border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
-}
-.task-fab-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.task-fab-stats > div {
-  background: #f8f9fb; border-radius: 8px; padding: 7px 0 8px; text-align: center;
-}
-.task-fab-stats b { display: block; font-size: 20px; line-height: 26px; }
-.task-fab-stats span { font-size: 11px; color: #8c8c8c; }
-.task-fab-card .ant-segmented { margin-top: 10px; }
-html[data-theme-mode="dark"] .task-fab-card {
-  background: #1f1f1f; border-color: #303030;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
-}
-html[data-theme-mode="dark"] .task-fab-stats > div { background: #262626; }
-
-/* 日历卡片左上角：日期 + 新建按钮，柔和化（不再用生硬蓝色文字链接） */
-.task-cal-head-date {
-  font-size: 15px; font-weight: 600; color: #1f2937; letter-spacing: 0.2px;
-}
+/* 日历卡片左上角：新建按钮，柔和化（不再用生硬蓝色文字链接） */
 .task-new-btn {
   background: #eef4ff; border-color: #d6e4ff; color: #2563eb;
   border-radius: 8px; box-shadow: none; font-weight: 500;
@@ -679,7 +656,6 @@ html[data-theme-mode="dark"] .task-fab-stats > div { background: #262626; }
 .task-calendar .ant-picker-calendar-header .ant-picker-calendar-month-select {
   font-weight: 600; color: #1f2937;
 }
-html[data-theme-mode="dark"] .task-cal-head-date { color: #e5e7eb; }
 html[data-theme-mode="dark"] .task-calendar .ant-picker-calendar-header .ant-picker-calendar-year-select,
 html[data-theme-mode="dark"] .task-calendar .ant-picker-calendar-header .ant-picker-calendar-month-select {
   color: #e5e7eb;
