@@ -513,18 +513,7 @@ html[data-theme-mode="dark"] .pipe-next { color: #4a9eff; }
 .task-main { flex: 1; min-width: 0; }
 .task-title { font-size: 0.9rem; font-weight: 600; color: #1a1a2e; }
 .task-item.is-done .task-title { text-decoration: line-through; color: #8c8c8c; }
-.task-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem; margin-top: 0.3rem; font-size: 0.8rem; }
-.task-due { display: inline-flex; align-items: center; gap: 0.25rem; }
-.task-prio { margin-inline-end: 0 !important; font-size: 0.72rem; line-height: 1.5; }
-.task-submeta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem; margin-top: 0.18rem; font-size: 0.72rem; color: #a8adb5; }
-.task-submeta .task-sub-link { color: #6b7280; }
-.task-submeta .anticon { margin-right: 0.2rem; }
-.task-submeta .is-cancel { color: #ff4d4f; }
-.task-submeta .is-done { color: #52c41a; }
-.task-submeta > span:not(.is-cancel):not(.is-done) { color: #a8adb5; }
-html[data-theme-mode="dark"] .task-submeta { color: #8c8c8c; }
-html[data-theme-mode="dark"] .task-submeta .task-sub-link { color: #8c8c8c; }
-html[data-theme-mode="dark"] .task-submeta > span:not(.is-cancel):not(.is-done) { color: #8c8c8c; }
+.task-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.35rem; font-size: 0.76rem; color: #8c8c8c; }
 .task-content { font-size: 0.82rem; color: #4b5563; margin-top: 0.3rem; line-height: 1.55; }
 .task-actions { display: flex; gap: 0.15rem; flex-shrink: 0; }
 
@@ -654,39 +643,46 @@ html[data-theme-mode="dark"] .task-cal-dnd .ant-picker-cell.task-drop-target { o
   display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #8c8c8c;
 }
 
-/* ===== 待办日历头部：scope 切换 + 年月选择器 同行 ===== */
-.task-cal-header {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; margin-bottom: 8px;
+/* ===== 待办页右下角悬浮卡：统计 + 视图切换，常驻显示 ===== */
+.task-fab-card {
+  position: fixed; right: 24px; bottom: 24px; z-index: 520;
+  width: 280px; padding: 12px 14px 14px;
+  background: #fff; border: 1px solid #eef0f3; border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.14);
 }
-.task-cal-header-picker { flex-shrink: 0; }
-@media (max-width: 768px) {
-  .task-cal-header { flex-wrap: wrap; }
-  .task-cal-header .app-pill-seg { width: 100%; }
+.task-fab-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.task-fab-stats > div {
+  background: #f8f9fb; border-radius: 8px; padding: 7px 0 8px; text-align: center;
 }
-/* 日历卡片标题（「新建待办」）整体靠右，与右上角统计呼应 */
-.task-calendar-card .ant-card-head-title { text-align: right; }
-.task-calendar-card .ant-card-head-title .task-new-btn { margin-left: auto; }
+.task-fab-stats b { display: block; font-size: 20px; line-height: 26px; }
+.task-fab-stats span { font-size: 11px; color: #8c8c8c; }
+.task-fab-card .ant-segmented { margin-top: 10px; }
+html[data-theme-mode="dark"] .task-fab-card {
+  background: #1f1f1f; border-color: #303030;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+html[data-theme-mode="dark"] .task-fab-stats > div { background: #262626; }
 
-/* ===== 卡片右上角统计（待办 / 逾期 / 今日到期） ===== */
-.task-card-extra-stats { display: flex; align-items: center; gap: 14px; }
-.task-card-extra-stats .tcs-item { display: inline-flex; align-items: baseline; gap: 5px; }
-.task-card-extra-stats b { font-size: 17px; line-height: 22px; font-weight: 600; }
-.task-card-extra-stats .tcs-label { font-size: 12px; color: #8c8c8c; }
-.task-card-extra-stats .tcs-divider { width: 1px; height: 12px; background: #e5e7eb; }
-html[data-theme-mode="dark"] .task-card-extra-stats .tcs-label { color: #8c8c8c; }
-html[data-theme-mode="dark"] .task-card-extra-stats .tcs-divider { background: #303030; }
-
-/* 人才筛选 Tag 单独一行 */
-.task-cal-filter-row { margin-bottom: 10px; }
-
-/* 日历右上角「新建待办」按钮：浅蓝柔和，避免生硬蓝色文字链接 */
+/* 日历卡片左上角：日期 + 新建按钮，柔和化（不再用生硬蓝色文字链接） */
+.task-cal-head-date {
+  font-size: 15px; font-weight: 600; color: #1f2937; letter-spacing: 0.2px;
+}
 .task-new-btn {
   background: #eef4ff; border-color: #d6e4ff; color: #2563eb;
   border-radius: 8px; box-shadow: none; font-weight: 500;
 }
 .task-new-btn:hover {
   background: #e0ecff !important; border-color: #bcd3ff !important; color: #2563eb !important;
+}
+/* antd 日历头部年月标题柔化：加大加粗，弱化默认灰感 */
+.task-calendar .ant-picker-calendar-header .ant-picker-calendar-year-select,
+.task-calendar .ant-picker-calendar-header .ant-picker-calendar-month-select {
+  font-weight: 600; color: #1f2937;
+}
+html[data-theme-mode="dark"] .task-cal-head-date { color: #e5e7eb; }
+html[data-theme-mode="dark"] .task-calendar .ant-picker-calendar-header .ant-picker-calendar-year-select,
+html[data-theme-mode="dark"] .task-calendar .ant-picker-calendar-header .ant-picker-calendar-month-select {
+  color: #e5e7eb;
 }
 html[data-theme-mode="dark"] .task-new-btn {
   background: #16233a; border-color: #1f3a5f; color: #6ea8fe;
@@ -1409,8 +1405,7 @@ html[data-theme-mode="dark"] .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab.ant-ta
 
 /* 圆角分段筛选器：选中块统一为分组同款蓝（与胶囊一致），保留 antd Segmented 滑动交互 */
 .app-pill-seg { border-radius: 999px; }
-/* 提升特异性 + !important，压过 antd 运行时注入的 segmented 样式（否则选中项背景被反压成白色，白字白底不可见） */
-.ant-segmented.app-pill-seg .ant-segmented-item { border-radius: 999px; }
-.ant-segmented.app-pill-seg .ant-segmented-thumb { background: #3b82f6 !important; }
-.ant-segmented.app-pill-seg .ant-segmented-item-selected .ant-segmented-item-label { color: #fff !important; font-weight: 600; }
-html[data-theme-mode="dark"] .ant-segmented.app-pill-seg .ant-segmented-thumb { background: #3b82f6 !important; }
+.app-pill-seg .ant-segmented-item { border-radius: 999px; }
+.app-pill-seg .ant-segmented-thumb { background: #3b82f6; }
+.app-pill-seg .ant-segmented-item-selected .ant-segmented-item-label { color: #fff; font-weight: 600; }
+html[data-theme-mode="dark"] .app-pill-seg .ant-segmented-thumb { background: #3b82f6; }

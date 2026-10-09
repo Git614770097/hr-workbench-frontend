@@ -339,25 +339,23 @@ export default function Tasks() {
       <div className="task-main">
         <div className="task-title">{t.title}</div>
         <div className="task-meta">
-          <span className="task-due" style={{ color: dueColor(t), fontWeight: t.overdue || t.due_today ? 600 : 400 }}>
+          <span style={{ color: dueColor(t), fontWeight: t.overdue || t.due_today ? 600 : 400 }}>
             <ClockCircleOutlined /> {dueText(t)}
           </span>
-          <Tag className="task-prio" color={PRIORITY_COLORS[t.priority] || "default"} bordered={false}>
+          <Tag color={PRIORITY_COLORS[t.priority] || "default"} style={{ marginInlineEnd: 0 }}>
             {PRIORITY_LABELS[t.priority] || t.priority}
           </Tag>
-        </div>
-        <div className="task-submeta">
           {t.talent_id && (
-            <Link to={`/talents/${t.talent_id}`} className="task-sub-link">
+            <Link to={`/talents/${t.talent_id}`} style={{ color: "#3b82f6" }}>
               <UserOutlined /> {t.talent_name || "关联人才"}
             </Link>
           )}
           {t.job_title && (
             <span><LinkOutlined /> {t.job_title}</span>
           )}
-          {t.status === "cancelled" && <span className="is-cancel">已取消</span>}
-          {t.status === "done" && <span className="is-done">已完成</span>}
-          <span>
+          {t.status === "cancelled" && <Tag style={{ marginInlineEnd: 0 }}>已取消</Tag>}
+          {t.status === "done" && <Tag color="green" style={{ marginInlineEnd: 0 }}>已完成</Tag>}
+          <span style={{ color: "#c2c6cc" }}>
             {TASK_SOURCE_LABELS[t.source] || t.source}
             {isAdmin && t.owner_name ? ` · ${t.owner_name}` : ""}
           </span>
@@ -388,37 +386,34 @@ export default function Tasks() {
           className="task-calendar-card"
           styles={{ body: { padding: "12px 16px 16px" } }}
           title={
-            <Button
-              className="task-new-btn"
-              size="small"
-              icon={<PlusOutlined />}
-              data-onb-action="new-task"
-              onClick={() => openCreate(selected)}
-            >
-              新建待办
-            </Button>
+            <Space size={12} align="center" wrap={false}>
+              <span className="task-cal-head-date">今天 · {dayjs().format("M月D日")}</span>
+              <Button
+                className="task-new-btn"
+                size="small"
+                icon={<PlusOutlined />}
+                data-onb-action="new-task"
+                onClick={() => openCreate(selected)}
+              >
+                新建待办
+              </Button>
+            </Space>
           }
           extra={
-            <div className="task-card-extra-stats">
-              <span className="tcs-item"><b style={{ color: "#3b82f6" }}>{summary.pending}</b><span className="tcs-label">待办</span></span>
-              <i className="tcs-divider" />
-              <span className="tcs-item"><b style={{ color: "#ff4d4f" }}>{summary.overdue}</b><span className="tcs-label">逾期</span></span>
-              <i className="tcs-divider" />
-              <span className="tcs-item"><b style={{ color: "#faad14" }}>{summary.today}</b><span className="tcs-label">今日到期</span></span>
-            </div>
+            <Space size={12} wrap style={{ fontSize: 12, color: "#8c8c8c" }}>
+              <Space size={4}>
+                <span className="task-cal-badge is-today">今</span>
+                <span className="task-cal-badge is-holiday">休</span>
+                <span className="task-cal-badge is-makeup">班</span>
+              </Space>
+              <Space size={8}>
+                <span className="task-legend"><i className="task-cal-dot p-high" />高</span>
+                <span className="task-legend"><i className="task-cal-dot p-normal" />中</span>
+                <span className="task-legend"><i className="task-cal-dot p-low" />低</span>
+              </Space>
+            </Space>
           }
         >
-          {talentFilter && (
-            <div className="task-cal-filter-row">
-              <Tag
-                closable
-                color="blue"
-                onClose={() => { searchParams.delete("talent_id"); setSearchParams(searchParams); }}
-              >
-                仅看该人才的待办
-              </Tag>
-            </div>
-          )}
           {missingHoliday && (
             <div className="task-cal-tip">
               未内置 {viewYear} 年节假日安排，当前节假日标记仅按周六周日判断
@@ -436,51 +431,6 @@ export default function Tasks() {
               className="task-calendar"
               // 非受控：选中态交给组件内部，翻月不会受外部 value 干扰
               defaultValue={dayjs()}
-              headerRender={(config) => {
-                const { value, type, onChange, onTypeChange } = config;
-                const years = Array.from({ length: 36 }, (_, i) => ({ label: `${2000 + i}年`, value: 2000 + i }));
-                const months = Array.from({ length: 12 }, (_, i) => ({ label: `${i + 1}月`, value: i }));
-                return (
-                  <div className="task-cal-header">
-                    <Segmented
-                      className="app-pill-seg"
-                      size="small"
-                      value={scope}
-                      onChange={(v) => setScope(v as "todo" | "done" | "all")}
-                      options={[
-                        { label: "待办中", value: "todo" },
-                        { label: "已完成", value: "done" },
-                        { label: "全部", value: "all" },
-                      ]}
-                    />
-                    <Space size={8} className="task-cal-header-picker">
-                      <Select
-                        size="small"
-                        value={value.year()}
-                        onChange={(y) => onChange(value.year(y))}
-                        options={years}
-                      />
-                      {type === "month" && (
-                        <Select
-                          size="small"
-                          value={value.month()}
-                          onChange={(m) => onChange(value.month(m))}
-                          options={months}
-                        />
-                      )}
-                      <Segmented
-                        size="small"
-                        value={type}
-                        onChange={(t) => onTypeChange(t as "month" | "year")}
-                        options={[
-                          { label: "月", value: "month" },
-                          { label: "年", value: "year" },
-                        ]}
-                      />
-                    </Space>
-                  </div>
-                );
-              }}
               onSelect={(d, info) => {
                 if (info.source !== "date") return;
                 const ymd = d.format("YYYY-MM-DD");
@@ -535,6 +485,36 @@ export default function Tasks() {
             </div>
           )}
         </Card>
+      </div>
+
+      {/* 右下角悬浮卡：统计 + 视图切换，常驻显示 */}
+      <div className="task-fab-card">
+        <div className="task-fab-stats">
+          <div><b style={{ color: "#3b82f6" }}>{summary.pending}</b><span>待办</span></div>
+          <div><b style={{ color: "#ff4d4f" }}>{summary.overdue}</b><span>逾期</span></div>
+          <div><b style={{ color: "#faad14" }}>{summary.today}</b><span>今日到期</span></div>
+        </div>
+        <Segmented
+          className="app-pill-seg"
+          block
+          value={scope}
+          onChange={(v) => setScope(v as "todo" | "done" | "all")}
+          options={[
+            { label: "待办中", value: "todo" },
+            { label: "已完成", value: "done" },
+            { label: "全部", value: "all" },
+          ]}
+        />
+        {talentFilter && (
+          <Tag
+            closable
+            color="blue"
+            style={{ marginTop: 10, marginRight: 0 }}
+            onClose={() => { searchParams.delete("talent_id"); setSearchParams(searchParams); }}
+          >
+            仅看该人才的待办
+          </Tag>
+        )}
       </div>
 
       {/* 新建 / 编辑待办 */}
