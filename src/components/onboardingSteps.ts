@@ -38,13 +38,13 @@ export interface OnbStep {
 const BASE_STEPS: OnbStep[] = [
   {
     center: true,
-    title: "欢迎，接下来 1 分钟边讲边练",
-    desc: "我不会光讲功能。接下来只带你亲手做三件事：新增一个岗位、新增一位人才、新建一条待办——做完这三个，这个系统你就摸熟了。\n中途觉得烦，右上角 ✕ 随时跳过，不会给你发消息催。",
+    title: "欢迎，1 分钟边练边会",
+    desc: "前 3 步我会先帮你打开表单，你点「帮我填好表单」自动填好示例，再点「保存」即可；其余模块会自动跳过去看一眼。右上角 ✕ 可随时跳过。",
   },
   {
     target: '[data-onb-action="new-job"]',
-    title: "第一步：亲手新增一个岗位",
-    desc: "招聘的一切都围绕岗位组织。先去「岗位管理」，点一下页面左上角的「新增岗位」，把你要招的职位和 JD 填进去保存。\n这一步做完，人才库、招聘看板、漏斗分析都会自动挂到这个岗位上。",
+    title: "① 新增岗位",
+    desc: "「岗位管理」→ 点左上角「新增岗位」，填职位和 JD 保存。招聘需求也可先在「招聘需求」登记再转岗位。",
     goTo: "/jobs",
     action: {
       target: '[data-onb-action="new-job"]',
@@ -54,8 +54,8 @@ const BASE_STEPS: OnbStep[] = [
   },
   {
     target: '[data-onb-action="new-talent"]',
-    title: "第二步：把一个人存进人才库",
-    desc: "光有岗位还没有人。去「人才库管理」，点「新增人才」填一份基本信息；手上真有简历的话，用旁边的「导入」直接解析，几秒钟就录进来了。",
+    title: "② 新增人才",
+    desc: "「人才库管理」→ 点「新增人才」录信息，或用「导入」解析简历。一人可投多岗。",
     goTo: "/talents",
     action: {
       target: '[data-onb-action="new-talent"]',
@@ -65,8 +65,8 @@ const BASE_STEPS: OnbStep[] = [
   },
   {
     target: '[data-onb-action="new-task"]',
-    title: "第三步：给自己建一条待办",
-    desc: "系统会自动生成到期提醒（合同到期、试用期结束、社保增减员），但你自己想记的事也能手动加：去「待办日历」，点日历左上角那个「新建待办」，选个日期写好内容。\n所有到期日都会自动落到这块日历上，不会忘。",
+    title: "③ 新建待办",
+    desc: "「待办日历」→ 点左上角「新建待办」，选日期写内容。合同/试用/社保到期会自动落进来。",
     goTo: "/tasks",
     action: {
       target: '[data-onb-action="new-task"]',
@@ -76,33 +76,47 @@ const BASE_STEPS: OnbStep[] = [
   },
   {
     target: '[data-onb="/pipeline"]',
-    title: "招聘看板：候选人就这么一路推进",
-    desc: "刚才新增的岗位会在这里出现。把候选人从「简历筛选」拖到「面试 → Offer → 入职」，整个过程拖一下就完成了，系统自动记录每个阶段的时间。",
+    title: "招聘看板：拖拽推进",
+    desc: "岗位出现在这里。把候选人从「筛选」拖到「面试→Offer→入职」。面试去「面试管理」录双评，Offer 走「审批中心」，入职去「入职办理」生成清单。",
     goTo: "/pipeline",
     goToLabel: "去看看看板",
   },
   {
+    target: '[data-onb="/profiles"]',
+    title: "人才画像：AI 自动打分",
+    desc: "「人才画像」配置能力模型，系统自动给人才生成画像与匹配度，搜索排序更省力，可多岗共用。",
+    goTo: "/profiles",
+    goToLabel: "去看看画像",
+  },
+  {
     target: '[data-onb="/contracts"]',
-    title: "合同管理：最容易出现赔钱坑的地方",
-    desc: "把人才的状态一改成「已入职」，合同提醒就自动来了。上传合同原件，AI 会自动识别里面的签订/到期日期——漏签一次的成本是 2N，这笔账不划算。",
+    title: "合同管理：别漏签",
+    desc: "状态改「已入职」→ 合同提醒自动来。上传原件，AI 识别签订/到期日。入职材料也在这归档。",
     goTo: "/contracts",
   },
   {
     target: '[data-onb="/social"]',
-    title: "社保公积金：自动算增减员，还能算个税",
-    desc: "入职状态一变，增减员待办自动生成，不用你记。里面还有个税计算器，输入薪资直接看到每月到手和全年合计。",
+    title: "社保公积金",
+    desc: "入职即自动生成增减员待办。内含个税计算器，输入薪资看每月到手与全年合计。",
     goTo: "/social",
   },
   {
+    target: '[data-onb="/funnel"]',
+    title: "招聘概览：数据复盘",
+    desc: "「招聘概览」用漏斗看各阶段人数、转化率与渠道效果，招聘周期也帮你算好。",
+    goTo: "/funnel",
+    goToLabel: "去看看概览",
+  },
+  {
     target: '[data-onb="/templates"]',
-    title: "模板库管理：常用文书都在这儿",
-    desc: "JD、劳动合同、离职证明、在职证明、Offer 等模板都整理好了，可以直接导出成 Word 拿去用；也能自己改，存成你公司的版本。",
+    title: "模板库",
+    desc: "JD、合同、证明、Offer 等模板都在「模板库」，可导出 Word 或改存本公司版本。",
     goTo: "/templates",
   },
   {
     target: '[data-onb="topbar-help"]',
-    title: "最后：随时能把这一步调出来",
-    desc: "右上角这个问号就是提醒按钮，任何时候点它都能重看这份引导。\n看完就可以放心用了——增删改查、导入导出、到期提醒，都在这个框架里。",
+    title: "随时重看指引",
+    desc: "右上角问号 → 重看本指引。增删改查、导入导出、到期提醒都在这个框架里。",
   },
 ];
 

@@ -186,7 +186,7 @@ export default function Onboarding() {
               ? "该候选人还没有材料清单，点左上角「一键生成默认清单」快速开始"
               : "还没有入职办理记录。把候选人在「招聘看板」推进到「已入职」，系统会自动生成材料清单"}
             image={Empty.PRESENTED_IMAGE_SIMPLE}
-            style={{ margin: "60px 0" }}
+            style={{ margin: 0 }}
           />
         ) : (
           Object.entries(grouped).map(([cat, list]) => (

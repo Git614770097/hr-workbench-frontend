@@ -22,6 +22,7 @@ import TalentFormModal from "../components/TalentFormModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import { DemoSeedButton, DemoBanner } from "../components/DemoSeed";
 import { useDict } from "../dict";
+import { registerOnbFill } from "../components/onboardingAutoFill";
 
 // 搜索条件（draft = 编辑中，applied = 已生效）
 interface Filters {
@@ -100,6 +101,36 @@ export default function TalentList() {
   const [previewTalent, setPreviewTalent] = useState<Talent | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // 新手指引代填数据（仅新增态写入）+ 触发填充的计数
+  const [talentPrefill, setTalentPrefill] = useState<Record<string, any> | undefined>(undefined);
+  const [talentFillToken, setTalentFillToken] = useState(0);
+
+  // 新手指引：登记「打开空表单」与「填示例数据」两个回调
+  useEffect(() => {
+    return registerOnbFill("/talents", {
+      open: () => {
+        setEditId(null);
+        setTalentPrefill(undefined); // 打开空表单
+        setAddOpen(true);
+      },
+      fill: () => {
+        setTalentPrefill({
+          name: "张明",
+          phone: "13800138000",
+          email: "zhangming@example.com",
+          education: "本科",
+          current_company: "某某科技有限公司",
+          current_title: "前端工程师",
+          years_experience: 4,
+          city: "深圳",
+          skills: "React, TypeScript, Node.js",
+          source: "猎头推荐",
+          status: "active",
+        });
+        setTalentFillToken((t) => t + 1); // 触发弹窗把示例写进已打开的表单
+      },
+    });
+  }, []);
 
   // 批量加入招聘看板：受控多选（跨页保留选中）+ 弹窗
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
@@ -352,20 +383,25 @@ export default function TalentList() {
   };
 
   // 导出单份简历：根据 resume_url 扩展名判断原文件格式，PDF 导出 PDF、Word 导出 Word
-  const handleExportResume = (record: Talent) => {
+  const handleExportResume = async (record: Talent) => {
     if (!record.resume_url) { message.warning(termFor(profile, "该人才暂无简历文件")); return; }
     const ext = (record.resume_url.match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
     const isWord = ext === "docx" || ext === "doc";
     const isPdf = ext === "pdf";
     const typeLabel = isWord ? "Word" : isPdf ? "PDF" : "简历";
-    // 触发浏览器下载（后端 Content-Disposition: attachment）
-    const a = document.createElement("a");
-    a.href = api.getResumeDownloadUrl(record.id);
-    a.download = `${record.name}_${typeLabel}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    message.success(termFor(profile, `正在导出 ${record.name} 的${typeLabel}简历`));
+    try {
+      // 先取 60s 短期票据，再触发浏览器下载（后端 Content-Disposition: attachment）
+      const url = await api.getResumeDownloadUrl(record.id);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${record.name}_${typeLabel}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      message.success(termFor(profile, `正在导出 ${record.name} 的${typeLabel}简历`));
+    } catch (e) {
+      message.error((e as Error).message || "导出失败");
+    }
   };
 
   // ---- 搜索字段定义（label 左 + 控件右，一行 4 个）----
@@ -546,7 +582,7 @@ export default function TalentList() {
             <Button
               type="primary" icon={<PlusOutlined />}
               data-onb-action="new-talent"
-              onClick={() => setAddOpen(true)}
+              onClick={() => { setEditId(null); setTalentPrefill(undefined); setAddOpen(true); }}
             >
               {termFor(profile, "新增人才")}
             </Button>
@@ -641,7 +677,9 @@ export default function TalentList() {
       <TalentFormModal
         open={addOpen || !!editId}
         talentId={editId}
-        onClose={() => { setEditId(null); setAddOpen(false); }}
+        prefill={talentPrefill}
+        fillToken={talentFillToken}
+        onClose={() => { setEditId(null); setAddOpen(false); setTalentPrefill(undefined); }}
         onSuccess={fetchTalents}
       />
 

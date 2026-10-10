@@ -9,15 +9,20 @@ import { PRIORITY_LABELS } from "../types";
 import { useDict } from "../dict";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
+import { notifyOnbSaved } from "./onboardingAutoFill";
 
 interface Props {
   open: boolean;
   jobId?: string | null;
+  /** 新手指引代填：非空时（且仅新增态）打开即写入这些字段 */
+  prefill?: Record<string, any>;
+  /** 新手指引：填充计数变化（表单已打开）时把示例写进当前表单 */
+  fillToken?: number;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props) {
+export default function JobFormModal({ open, jobId, prefill, fillToken, onClose, onSuccess }: Props) {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [departments, setDepartments] = useState<string[]>([]);
@@ -42,8 +47,16 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
       form.resetFields();
       // 新增默认值：开放日期默认今天（新建岗位通常即刻开放），状态隐含「在招」不显示
       form.setFieldsValue({ job_type: "fulltime", status: "open", priority: "normal", headcount: 1, opened_at: dayjs() });
+      // 新手指引：打开即写入示例数据（prefill 非空时），用户只须点「保存」
+      if (prefill) form.setFieldsValue(prefill);
     }
   }, [open, jobId]);
+
+  // 新手指引：弹窗已打开后，点「帮我填好表单」触发 fillToken 变化 → 写入示例数据
+  useEffect(() => {
+    if (open && !isEdit && prefill) form.setFieldsValue(prefill);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fillToken]);
 
   const handleSubmit = async (values: any) => {
     setSaving(true);
@@ -61,6 +74,7 @@ export default function JobFormModal({ open, jobId, onClose, onSuccess }: Props)
       } else {
         await api.createJob(data);
         message.success(termFor(profile, "岗位已创建"));
+        notifyOnbSaved();
       }
       form.resetFields();
       onSuccess();

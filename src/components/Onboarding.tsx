@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "antd";
 import { CloseOutlined, ArrowRightOutlined, ArrowLeftOutlined, CheckOutlined } from "@ant-design/icons";
+import { openOnbForm, fillOnbForm } from "./onboardingAutoFill";
 import "../styles/onboarding.css";
 
 export interface OnbStep {
@@ -44,10 +45,13 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
   const [index, setIndex] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
   const [tick, setTick] = useState(0);
-  // 动手任务状态：waiting=已引导去点，done=点中了，missing=压根找不到这个入口
+  // 动手任务状态：waiting=已引导去填，done=保存成功，missing=压根找不到这个入口
   const [waiting, setWaiting] = useState(false);
   const [done, setDone] = useState(false);
   const [missing, setMissing] = useState(false);
+  // armed=已在动手步骤触发代填、等待保存事件（用 ref 避免闭包过期）
+  const [armed, setArmed] = useState(false);
+  const armedRef = useRef(false);
 
   const step = steps[index];
   const isLast = index >= steps.length - 1;
@@ -58,6 +62,8 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
     setWaiting(false);
     setDone(false);
     setMissing(false);
+    setArmed(false);
+    armedRef.current = false;
   }, [index, open]);
 
   const measure = () => {
@@ -104,20 +110,18 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // 动手任务：在捕获阶段监听真实点击，命中目标即算完成。
-  // 用 capture 是因为目标按钮点下去会立刻打开弹窗，
-  // 晚一拍就再也收不到这次点击了。
+  // 动手任务完成判定：不再依赖「点中某个按钮」，而是由业务页在「保存成功」后
+  // 广播 onb:record-saved。引导只负责帮用户填好表单，用户点「保存」即算完成，
+  // 随后自动进入下一步。armedRef 保证只有已触发代填的当前步骤才会响应。
   useEffect(() => {
-    if (!open || !action) return;
-    const onDocClick = (e: MouseEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (!el) return;
-      if (el.closest(action.target)) setDone(true);
+    if (!open) return;
+    const onSaved = () => {
+      if (armedRef.current && step?.action) setDone(true);
     };
-    document.addEventListener("click", onDocClick, true);
-    return () => document.removeEventListener("click", onDocClick, true);
+    window.addEventListener("onb:record-saved", onSaved);
+    return () => window.removeEventListener("onb:record-saved", onSaved);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, index, action?.target]);
+  }, [open, index]);
 
   // 点中之后给一点正反馈再自动进下一步，别让用户怀疑点没点上
   useEffect(() => {
@@ -158,6 +162,28 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
     }
   }, [index, tick, missing, done, waiting, open, step]);
 
+  // 进入带 goTo 的步骤时自动跳转：动手任务页先跳再自动打开空表单，
+  // 其余页直接跳（不再要求点「去看看」）。目标页需 mount 并向 onboardingAutoFill
+  // 登记 open/fill 处理器；open 调用若页面未就绪会被排队，登记后自动 flush。
+  // ⚠️ 必须放在 return null 之前，否则 open 为 false 时此 Hook 不执行，
+  //    与 open 为 true 时的 Hook 数量不一致 → React 崩溃白屏。
+  useEffect(() => {
+    if (!open || !step) return;
+    if (step.goTo && window.location.pathname !== step.goTo) {
+      onNavigate?.(step.goTo);
+    }
+    if (step.action && step.goTo) {
+      // 自动弹出空的新建表单，等用户点「帮我填好表单」填示例数据
+      openOnbForm(step.goTo);
+      setArmed(true);
+      armedRef.current = true;
+    }
+    // 路由切换后页面才渲染，延迟一下再重新测量高亮位置（measure 依赖 tick）
+    const t = window.setTimeout(() => setTick((n) => n + 1), 350);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, open]);
+
   if (!open || !step) return null;
 
   const goNext = () => {
@@ -170,19 +196,13 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
 
   const goPrev = () => setIndex((i) => Math.max(i - 1, 0));
 
-  // 动手任务：跳到目标页并进入等待；已在目标页则直接从当前页开始等
-  const startAction = () => {
-    if (step?.goTo && window.location.pathname !== step.goTo) {
-      onNavigate?.(step.goTo);
-    }
+  // 动手任务：点「帮我填好表单」把示例数据写进已打开的表单；保存成功即判完成
+  const fillAction = () => {
+    if (step?.goTo) fillOnbForm(step.goTo);
     setWaiting(true);
+    setArmed(true);
+    armedRef.current = true;
     setTick((t) => t + 1);
-  };
-
-  const handleGoTo = (path: string) => {
-    onNavigate?.(path);
-    // 等待路由渲染后再重新测量目标位置
-    window.setTimeout(() => setTick((t) => t + 1), 320);
   };
 
   // 气泡定位：右侧优先，其次左侧，再次下方；窄屏固定底部
@@ -245,15 +265,12 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
             ) : waiting ? (
               <>
                 <span className="obo-do-icon">→</span>
-                <span>
-                  现在轮到你了：{action.label}
-                  {step.goTo ? "" : "（就在当前页面）"}
-                </span>
+                <span>示例已填好，点「保存」即可；保存成功会自动进入下一步。</span>
               </>
             ) : (
               <>
                 <span className="obo-do-icon">👉</span>
-                <span>{action.label}</span>
+                <span>点「帮我填好表单」自动填好示例数据，再点「保存」即可。</span>
               </>
             )}
           </div>
@@ -269,13 +286,15 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
           )}
           <div className="obo-actions">
             {action && !done ? (
-              <Button size="small" type={waiting ? "default" : "primary"} onClick={startAction}>
-                {waiting ? "等待你操作…" : "我去做"}
-              </Button>
-            ) : step.goTo ? (
-              <Button size="small" onClick={() => handleGoTo(step.goTo!)}>
-                {step.goToLabel || "去看看"}
-              </Button>
+              waiting ? (
+                <Button size="small" onClick={fillAction}>
+                  重新填报
+                </Button>
+              ) : (
+                <Button size="small" type="primary" onClick={fillAction}>
+                  帮我填好表单
+                </Button>
+              )
             ) : null}
             <Button
               type="primary"

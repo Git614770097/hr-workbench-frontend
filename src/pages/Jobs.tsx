@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Button, Space, Tag, Input, Select, Popconfirm, message, Tooltip,
-  Progress, Modal, Empty, Spin, Badge, Dropdown, Tabs,
+  Progress, Modal, Empty, Spin, Badge, Dropdown,
 } from "antd";
 import {
   PlusOutlined, SearchOutlined, ReloadOutlined,
@@ -18,12 +18,12 @@ import {
 } from "../types";
 import JobFormModal from "../components/JobFormModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
-import RequisitionPanel from "../components/RequisitionPanel";
 import { DemoSeedButton } from "../components/DemoSeed";
 import { useDict } from "../dict";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
 import { downloadBlob, dateStamp, csvCell } from "../utils/file";
+import { registerOnbFill } from "../components/onboardingAutoFill";
 
 const PAGE_SIZE = 10;
 
@@ -45,8 +45,37 @@ export default function Jobs() {
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // 新手指引代填数据（仅新增态写入）+ 触发填充的计数
+  const [jobPrefill, setJobPrefill] = useState<Record<string, any> | undefined>(undefined);
+  const [jobFillToken, setJobFillToken] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [presetJobId, setPresetJobId] = useState<string | null>(null);
+
+  // 新手指引：登记「打开空表单」与「填示例数据」两个回调
+  useEffect(() => {
+    return registerOnbFill("/jobs", {
+      open: () => {
+        setEditingId(null);
+        setJobPrefill(undefined); // 打开空表单
+        setFormOpen(true);
+      },
+      fill: () => {
+        setJobPrefill({
+          title: "高级前端工程师",
+          department: "技术部",
+          city: "深圳",
+          job_type: "fulltime",
+          headcount: 2,
+          salary_range: "25-40K·14薪",
+          education: "本科",
+          experience: "3-5年",
+          description: "负责核心业务系统的前端开发与体验优化，参与技术选型与性能治理。",
+          requirements: "熟练掌握 React 与 TypeScript；有大型前端项目经验者优先。",
+        });
+        setJobFillToken((t) => t + 1); // 触发弹窗把示例写进已打开的表单
+      },
+    });
+  }, []);
 
   const [detail, setDetail] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -258,7 +287,7 @@ export default function Jobs() {
     message.success(termFor(profile, `已导出 ${jobs.length} 个岗位`));
   };
 
-  // 岗位管理 + 招聘需求（用人部门提需求 → 审批 → 自动生成岗位）合为一个页面两个 Tab
+  // 岗位列表区：搜索卡 + 列表卡 + 岗位相关弹窗（招聘需求已独立成页，见 /requisitions）
   const jobsPane = (
     <>
       <Card className="search-card" style={{ marginBottom: 16 }}>
@@ -305,10 +334,13 @@ export default function Jobs() {
             <Button
               type="primary" icon={<PlusOutlined />}
               data-onb-action="new-job"
-              onClick={() => { setEditingId(null); setFormOpen(true); }}
+              onClick={() => { setEditingId(null); setJobPrefill(undefined); setFormOpen(true); }}
             >
               {termFor(profile, "新增岗位")}
             </Button>
+            <Link to="/requisitions" className="btn-as-link">
+              <PlusOutlined /> 提交招聘需求
+            </Link>
             {/* 不要 <Link><Button/></Link>：<a> 内嵌 <button> 是非法 HTML，点击易被外层吞掉。 */}
             <Link to="/pipeline" className="btn-as-link">
               <TeamOutlined /> {termFor(profile, "查看招聘看板")}
@@ -354,7 +386,9 @@ export default function Jobs() {
       <JobFormModal
         open={formOpen}
         jobId={editingId}
-        onClose={() => setFormOpen(false)}
+        prefill={jobPrefill}
+        fillToken={jobFillToken}
+        onClose={() => { setFormOpen(false); setJobPrefill(undefined); }}
         onSuccess={fetchJobs}
       />
 
@@ -459,14 +493,8 @@ export default function Jobs() {
   );
 
   return (
-    <div className="page-fill">
-      <Tabs
-        className="app-pill-tabs"
-        items={[
-          { key: "jobs", label: "岗位管理", children: jobsPane },
-          { key: "req", label: "招聘需求", children: <RequisitionPanel isAdmin={isAdmin} /> },
-        ]}
-      />
+    <div className="page-fill profiles-page">
+      {jobsPane}
     </div>
   );
 }

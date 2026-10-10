@@ -9,15 +9,20 @@ import { STATUS_LABELS } from "../types";
 import { useDict } from "../dict";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
+import { notifyOnbSaved } from "./onboardingAutoFill";
 
 interface Props {
   open: boolean;
   talentId?: string | null;
+  /** 新手指引代填：非空时（且仅新增态）打开即写入这些字段 */
+  prefill?: Record<string, any>;
+  /** 新手指引：填充计数变化（表单已打开）时把示例写进当前表单 */
+  fillToken?: number;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export default function TalentFormModal({ open, talentId, onClose, onSuccess }: Props) {
+export default function TalentFormModal({ open, talentId, prefill, fillToken, onClose, onSuccess }: Props) {
   const { sources, education: educationOptions } = useDict();
   const profile = useIdentityProfile();
   const [form] = Form.useForm();
@@ -41,6 +46,8 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
           });
         } else {
           form.resetFields();
+          // 新手指引：打开即写入示例数据（prefill 非空时），用户只须点「保存」
+          if (prefill) form.setFieldsValue(prefill);
         }
       } catch (err) {
         message.error((err as Error).message);
@@ -49,6 +56,12 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
     };
     fetchData();
   }, [open, talentId]);
+
+  // 新手指引：弹窗已打开后，点「帮我填好表单」触发 fillToken 变化 → 写入示例数据
+  useEffect(() => {
+    if (open && !isEdit && prefill) form.setFieldsValue(prefill);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fillToken]);
 
   const handleSubmit = async (values: any) => {
     setSaving(true);
@@ -69,6 +82,7 @@ export default function TalentFormModal({ open, talentId, onClose, onSuccess }: 
       } else {
         result = await api.createTalent(data);
         message.success(termFor(profile, "人才已创建"));
+        notifyOnbSaved();
       }
       // 上传简历文件
       if (resumeFile && result?.id) {

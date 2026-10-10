@@ -15,6 +15,7 @@ import {
   DeploymentUnitOutlined,
   FunnelPlotOutlined,
   SolutionOutlined,
+  FileAddOutlined,
   CarryOutOutlined,
   CalendarOutlined,
   AuditOutlined,
@@ -31,6 +32,7 @@ import {
   RocketOutlined,
   AppstoreOutlined,
   ProfileOutlined,
+  BarChartOutlined,
 } from "@ant-design/icons";
 import { QuestionCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import type { User } from "../types";
@@ -125,6 +127,7 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
     color: "#0ea5e9",
     children: [
       { to: "/jobs", label: "岗位管理", icon: <SolutionOutlined />, color: "#6366f1", perm: "jobs" },
+      { to: "/requisitions", label: "招聘需求", icon: <FileAddOutlined />, color: "#818cf8", perm: "jobs" },
       { to: "/pipeline", label: "招聘看板", icon: <DeploymentUnitOutlined />, color: "#0ea5e9", perm: "pipeline" },
       { to: "/interviews", label: "面试管理", icon: <CalendarOutlined />, color: "#8b5cf6", perm: "interviews" },
       // 审批中心 / 入职办理：权限跟随 pipeline，不新增菜单 key
@@ -176,6 +179,8 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
       { to: "/roles", label: "角色管理", icon: <SafetyOutlined />, color: "#f59e0b", perm: "roles", adminOnly: true },
       { to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users", adminOnly: true },
       { to: "/settings", label: "系统设置", icon: <SettingOutlined />, color: "#64748b", perm: "settings", adminOnly: true },
+      // 日志管理：模块使用热度（埋点数据），同为管理员专属，同样不占菜单权限 key
+      { to: "/logs", label: "日志管理", icon: <BarChartOutlined />, color: "#64748b", perm: "logs", adminOnly: true },
     ],
   },
 ];
@@ -241,6 +246,9 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
 
   // 新手指引：首次进入自动播放，之后由顶栏按钮唤出
   const [onbOpen, setOnbOpen] = useState(false);
+  // 重看计数：每次唤出引导都 +1 并作为 Onboarding 的 key 强制重新挂载，
+  // 保证引导每次都从第 1 步开始（避免上次停留的步数残留导致重看错位 / 越界不显示）。
+  const [onbNonce, setOnbNonce] = useState(0);
   // 个人消息推送设置弹窗
   const [pushplusOpen, setPushplusOpen] = useState(false);
   // 修改自己的密码弹窗；forced=true 表示管理员重置过密码、本次登录必须先改掉
@@ -258,7 +266,8 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
         window.history.replaceState(null, "", window.location.pathname + window.location.hash);
       } catch {}
     }
-    if (flag === "force") {
+      if (flag === "force") {
+      setOnbNonce((n) => n + 1);
       setOnbOpen(true);
       return;
     }
@@ -268,7 +277,10 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
     } catch {}
     if (seen) return;
     // 延迟一点，等首屏接口与布局稳定再弹，避免高亮位置算歪
-    const timer = window.setTimeout(() => setOnbOpen(true), 900);
+    const timer = window.setTimeout(() => {
+      setOnbNonce((n) => n + 1);
+      setOnbOpen(true);
+    }, 900);
     return () => window.clearTimeout(timer);
   }, [user.id]);
 
@@ -654,7 +666,10 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
                   { key: "help", icon: <QuestionCircleOutlined />, label: "常见问题" },
                 ],
                 onClick: ({ key }) => {
-                  if (key === "onboarding") setOnbOpen(true);
+                  if (key === "onboarding") {
+                    setOnbNonce((n) => n + 1);
+                    setOnbOpen(true);
+                  }
                   if (key === "help") navigate("/help");
                 },
               }}
@@ -714,12 +729,15 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
         <main className="main-content">{children}</main>
       </div>
 
-      <Onboarding
-        steps={onbSteps}
-        open={onbOpen}
-        onClose={closeOnboarding}
-        onNavigate={navigate}
-      />
+      {onbOpen && (
+        <Onboarding
+          key={onbNonce}
+          steps={onbSteps}
+          open
+          onClose={closeOnboarding}
+          onNavigate={navigate}
+        />
+      )}
 
       <PushplusModal
         open={pushplusOpen}
