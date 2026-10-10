@@ -25,6 +25,8 @@ function isMobilePath(pathname: string): boolean {
 }
 import { notifyIdentityChanged } from "./useIdentity";
 import ChangelogModal from "./components/ChangelogModal";
+// 使用埋点：桌面与移动两棵树各挂一份，不渲染任何 UI
+import UsageTracker from "./components/UsageTracker";
 
 // 其余页面按路由懒加载：把 Quill 富文本编辑器、pdfjs 等重依赖
 // 推迟到真正访问对应页面时才下载，降低首屏体积。
@@ -40,6 +42,7 @@ const Approvals = lazy(() => import("./pages/Approvals"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Funnel = lazy(() => import("./pages/Funnel"));
 const Jobs = lazy(() => import("./pages/Jobs"));
+const Requisitions = lazy(() => import("./pages/Requisitions"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 // 合同管理：人才档案的合同/试用期字段集中视图，复用 talents 权限
 const Contracts = lazy(() => import("./pages/Contracts"));
@@ -48,6 +51,8 @@ const Social = lazy(() => import("./pages/Social"));
 const Users = lazy(() => import("./pages/Users"));
 const Roles = lazy(() => import("./pages/Roles"));
 const Settings = lazy(() => import("./pages/Settings"));
+// 日志管理：模块使用热度（管理员专属），含 ECharts，按需加载
+const Logs = lazy(() => import("./pages/Logs"));
 const MTasks = lazy(() => import("./mobile/MTasks"));
 const MPipeline = lazy(() => import("./mobile/MPipeline"));
 const MTalents = lazy(() => import("./mobile/MTalents"));
@@ -236,6 +241,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
     return (
       <DictProvider>
         <ChangelogModal />
+        <UsageTracker />
         <Routes>
           <Route path="/m" element={<MobileLayout user={user} onLogout={logout} />}>
             <Route index element={fallback} />
@@ -253,6 +259,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
   return (
     <DictProvider>
     <ChangelogModal />
+    <UsageTracker />
     <Layout user={user} onLogout={logout} theme={theme} onChangeTheme={onChangeTheme} onUserChange={setUser}>
       <Suspense fallback={pageFallback}>
         <Routes>
@@ -269,6 +276,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
           <Route path="/onboarding" element={<RequirePerm user={user} perm="pipeline"><Onboarding /></RequirePerm>} />
           <Route path="/funnel" element={<RequirePerm user={user} perm="funnel"><Funnel /></RequirePerm>} />
           <Route path="/jobs" element={<RequirePerm user={user} perm="jobs"><Jobs /></RequirePerm>} />
+          <Route path="/requisitions" element={<RequirePerm user={user} perm="jobs"><Requisitions /></RequirePerm>} />
           <Route path="/tasks" element={<RequirePerm user={user} perm="tasks"><Tasks /></RequirePerm>} />
           <Route path="/contracts" element={<RequirePerm user={user} perm="contracts"><Contracts /></RequirePerm>} />
           <Route path="/social" element={<RequirePerm user={user} perm="social"><Social /></RequirePerm>} />
@@ -277,6 +285,8 @@ export default function App({ theme, onChangeTheme }: AppProps) {
           {user.role === "admin" && <Route path="/users" element={<Users />} />}
           {/* 系统设置：收款码/数据字典等全局配置，仅管理员；权限走 admin 硬放行，不占菜单权限 key */}
           {user.role === "admin" && <Route path="/settings" element={<Settings />} />}
+          {/* 日志管理：模块点击率统计，仅管理员；同上走 admin 硬放行 */}
+          {user.role === "admin" && <Route path="/logs" element={<Logs />} />}
           {/* 帮助中心：所有登录用户可看，不做权限控制 */}
           <Route path="/help" element={<Help />} />
           <Route path="*" element={<Navigate to="/" replace />} />

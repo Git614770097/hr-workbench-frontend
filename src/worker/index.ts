@@ -17,8 +17,10 @@ import aiParseRoutes from "./routes/aiParse";
 import matchRoutes from "./routes/match";
 import demoRoutes from "./routes/demo";
 import { overview } from "./routes/overview";
+import logsRoutes, { purgeOldUsage } from "./routes/logs";
 import { parsePermissions } from "./permissions";
 import { runReminders, freezeExpiredAccounts } from "./reminders";
+import { sessionGet } from "./kv";
 
 export interface Env {
   DB: D1Database;
@@ -64,7 +66,7 @@ app.use("/api/*", async (c, next) => {
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") return next();
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
   if (!token) return next();
-  const sessionRaw = await c.env.SESSIONS.get(token);
+  const sessionRaw = await sessionGet(c.env, token);
   if (!sessionRaw) return next();
   let session: { role: string; userId: string };
   try { session = JSON.parse(sessionRaw); } catch { return next(); }
@@ -88,7 +90,7 @@ app.use("/api/*", async (c, next) => {
 async function menuGuard(c: any, menuKey: string) {
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
   if (!token) return c.json({ error: "未登录" }, 401);
-  const sessionRaw = await c.env.SESSIONS.get(token);
+  const sessionRaw = await sessionGet(c.env, token);
   if (!sessionRaw) return c.json({ error: "未登录" }, 401);
   let session: { userId: string; role: string };
   try {
@@ -222,7 +224,7 @@ app.use("/api/match", async (c, next) => {
 // 角色管理仅 admin（roles 路由内部已校验 admin，这里也拦一层双保险）
 app.use("/api/roles/*", async (c, next) => {
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
-  const sessionRaw = token ? await c.env.SESSIONS.get(token) : null;
+  const sessionRaw = token ? await sessionGet(c.env, token) : null;
   if (!sessionRaw) return c.json({ error: "未登录" }, 401);
   let session: { role: string };
   try { session = JSON.parse(sessionRaw); } catch { return c.json({ error: "未登录" }, 401); }
@@ -247,6 +249,10 @@ app.route("/api/parse-resume", aiParseRoutes);
 app.route("/api/match", matchRoutes);
 app.route("/api/demo", demoRoutes);
 app.route("/api/overview", overview);
+// 使用日志（模块点击率）：鉴权在 logs.ts 内部按方法分流——
+// POST /report 任何登录用户可上报（否则统计只覆盖管理员），GET 查询仅 admin。
+// 因此这里**不能**挂 menuGuard：那会把普通用户的上报一并拦掉。
+app.route("/api/logs", logsRoutes);
 
 // ---- Health check ----
 app.get("/api/health", (c) =>
@@ -257,7 +263,7 @@ app.get("/api/health", (c) =>
 app.get("/api/reminders/test", async (c) => {
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
   if (!token) return c.json({ error: "未登录" }, 401);
-  const sessionRaw = await c.env.SESSIONS.get(token);
+  const sessionRaw = await sessionGet(c.env, token);
   if (!sessionRaw) return c.json({ error: "未登录" }, 401);
   let session: { role: string };
   try { session = JSON.parse(sessionRaw); } catch { return c.json({ error: "未登录" }, 401); }
@@ -280,5 +286,7 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, _ctx: ExecutionContext) {
     await runReminders(env);
     await freezeExpiredAccounts(env);
+    // 使用日志明细滚动清理（保留 30 天；聚合表不动）
+    await purgeOldUsage(env);
   },
 };

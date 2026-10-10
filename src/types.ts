@@ -175,6 +175,17 @@ export const EDUCATION_OPTIONS = [
   "高中及以下", "中专", "大专", "本科", "硕士", "博士", "MBA/EMBA", "其他",
 ];
 
+export const CITY_OPTIONS = [
+  "北京", "上海", "广州", "深圳", "杭州", "成都", "南京", "武汉",
+  "西安", "苏州", "重庆", "天津", "青岛", "长沙", "郑州", "其他",
+];
+
+export const SKILL_OPTIONS = [
+  "Java", "Python", "JavaScript", "TypeScript", "React", "Vue",
+  "Node.js", "Go", "C++", "MySQL", "Redis", "Docker", "Kubernetes",
+  "团队管理", "项目管理", "产品设计",
+];
+
 export interface DocTemplate {
   id: string;
   owner_id: string;
@@ -553,6 +564,10 @@ export interface Interview {
   result: InterviewResult | null;
   score: number | null;
   evaluation: string | null;
+  // 用人部门评价（与面试评价并列，结构一致：结果 + 评分 + 评语）
+  dept_result: InterviewResult | null;
+  dept_score: number | null;
+  dept_evaluation: string | null;
   created_at: string;
   updated_at: string;
   // 联表带出
@@ -568,6 +583,7 @@ export interface Interview {
   mode_label: string;
   status_label: string;
   result_label: string;
+  dept_result_label: string;
   days_from_today: number | null;
   is_today: boolean;
   is_overdue: boolean;
@@ -779,6 +795,9 @@ export interface Task {
   source: string;
   done_at: string | null;
   created_at: string;
+  // 周末顺延：original_due 为原始到期日，shifted=1 表示已顺延到工作日
+  original_due?: string | null;
+  shifted?: number | null;
   // 后端计算字段
   days_left: number | null;
   overdue: boolean;
@@ -873,3 +892,48 @@ export const SOURCE_OPTIONS = [
   "BOSS直聘", "猎聘", "智联招聘", "前程无忧", "内推", "校招",
   "官网投递", "猎头推荐", "社交平台", "其他",
 ];
+
+// ---- 使用日志（模块点击率）----
+export interface UsageOverview {
+  days: number;
+  range: { from: string; to: string };
+  cards: {
+    activeUsers: number;
+    totalViews: number;
+    /** 今日访问最多的模块 key，空串表示今天还没有数据 */
+    topMenu: string;
+    /** 今日人均使用的模块数 */
+    avgMenus: number;
+  };
+  ranking: { menu: string; views: number; uv: number }[];
+  trend: { day: string; views: number; uv: number }[];
+  /** 本期出现过的菜单 key（矩阵列顺序） */
+  menus: string[];
+  users: {
+    id: string;
+    name: string;
+    role: string;
+    status: string;
+    total: number;
+    menus: Record<string, number>;
+  }[];
+}
+
+export interface UsageEventRow {
+  id: string;
+  ts: string;
+  menu: string;
+  action: string;
+  detail: string | null;
+  platform: string | null;
+  user_id: string;
+  user_name: string;
+  role: string | null;
+}
+
+export interface UsageEventsResponse {
+  total: number;
+  page: number;
+  page_size: number;
+  items: UsageEventRow[];
+}
