@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { genId } from "../helpers";
+import { shiftToWorkday } from "../utils/workday";
 
 /**
  * 示例数据（演示模式）：一键为当前企业载入一套完整招聘演示数据，
@@ -218,7 +219,7 @@ app.post("/seed", async (c) => {
     genId(), ownerId,
     k.talentIdx >= 0 ? talentIds[k.talentIdx] : null,
     k.jobIdx >= 0 ? jobIds[k.jobIdx] : null,
-    k.title, k.content, k.due, k.priority
+    k.title, k.content, shiftToWorkday(k.due).due, k.priority
   ));
   await db.batch(taskStmts);
 

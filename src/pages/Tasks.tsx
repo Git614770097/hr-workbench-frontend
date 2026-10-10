@@ -8,6 +8,7 @@ import type { CalendarProps } from "antd";
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, ClockCircleOutlined,
   CheckCircleOutlined, CheckOutlined, MoreOutlined, LinkOutlined, UserOutlined,
+  DownloadOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -18,6 +19,8 @@ import { PRIORITY_LABELS, PRIORITY_COLORS, TASK_SOURCE_LABELS } from "../types";
 import { dayInfo, hasHolidayData, knownYears } from "../utils/holidays";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
+import { exportXlsx, dateStamp } from "../utils/file";
+import { registerOnbFill, notifyOnbSaved } from "../components/onboardingAutoFill";
 
 const todayYmd = () => dayjs().format("YYYY-MM-DD");
 
@@ -72,6 +75,19 @@ export default function Tasks() {
   const [editing, setEditing] = useState<Task | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+
+  // 新手指引：登记「打开空表单」与「填示例数据」两个回调
+  useEffect(() => {
+    return registerOnbFill("/tasks", {
+      open: () => {
+        // 仅打开空表单（带默认日期），示例数据等用户点「帮我填好表单」再写
+        openCreate(dayjs().add(3, "day").format("YYYY-MM-DD"));
+      },
+      fill: () => {
+        form.setFieldsValue({ title: "跟进候选人面试反馈", priority: "high", notes: "示例待办，可改可删" });
+      },
+    });
+  }, []);
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -129,16 +145,18 @@ export default function Tasks() {
     setModalOpen(true);
   };
 
-  const handleSubmit = async (values: any) => {
+  // 实际落库：finalDue 为最终到期日，originalDue 为原始日期，shifted 标记是否因周末顺延
+  const persistTask = async (values: any, finalDue: string | null, originalDue: string | null, shifted: 0 | 1) => {
     setSaving(true);
     try {
-      const data = { ...values, due_date: values.due_date ? values.due_date.format("YYYY-MM-DD") : null };
+      const data = { ...values, due_date: finalDue, original_due: originalDue, shifted };
       if (editing) {
         await api.updateTask(editing.id, data);
         message.success("待办已更新");
       } else {
         await api.createTask({ ...data, source: "manual" });
         message.success("待办已创建");
+        notifyOnbSaved();
       }
       form.resetFields();
       setModalOpen(false);
@@ -147,6 +165,25 @@ export default function Tasks() {
       message.error((err as Error).message);
     }
     setSaving(false);
+  };
+
+  const handleSubmit = async (values: any) => {
+    const due: string | null = values.due_date ? values.due_date.format("YYYY-MM-DD") : null;
+    if (!due) { await persistTask(values, null, null, 0); return; }
+    const wd = dayjs(due).day(); // 0=周日 6=周六
+    if (wd === 0 || wd === 6) {
+      const shiftedDue = dayjs(due).add(wd === 6 ? 2 : 1, "day").format("YYYY-MM-DD");
+      Modal.confirm({
+        title: "该日期为周末",
+        content: `「${due}」是${wd === 6 ? "周六" : "周日"}，顺延到下一个工作日 ${shiftedDue}（周一）可避免周末无人处理。是否顺延？`,
+        okText: "顺延到周一",
+        cancelText: "保持周末",
+        onOk: () => persistTask(values, shiftedDue, due, 1),
+        onCancel: () => persistTask(values, due, due, 0),
+      });
+      return;
+    }
+    await persistTask(values, due, due, 0);
   };
 
   const toggleDone = async (t: Task) => {
@@ -197,8 +234,17 @@ export default function Tasks() {
     const t = tasks.find((x) => x.id === id);
     if (!t || !/^\d{4}-\d{2}-\d{2}$/.test(ymd) || t.due_date === ymd) return;
     try {
-      await api.updateTask(t.id, { due_date: ymd });
-      message.success(`「${t.title.slice(0, 12)}${t.title.length > 12 ? "…" : ""}」已改期至 ${dayjs(ymd).format("M月D日")}`);
+      // 拖到周末 → 顺延到下一个工作日，并标注原日期
+      const wd = dayjs(ymd).day();
+      const shifted = wd === 0 || wd === 6;
+      const finalDue = shifted ? dayjs(ymd).add(wd === 6 ? 2 : 1, "day").format("YYYY-MM-DD") : ymd;
+      await api.updateTask(t.id, {
+        due_date: finalDue,
+        original_due: shifted ? ymd : null,
+        shifted: shifted ? 1 : 0,
+      });
+      const shortTitle = `${t.title.slice(0, 12)}${t.title.length > 12 ? "…" : ""}`;
+      message.success(`「${shortTitle}」已改期至 ${dayjs(finalDue).format("M月D日")}${shifted ? "（周末顺延）" : ""}`);
       fetchTasks();
     } catch (err) {
       message.error((err as Error).message);
@@ -349,6 +395,11 @@ export default function Tasks() {
           {t.job_title && (
             <span><LinkOutlined /> {t.job_title}</span>
           )}
+          {t.shifted ? (
+            <Tag style={{ marginInlineEnd: 0 }} title={`周末顺延：原到期日 ${t.original_due}`}>
+              已顺延（原 {t.original_due}）
+            </Tag>
+          ) : null}
           {t.status === "cancelled" && <Tag style={{ marginInlineEnd: 0 }}>已取消</Tag>}
           {t.status === "done" && <Tag color="green" style={{ marginInlineEnd: 0 }}>已完成</Tag>}
           <span style={{ color: "#c2c6cc" }}>
@@ -404,6 +455,39 @@ export default function Tasks() {
                 <span className="task-legend"><i className="task-cal-dot p-normal" />中</span>
                 <span className="task-legend"><i className="task-cal-dot p-low" />低</span>
               </Space>
+              <Button
+                size="small"
+                icon={<DownloadOutlined />}
+                onClick={async () => {
+                  await exportXlsx(`待办清单_${dateStamp()}.xlsx`, [{
+                    name: "待办清单",
+                    columns: [
+                      { header: "标题", key: "title", width: 30 },
+                      { header: "关联人才", key: "talent_name", width: 12 },
+                      { header: "关联岗位", key: "job_title", width: 18 },
+                      { header: "到期日", key: "due_date", width: 12 },
+                      { header: "优先级", key: "priority", width: 8 },
+                      { header: "状态", key: "status", width: 8 },
+                      { header: "来源", key: "source", width: 10 },
+                      { header: "完成时间", key: "done_at", width: 12 },
+                      { header: "创建时间", key: "created_at", width: 12 },
+                    ],
+                    rows: tasks.map((t) => ({
+                      title: t.title,
+                      talent_name: t.talent_name || "",
+                      job_title: t.job_title || "",
+                      due_date: t.due_date || "",
+                      priority: PRIORITY_LABELS[t.priority] || t.priority,
+                      status: t.status === "done" ? "已完成" : "待处理",
+                      source: TASK_SOURCE_LABELS[t.source] || t.source,
+                      done_at: t.done_at || "",
+                      created_at: (t.created_at || "").slice(0, 10),
+                    })),
+                  }]);
+                }}
+              >
+                导出 Excel
+              </Button>
             </Space>
           }
         >

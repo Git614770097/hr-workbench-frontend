@@ -176,26 +176,6 @@ CREATE TABLE IF NOT EXISTS match_profiles (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
--- 人才画像的级别（初级/中级/高级…）：一个画像下挂多个级别，
--- 每个级别有独立的年限区间、学历、技能、城市，以及对应的市场薪资。
-CREATE TABLE IF NOT EXISTS match_profile_levels (
-  id TEXT PRIMARY KEY,
-  profile_id TEXT NOT NULL REFERENCES match_profiles(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,                -- 级别名，如「初级」「中级」「高级」
-  min_years INTEGER,                 -- 年限下限
-  max_years INTEGER,                 -- 年限上限（NULL = 不设上限）
-  education TEXT,                    -- 学历门槛
-  city TEXT,                         -- 工作城市
-  must_skills TEXT,                  -- JSON 数组：必备技能
-  nice_skills TEXT,                  -- JSON 数组：加分技能
-  requirements TEXT,                 -- 其它要求
-  salary_min INTEGER,                -- 市场薪资下限（月薪，元）
-  salary_max INTEGER,                -- 市场薪资上限（月薪，元）
-  salary_note TEXT,                  -- 薪资说明，如「一线城市」「13 薪」
-  sort_order INTEGER DEFAULT 0,      -- 级别排序（初级在前）
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
 -- 合同文件：原件存 KV（contract: 前缀），元数据存 D1。
 -- extracted_* 为 AI 识别的日期（仅作记录，档案日期以 talents 表为准）。
 CREATE TABLE IF NOT EXISTS contract_files (
@@ -350,7 +330,6 @@ CREATE INDEX IF NOT EXISTS idx_stage_logs_tj ON job_stage_logs(talent_job_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_owner_status ON talent_tasks(owner_id, status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due ON talent_tasks(due_date);
 CREATE INDEX IF NOT EXISTS idx_match_profiles_owner ON match_profiles(owner_id);
-CREATE INDEX IF NOT EXISTS idx_match_profile_levels_profile ON match_profile_levels(profile_id);
 CREATE INDEX IF NOT EXISTS idx_contract_files_talent ON contract_files(talent_id);
 CREATE INDEX IF NOT EXISTS idx_interviews_talent_job ON interviews(talent_job_id);
 CREATE INDEX IF NOT EXISTS idx_interviews_owner ON interviews(owner_id);

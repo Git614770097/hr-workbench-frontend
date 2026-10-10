@@ -115,13 +115,17 @@ tasks.post("/", async (c) => {
   if (!body.title || !String(body.title).trim()) return c.json({ error: "待办标题为必填" }, 400);
 
   const id = genId();
+  const due = body.due_date || null;
+  // 手动待办的 original_due / shifted 由前端在保存时确认填写（周末顺延）
+  const originalDue = body.original_due || null;
+  const shifted = body.shifted ? 1 : 0;
   await c.env.DB.prepare(`
-    INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, original_due, shifted)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
   `).bind(
     id, session.userId, body.talent_id || null, body.job_id || null,
-    String(body.title).trim(), body.content || null, body.due_date || null,
-    body.priority || "normal", body.source || "manual"
+    String(body.title).trim(), body.content || null, due,
+    body.priority || "normal", body.source || "manual", originalDue, shifted
   ).run();
 
   return c.json({ id });
@@ -140,10 +144,11 @@ tasks.put("/:id", async (c) => {
   if (!existing) return c.json({ error: "待办不存在" }, 404);
 
   const body = await c.req.json<any>();
-  const fields = ["title", "content", "due_date", "priority", "status", "talent_id", "job_id"] as const;
+  // original_due / shifted 也允许更新（拖拽改期落周末时顺延并标注）
+  const fields = ["title", "content", "due_date", "priority", "status", "talent_id", "job_id", "original_due", "shifted"] as const;
 
   const sets: string[] = [];
-  const params: (string | null)[] = [];
+  const params: (string | number | null)[] = [];
   for (const f of fields) {
     if (body[f] !== undefined) {
       sets.push(`${f} = ?`);

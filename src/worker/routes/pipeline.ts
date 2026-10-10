@@ -3,6 +3,7 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { genId } from "../helpers";
 import { syncTalentStage, ensureOnboardingItems } from "../talentFlow";
+import { shiftToWorkday } from "../utils/workday";
 
 const pipeline = new Hono<{ Bindings: Env }>();
 
@@ -192,6 +193,8 @@ pipeline.post("/sync-stale-tasks", async (c) => {
   }
 
   const todayStr = new Date().toISOString().slice(0, 10);
+  const todayShift = shiftToWorkday(todayStr);
+  const dueStr = todayShift.due!;
   const stmts: any[] = [];
   let created = 0, updated = 0, cancelled = 0;
 
@@ -201,12 +204,12 @@ pipeline.post("/sync-stale-tasks", async (c) => {
     const dup = existing.get(talentId);
     if (!dup) {
       stmts.push(c.env.DB.prepare(
-        "INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
-      ).bind(genId(), v.owner_id, talentId, title, content, todayStr));
+        "INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source, original_due, shifted) VALUES (?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', ?, ?)"
+      ).bind(genId(), v.owner_id, talentId, title, content, dueStr, todayStr, todayShift.shifted ? 1 : 0));
       created++;
     } else if (dup.content !== content) {
-      stmts.push(c.env.DB.prepare("UPDATE talent_tasks SET content = ?, due_date = ? WHERE id = ?")
-        .bind(content, todayStr, dup.id));
+      stmts.push(c.env.DB.prepare("UPDATE talent_tasks SET content = ?, due_date = ?, original_due = ?, shifted = ? WHERE id = ?")
+        .bind(content, dueStr, todayStr, todayShift.shifted ? 1 : 0, dup.id));
       updated++;
     }
   }
@@ -670,7 +673,9 @@ pipeline.post("/batch-stage", async (c) => {
 
     const due = new Date(Date.now() + 90 * 86400000);
     const p = (n: number) => String(n).padStart(2, "0");
-    const dueStr = `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`;
+    const rawDue = `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`;
+    const dueShift = shiftToWorkday(rawDue);
+    const dueStr = dueShift.due!;
 
     const hiredStmts: any[] = [];
     for (const r of targets) {
@@ -679,10 +684,11 @@ pipeline.post("/batch-stage", async (c) => {
       ).bind(r.talent_id));
       if (!dupSet.has(r.talent_id)) {
         hiredStmts.push(c.env.DB.prepare(
-          "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
+          "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, original_due, shifted) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', ?, ?)"
         ).bind(genId(), r.owner_id, r.talent_id, r.job_id,
           `试用期跟进：${r.talent_name}`,
-          "候选人已入职，关注试用期表现与融入情况，到期前完成转正评估。", dueStr));
+          "候选人已入职，关注试用期表现与融入情况，到期前完成转正评估。",
+          dueStr, rawDue, dueShift.shifted ? 1 : 0));
         dupSet.add(r.talent_id);
         hiredLinked++;
       }
@@ -750,13 +756,15 @@ pipeline.put("/:linkId/stage", async (c) => {
     if (!dupTask) {
       const due = new Date(Date.now() + 90 * 86400000);
       const p = (n: number) => String(n).padStart(2, "0");
+      const rawDue = `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`;
+      const dueShift = shiftToWorkday(rawDue);
       await c.env.DB.prepare(
-        "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
+        "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, original_due, shifted) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', ?, ?)"
       ).bind(
         genId(), link.owner_id, link.talent_id, link.job_id,
         `试用期跟进：${link.talent_name}`,
         "候选人已入职，关注试用期表现与融入情况，到期前完成转正评估。",
-        `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`
+        dueShift.due, rawDue, dueShift.shifted ? 1 : 0
       ).run();
       taskCreated = true;
     }

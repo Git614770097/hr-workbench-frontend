@@ -5,6 +5,7 @@ import { getSession } from "./auth";
 import { genId } from "../helpers";
 import { STAGES, syncTalentStage } from "./pipeline";
 import { deepseekJson } from "../ai";
+import { shiftToWorkday } from "../utils/workday";
 
 const talents = new Hono<{ Bindings: Env }>();
 
@@ -58,14 +59,15 @@ function contractTaskStmts(db: any, t: TalentContractRow, existing: ExistingTask
       if (dup) { stmts.push(db.prepare(`UPDATE talent_tasks SET status = 'cancelled' WHERE id = ?`).bind(dup.id)); cancelled++; }
       continue;
     }
+    const sh = shiftToWorkday(due);
+    const pr = (kinds.find((x) => x.prefix === prefix) as any)?.priority || 'high';
     if (!dup) {
-      const pr = (kinds.find((x) => x.prefix === prefix) as any)?.priority || 'high';
-      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 'system')`).bind(genId(), t.owner_id, t.id, title, content, due, pr));
+      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source, original_due, shifted) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 'system', ?, ?)`).bind(genId(), t.owner_id, t.id, title, content, sh.due, pr, sh.original, sh.shifted ? 1 : 0));
       created++;
       continue;
     }
-    if (dup.due_date !== due) {
-      stmts.push(db.prepare(`UPDATE talent_tasks SET due_date = ?, content = ? WHERE id = ?`).bind(due, content, dup.id));
+    if (dup.due_date !== sh.due) {
+      stmts.push(db.prepare(`UPDATE talent_tasks SET due_date = ?, content = ?, original_due = ?, shifted = ? WHERE id = ?`).bind(sh.due, content, sh.original, sh.shifted ? 1 : 0, dup.id));
       updated++;
     }
   }
@@ -107,14 +109,15 @@ function socialTaskStmts(db: any, t: SocialTalentRow, existing: ExistingTask[]) 
       if (dup) { stmts.push(db.prepare(`UPDATE talent_tasks SET status = 'cancelled' WHERE id = ?`).bind(dup.id)); cancelled++; }
       continue;
     }
-    const effectiveDue = due || new Date().toISOString().slice(0, 10);
+    const sh = shiftToWorkday(due || new Date().toISOString().slice(0, 10));
+    const effectiveDue = sh.due;
     if (!dup) {
-      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, 'high', 'pending', 'system')`).bind(genId(), t.owner_id, t.id, title, content, effectiveDue));
+      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source, original_due, shifted) VALUES (?, ?, ?, ?, ?, ?, 'high', 'pending', 'system', ?, ?)`).bind(genId(), t.owner_id, t.id, title, content, effectiveDue, sh.original, sh.shifted ? 1 : 0));
       created++;
       continue;
     }
     if (dup.due_date !== effectiveDue) {
-      stmts.push(db.prepare(`UPDATE talent_tasks SET due_date = ?, content = ? WHERE id = ?`).bind(effectiveDue, content, dup.id));
+      stmts.push(db.prepare(`UPDATE talent_tasks SET due_date = ?, content = ?, original_due = ?, shifted = ? WHERE id = ?`).bind(effectiveDue, content, sh.original, sh.shifted ? 1 : 0, dup.id));
       updated++;
     }
   }
