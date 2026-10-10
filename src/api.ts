@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse } from "./types";
 
 const BASE = "/api";
 
@@ -71,7 +71,7 @@ export const api = {
       return r;
     }),
 
-  me: () => request<User>("/auth/me"),
+  me: () => request<User>("/auth/me", {}, 8000),
   logout: () => request("/auth/logout", { method: "POST" }),
 
   // 自助注册（注册后为 pending 状态，需管理员审批）
@@ -169,12 +169,16 @@ export const api = {
       reject_reasons: string[];
       education: string[];
       job_types: Record<string, string>;
+      cities: string[];
+      skills: string[];
     }>("/auth/settings/dict"),
   setDictConfig: (data: {
     sources?: string[];
     reject_reasons?: string[];
     education?: string[];
     job_types?: Record<string, string>;
+    cities?: string[];
+    skills?: string[];
   }) =>
     request<{ ok: boolean }>("/auth/settings/dict", { method: "PUT", body: JSON.stringify(data) }),
   // 更新公告（首屏弹窗用）：GET 登录可见，PUT 仅管理员
@@ -301,11 +305,16 @@ export const api = {
     });
   },
 
-  getResumeUrl: (talentId: string) =>
-    `${BASE}/talents/${talentId}/resume?token=${getToken() || ""}`,
+  // 简历预览/下载地址：先取 60s 短期票据再拼 URL（不再把 7 天会话 token 放进 URL）
+  getResumeUrl: async (talentId: string) => {
+    const { ticket } = await request<{ ticket: string }>(`/talents/${talentId}/resume/ticket`, { method: "POST" });
+    return `${BASE}/talents/${talentId}/resume?ticket=${encodeURIComponent(ticket)}`;
+  },
 
-  getResumeDownloadUrl: (talentId: string) =>
-    `${BASE}/talents/${talentId}/resume?token=${getToken() || ""}&download=1`,
+  getResumeDownloadUrl: async (talentId: string) => {
+    const { ticket } = await request<{ ticket: string }>(`/talents/${talentId}/resume/ticket`, { method: "POST" });
+    return `${BASE}/talents/${talentId}/resume?ticket=${encodeURIComponent(ticket)}&download=1`;
+  },
 
   deleteResume: (talentId: string) =>
     request(`/talents/${talentId}/resume`, { method: "DELETE" }),
@@ -569,6 +578,17 @@ export const api = {
     request<{ ok: boolean; item: Interview; advanced_to?: string | null }>(`/interviews/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteInterview: (id: string) => request<{ ok: boolean }>(`/interviews/${id}`, { method: "DELETE" }),
 
+  // AI 面试评价总结：面试官填完评价后一键生成结构化总结
+  aiInterviewSummary: (id: string) =>
+    request<{
+      summary: string;
+      strengths: string[];
+      risks: string[];
+      recommendation: string;
+      suggested_result: string;
+      _ai_fallback?: boolean;
+    }>(`/interviews/${id}/ai-summary`, { method: "POST" }, 60000),
+
   // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
   getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {
     const qs = Object.entries(params)
@@ -617,4 +637,20 @@ export const api = {
   updateOnboardingItem: (id: string, data: Partial<OnboardingItem>) =>
     request<{ ok: boolean }>(`/onboarding/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteOnboardingItem: (id: string) => request<{ ok: boolean }>(`/onboarding/${id}`, { method: "DELETE" }),
+
+  // 使用日志（模块点击率）——仅管理员可查询
+  getUsageOverview: (params: { days?: number; menu?: string } = {}) => {
+    const qs = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join("&");
+    return request<UsageOverview>(`/logs/overview${qs ? `?${qs}` : ""}`);
+  },
+  getUsageEvents: (params: { days?: number; menu?: string; user_id?: string; page?: number; page_size?: number } = {}) => {
+    const qs = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join("&");
+    return request<UsageEventsResponse>(`/logs/events${qs ? `?${qs}` : ""}`);
+  },
 };

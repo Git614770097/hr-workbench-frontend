@@ -168,7 +168,13 @@ function ContractFilesModal({
     {
       title: "文件名", dataIndex: "filename", key: "filename", ellipsis: true,
       render: (v: string, r: ContractFile) => (
-        <a href={api.getContractFileUrl(r.id)} target="_blank" rel="noreferrer">{v}</a>
+        <a
+          style={{ cursor: "pointer" }}
+          onClick={async (e) => {
+            e.preventDefault();
+            try { window.open(await api.getContractFileUrl(r.id), "_blank"); } catch { /* 忽略 */ }
+          }}
+        >{v}</a>
       ),
     },
     { title: "大小", dataIndex: "size", key: "size", width: 90, render: (v: number) => fmtSize(v) },
@@ -188,7 +194,13 @@ function ContractFilesModal({
       title: "操作", key: "action", width: 110,
       render: (_: unknown, r: ContractFile) => (
         <Space size={4}>
-          <a href={api.getContractFileUrl(r.id, true)}>下载</a>
+          <a
+            style={{ cursor: "pointer" }}
+            onClick={async (e) => {
+              e.preventDefault();
+              try { window.open(await api.getContractFileUrl(r.id, true), "_blank"); } catch { /* 忽略 */ }
+            }}
+          >下载</a>
           <Popconfirm title="确定删除该合同文件？" onConfirm={() => handleDelete(r.id)}>
             <Button type="link" size="small" danger style={{ paddingInline: 4 }}>删除</Button>
           </Popconfirm>

@@ -3,6 +3,7 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { genId } from "../helpers";
 import { moveStageForward } from "../talentFlow";
+import { deepseekJsonSafe, toStringArray } from "../ai";
 
 const interviews = new Hono<{ Bindings: Env }>();
 
@@ -39,6 +40,7 @@ function decorate(r: any) {
     mode_label: MODE_LABEL[r.mode] || r.mode,
     status_label: STATUS_LABEL[r.status] || r.status,
     result_label: r.result ? RESULT_LABEL[r.result] || r.result : "",
+    dept_result_label: r.dept_result ? RESULT_LABEL[r.dept_result] || r.dept_result : "",
     days_from_today: daysFromToday,
     is_today: daysFromToday === 0,
     is_overdue: daysFromToday !== null && daysFromToday < 0 && r.status === "scheduled",
@@ -151,6 +153,9 @@ interface Body {  talent_id?: string;
   result?: string | null;
   score?: number | null;
   evaluation?: string | null;
+  dept_result?: string | null;
+  dept_score?: number | null;
+  dept_evaluation?: string | null;
 }
 
 /** 新建面试安排 */
@@ -178,11 +183,12 @@ interviews.post("/", async (c) => {
 
   const id = genId();
   // 直接填了面试结论（说明面试已发生）→ 状态自动落「已完成」，不再是「待面试」
-  const initStatus = b.result && (b.status || "scheduled") === "scheduled" ? "done" : (b.status || "scheduled");
+  const initStatus = (b.result || b.dept_result) && (b.status || "scheduled") === "scheduled" ? "done" : (b.status || "scheduled");
   await c.env.DB.prepare(`
     INSERT INTO interviews (id, owner_id, talent_id, job_id, talent_job_id, round, mode, scheduled_at,
-                            duration, location, meeting_url, interviewer, status, result, score, evaluation)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            duration, location, meeting_url, interviewer, status, result, score, evaluation,
+                            dept_result, dept_score, dept_evaluation)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     id,
     session.userId,
@@ -199,11 +205,14 @@ interviews.post("/", async (c) => {
     initStatus,
     b.result || null,
     b.score ?? null,
-    (b.evaluation || "").trim() || null
+    (b.evaluation || "").trim() || null,
+    b.dept_result || null,
+    b.dept_score ?? null,
+    (b.dept_evaluation || "").trim() || null
   ).run();
 
   const row = await c.env.DB.prepare(`${SELECT_SQL} WHERE iv.id = ?`).bind(id).first();
-  const advancedTo = b.result === "pass"
+  const advancedTo = b.result === "pass" && b.dept_result === "pass"
     ? await advanceOnInterviewPass(c.env, {
         talentJobId: b.talent_job_id || null,
         round: b.round || "interview1",
@@ -222,7 +231,8 @@ interviews.put("/:id", async (c) => {
   const id = c.req.param("id");
   const exist = await c.env.DB.prepare("SELECT * FROM interviews WHERE id = ?").bind(id).first<any>();
   if (!exist) return c.json({ error: "面试记录不存在" }, 404);
-  if (exist.owner_id !== session.userId) return c.json({ error: "无权操作该面试记录" }, 403);
+  // admin 可操作全部面试（列表/详情同样放开），普通用户只能操作自己安排的
+  if (session.role !== "admin" && exist.owner_id !== session.userId) return c.json({ error: "无权操作该面试记录" }, 403);
 
   let b: Body;
   try { b = await c.req.json(); } catch { return c.json({ error: "请求参数格式不正确" }, 400); }
@@ -236,12 +246,13 @@ interviews.put("/:id", async (c) => {
 
   // 填了面试结论即视为面试已发生 → 待面试自动落为「已完成」，避免看板一直挂着过期面试
   const submittedStatus = b.status ?? exist.status;
-  const finalStatus = b.result && submittedStatus === "scheduled" ? "done" : submittedStatus;
+  const finalStatus = (b.result || b.dept_result) && submittedStatus === "scheduled" ? "done" : submittedStatus;
 
   await c.env.DB.prepare(`
     UPDATE interviews SET
       round = ?, mode = ?, scheduled_at = ?, duration = ?, location = ?, meeting_url = ?,
       interviewer = ?, status = ?, result = ?, score = ?, evaluation = ?,
+      dept_result = ?, dept_score = ?, dept_evaluation = ?,
       updated_at = datetime('now')
     WHERE id = ?
   `).bind(
@@ -256,13 +267,16 @@ interviews.put("/:id", async (c) => {
     (b.result ?? exist.result) || null,
     b.score ?? exist.score ?? null,
     (b.evaluation ?? exist.evaluation ?? "").trim() || null,
+    (b.dept_result ?? exist.dept_result) || null,
+    b.dept_score ?? exist.dept_score ?? null,
+    (b.dept_evaluation ?? exist.dept_evaluation ?? "").trim() || null,
     id
   ).run();
 
   const row = await c.env.DB.prepare(`${SELECT_SQL} WHERE iv.id = ?`).bind(id).first();
 
   // 结论为「通过」→ 自动推进看板阶段（初试→复试 / 复试·终面→Offer）
-  const advancedTo = (b.result ?? exist.result) === "pass"
+  const advancedTo = (b.result ?? exist.result) === "pass" && (b.dept_result ?? exist.dept_result) === "pass"
     ? await advanceOnInterviewPass(c.env, {
         talentJobId: (row as any)?.talent_job_id ?? exist.talent_job_id ?? null,
         round: (b.round ?? exist.round) as string,
@@ -281,9 +295,95 @@ interviews.delete("/:id", async (c) => {
   const id = c.req.param("id");
   const exist = await c.env.DB.prepare("SELECT owner_id FROM interviews WHERE id = ?").bind(id).first<{ owner_id: string }>();
   if (!exist) return c.json({ error: "面试记录不存在" }, 404);
-  if (exist.owner_id !== session.userId) return c.json({ error: "无权操作该面试记录" }, 403);
+  // admin 可操作全部面试（列表/详情同样放开），普通用户只能操作自己安排的
+  if (session.role !== "admin" && exist.owner_id !== session.userId) return c.json({ error: "无权操作该面试记录" }, 403);
   await c.env.DB.prepare("DELETE FROM interviews WHERE id = ?").bind(id).run();
   return c.json({ ok: true });
+});
+
+/**
+ * AI 面试评价总结：面试官填完评价/评分/结论后，一键生成结构化总结。
+ * 输入：面试记录已有的评价、评分、结论 + 候选人和职位信息。
+ * 输出：一句话总结、优势、风险、推荐级别、建议结论。
+ * 降级：AI 不可用时返回空结果 + 提示，面试官手动填写，不阻塞流程。
+ */
+interviews.post("/:id/ai-summary", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const id = c.req.param("id");
+  const row = await c.env.DB.prepare(`${SELECT_SQL} WHERE iv.id = ?`).bind(id).first<any>();
+  if (!row) return c.json({ error: "面试记录不存在" }, 404);
+  if (session.role !== "admin" && row.owner_id !== session.userId) {
+    return c.json({ error: "无权操作该面试记录" }, 403);
+  }
+
+  // 至少要有一段评价文字才有 AI 总结的意义
+  const hasEvaluation = (row.evaluation || "").trim() || (row.dept_evaluation || "").trim();
+  if (!hasEvaluation) {
+    return c.json({ error: "请先填写面试评价后再生成总结" }, 400);
+  }
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "未配置 AI 密钥，无法生成总结，请手动填写" }, 500);
+  }
+
+  const system = `你是一名资深招聘面试官。请根据面试官填写的评价内容，生成结构化面试总结。以严格的 JSON 对象返回，不要输出任何多余解释。
+
+字段说明：
+- summary: 一句话总结候选人面试表现（40 字以内）
+- strengths: 2-4 条候选人优势，每条不超过 30 字，必须引用评价中的事实
+- risks: 1-3 条风险或不足（没有则空数组），每条不超过 30 字
+- recommendation: 推荐级别，四选一："强烈推荐" / "推荐" / "可考虑" / "不建议"
+- suggested_result: 建议结论，三选一："pass" / "fail" / "pending"
+
+要求：
+1. 基于面试评价事实，不要臆造。
+2. 如果评价内容太少或太笼统，strengths 和 risks 可以少给，但不要编造。
+3. recommendation 和 suggested_result 要与评价评分一致，不要矛盾。`;
+
+  const roundLabel = ROUND_LABEL[row.round] || row.round;
+  const resultLabel = row.result ? RESULT_LABEL[row.result] || row.result : "未填";
+  const deptResultLabel = row.dept_result ? RESULT_LABEL[row.dept_result] || row.dept_result : "未填";
+
+  const userPrompt = `【面试信息】
+候选人：${row.talent_name || "未知"}
+应聘职位：${row.job_title || "未指定"}（${row.job_department || ""}）
+面试轮次：${roundLabel}
+面试官：${row.interviewer || "未填"}
+
+【面试评价】
+面试官评分：${row.score ?? "未填"}
+面试官结论：${resultLabel}
+面试官评语：${(row.evaluation || "").trim() || "未填"}
+
+【部门评价】
+部门评分：${row.dept_score ?? "未填"}
+部门结论：${deptResultLabel}
+部门评语：${(row.dept_evaluation || "").trim() || "未填"}
+
+请生成面试总结。`;
+
+  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.3 });
+  if (!raw) {
+    return c.json({
+      summary: "",
+      strengths: [],
+      risks: [],
+      recommendation: "",
+      suggested_result: "",
+      _ai_fallback: true,
+    });
+  }
+
+  return c.json({
+    summary: (raw.summary as string || "").trim(),
+    strengths: toStringArray(raw.strengths, 4),
+    risks: toStringArray(raw.risks, 3),
+    recommendation: (raw.recommendation as string || "").trim(),
+    suggested_result: (raw.suggested_result as string || "").trim(),
+  });
 });
 
 export { interviews as interviewRoutes };

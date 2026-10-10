@@ -1,18 +1,72 @@
 import { Hono } from "hono";
 import { setCookie, getCookie } from "hono/cookie";
 import type { Env } from "../index";
-import { genId } from "../helpers";
+import { genId, cachedJson, invalidateCache } from "../helpers";
 import { sendPushPlus, notifyNewRegistration, notifyPasswordResetRequest, notifyMembershipRequest, notifyUserApproved } from "../reminders";
 import { newReferralCode, getReferralConfig, grantReferralReward, notifyReferralReward } from "../referral";
 import { getSmsConfig, sendSmsCode, verifySmsCode } from "../sms";
+import { sessionGet } from "../kv";
 const auth = new Hono<{ Bindings: Env }>();
 
-async function hashPassword(password: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password + "hr-talent-salt");
-  const buf = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+// ---- 密码哈希（PBKDF2-SHA256 + 每用户随机盐 + 10 万迭代）----
+// 历史版本曾用「单轮 SHA-256 + 全局固定盐」，安全性弱（可彩虹表、GPU 秒破）。
+// 现升级为慢哈希；verifyPassword 兼容旧格式，旧哈希校验通过后由调用方就地重算升级。
+const PBKDF2_ITER = 100_000;
+const PBKDF2_KEYLEN = 32; // 32 字节 = 256 bit
+const KDF_HASH = "SHA-256";
+
+function toHex(buf: Uint8Array): string {
+  return Array.from(buf).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+function fromHex(hex: string): Uint8Array {
+  const out = new Uint8Array(Math.floor(hex.length / 2));
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+}
+
+async function pbkdf2(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: new Uint8Array(salt) as BufferSource, iterations, hash: KDF_HASH },
+    key,
+    PBKDF2_KEYLEN * 8
+  );
+  return new Uint8Array(bits);
+}
+
+/** 生成新密码哈希，格式：pbkdf2$<iter>$<saltHex>$<hashHex> */
+async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const dk = await pbkdf2(password, salt, PBKDF2_ITER);
+  return `pbkdf2$${PBKDF2_ITER}$${toHex(salt)}$${toHex(dk)}`;
+}
+
+/** 旧版单轮 SHA-256 + 固定盐（仅用于校验历史哈希，不再用于生成） */
+async function legacySha256(password: string): Promise<string> {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest("SHA-256", enc.encode(password + "hr-talent-salt"));
+  return toHex(new Uint8Array(buf));
+}
+
+/**
+ * 校验密码。返回 ok（是否匹配）与 needsUpgrade（是否旧格式，调用方成功后就地升级为 PBKDF2）。
+ */
+async function verifyPassword(password: string, stored: string): Promise<{ ok: boolean; needsUpgrade: boolean }> {
+  if (stored && stored.startsWith("pbkdf2$")) {
+    const parts = stored.split("$"); // pbkdf2$iter$salt$hash
+    const iter = Number(parts[1]) || PBKDF2_ITER;
+    const salt = fromHex(parts[2] || "");
+    const expect = parts[3] || "";
+    const dk = await pbkdf2(password, salt, iter);
+    return { ok: toHex(dk) === expect, needsUpgrade: false };
+  }
+  const ok = (await legacySha256(password)) === stored;
+  return { ok, needsUpgrade: ok };
+}
+
+/** 密码最短长度（由 6 位提高到 8 位） */
+const MIN_PASSWORD_LEN = 8;
 
 function genToken(): string { return crypto.randomUUID() + crypto.randomUUID(); }
 
@@ -183,7 +237,7 @@ auth.post("/register", async (c) => {
 
   if (!phone || !name || !password) return c.json({ error: "手机号、姓名、密码均为必填" }, 400);
   if (!/^1[3-9]\d{9}$/.test(phone)) return c.json({ error: "请输入正确的手机号" }, 400);
-  if (password.length < 6) return c.json({ error: "密码至少 6 位" }, 400);
+  if (password.length < MIN_PASSWORD_LEN) return c.json({ error: `密码至少 ${MIN_PASSWORD_LEN} 位` }, 400);
 
   // 身份：非法值一律回落 "hr"，不报错（避免因前端版本不一致导致注册失败）
   const intended = (INTENDED_ROLES as readonly string[]).includes(intended_role || "")
@@ -336,12 +390,40 @@ auth.post("/login", async (c) => {
     return c.json({ error: "验证码错误" }, 400);
   }
 
+  // ---- 登录失败限流：同手机号 / 同 IP 连续失败过多则临时锁定，缓解口令爆破 ----
+  const ip = c.req.header("CF-Connecting-IP") || c.req.header("X-Forwarded-For") || "unknown";
+  const failKey = `loginfail:${phone}`;
+  const ipFailKey = `loginfail:ip:${ip}`;
+  const MAX_FAIL_PHONE = 5;
+  const MAX_FAIL_IP = 20;
+  const [failCntRaw, ipFailCntRaw] = await Promise.all([
+    c.env.SESSIONS.get(failKey),
+    c.env.SESSIONS.get(ipFailKey),
+  ]);
+  if (Number(failCntRaw || 0) >= MAX_FAIL_PHONE || Number(ipFailCntRaw || 0) >= MAX_FAIL_IP) {
+    return c.json({ error: "登录尝试过于频繁，请 15 分钟后再试" }, 429);
+  }
+  const recordFail = () => Promise.all([
+    c.env.SESSIONS.put(failKey, String(Number(failCntRaw || 0) + 1), { expirationTtl: 900 }),
+    c.env.SESSIONS.put(ipFailKey, String(Number(ipFailCntRaw || 0) + 1), { expirationTtl: 900 }),
+  ]);
+
   const user = await c.env.DB.prepare("SELECT * FROM users WHERE phone = ?").bind(phone).first<{ id: string; phone: string; name: string; password_hash: string; role: string; role_id: string | null; status: string | null }>();
 
-  if (!user) return c.json({ error: "手机号或密码错误" }, 401);
+  if (!user) { await recordFail(); return c.json({ error: "手机号或密码错误" }, 401); }
 
-  const passwordHash = await hashPassword(password);
-  if (user.password_hash !== passwordHash) return c.json({ error: "手机号或密码错误" }, 401);
+  const pwdCheck = await verifyPassword(password, user.password_hash);
+  if (!pwdCheck.ok) { await recordFail(); return c.json({ error: "手机号或密码错误" }, 401); }
+  // 旧格式（单轮 SHA-256）校验通过后就地升级为 PBKDF2，用户无感知
+  if (pwdCheck.needsUpgrade) {
+    try {
+      await c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
+        .bind(await hashPassword(password), user.id).run();
+    } catch { /* 升级失败不影响本次登录 */ }
+  }
+
+  // 密码正确：清空失败计数
+  await Promise.all([c.env.SESSIONS.delete(failKey), c.env.SESSIONS.delete(ipFailKey)]);
 
   // 待审批 / 已拒绝 / 已停用的账号不允许登录。
   // 注意：这里放在密码校验之后，避免通过响应差异探测某手机号是否已注册。
@@ -537,8 +619,8 @@ auth.put("/users/:id/reset-password", async (c) => {
     return c.json({ ok: true });
   }
 
-  if (!body.password || body.password.length < 6) {
-    return c.json({ error: "新密码至少 6 位" }, 400);
+  if (!body.password || body.password.length < MIN_PASSWORD_LEN) {
+    return c.json({ error: `新密码至少 ${MIN_PASSWORD_LEN} 位` }, 400);
   }
 
   const passwordHash = await hashPassword(body.password);
@@ -558,14 +640,14 @@ auth.put("/me/password", async (c) => {
 
   const { old_password, new_password } = await c.req.json<{ old_password: string; new_password: string }>();
   if (!old_password || !new_password) return c.json({ error: "原密码和新密码均为必填" }, 400);
-  if (new_password.length < 6) return c.json({ error: "新密码至少 6 位" }, 400);
+  if (new_password.length < MIN_PASSWORD_LEN) return c.json({ error: `新密码至少 ${MIN_PASSWORD_LEN} 位` }, 400);
   if (old_password === new_password) return c.json({ error: "新密码不能与原密码相同" }, 400);
 
   const user = await c.env.DB.prepare("SELECT id, password_hash FROM users WHERE id = ?")
     .bind(session.userId).first<{ id: string; password_hash: string }>();
   if (!user) return c.json({ error: "用户不存在" }, 401);
 
-  if (user.password_hash !== await hashPassword(old_password)) {
+  if (!(await verifyPassword(old_password, user.password_hash)).ok) {
     return c.json({ error: "原密码不正确" }, 400);
   }
 
@@ -759,7 +841,7 @@ auth.put("/users/:id/password", async (c) => {
 
   const id = c.req.param("id");
   const { password } = await c.req.json<{ password: string }>();
-  if (!password || password.length < 6) return c.json({ error: "密码至少6位" }, 400);
+  if (!password || password.length < MIN_PASSWORD_LEN) return c.json({ error: `密码至少 ${MIN_PASSWORD_LEN} 位` }, 400);
 
   const passwordHash = await hashPassword(password);
   // 管理员设的是临时密码，打上标记让用户下次登录后自行修改（与忘记密码处理路径一致）
@@ -915,7 +997,7 @@ auth.put("/settings/pay", async (c) => {
 // 两类语义：
 //  - 数组型（来源渠道/淘汰原因/学历）：值为 JSON 字符串数组，中文原文直接作为存储值。
 //  - 映射型（职位类型）：值为 JSON 对象 { key: 中文标签 }，key 集合固定（保证看板/筛选逻辑稳定），仅标签文案可改。
-const DICT_KEYS = ["dict_sources", "dict_reject_reasons", "dict_education", "dict_job_types"] as const;
+const DICT_KEYS = ["dict_sources", "dict_reject_reasons", "dict_education", "dict_job_types", "dict_cities", "dict_skills"] as const;
 
 const DEFAULT_DICT: Record<string, string[] | Record<string, string>> = {
   dict_sources: [
@@ -935,49 +1017,63 @@ const DEFAULT_DICT: Record<string, string[] | Record<string, string>> = {
     intern: "实习",
     outsourced: "外包",
   },
+  dict_cities: [
+    "北京", "上海", "广州", "深圳", "杭州", "成都", "南京", "武汉",
+    "西安", "苏州", "重庆", "天津", "青岛", "长沙", "郑州", "其他",
+  ],
+  dict_skills: [
+    "Java", "Python", "JavaScript", "TypeScript", "React", "Vue",
+    "Node.js", "Go", "C++", "MySQL", "Redis", "Docker", "Kubernetes",
+    "团队管理", "项目管理", "产品设计",
+  ],
 };
 
 // 读取字典（登录即可）：无配置时返回默认值
+// Edge Cache：120s TTL，字典全租户共用，管理员保存后立即失效
 auth.get("/settings/dict", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  const rows = await c.env.DB.prepare(
-    "SELECT key, value FROM site_settings WHERE key IN ('dict_sources','dict_reject_reasons','dict_education','dict_job_types')"
-  ).all<{ key: string; value: string }>();
-  const map: Record<string, string> = {};
-  (rows.results || []).forEach((r) => { map[r.key] = r.value; });
 
-  const parse = (k: string): string[] | Record<string, string> => {
-    const raw = map[k];
-    if (!raw) return DEFAULT_DICT[k];
-    try {
-      const v = JSON.parse(raw);
-      const def = DEFAULT_DICT[k];
-      if (Array.isArray(def)) {
-        // 数组型：清洗成非空字符串数组
-        if (!Array.isArray(v)) return def;
-        const list = v.map((x) => String(x).trim()).filter(Boolean);
-        return list.length > 0 ? list : def;
-      }
-      // 映射型：只保留 key 集合内、值非空的项；缺失 key 回落到默认标签
-      if (v && typeof v === "object" && !Array.isArray(v)) {
-        const out: Record<string, string> = {};
-        for (const key of Object.keys(def)) {
-          out[key] = String(v[key] ?? "").trim() || (def as Record<string, string>)[key];
+  const cacheKey = "https://edge-cache.internal/api/settings/dict";
+  return cachedJson(c.executionCtx, cacheKey, 120, async () => {
+    const rows = await c.env.DB.prepare(
+      "SELECT key, value FROM site_settings WHERE key IN ('dict_sources','dict_reject_reasons','dict_education','dict_job_types','dict_cities','dict_skills')"
+    ).all<{ key: string; value: string }>();
+    const map: Record<string, string> = {};
+    (rows.results || []).forEach((r) => { map[r.key] = r.value; });
+
+    const parse = (k: string): string[] | Record<string, string> => {
+      const raw = map[k];
+      if (!raw) return DEFAULT_DICT[k];
+      try {
+        const v = JSON.parse(raw);
+        const def = DEFAULT_DICT[k];
+        if (Array.isArray(def)) {
+          if (!Array.isArray(v)) return def;
+          const list = v.map((x) => String(x).trim()).filter(Boolean);
+          return list.length > 0 ? list : def;
         }
-        return out;
+        if (v && typeof v === "object" && !Array.isArray(v)) {
+          const out: Record<string, string> = {};
+          for (const key of Object.keys(def)) {
+            out[key] = String(v[key] ?? "").trim() || (def as Record<string, string>)[key];
+          }
+          return out;
+        }
+        return def;
+      } catch {
+        return DEFAULT_DICT[k];
       }
-      return def;
-    } catch {
-      return DEFAULT_DICT[k];
-    }
-  };
+    };
 
-  return c.json({
-    sources: parse("dict_sources"),
-    reject_reasons: parse("dict_reject_reasons"),
-    education: parse("dict_education"),
-    job_types: parse("dict_job_types"),
+    return {
+      sources: parse("dict_sources"),
+      reject_reasons: parse("dict_reject_reasons"),
+      education: parse("dict_education"),
+      job_types: parse("dict_job_types"),
+      cities: parse("dict_cities"),
+      skills: parse("dict_skills"),
+    };
   });
 });
 
@@ -989,7 +1085,8 @@ auth.put("/settings/dict", async (c) => {
 
   const body = await c.req.json<{
     sources?: unknown; reject_reasons?: unknown; education?: unknown; job_types?: unknown;
-  }>().catch(() => ({}) as { sources?: unknown; reject_reasons?: unknown; education?: unknown; job_types?: unknown });
+    cities?: unknown; skills?: unknown;
+  }>().catch(() => ({}) as { sources?: unknown; reject_reasons?: unknown; education?: unknown; job_types?: unknown; cities?: unknown; skills?: unknown });
 
   const normalize = (v: unknown): string[] | null => {
     if (!Array.isArray(v)) return null;
@@ -1012,7 +1109,9 @@ auth.put("/settings/dict", async (c) => {
   const reasons = normalize(body.reject_reasons);
   const education = normalize(body.education);
   const jobTypes = normalizeJobTypes(body.job_types);
-  if (!sources && !reasons && !education && !jobTypes) {
+  const cities = normalize(body.cities);
+  const skills = normalize(body.skills);
+  if (!sources && !reasons && !education && !jobTypes && !cities && !skills) {
     return c.json({ error: "至少需要提供一项非空字典" }, 400);
   }
 
@@ -1021,12 +1120,16 @@ auth.put("/settings/dict", async (c) => {
   if (reasons) items.push(["dict_reject_reasons", JSON.stringify(reasons)]);
   if (education) items.push(["dict_education", JSON.stringify(education)]);
   if (jobTypes) items.push(["dict_job_types", JSON.stringify(jobTypes)]);
+  if (cities) items.push(["dict_cities", JSON.stringify(cities)]);
+  if (skills) items.push(["dict_skills", JSON.stringify(skills)]);
   for (const [k, v] of items) {
     await c.env.DB.prepare(
       "INSERT INTO site_settings (key, value) VALUES (?, ?) " +
       "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
     ).bind(k, v).run();
   }
+  // 字典变更后立即失效缓存，确保全站下拉即时刷新
+  await invalidateCache("https://edge-cache.internal/api/settings/dict");
   return c.json({ ok: true });
 });
 
@@ -1091,7 +1194,7 @@ export interface SessionInfo {
 export async function getSession(c: any): Promise<SessionInfo | null> {
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
   if (!token) return null;
-  const session = await c.env.SESSIONS.get(token);
+  const session = await sessionGet(c.env, token);
   if (!session) return null;
   return JSON.parse(session) as SessionInfo;
 }

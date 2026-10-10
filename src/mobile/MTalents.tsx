@@ -285,9 +285,9 @@ export default function MTalents() {
                 <Button
                   block
                   icon={<DownloadOutlined />}
-                  href={api.getResumeDownloadUrl(detail.id)}
-                  target="_blank"
-                  rel="noreferrer"
+                  onClick={async () => {
+                    try { window.open(await api.getResumeDownloadUrl(detail.id), "_blank"); } catch { /* 忽略 */ }
+                  }}
                 >
                   下载简历
                 </Button>

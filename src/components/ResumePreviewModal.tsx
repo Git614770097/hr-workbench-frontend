@@ -23,23 +23,31 @@ export default function ResumePreviewModal({ talent, onClose }: Props) {
   const [docHtml, setDocHtml] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [pdfUrl, setPdfUrl] = useState("");
 
   const ext = talent ? getExt(talent.resume_url) : "";
   const isWord = ext === "docx" || ext === "doc";
 
   useEffect(() => {
-    if (!talent || !isWord) return;
+    if (!talent) return;
     let cancelled = false;
-    setLoading(true);
     setError("");
     setDocHtml("");
+    setPdfUrl("");
     (async () => {
       try {
-        const res = await fetch(api.getResumeUrl(talent.id));
-        if (!res.ok) throw new Error("简历文件加载失败");
-        const buf = await res.arrayBuffer();
-        const result = await mammoth.convertToHtml({ arrayBuffer: buf });
-        if (!cancelled) setDocHtml(result.value);
+        // 先取 60s 短期票据再拉取/预览，不再把会话 token 放进 URL
+        const url = await api.getResumeUrl(talent.id);
+        if (isWord) {
+          setLoading(true);
+          const res = await fetch(url);
+          if (!res.ok) throw new Error("简历文件加载失败");
+          const buf = await res.arrayBuffer();
+          const result = await mammoth.convertToHtml({ arrayBuffer: buf });
+          if (!cancelled) setDocHtml(result.value);
+        } else {
+          if (!cancelled) setPdfUrl(url);
+        }
       } catch (e) {
         if (!cancelled) setError((e as Error).message || "简历解析失败");
       }
@@ -70,11 +78,17 @@ export default function ResumePreviewModal({ talent, onClose }: Props) {
           <div className="resume-doc-preview" dangerouslySetInnerHTML={{ __html: docHtml }} />
         )
       ) : (
-        <iframe
-          src={api.getResumeUrl(talent.id)}
-          style={{ width: "100%", height: "80vh", border: "none", borderRadius: 8 }}
-          title="简历预览"
-        />
+        pdfUrl ? (
+          <iframe
+            src={pdfUrl}
+            style={{ width: "100%", height: "80vh", border: "none", borderRadius: 8 }}
+            title="简历预览"
+          />
+        ) : (
+          <div style={{ textAlign: "center", padding: "4rem" }}>
+            <Spin size="large" />
+          </div>
+        )
       ))}
     </Modal>
   );
