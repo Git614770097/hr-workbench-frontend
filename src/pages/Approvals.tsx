@@ -47,7 +47,7 @@ function FlowSettings() {
   };
 
   return (
-    <div>
+    <div className="appr-pane">
       <Alert
         type="info"
         showIcon
@@ -191,7 +191,7 @@ function InstanceList() {
   };
 
   return (
-    <div>
+    <div className="appr-pane">
       <Alert
         type="info"
         showIcon
@@ -201,7 +201,7 @@ function InstanceList() {
       <div className="toolbar">
         <Space>
           <Select
-            style={{ width: 140 }}
+            style={{ width: 200 }}
             value={status}
             onChange={setStatus}
             options={[
@@ -316,7 +316,7 @@ function InstanceList() {
 
 export default function Approvals() {
   return (
-    <div className="page-fill profiles-page">
+    <div className="page-fill profiles-page approvals-page">
       <Card>
         <Tabs
           className="app-pill-tabs"
