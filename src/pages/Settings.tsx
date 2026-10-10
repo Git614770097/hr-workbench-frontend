@@ -3,7 +3,7 @@ import { Card, Tabs, Input, Button, Alert, message, Typography, Select, Modal, F
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { useDict } from "../dict";
-import { SOURCE_OPTIONS, REJECT_REASONS, EDUCATION_OPTIONS, JOB_TYPE_LABELS } from "../types";
+import { SOURCE_OPTIONS, REJECT_REASONS, EDUCATION_OPTIONS, JOB_TYPE_LABELS, CITY_OPTIONS, SKILL_OPTIONS } from "../types";
 
 /** 字典类型元信息（顺序即列表展示顺序） */
 const DICT_TYPE_META: { key: string; label: string; color: string; hint: string; fixed?: boolean }[] = [
@@ -11,6 +11,8 @@ const DICT_TYPE_META: { key: string; label: string; color: string; hint: string;
   { key: "reject_reasons", label: "淘汰原因", color: "orange", hint: "看板淘汰原因、漏斗淘汰分布统计" },
   { key: "education", label: "学历", color: "green", hint: "人才录入/导入、岗位学历要求" },
   { key: "job_types", label: "用工类型", color: "purple", hint: "岗位用工类型，固定项仅可改名称", fixed: true },
+  { key: "cities", label: "城市", color: "cyan", hint: "人才档案/岗位所在城市下拉选项" },
+  { key: "skills", label: "技能标签", color: "magenta", hint: "人才录入技能输入补全、技能筛选" },
 ];
 
 /** 上传图片转成 data URL 存库（收款码是管理员自己的图，量小，不走 KV） */
@@ -158,6 +160,8 @@ function DictSettings() {
   const [reasons, setReasons] = useState<string[]>(REJECT_REASONS);
   const [education, setEducation] = useState<string[]>(EDUCATION_OPTIONS);
   const [jobTypes, setJobTypes] = useState<Record<string, string>>(JOB_TYPE_LABELS);
+  const [cities, setCities] = useState<string[]>(CITY_OPTIONS);
+  const [skills, setSkills] = useState<string[]>(SKILL_OPTIONS);
 
   const [saving, setSaving] = useState(false);
   const [draftKeyword, setDraftKeyword] = useState("");
@@ -178,12 +182,16 @@ function DictSettings() {
         setReasons(d.reject_reasons?.length ? d.reject_reasons : REJECT_REASONS);
         setEducation(d.education?.length ? d.education : EDUCATION_OPTIONS);
         if (d.job_types && typeof d.job_types === "object") setJobTypes(d.job_types);
+        if (Array.isArray(d?.cities) && d.cities.length > 0) setCities(d.cities);
+        if (Array.isArray(d?.skills) && d.skills.length > 0) setSkills(d.skills);
       })
       .catch(() => {
         setSources(SOURCE_OPTIONS);
         setReasons(REJECT_REASONS);
         setEducation(EDUCATION_OPTIONS);
         setJobTypes(JOB_TYPE_LABELS);
+        setCities(CITY_OPTIONS);
+        setSkills(SKILL_OPTIONS);
       });
   }, []);
 
@@ -193,18 +201,22 @@ function DictSettings() {
     if (typeKey === "sources") return sources;
     if (typeKey === "reject_reasons") return reasons;
     if (typeKey === "education") return education;
+    if (typeKey === "cities") return cities;
+    if (typeKey === "skills") return skills;
     return [];
   };
 
   /** typeKey → 本地 state 的键名（reject_reasons 在 state 里叫 reasons） */
-  const stateKeyOf = (typeKey: string): "sources" | "reasons" | "education" =>
-    typeKey === "sources" ? "sources" : typeKey === "reject_reasons" ? "reasons" : "education";
+  const stateKeyOf = (typeKey: string): "sources" | "reasons" | "education" | "cities" | "skills" =>
+    typeKey === "sources" ? "sources" : typeKey === "reject_reasons" ? "reasons" : typeKey === "cities" ? "cities" : typeKey === "skills" ? "skills" : "education";
 
   interface DictState {
     sources: string[];
     reasons: string[];
     education: string[];
     jobTypes: Record<string, string>;
+    cities: string[];
+    skills: string[];
   }
 
   /**
@@ -221,11 +233,16 @@ function DictSettings() {
     }
     setSaving(true);
     try {
-      await api.setDictConfig({ sources: s, reject_reasons: r, education: e, job_types: next.jobTypes });
+      await api.setDictConfig({
+        sources: s, reject_reasons: r, education: e, job_types: next.jobTypes,
+        cities: clean(next.cities), skills: clean(next.skills),
+      });
       setSources(s);
       setReasons(r);
       setEducation(e);
       setJobTypes(next.jobTypes);
+      setCities(clean(next.cities));
+      setSkills(clean(next.skills));
       // 关键：字典改完必须让全站下拉立即生效，否则要刷新页面才看到
       await reload();
       message.success("已保存，全站选项已更新");
@@ -238,7 +255,7 @@ function DictSettings() {
     }
   };
 
-  const current = (): DictState => ({ sources, reasons, education, jobTypes });
+  const current = (): DictState => ({ sources, reasons, education, jobTypes, cities, skills });
 
   const handleAdd = () => {
     addForm.validateFields().then(async (v: { typeKey: string; value: string }) => {

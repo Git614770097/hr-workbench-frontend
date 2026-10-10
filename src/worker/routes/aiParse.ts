@@ -4,7 +4,7 @@ import { getSession } from "./auth";
 import { sanitizeField, sanitizeSkills } from "../../utils/fieldSanity";
 import { normalizeEducation } from "../../utils/resumeParser";
 
-import { deepseekJson } from "../ai";
+import { deepseekJsonSafe } from "../ai";
 
 // AI 简历解析接口
 // 前端把简历文本（或文件 base64）发到这里，后端用 DEEPSEEK_API_KEY 调 DeepSeek，
@@ -90,7 +90,7 @@ async function callDeepSeek(apiKey: string, resumeText: string): Promise<Record<
 
   const userPrompt = `请解析以下简历文本：\n\n${resumeText.slice(0, 14000)}`;
 
-  return deepseekJson(apiKey, systemPrompt, userPrompt);
+  return deepseekJsonSafe(apiKey, systemPrompt, userPrompt);
 }
 
 // 把 AI 返回的原始 JSON 归一化成标准 ParsedResume
@@ -136,16 +136,13 @@ aiParse.post("/", async (c) => {
     return c.json({ error: "简历文本过短，无法解析" }, 400);
   }
 
-  try {
-    const raw = await callDeepSeek(apiKey, resumeText);
-    if (!raw) {
-      return c.json({ error: "AI 未能解析出有效结果" }, 422);
-    }
-    return c.json(normalizeAiResult(raw));
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "AI 解析失败";
-    return c.json({ error: msg }, 502);
+  // deepseekJsonSafe：AI 超时/失败时返回 null 而非抛错，降级为空字段让用户手动填写
+  const raw = await callDeepSeek(apiKey, resumeText);
+  if (!raw) {
+    // AI 不可用时回退空字段，前端导入弹窗仍可展示，用户手动核对录入
+    return c.json({ ...EMPTY, _ai_fallback: true });
   }
+  return c.json(normalizeAiResult(raw));
 });
 
 export default aiParse;

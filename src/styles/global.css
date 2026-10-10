@@ -29,9 +29,141 @@ body {
 .sidebar.collapsed .logo-text { opacity: 0; width: 0; overflow: hidden; }
 .sidebar.collapsed .sidebar-logo { padding-left: 14px; padding-right: 14px; }
 .sidebar-nav { flex: 1; padding: 0 0.75rem; overflow-y: auto; overflow-x: hidden; }
+/* 侧边栏滚动条：默认完全隐藏（视觉上「去掉」），hover 才浮现一条 6px 极细浅条；
+   功能保留——滚轮/触控板照常滚动。Firefox 用 scrollbar-*，Webkit 用 ::-webkit-scrollbar。 */
+.sidebar-nav { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+.sidebar-nav::-webkit-scrollbar { width: 6px; }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; transition: background 0.2s; }
+.sidebar-nav:hover { scrollbar-color: rgba(0, 0, 0, 0.2) transparent; }
+.sidebar-nav:hover::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); }
+
+/* 统一细滚动条（侧栏已单独处理）：默认透明隐藏，hover 浮现 6px 细条。
+   Webkit(::-webkit-scrollbar) + Firefox(scrollbar-*) 双覆盖；暗色下 hover 细条转浅色。
+   覆盖：主内容区 / 看板列 / 看板横滑 / 简历预览 / antd 表格体 / 弹窗体 / 抽屉 / 下拉。 */
+.thin-scroll,
+.main-content,
+.pipe-col-body,
+.pipe-board,
+.resume-doc-preview,
+.ant-table-body,
+.ant-modal-body,
+.ant-drawer-body,
+.ant-select-dropdown {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.thin-scroll::-webkit-scrollbar,
+.main-content::-webkit-scrollbar,
+.pipe-col-body::-webkit-scrollbar,
+.pipe-board::-webkit-scrollbar,
+.resume-doc-preview::-webkit-scrollbar,
+.ant-table-body::-webkit-scrollbar,
+.ant-modal-body::-webkit-scrollbar,
+.ant-drawer-body::-webkit-scrollbar,
+.ant-select-dropdown::-webkit-scrollbar {
+  width: 6px; height: 6px;
+}
+.thin-scroll::-webkit-scrollbar-track,
+.main-content::-webkit-scrollbar-track,
+.pipe-col-body::-webkit-scrollbar-track,
+.pipe-board::-webkit-scrollbar-track,
+.resume-doc-preview::-webkit-scrollbar-track,
+.ant-table-body::-webkit-scrollbar-track,
+.ant-modal-body::-webkit-scrollbar-track,
+.ant-drawer-body::-webkit-scrollbar-track,
+.ant-select-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scroll::-webkit-scrollbar-thumb,
+.main-content::-webkit-scrollbar-thumb,
+.pipe-col-body::-webkit-scrollbar-thumb,
+.pipe-board::-webkit-scrollbar-thumb,
+.resume-doc-preview::-webkit-scrollbar-thumb,
+.ant-table-body::-webkit-scrollbar-thumb,
+.ant-modal-body::-webkit-scrollbar-thumb,
+.ant-drawer-body::-webkit-scrollbar-thumb,
+.ant-select-dropdown::-webkit-scrollbar-thumb {
+  background: transparent; border-radius: 3px; transition: background 0.2s;
+}
+.thin-scroll:hover,
+.main-content:hover,
+.pipe-col-body:hover,
+.pipe-board:hover,
+.resume-doc-preview:hover,
+.ant-table-body:hover,
+.ant-modal-body:hover,
+.ant-drawer-body:hover,
+.ant-select-dropdown:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+.thin-scroll:hover::-webkit-scrollbar-thumb,
+.main-content:hover::-webkit-scrollbar-thumb,
+.pipe-col-body:hover::-webkit-scrollbar-thumb,
+.pipe-board:hover::-webkit-scrollbar-thumb,
+.resume-doc-preview:hover::-webkit-scrollbar-thumb,
+.ant-table-body:hover::-webkit-scrollbar-thumb,
+.ant-modal-body:hover::-webkit-scrollbar-thumb,
+.ant-drawer-body:hover::-webkit-scrollbar-thumb,
+.ant-select-dropdown:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+}
+html[data-theme-mode="dark"] .thin-scroll:hover,
+html[data-theme-mode="dark"] .main-content:hover,
+html[data-theme-mode="dark"] .pipe-col-body:hover,
+html[data-theme-mode="dark"] .pipe-board:hover,
+html[data-theme-mode="dark"] .resume-doc-preview:hover,
+html[data-theme-mode="dark"] .ant-table-body:hover,
+html[data-theme-mode="dark"] .ant-modal-body:hover,
+html[data-theme-mode="dark"] .ant-drawer-body:hover,
+html[data-theme-mode="dark"] .ant-select-dropdown:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+html[data-theme-mode="dark"] .thin-scroll:hover::-webkit-scrollbar-thumb,
+html[data-theme-mode="dark"] .main-content:hover::-webkit-scrollbar-thumb,
+html[data-theme-mode="dark"] .pipe-col-body:hover::-webkit-scrollbar-thumb,
+html[data-theme-mode="dark"] .pipe-board:hover::-webkit-scrollbar-thumb,
+html[data-theme-mode="dark"] .resume-doc-preview:hover::-webkit-scrollbar-thumb,
+html[data-theme-mode="dark"] .ant-table-body:hover::-webkit-scrollbar-thumb,
+html[data-theme-mode="dark"] .ant-modal-body:hover::-webkit-scrollbar-thumb,
+html[data-theme-mode="dark"] .ant-drawer-body:hover::-webkit-scrollbar-thumb,
+html[data-theme-mode="dark"] .ant-select-dropdown:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* 横向滚动条同样压成 6px 极细：antd 设了 scroll.x 的表格，横向滚动条挂在
+   .ant-table-content（有 scroll.y 时是 .ant-table-body，已在上面名单），
+   移动端表格 wrapper 与阶段 Tab 也各有一条横条——这些容器原先不在名单里，
+   会渲染成系统默认粗横条。轨道透明、hover 浮现同款 6px 细条。 */
+:is(.ant-table-content, .ant-table-header, .ant-table-wrapper, .m-stage-tabs) {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+:is(.ant-table-content, .ant-table-header, .ant-table-wrapper, .m-stage-tabs)::-webkit-scrollbar {
+  width: 6px; height: 6px;
+}
+:is(.ant-table-content, .ant-table-header, .ant-table-wrapper, .m-stage-tabs)::-webkit-scrollbar-track {
+  background: transparent;
+}
+:is(.ant-table-content, .ant-table-header, .ant-table-wrapper, .m-stage-tabs)::-webkit-scrollbar-thumb {
+  background: transparent; border-radius: 3px; transition: background 0.2s;
+}
+:is(.ant-table-content, .ant-table-header, .ant-table-wrapper, .m-stage-tabs):hover {
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+:is(.ant-table-content, .ant-table-header, .ant-table-wrapper, .m-stage-tabs):hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+}
+html[data-theme-mode="dark"] :is(.ant-table-content, .ant-table-header, .ant-table-wrapper, .m-stage-tabs):hover {
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+html[data-theme-mode="dark"] :is(.ant-table-content, .ant-table-header, .ant-table-wrapper, .m-stage-tabs):hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+}
+
 .sidebar-nav a {
   display: flex; align-items: center; gap: 0.7rem;
-  padding: 0.6rem 0.75rem; margin-bottom: 0.25rem;
+  padding: 0.5rem 0.75rem; margin-bottom: 0.15rem;
   color: #5b6472; text-decoration: none; transition: all 0.15s;
   font-size: 0.9rem; border-radius: 10px; white-space: nowrap;
 }
@@ -53,7 +185,7 @@ body {
    一级 = .nav-group-title（<button>，带 .nav-caret 折叠箭头）；二级 = .nav-sub 里的 <a>。
    ⚠️ 上面的规则全是 `.sidebar-nav a`，只匹配 <a>；一级是 <button> 命不中，必须另写。
    二级覆盖用 `.sidebar-nav .nav-sub a`（3 类），优先级高于 `.sidebar-nav a`（2 类）。 */
-.sidebar-nav .nav-group { margin-bottom: 0.25rem; }
+.sidebar-nav .nav-group { margin-bottom: 0.15rem; }
 .sidebar-nav .nav-group-title {
   width: 100%; display: flex; align-items: center; gap: 0.7rem;
   padding: 0.6rem 0.75rem; margin: 0; border: 0; border-radius: 10px;
@@ -74,7 +206,7 @@ body {
   margin: 0.1rem 0 0.25rem 0.85rem; padding-left: 0.45rem;
   border-left: 1px solid #eef0f3;
 }
-.sidebar-nav .nav-sub a { padding: 0.45rem 0.6rem; margin-bottom: 0.1rem; font-size: 0.85rem; }
+.sidebar-nav .nav-sub a { padding: 0.4rem 0.6rem; margin-bottom: 0.05rem; font-size: 0.85rem; }
 .sidebar-nav .nav-sub a .nav-icon { width: 26px; height: 26px; border-radius: 7px; font-size: 0.82rem; }
 .sidebar-nav .nav-sub a.active .nav-icon { box-shadow: none; }
 /* 收缩态：一级只留图标居中，文字与箭头都收起来 */
@@ -299,6 +431,9 @@ html[data-theme-mode="dark"] .sidebar-nav .nav-group-title { color: #b0b6c0; }
 html[data-theme-mode="dark"] .sidebar-nav .nav-group-title:hover { color: #fff; background: #2a2a2a; }
 html[data-theme-mode="dark"] .sidebar-nav .nav-group-title.is-open { color: #e5e7eb; }
 html[data-theme-mode="dark"] .sidebar-nav .nav-sub { border-left-color: #303030; }
+/* 暗色下 hover 浮现的细条改为浅色，否则看不见 */
+html[data-theme-mode="dark"] .sidebar-nav:hover { scrollbar-color: rgba(255, 255, 255, 0.22) transparent; }
+html[data-theme-mode="dark"] .sidebar-nav:hover::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.22); }
 /* hover 浮层挂在 body 上，不受 .sidebar 的暗色规则影响，需单独覆盖 */
 html[data-theme-mode="dark"] .nav-pop .nav-pop-title { color: #7d8694; }
 html[data-theme-mode="dark"] .nav-pop .nav-pop-item { color: #b0b6c0; }
@@ -812,6 +947,14 @@ html[data-theme-mode="dark"] .stat-icon.is-warn { color: #fbbf24; background: rg
   font-size: 0.82rem; color: #5b6472; white-space: nowrap;
 }
 .search-control { flex: 1; min-width: 0; }
+/* 搜索控件统一填满字段宽度（与招聘看板等页面一致）：antd Select 默认不撑满，
+   会导致同页 Input 宽、Select 窄的不统一；Picker/InputNumber/带前缀 Input 一并覆盖。 */
+.search-control .ant-input,
+.search-control .ant-select,
+.search-control .ant-picker,
+.search-control .ant-input-number,
+.search-control .ant-input-affix-wrapper,
+.search-control .ant-cascader-picker { width: 100%; }
 
 .profiles-page .list-card { border: 1px solid #eef0f3; }
 .profiles-page .list-card .ant-card-body { padding: 1rem 1.1rem; }
@@ -1186,16 +1329,39 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 .list-card:has(.ant-table-placeholder) .ant-spin-container > .ant-table { flex: 1; display: flex; flex-direction: column; }
 .list-card:has(.ant-table-placeholder) .ant-table-container { flex: 1; display: flex; flex-direction: column; }
 .list-card:has(.ant-table-placeholder) .ant-table-content { flex: 1; display: flex; flex-direction: column; }
-.list-card:has(.ant-table-placeholder) .ant-table-content > table { flex: 1; }
+.list-card:has(.ant-table-placeholder) .ant-table-content > table { flex: 1; min-height: 300px; }
 
-/* B. 直接渲染 Empty 的卡（Pipeline/Funnel 空态卡、待办日卡）：body 内容整体垂直居中。 */
+/* B. 直接渲染 Empty 的卡（Pipeline/Funnel 空态卡、待办日卡、入职办理）：
+   仅让 Empty 在「工具行以下的剩余高度」内垂直居中，工具行(按钮)仍贴顶，
+   避免未选候选人时按钮上方出现大段空白（原 justify-content:center 会把整块推到中间）。 */
 .list-card:has(> .ant-card-body > .ant-empty) > .ant-card-body,
 .task-day-card:has(> .ant-card-body > .ant-empty) > .ant-card-body {
-  display: flex; flex-direction: column; justify-content: center;
+  display: flex; flex-direction: column;
+}
+.list-card:has(> .ant-card-body > .ant-empty) > .ant-card-body > .ant-empty,
+.task-day-card:has(> .ant-card-body > .ant-empty) > .ant-card-body > .ant-empty {
+  flex: 1; display: flex; align-items: center; justify-content: center;
 }
 /* 待办日卡参与 grid 等高拉伸后，body 要撑满卡片，Empty 才有居中空间 */
 .tasks-page .task-day-card { display: flex; flex-direction: column; }
 .tasks-page .task-day-card > .ant-card-body { flex: 1; }
+
+/* 审批中心：Tab 内容在空态时撑满整卡并居中（Tab 内列表为普通 div，未包 list-card，需独立链；
+   Tabs 整体 flex:1 撑满 Card body，空态时表格链 flex 拉伸，Empty 居中；有数据时 tabpane 内滚动兜底） */
+.approvals-page .ant-card-body { display: flex; flex-direction: column; }
+.approvals-page .ant-tabs { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.approvals-page .ant-tabs-content-holder { flex: 1; min-height: 0; }
+.approvals-page .ant-tabs-content { height: 100%; }
+.approvals-page .ant-tabs-tabpane { height: 100%; overflow: auto; }
+.appr-pane { display: flex; flex-direction: column; height: 100%; }
+.appr-pane .toolbar { flex: none; }
+.appr-pane:has(.ant-table-placeholder) .ant-table-wrapper { flex: 1; display: flex; flex-direction: column; }
+.appr-pane:has(.ant-table-placeholder) .ant-spin-nested-loading { flex: 1; display: flex; flex-direction: column; }
+.appr-pane:has(.ant-table-placeholder) .ant-spin-container { flex: 1; display: flex; flex-direction: column; }
+.appr-pane:has(.ant-table-placeholder) .ant-spin-container > .ant-table { flex: 1; display: flex; flex-direction: column; }
+.appr-pane:has(.ant-table-placeholder) .ant-table-container { flex: 1; display: flex; flex-direction: column; }
+.appr-pane:has(.ant-table-placeholder) .ant-table-content { flex: 1; display: flex; flex-direction: column; }
+.appr-pane:has(.ant-table-placeholder) .ant-table-content > table { flex: 1; }
 
 /* ===== 我的推广（邀请码）弹窗 ===== */
 .referral-code-box {
@@ -1353,35 +1519,58 @@ html[data-theme-mode="dark"] .talent-group-item.is-active {
   transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab:hover {
-  color: #3b82f6; border-color: #3b82f6; background: #f0f7ff;
+  color: var(--color-primary, #3b82f6); border-color: var(--color-primary, #3b82f6);
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 8%, #fff);
 }
 .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active {
-  background: #3b82f6; border-color: #3b82f6;
-  box-shadow: 0 4px 12px -4px rgba(59, 130, 246, 0.5);
+  background: var(--color-primary, #3b82f6); border-color: var(--color-primary, #3b82f6);
+  box-shadow: 0 4px 12px -4px color-mix(in srgb, var(--color-primary, #3b82f6) 50%, transparent);
 }
 .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
   color: #fff; font-weight: 600;
 }
 .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab:not(.ant-tabs-tab-active):focus-visible .ant-tabs-tab-btn {
-  color: #3b82f6;
+  color: var(--color-primary, #3b82f6);
 }
 /* 暗色模式适配 */
 html[data-theme-mode="dark"] .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab {
   background: #1f1f1f; border-color: #303030; color: #b0b6c0;
 }
 html[data-theme-mode="dark"] .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab:hover {
-  background: #262626; color: #3b82f6; border-color: #3b82f6;
+  background: color-mix(in srgb, var(--color-primary, #3b82f6) 18%, #1f1f1f);
+  color: var(--color-primary, #3b82f6); border-color: var(--color-primary, #3b82f6);
 }
 html[data-theme-mode="dark"] .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active {
-  background: #3b82f6; border-color: #3b82f6;
+  background: var(--color-primary, #3b82f6); border-color: var(--color-primary, #3b82f6);
 }
 html[data-theme-mode="dark"] .app-pill-tabs > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
   color: #fff;
 }
 
-/* 圆角分段筛选器：选中块统一为分组同款蓝（与胶囊一致），保留 antd Segmented 滑动交互 */
+/* 圆角分段筛选器：保留 antd Segmented 滑动交互。
+   ⚠️ antd 5.22 起选中块走 .ant-segmented-item-selected 背景而非 thumb，两处都要盖；
+   统一用主题色变量（随换肤变化），保证选中块有底色、白字才看得清（否则白底白字） */
 .app-pill-seg { border-radius: 999px; }
 .app-pill-seg .ant-segmented-item { border-radius: 999px; }
-.app-pill-seg .ant-segmented-thumb { background: #3b82f6; }
+.app-pill-seg .ant-segmented-thumb { background: var(--color-primary, #3b82f6); }
+.app-pill-seg .ant-segmented-item-selected { background: var(--color-primary, #3b82f6); }
 .app-pill-seg .ant-segmented-item-selected .ant-segmented-item-label { color: #fff; font-weight: 600; }
-html[data-theme-mode="dark"] .app-pill-seg .ant-segmented-thumb { background: #3b82f6; }
+html[data-theme-mode="dark"] .app-pill-seg .ant-segmented-thumb,
+html[data-theme-mode="dark"] .app-pill-seg .ant-segmented-item-selected { background: var(--color-primary, #3b82f6); }
+
+/* ===== 日志管理（模块点击率）=====
+   页面主体是一个 list-card，内部按「区块」纵向堆叠（图表 + 矩阵 + 明细表），
+   不嵌套 Card —— 嵌套卡片在暗色下层次会糊。区块标题用统一的两行式小标题。 */
+.logs-page .logs-section { margin-top: 22px; }
+.logs-page .logs-section:first-of-type { margin-top: 6px; }
+.logs-page .logs-sec-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.logs-page .logs-sec-title {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 0.9rem; font-weight: 600; color: #1f2937;
+}
+.logs-page .logs-sec-tip { font-size: 0.78rem; color: #94a3b8; cursor: default; }
+html[data-theme-mode="dark"] .logs-page .logs-sec-title { color: #e5e7eb; }
+html[data-theme-mode="dark"] .logs-page .logs-sec-tip { color: #8b95a5; }

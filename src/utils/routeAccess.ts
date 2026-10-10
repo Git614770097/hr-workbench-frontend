@@ -16,6 +16,7 @@ import type { User } from "../types";
 const DESKTOP_ROUTES: { path: string; perm: string }[] = [
   { path: "/tasks", perm: "tasks" },
   { path: "/jobs", perm: "jobs" },
+  { path: "/requisitions", perm: "jobs" },
   { path: "/pipeline", perm: "pipeline" },
   { path: "/interviews", perm: "interviews" },
   { path: "/funnel", perm: "funnel" },

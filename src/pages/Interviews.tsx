@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Input, Select, Button, Space, Tag, Modal, Form, message,
-  DatePicker, InputNumber, Alert, Typography, Popconfirm, Empty, Rate, Tooltip, Divider,
+  DatePicker, InputNumber, Alert, Typography, Popconfirm, Empty, Rate, Tooltip, Tabs,
 } from "antd";
 import {
   SearchOutlined, ReloadOutlined, PlusOutlined, VideoCameraOutlined,
@@ -135,7 +135,7 @@ export default function Interviews() {
     total: items.length,
     today: items.filter((r) => r.is_today).length,
     waiting: items.filter((r) => r.status === "scheduled").length,
-    passed: items.filter((r) => r.result === "pass").length,
+    passed: items.filter((r) => r.result === "pass" && r.dept_result === "pass").length,
   }), [items]);
 
   const openCreate = () => {
@@ -176,6 +176,9 @@ export default function Interviews() {
       result: row.result,
       score: row.score,
       evaluation: row.evaluation,
+      dept_result: row.dept_result,
+      dept_score: row.dept_score,
+      dept_evaluation: row.dept_evaluation,
     } as any);
     setOpen(true);
   };
@@ -223,8 +226,8 @@ export default function Interviews() {
   };
 
   // 结果 Tag 配色
-  const resultColor = (r: Interview) =>
-    r.result === "pass" ? "green" : r.result === "fail" ? "red" : r.result === "pending" ? "gold" : "default";
+  const resultColor = (res: string | null | undefined) =>
+    res === "pass" ? "green" : res === "fail" ? "red" : res === "pending" ? "gold" : "default";
   const statusColor = (s: string) =>
     s === "done" ? "green" : s === "cancelled" ? "default" : s === "no_show" ? "orange" : "blue";
 
@@ -329,17 +332,31 @@ export default function Interviews() {
     {
       title: "评价",
       key: "result",
-      width: 150,
+      width: 180,
       render: (_: unknown, r: Interview) => (
-        <Space size={6} wrap>
-          {r.result
-            ? <Tag color={resultColor(r)} style={{ marginInlineEnd: 0 }}>{r.result_label}</Tag>
-            : <Typography.Text type="secondary">待评价</Typography.Text>}
-          {r.score ? (
-            <Typography.Text style={{ fontSize: 12, color: "#faad14", letterSpacing: 1 }}>
-              {"★".repeat(r.score)}
-            </Typography.Text>
-          ) : null}
+        <Space direction="vertical" size={4} style={{ lineHeight: 1.4 }}>
+          <Space size={4} wrap>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>面试</Typography.Text>
+            {r.result
+              ? <Tag color={resultColor(r.result)} style={{ marginInlineEnd: 0 }}>{r.result_label}</Tag>
+              : <Typography.Text type="secondary" style={{ fontSize: 12 }}>待评价</Typography.Text>}
+            {r.score ? (
+              <Typography.Text style={{ fontSize: 12, color: "#faad14", letterSpacing: 1 }}>
+                {"★".repeat(r.score)}
+              </Typography.Text>
+            ) : null}
+          </Space>
+          <Space size={4} wrap>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>部门</Typography.Text>
+            {r.dept_result
+              ? <Tag color={resultColor(r.dept_result)} style={{ marginInlineEnd: 0 }}>{r.dept_result_label}</Tag>
+              : <Typography.Text type="secondary" style={{ fontSize: 12 }}>待评价</Typography.Text>}
+            {r.dept_score ? (
+              <Typography.Text style={{ fontSize: 12, color: "#faad14", letterSpacing: 1 }}>
+                {"★".repeat(r.dept_score)}
+              </Typography.Text>
+            ) : null}
+          </Space>
         </Space>
       ),
     },
@@ -401,7 +418,7 @@ export default function Interviews() {
             <span className="stat-num is-good">
               <AnimatedNumber value={stats.passed} format={(n) => Math.round(n).toLocaleString("zh-CN")} />
             </span>
-            <span className="stat-label">评价通过</span>
+            <span className="stat-label">双评价通过</span>
           </span>
         </div>
       </div>
@@ -412,7 +429,7 @@ export default function Interviews() {
           showIcon
           closable
           style={{ marginBottom: 16 }}
-          message={termFor(profile, "面试安排与评价：线上面试填会议链接、线下面试填地点；面试结束后在「编辑/评价」里补录结果与星级评分。结论填「通过」时，候选人会自动推进到下一阶段（初试→复试→Offer），无需再去拖看板卡片。")}
+          message={termFor(profile, "面试安排与评价：线上面试填会议链接、线下面试填地点；面试结束后在「编辑/评价」里分别补录「面试评价」与「用人部门评价」（结果+评分+评语）。当面试评价与用人部门评价都填「通过」时，候选人会自动推进到下一阶段（初试→复试→Offer），无需再去拖看板卡片。")}
           onClose={intro.dismiss}
         />
       )}
@@ -514,7 +531,7 @@ export default function Interviews() {
         />
       </Card>
 
-      {/* 安排 / 编辑面试（含面试评价） */}
+      {/* 安排 / 编辑面试：基础信息 / 面试评价 / 用人部门评价 三个 Tab */}
       <Modal
         title={editing ? "编辑面试 / 填写评价" : "安排面试"}
         open={open}
@@ -524,92 +541,142 @@ export default function Interviews() {
         okText="保存"
         cancelText="取消"
         destroyOnClose
-        width={620}
+        width={720}
       >
         <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} preserve={false}>
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-            message="线上面试请填会议链接，线下面试请填地点；完成后可在「编辑/评价」里补录面试结果与评语。"
+          <Tabs
+            defaultActiveKey="basic"
+            items={[
+              {
+                key: "basic",
+                label: "基础信息",
+                children: (
+                  <>
+                    <Alert
+                      type="info"
+                      showIcon
+                      style={{ marginBottom: 16 }}
+                      message="线上面试请填会议链接，线下面试请填地点；面试结束后可在「面试评价」「用人部门评价」两个 Tab 里补录结果与评语。"
+                    />
+                    <div className="form-grid">
+                      <Form.Item name="talent_id" label="候选人" rules={[{ required: true, message: "请选择候选人" }]}>
+                        <Select
+                          showSearch
+                          allowClear
+                          disabled={!!editing}
+                          placeholder="输入姓名或手机号搜索候选人"
+                          filterOption={false}
+                          loading={searching}
+                          options={talentOptions}
+                          onSearch={debouncedSearch}
+                          suffixIcon={<UserOutlined />}
+                          onChange={(v: string | undefined) => {
+                            form.setFieldValue("talent_job_id", undefined);
+                            setLinkOptions([]);
+                            if (v) loadLinks(v);
+                          }}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        name="talent_job_id"
+                        label="应聘职位"
+                        rules={[{ required: true, message: "请选择该候选人正在推进的职位" }]}
+                      >
+                        <Select
+                          placeholder="先选候选人，再选其投递的职位"
+                          loading={loadingLinks}
+                          options={linkOptions}
+                          notFoundContent={loadingLinks ? "加载中…" : "该候选人暂无投递，请先把他加入「招聘看板」"}
+                        />
+                      </Form.Item>
+                    </div>
+                    <div className="form-grid">
+                      <Form.Item name="round" label="轮次" rules={[{ required: true }]}>
+                        <Select options={Object.entries(INTERVIEW_ROUND_LABELS).map(([value, label]) => ({ value, label }))} />
+                      </Form.Item>
+                      <Form.Item name="mode" label="面试方式" rules={[{ required: true }]}>
+                        <Select options={Object.entries(INTERVIEW_MODE_LABELS).map(([value, label]) => ({ value, label }))} />
+                      </Form.Item>
+                    </div>
+                    <div className="form-grid">
+                      <Form.Item name="scheduled_at" label="面试时间" rules={[{ required: true, message: "请选择面试时间" }]}>
+                        <DatePicker
+                          showTime={{ format: "HH:mm", minuteStep: 15 }}
+                          format="YYYY-MM-DD HH:mm"
+                          style={{ width: "100%" }}
+                          placeholder="选择面试时间"
+                        />
+                      </Form.Item>
+                      <Form.Item name="duration" label="时长(分钟)">
+                        <InputNumber min={15} max={480} step={15} style={{ width: "100%" }} />
+                      </Form.Item>
+                    </div>
+                    {formMode === "onsite" ? (
+                      <Form.Item name="location" label="面试地点" rules={[{ required: true, message: "请填写面试地点" }]}>
+                        <Input placeholder="如：公司 3 楼会议室 / 客户现场" />
+                      </Form.Item>
+                    ) : formMode === "online" ? (
+                      <Form.Item name="meeting_url" label="会议链接" rules={[{ required: true, message: "请填写会议链接" }]}>
+                        <Input placeholder="如：飞书会议 / 腾讯会议链接" />
+                      </Form.Item>
+                    ) : null}
+                    <div className="form-grid">
+                      <Form.Item name="interviewer" label="面试官">
+                        <Input placeholder="多人用顿号分隔，如：张三、李四" />
+                      </Form.Item>
+                      <Form.Item name="status" label="状态" rules={[{ required: true }]}>
+                        <Select options={Object.entries(INTERVIEW_STATUS_LABELS).map(([value, label]) => ({ value, label }))} />
+                      </Form.Item>
+                    </div>
+                  </>
+                ),
+              },
+              {
+                key: "eval",
+                label: "面试评价",
+                forceRender: true,
+                children: (
+                  <>
+                    <Form.Item name="result" label="面试结果">
+                      <Select
+                        allowClear
+                        placeholder="待定"
+                        options={Object.entries(INTERVIEW_RESULT_LABELS).map(([value, label]) => ({ value, label }))}
+                      />
+                    </Form.Item>
+                    <Form.Item name="score" label="综合评分">
+                      <Rate allowClear />
+                    </Form.Item>
+                    <Form.Item name="evaluation" label="评价评语">
+                      <Input.TextArea rows={4} placeholder="记录面试表现、亮点与风险点" />
+                    </Form.Item>
+                  </>
+                ),
+              },
+              {
+                key: "dept",
+                label: "用人部门评价",
+                forceRender: true,
+                children: (
+                  <>
+                    <Form.Item name="dept_result" label="部门结论">
+                      <Select
+                        allowClear
+                        placeholder="待定"
+                        options={Object.entries(INTERVIEW_RESULT_LABELS).map(([value, label]) => ({ value, label }))}
+                      />
+                    </Form.Item>
+                    <Form.Item name="dept_score" label="部门评分">
+                      <Rate allowClear />
+                    </Form.Item>
+                    <Form.Item name="dept_evaluation" label="部门评语">
+                      <Input.TextArea rows={4} placeholder="用人部门对候选人胜任度、团队匹配度的意见" />
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
           />
-          <Form.Item name="talent_id" label="候选人" rules={[{ required: true, message: "请选择候选人" }]}>
-            <Select
-              showSearch
-              allowClear
-              disabled={!!editing}
-              placeholder="输入姓名或手机号搜索候选人"
-              filterOption={false}
-              loading={searching}
-              options={talentOptions}
-              onSearch={debouncedSearch}
-              suffixIcon={<UserOutlined />}
-              onChange={(v: string | undefined) => {
-                form.setFieldValue("talent_job_id", undefined);
-                setLinkOptions([]);
-                if (v) loadLinks(v);
-              }}
-            />
-          </Form.Item>
-          <Form.Item
-            name="talent_job_id"
-            label="应聘职位"
-            rules={[{ required: true, message: "请选择该候选人正在推进的职位" }]}
-          >
-            <Select
-              placeholder="先选候选人，再选其投递的职位"
-              loading={loadingLinks}
-              options={linkOptions}
-              notFoundContent={loadingLinks ? "加载中…" : "该候选人暂无投递，请先把他加入「招聘看板」"}
-            />
-          </Form.Item>
-          <Form.Item name="round" label="轮次" rules={[{ required: true }]}>
-            <Select options={Object.entries(INTERVIEW_ROUND_LABELS).map(([value, label]) => ({ value, label }))} />
-          </Form.Item>
-          <Form.Item name="mode" label="面试方式" rules={[{ required: true }]}>
-            <Select options={Object.entries(INTERVIEW_MODE_LABELS).map(([value, label]) => ({ value, label }))} />
-          </Form.Item>
-          <Form.Item name="scheduled_at" label="面试时间" rules={[{ required: true, message: "请选择面试时间" }]}>
-            <DatePicker
-              showTime={{ format: "HH:mm", minuteStep: 15 }}
-              format="YYYY-MM-DD HH:mm"
-              style={{ width: "100%" }}
-              placeholder="选择面试时间"
-            />
-          </Form.Item>
-          <Form.Item name="duration" label="时长(分钟)">
-            <InputNumber min={15} max={480} step={15} style={{ width: "100%" }} />
-          </Form.Item>
-          {formMode === "onsite" ? (
-            <Form.Item name="location" label="面试地点" rules={[{ required: true, message: "请填写面试地点" }]}>
-              <Input placeholder="如：公司 3 楼会议室 / 客户现场" />
-            </Form.Item>
-          ) : formMode === "online" ? (
-            <Form.Item name="meeting_url" label="会议链接" rules={[{ required: true, message: "请填写会议链接" }]}>
-              <Input placeholder="如：飞书会议 / 腾讯会议链接" />
-            </Form.Item>
-          ) : null}
-          <Form.Item name="interviewer" label="面试官">
-            <Input placeholder="多人用顿号分隔，如：张三、李四" />
-          </Form.Item>
-          <Form.Item name="status" label="状态" rules={[{ required: true }]}>
-            <Select options={Object.entries(INTERVIEW_STATUS_LABELS).map(([value, label]) => ({ value, label }))} />
-          </Form.Item>
-
-          <Divider orientation="left" plain style={{ margin: "8px 0 16px" }}>面试评价</Divider>
-          <Form.Item name="result" label="面试结果">
-            <Select
-              allowClear
-              placeholder="待定"
-              options={Object.entries(INTERVIEW_RESULT_LABELS).map(([value, label]) => ({ value, label }))}
-            />
-          </Form.Item>
-          <Form.Item name="score" label="综合评分">
-            <Rate allowClear />
-          </Form.Item>
-          <Form.Item name="evaluation" label="评价评语">
-            <Input.TextArea rows={3} placeholder="记录面试表现、亮点与风险点" />
-          </Form.Item>
         </Form>
       </Modal>
     </div>

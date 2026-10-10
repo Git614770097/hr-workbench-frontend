@@ -7,7 +7,7 @@ import {
 import {
   SearchOutlined, ReloadOutlined, BellOutlined, CalculatorOutlined,
   UserAddOutlined, UserDeleteOutlined, SafetyCertificateOutlined, InfoCircleOutlined,
-  DollarOutlined, SettingOutlined,
+  DollarOutlined, SettingOutlined, DownloadOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { SocialItem, SocialRateTemplate } from "../types";
@@ -16,6 +16,7 @@ import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
+import { exportXlsx, dateStamp } from "../utils/file";
 
 /** 待办动作推导（与后端 socialTaskStmts 同口径）：onboarded=已入职、si=参保状态 */
 function deriveAction(r: SocialItem): "add" | "stop" | null {
@@ -653,6 +654,41 @@ export default function Social() {
             <Button icon={<BellOutlined />} onClick={manualSync}>同步提醒</Button>
             <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setActionFilter("all"); fetchList(""); }}>重置</Button>
             <Button type="primary" icon={<SearchOutlined />} onClick={() => { setAppliedQ(q); fetchList(q); }}>查询</Button>
+            <Button icon={<DownloadOutlined />} onClick={async () => {
+              await exportXlsx(`社保公积金台账_${dateStamp()}.xlsx`, [{
+                name: "社保台账",
+                columns: [
+                  { header: "姓名", key: "name", width: 12 },
+                  { header: "手机号", key: "phone", width: 14 },
+                  { header: "状态", key: "status", width: 10 },
+                  { header: "入职日期", key: "hire_date", width: 12 },
+                  { header: "离职日期", key: "resignation_date", width: 12 },
+                  { header: "参保状态", key: "si_status", width: 10 },
+                  { header: "参保地", key: "si_city", width: 10 },
+                  { header: "社保基数", key: "si_base", width: 12 },
+                  { header: "公积金基数", key: "hf_base", width: 12 },
+                  { header: "社保个人比例", key: "si_rate_personal", width: 14 },
+                  { header: "社保单位比例", key: "si_rate_company", width: 14 },
+                  { header: "公积金个人比例", key: "hf_rate_personal", width: 14 },
+                  { header: "公积金单位比例", key: "hf_rate_company", width: 14 },
+                ],
+                rows: filtered.map((r) => ({
+                  name: r.name,
+                  phone: r.phone || "",
+                  status: r.status,
+                  hire_date: r.hire_date || "",
+                  resignation_date: r.resignation_date || "",
+                  si_status: SI_STATUS_LABELS[r.si_status || "none"] || r.si_status || "",
+                  si_city: r.si_city || "",
+                  si_base: r.si_base ?? "",
+                  hf_base: r.hf_base ?? "",
+                  si_rate_personal: r.si_rate_personal ?? "",
+                  si_rate_company: r.si_rate_company ?? "",
+                  hf_rate_personal: r.hf_rate_personal ?? "",
+                  hf_rate_company: r.hf_rate_company ?? "",
+                })),
+              }]);
+            }}>导出 Excel</Button>
           </div>
         </div>
       </Card>

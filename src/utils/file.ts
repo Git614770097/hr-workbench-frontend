@@ -25,3 +25,38 @@ export function csvCell(v: string | number | null | undefined): string {
   const s = v == null ? "" : String(v);
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
+
+/** Excel 导出：多 sheet、带表头样式。exceljs 动态导入，不影响首屏体积。 */
+export interface XlsxSheet {
+  name: string;
+  columns: { header: string; key: string; width?: number }[];
+  rows: Record<string, string | number | null | undefined>[];
+}
+
+export async function exportXlsx(filename: string, sheets: XlsxSheet[]) {
+  // 动态导入：exceljs 约 300KB，只在用户点「导出 Excel」时才加载
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = new ExcelJS.Workbook();
+  for (const sheet of sheets) {
+    const ws = wb.addWorksheet(sheet.name);
+    ws.columns = sheet.columns.map((col) => ({
+      header: col.header,
+      key: col.key,
+      width: col.width ?? 18,
+    }));
+    // 表头加粗 + 浅灰底色
+    ws.getRow(1).font = { bold: true };
+    ws.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFF0F0F0" },
+    };
+    // 冻结表头行
+    ws.views = [{ state: "frozen", ySplit: 1 }];
+    for (const row of sheet.rows) {
+      ws.addRow(row);
+    }
+  }
+  const buf = await wb.xlsx.writeBuffer();
+  downloadBlob(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename);
+}

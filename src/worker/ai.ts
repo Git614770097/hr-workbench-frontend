@@ -31,6 +31,7 @@ export function extractJson(text: string): Record<string, unknown> | null {
 /**
  * 调 DeepSeek chat/completions 并取回 JSON 对象。
  * 约定用 response_format=json_object，但仍走 extractJson 兜底（模型偶尔会带围栏）。
+ * 60s 超时：AI 接口耗时较长，但超时后必须中断，避免前端永久挂起。
  */
 export async function deepseekJson(
   apiKey: string,
@@ -54,6 +55,7 @@ export async function deepseekJson(
       ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
       response_format: { type: "json_object" },
     }),
+    signal: AbortSignal.timeout(60_000),
   });
 
   if (!resp.ok) {
@@ -65,6 +67,23 @@ export async function deepseekJson(
   const content = data.choices?.[0]?.message?.content;
   if (!content) return null;
   return extractJson(content);
+}
+
+/**
+ * 安全版 DeepSeek 调用：超时或任何异常时返回 null 而非抛错。
+ * 调用方根据返回值自行决定降级策略（规则兜底 / 基础解析 / 提示用户）。
+ */
+export async function deepseekJsonSafe(
+  apiKey: string,
+  system: string,
+  user: string,
+  opts: { temperature?: number; maxTokens?: number } = {}
+): Promise<Record<string, unknown> | null> {
+  try {
+    return await deepseekJson(apiKey, system, user, opts);
+  } catch {
+    return null;
+  }
 }
 
 /** 把 AI 返回的任意值安全转成长度受限的字符串数组（用于 reasons / gaps / risks） */

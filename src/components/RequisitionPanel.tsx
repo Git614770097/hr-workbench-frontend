@@ -10,10 +10,27 @@ import type { Requisition } from "../types";
 import { REQUISITION_STATUS_LABELS, JOB_TYPE_LABELS } from "../types";
 
 /** 招聘需求：用人部门提需求 → 审批 → 一键转正式岗位（并入岗位管理页） */
-export default function RequisitionPanel({ isAdmin }: { isAdmin: boolean }) {
+export default function RequisitionPanel({
+  isAdmin,
+  submitOpen,
+  onSubmitOpenChange,
+  hideSubmitButton,
+}: {
+  isAdmin: boolean;
+  /** 父级受控打开「提交需求」弹窗：把提交入口并入列表卡 toolbar 时用；不传则组件自管 */
+  submitOpen?: boolean;
+  onSubmitOpenChange?: (open: boolean) => void;
+  /** 提交入口已由父级 toolbar 提供时，隐藏组件内部的触发按钮 */
+  hideSubmitButton?: boolean;
+}) {
   const [items, setItems] = useState<Requisition[]>([]);
   const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [innerOpen, setInnerOpen] = useState(false);
+  const open = submitOpen ?? innerOpen;
+  const setOpen = (v: boolean) => {
+    setInnerOpen(v);
+    onSubmitOpenChange?.(v);
+  };
   const [saving, setSaving] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<Requisition | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -88,9 +105,11 @@ export default function RequisitionPanel({ isAdmin }: { isAdmin: boolean }) {
       />
       <div className="toolbar">
         <Space>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setOpen(true); }}>
-            提交招聘需求
-          </Button>
+          {!hideSubmitButton && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setOpen(true); }}>
+              提交招聘需求
+            </Button>
+          )}
         </Space>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>

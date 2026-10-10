@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { genId } from "../helpers";
-import { deepseekJson, toStringArray } from "../ai";
+import { deepseekJson, deepseekJsonSafe, toStringArray } from "../ai";
 
 // 智能匹配：候选人（上传简历或从人才库挑人）+ 职位画像 → 排序推荐 + 理由
 // - 画像 = 一个职位（job_title）的整体要求：城市、学历、年限区间、薪资范围、
@@ -13,7 +13,7 @@ import { deepseekJson, toStringArray } from "../ai";
 //   无 key 或 AI 失败时规则兜底。
 //
 // 注：「画像级别」（初级/中级/高级分档，各自独立的年限/技能/薪资）已整体下线，
-//     match_profile_levels 表保留但不再读写（历史数据留着，如需彻底清理另行迁移）。
+//     match_profile_levels 表及索引已通过 migration-20261010-drop-profile-levels.sql 删除。
 const match = new Hono<{ Bindings: Env }>();
 
 // ---- 画像结构 ----
@@ -464,36 +464,35 @@ match.post("/score", async (c) => {
     });
   }
 
-  try {
-    const raw = await deepseekJson(
-      apiKey,
-      SCORE_SYSTEM,
-      `【人才画像】\n${JSON.stringify(profileBrief, null, 2)}\n\n【候选人简历】\n${text.slice(0, 6000)}`
-    );
-    if (!raw) throw new Error("AI 未返回有效结果");
-    const scoreRaw = numOrNull(raw.score) ?? 0;
-    const score = Math.max(0, Math.min(100, Math.round(scoreRaw)));
-    return c.json({
-      score,
-      verdict: str(raw.verdict) || (score >= 85 ? "强烈推荐" : score >= 70 ? "推荐" : score >= 55 ? "可考虑" : "不建议"),
-      summary: str(raw.summary),
-      reasons: toStringArray(raw.reasons, 4),
-      gaps: toStringArray(raw.gaps, 3),
-      risks: toStringArray(raw.risks, 3),
-      questions: toStringArray(raw.questions, 2),
-      hard,
-      source: "ai",
-    });
-  } catch (err) {
+  // deepseekJsonSafe：超时/失败返回 null，降级为规则评分
+  const raw = await deepseekJsonSafe(
+    apiKey,
+    SCORE_SYSTEM,
+    `【人才画像】\n${JSON.stringify(profileBrief, null, 2)}\n\n【候选人简历】\n${text.slice(0, 6000)}`
+  );
+  if (!raw) {
     const fb = ruleScore(hard);
     return c.json({
       ...fb,
       reasons: [],
-      gaps: [err instanceof Error ? `AI 评估失败，已按硬性条件估算：${err.message}` : "AI 评估失败，已按硬性条件估算"],
+      gaps: ["AI 评估超时或失败，已按硬性条件估算"],
       risks: [], questions: [],
       hard, source: "rule",
     });
   }
+  const scoreRaw = numOrNull(raw.score) ?? 0;
+  const score = Math.max(0, Math.min(100, Math.round(scoreRaw)));
+  return c.json({
+    score,
+    verdict: str(raw.verdict) || (score >= 85 ? "强烈推荐" : score >= 70 ? "推荐" : score >= 55 ? "可考虑" : "不建议"),
+    summary: str(raw.summary),
+    reasons: toStringArray(raw.reasons, 4),
+    gaps: toStringArray(raw.gaps, 3),
+    risks: toStringArray(raw.risks, 3),
+    questions: toStringArray(raw.questions, 2),
+    hard,
+    source: "ai",
+  });
 });
 
 export default match;
