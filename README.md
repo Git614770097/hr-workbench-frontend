@@ -47,11 +47,15 @@ npx wrangler kv namespace create RESUMES
 npx wrangler d1 execute hr-workbench --remote --command "DROP TABLE IF EXISTS users;"
 npx wrangler d1 execute hr-workbench --remote --file=./schema.sql
 
-# ⚠️ 2026-09-18 talents 表新增 年龄/学历/院校 字段，已有数据库需执行迁移：
-npx wrangler d1 execute hr-workbench --remote --file=./migration-20260918-add-edu-fields.sql
+# 增量迁移统一放在 ./migrations/ 目录，文件按日期命名（YYYYMMDD-描述.sql），按序执行：
+# ⚠️ 2026-09-18 talents 表新增 年龄/学历/院校 字段：
+npx wrangler d1 execute hr-workbench --remote --file=./migrations/migration-20260918-add-edu-fields.sql
 
 # ⚠️ 2026-09-21 新增 岗位/招聘流程/待办 四张表 + talents.stage/source 字段：
-npx wrangler d1 execute hr-workbench --remote --file=./migration-20260921-jobs-pipeline-tasks.sql
+npx wrangler d1 execute hr-workbench --remote --file=./migrations/migration-20260921-jobs-pipeline-tasks.sql
+
+# 注意：migrations/ 下的脚本多为「归档记录」，生产库已执行过，
+# 仅新环境需按文件名日期顺序依次执行；重复执行 ALTER TABLE ADD COLUMN 会报错。
 
 npm run build
 npm run deploy
