@@ -130,6 +130,12 @@ export const SI_STATUS_COLORS: Record<string, string> = {
   active: "green",
   stopped: "default",
 };
+/** 参保状态可选项（单一来源）：编辑弹窗与搜索筛选共用，保证两者一致 */
+export const SI_STATUS_OPTIONS: { label: string; value: string }[] = [
+  "active",
+  "stopped",
+  "none",
+].map((v) => ({ value: v, label: SI_STATUS_LABELS[v] }));
 
 // 社保公积金台账行（talents LEFT JOIN talent_social）
 export interface SocialItem {

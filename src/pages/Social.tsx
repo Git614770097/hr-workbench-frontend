@@ -11,7 +11,7 @@ import {
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { SocialItem, SocialRateTemplate } from "../types";
-import { SI_STATUS_LABELS, SI_STATUS_COLORS } from "../types";
+import { SI_STATUS_LABELS, SI_STATUS_COLORS, SI_STATUS_OPTIONS } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
 import { useIdentityProfile } from "../useIdentity";
@@ -402,7 +402,7 @@ function SocialEditModal({
       )}
       <Form form={form} layout="horizontal" labelCol={{ span: 6 }} wrapperCol={{ span: 16 }} style={{ marginTop: 16 }}>
         <Form.Item name="si_status" label="参保状态">
-          <Select options={Object.entries(SI_STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} />
+          <Select options={SI_STATUS_OPTIONS} />
         </Form.Item>
         <Form.Item name="si_city" label="参保地" extra="选城市后自动带出该城市的默认缴费比例（可在下方改）">
           <AutoComplete
@@ -670,9 +670,7 @@ export default function Social() {
                   { label: "全部", value: "all" },
                   { label: "待增员", value: "add" },
                   { label: "待减员", value: "stop" },
-                  { label: "参保中", value: "active" },
-                  { label: "已停缴", value: "stopped" },
-                  { label: "未参保", value: "none" },
+                  ...SI_STATUS_OPTIONS,
                 ]}
               />
             </div>
