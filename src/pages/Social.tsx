@@ -521,6 +521,42 @@ export default function Social() {
     }
   };
 
+  const handleExport = async () => {
+    await exportXlsx(`社保公积金台账_${dateStamp()}.xlsx`, [{
+      name: "社保台账",
+      columns: [
+        { header: "姓名", key: "name", width: 12 },
+        { header: "手机号", key: "phone", width: 14 },
+        { header: "状态", key: "status", width: 10 },
+        { header: "入职日期", key: "hire_date", width: 12 },
+        { header: "离职日期", key: "resignation_date", width: 12 },
+        { header: "参保状态", key: "si_status", width: 10 },
+        { header: "参保地", key: "si_city", width: 10 },
+        { header: "社保基数", key: "si_base", width: 12 },
+        { header: "公积金基数", key: "hf_base", width: 12 },
+        { header: "社保个人比例", key: "si_rate_personal", width: 14 },
+        { header: "社保单位比例", key: "si_rate_company", width: 14 },
+        { header: "公积金个人比例", key: "hf_rate_personal", width: 14 },
+        { header: "公积金单位比例", key: "hf_rate_company", width: 14 },
+      ],
+      rows: filtered.map((r) => ({
+        name: r.name,
+        phone: r.phone || "",
+        status: r.status,
+        hire_date: r.hire_date || "",
+        resignation_date: r.resignation_date || "",
+        si_status: SI_STATUS_LABELS[r.si_status || "none"] || r.si_status || "",
+        si_city: r.si_city || "",
+        si_base: r.si_base ?? "",
+        hf_base: r.hf_base ?? "",
+        si_rate_personal: r.si_rate_personal ?? "",
+        si_rate_company: r.si_rate_company ?? "",
+        hf_rate_personal: r.hf_rate_personal ?? "",
+        hf_rate_company: r.hf_rate_company ?? "",
+      })),
+    }]);
+  };
+
   const fmtMoney = (v: number | null) => (v != null ? `¥${v.toLocaleString("zh-CN")}` : "—");
   const fmtRate = (v: number | null) => (v != null ? `${v}%` : "—");
 
@@ -612,7 +648,7 @@ export default function Social() {
         />
       )}
 
-      {/* 搜索 + 工具行 */}
+      {/* 搜索区：仅放筛选字段（label 左 / 控件右，一行 4 个） */}
       <Card className="search-card" style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
         <div className="search-grid">
           <div className="search-field">
@@ -641,57 +677,25 @@ export default function Social() {
               />
             </div>
           </div>
-          <div className="search-field">
-            <span className="search-label" />
-            <div className="search-control" />
-          </div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
-            {intro.dismissed && (
-              <Button icon={<InfoCircleOutlined />} onClick={intro.restore}>说明</Button>
-            )}
-            <Button icon={<SettingOutlined />} onClick={() => setRateOpen(true)}>费率模板</Button>
-            <Button icon={<CalculatorOutlined />} onClick={() => setTaxOpen(true)}>个税计算器</Button>
-            <Button icon={<BellOutlined />} onClick={manualSync}>同步提醒</Button>
-            <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setActionFilter("all"); fetchList(""); }}>重置</Button>
-            <Button type="primary" icon={<SearchOutlined />} onClick={() => { setAppliedQ(q); fetchList(q); }}>查询</Button>
-            <Button icon={<DownloadOutlined />} onClick={async () => {
-              await exportXlsx(`社保公积金台账_${dateStamp()}.xlsx`, [{
-                name: "社保台账",
-                columns: [
-                  { header: "姓名", key: "name", width: 12 },
-                  { header: "手机号", key: "phone", width: 14 },
-                  { header: "状态", key: "status", width: 10 },
-                  { header: "入职日期", key: "hire_date", width: 12 },
-                  { header: "离职日期", key: "resignation_date", width: 12 },
-                  { header: "参保状态", key: "si_status", width: 10 },
-                  { header: "参保地", key: "si_city", width: 10 },
-                  { header: "社保基数", key: "si_base", width: 12 },
-                  { header: "公积金基数", key: "hf_base", width: 12 },
-                  { header: "社保个人比例", key: "si_rate_personal", width: 14 },
-                  { header: "社保单位比例", key: "si_rate_company", width: 14 },
-                  { header: "公积金个人比例", key: "hf_rate_personal", width: 14 },
-                  { header: "公积金单位比例", key: "hf_rate_company", width: 14 },
-                ],
-                rows: filtered.map((r) => ({
-                  name: r.name,
-                  phone: r.phone || "",
-                  status: r.status,
-                  hire_date: r.hire_date || "",
-                  resignation_date: r.resignation_date || "",
-                  si_status: SI_STATUS_LABELS[r.si_status || "none"] || r.si_status || "",
-                  si_city: r.si_city || "",
-                  si_base: r.si_base ?? "",
-                  hf_base: r.hf_base ?? "",
-                  si_rate_personal: r.si_rate_personal ?? "",
-                  si_rate_company: r.si_rate_company ?? "",
-                  hf_rate_personal: r.hf_rate_personal ?? "",
-                  hf_rate_company: r.hf_rate_company ?? "",
-                })),
-              }]);
-            }}>导出 Excel</Button>
-          </div>
         </div>
       </Card>
+
+      {/* 工具行：左侧业务操作，右侧重置 / 查询（查询在最右） */}
+      <div className="toolbar">
+        <Space wrap>
+          {intro.dismissed && (
+            <Button icon={<InfoCircleOutlined />} onClick={intro.restore}>说明</Button>
+          )}
+          <Button icon={<SettingOutlined />} onClick={() => setRateOpen(true)}>费率模板</Button>
+          <Button icon={<CalculatorOutlined />} onClick={() => setTaxOpen(true)}>个税计算器</Button>
+          <Button icon={<BellOutlined />} onClick={manualSync}>同步提醒</Button>
+          <Button icon={<DownloadOutlined />} onClick={handleExport}>导出 Excel</Button>
+        </Space>
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setActionFilter("all"); fetchList(""); }}>重置</Button>
+          <Button type="primary" icon={<SearchOutlined />} onClick={() => { setAppliedQ(q); fetchList(q); }}>查询</Button>
+        </Space>
+      </div>
 
       <Card className="list-card" styles={{ body: { padding: 0 } }}>
         <Table
