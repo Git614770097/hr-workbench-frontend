@@ -61,31 +61,6 @@ templates.get("/", async (c) => {
   return c.json({ items: rows.results, total, page, limit, pages: Math.ceil(total / limit) });
 });
 
-// ---- 分类列表（含各分类模板数，按可见性过滤）----
-templates.get("/categories", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
-  const vis = visibilityCondition(session);
-  const rows = await c.env.DB.prepare(
-    `SELECT category, COUNT(*) as count FROM doc_templates dt WHERE ${vis.sql} GROUP BY category ORDER BY count DESC`
-  ).bind(...vis.params).all();
-  return c.json({ items: rows.results });
-});
-
-// ---- 模板详情 ----
-templates.get("/:id", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
-  const row = await c.env.DB.prepare(
-    "SELECT dt.*, u.name as owner_name FROM doc_templates dt LEFT JOIN users u ON dt.owner_id = u.id WHERE dt.id = ?"
-  ).bind(c.req.param("id")).first<TemplateRow>();
-  if (!row) return c.json({ error: "模板不存在" }, 404);
-  if (row.scope === "private" && row.owner_id !== session.userId && session.role !== "admin") {
-    return c.json({ error: "无权查看该模板" }, 403);
-  }
-  return c.json(row);
-});
-
 // ---- 新建模板 ----
 templates.post("/", async (c) => {
   const session = await getSession(c);

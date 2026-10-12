@@ -12,7 +12,7 @@ import {
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
-import type { Interview, AiResumeInsight } from "../types";
+import type { Interview } from "../types";
 import {
   INTERVIEW_ROUND_LABELS, INTERVIEW_MODE_LABELS,
   INTERVIEW_STATUS_LABELS, INTERVIEW_RESULT_LABELS, STAGE_META,

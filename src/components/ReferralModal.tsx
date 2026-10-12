@@ -3,6 +3,7 @@ import { Modal, Alert, Spin, Button, Table, Tag, message } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { fmtDate } from "../utils/time";
+import { copyText as copyToClipboard } from "../utils/clipboard";
 
 interface Props {
   open: boolean;
@@ -36,13 +37,11 @@ export default function ReferralModal({ open, onClose }: Props) {
       .finally(() => setLoading(false));
   }, [open]);
 
+  // 复制统一走 utils/clipboard（含 execCommand 降级），此处只包一层消息提示
   const copy = async (text: string, tip: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      message.success(tip);
-    } catch {
-      message.error("复制失败，请手动选中后复制");
-    }
+    const ok = await copyToClipboard(text);
+    if (ok) message.success(tip);
+    else message.error("复制失败，请手动选中后复制");
   };
 
   const cfg = data?.config;

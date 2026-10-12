@@ -25,7 +25,8 @@ import AnimatedNumber from "../components/AnimatedNumber";
 import { DemoSeedButton } from "../components/DemoSeed";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
-import { downloadBlob, dateStamp, csvCell, escapeHtml } from "../utils/file";
+import { downloadBlob, dateStamp, csvCell } from "../utils/file";
+import { copyText as copyToClipboard } from "../utils/clipboard";
 import OfferModal from "../components/OfferModal";
 
 const EMPTY_COLUMNS: Record<string, PipelineCard[]> = Object.fromEntries(
@@ -33,13 +34,11 @@ const EMPTY_COLUMNS: Record<string, PipelineCard[]> = Object.fromEntries(
 );
 
 // 复制到剪贴板（看板卡片电话一键复制；失败时给可感知的提示）
+// 复制统一走 utils/clipboard（含 execCommand 降级），此处只包一层消息提示
 const copyText = async (text: string, label: string) => {
-  try {
-    await navigator.clipboard.writeText(text);
-    message.success(`已复制${label}`);
-  } catch {
-    message.error("复制失败，请手动复制");
-  }
+  const ok = await copyToClipboard(text);
+  if (ok) message.success(`已复制${label}`);
+  else message.error("复制失败，请手动复制");
 };
 
 export default function Pipeline() {

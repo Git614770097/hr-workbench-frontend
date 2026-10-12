@@ -41,7 +41,6 @@ body {
 /* 统一细滚动条（侧栏已单独处理）：默认透明隐藏，hover 浮现 6px 细条。
    Webkit(::-webkit-scrollbar) + Firefox(scrollbar-*) 双覆盖；暗色下 hover 细条转浅色。
    覆盖：主内容区 / 看板列 / 看板横滑 / 简历预览 / antd 表格体 / 弹窗体 / 抽屉 / 下拉。 */
-.thin-scroll,
 .main-content,
 .pipe-col-body,
 .pipe-board,
@@ -53,7 +52,6 @@ body {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
-.thin-scroll::-webkit-scrollbar,
 .main-content::-webkit-scrollbar,
 .pipe-col-body::-webkit-scrollbar,
 .pipe-board::-webkit-scrollbar,
@@ -64,7 +62,6 @@ body {
 .ant-select-dropdown::-webkit-scrollbar {
   width: 6px; height: 6px;
 }
-.thin-scroll::-webkit-scrollbar-track,
 .main-content::-webkit-scrollbar-track,
 .pipe-col-body::-webkit-scrollbar-track,
 .pipe-board::-webkit-scrollbar-track,
@@ -75,7 +72,6 @@ body {
 .ant-select-dropdown::-webkit-scrollbar-track {
   background: transparent;
 }
-.thin-scroll::-webkit-scrollbar-thumb,
 .main-content::-webkit-scrollbar-thumb,
 .pipe-col-body::-webkit-scrollbar-thumb,
 .pipe-board::-webkit-scrollbar-thumb,
@@ -86,7 +82,6 @@ body {
 .ant-select-dropdown::-webkit-scrollbar-thumb {
   background: transparent; border-radius: 3px; transition: background 0.2s;
 }
-.thin-scroll:hover,
 .main-content:hover,
 .pipe-col-body:hover,
 .pipe-board:hover,
@@ -97,7 +92,6 @@ body {
 .ant-select-dropdown:hover {
   scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
-.thin-scroll:hover::-webkit-scrollbar-thumb,
 .main-content:hover::-webkit-scrollbar-thumb,
 .pipe-col-body:hover::-webkit-scrollbar-thumb,
 .pipe-board:hover::-webkit-scrollbar-thumb,
@@ -108,7 +102,6 @@ body {
 .ant-select-dropdown:hover::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.2);
 }
-html[data-theme-mode="dark"] .thin-scroll:hover,
 html[data-theme-mode="dark"] .main-content:hover,
 html[data-theme-mode="dark"] .pipe-col-body:hover,
 html[data-theme-mode="dark"] .pipe-board:hover,
@@ -119,7 +112,6 @@ html[data-theme-mode="dark"] .ant-drawer-body:hover,
 html[data-theme-mode="dark"] .ant-select-dropdown:hover {
   scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 }
-html[data-theme-mode="dark"] .thin-scroll:hover::-webkit-scrollbar-thumb,
 html[data-theme-mode="dark"] .main-content:hover::-webkit-scrollbar-thumb,
 html[data-theme-mode="dark"] .pipe-col-body:hover::-webkit-scrollbar-thumb,
 html[data-theme-mode="dark"] .pipe-board:hover::-webkit-scrollbar-thumb,
@@ -762,9 +754,6 @@ html[data-theme-mode="dark"] .pipe-next { color: #4a9eff; }
 }
 html[data-theme-mode="dark"] .task-cal-dnd .ant-picker-cell.task-drop-target { outline-color: #3b82f6; }
 
-.task-cal-dots {
-  display: inline-flex; align-items: center; gap: 3px; position: relative; z-index: 1;
-}
 .task-cal-dot {
   width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0;
 }
@@ -772,7 +761,6 @@ html[data-theme-mode="dark"] .task-cal-dnd .ant-picker-cell.task-drop-target { o
 .task-cal-dot.p-normal { background: #1677ff; }
 .task-cal-dot.p-low { background: #bfbfbf; }
 .task-cal-dot.is-closed { background: transparent; box-shadow: inset 0 0 0 1px #bfbfbf; }
-.task-cal-dots em { font-style: normal; font-size: 10px; color: #a8adb5; }
 
 .task-legend {
   display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #8c8c8c;
@@ -1394,7 +1382,6 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
       对应样式（.dash-head/.dash-title/.dash-date/.dash-kpis/.dash-stat/
       .dash-week-*/.dash-task-*）一并清掉，只保留下面这段条形图。 */
 
-.dash-cards { margin-top: 0; }
 .dash-card { border: 1px solid #eef0f3; }
 .dash-card .ant-card-head { border-bottom-color: #f0f2f5; }
 html[data-theme-mode="dark"] .dash-card { background: #1f1f1f; border-color: #303030; }

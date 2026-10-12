@@ -72,7 +72,6 @@ export const api = {
     }),
 
   me: () => request<User>("/auth/me", {}, 8000),
-  logout: () => request("/auth/logout", { method: "POST" }),
 
   // 自助注册（注册后为 pending 状态，需管理员审批）
   // ref 为选填邀请码：非法码后端静默忽略，不影响注册结果
@@ -136,8 +135,6 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ action, password }),
     }),
-  createUser: (data: { phone: string; name: string; password: string; role_id?: string | null }) =>
-    request("/auth/users", { method: "POST", body: JSON.stringify(data) }),
   // 审批通过注册申请（可同时分配角色）
   approveUser: (id: string, role_id: string | null) =>
     request(`/auth/users/${id}/approve`, { method: "PUT", body: JSON.stringify({ role_id }) }),
@@ -451,9 +448,6 @@ export const api = {
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
     return request<{ items: DocTemplate[]; total: number; page: number; limit: number; pages: number }>(`/templates${suffix}`);
   },
-  getTemplateCategories: () =>
-    request<{ items: { category: string; count: number }[] }>("/templates/categories"),
-  getTemplate: (id: string) => request<DocTemplate>(`/templates/${id}`),
   // scope 由后端裁决：official 仅管理员可写，普通用户提交会被降级为 shared
   createTemplate: (data: { name: string; category: string; content: string; scope?: string }) =>
     request<{ id: string }>("/templates", { method: "POST", body: JSON.stringify(data) }),
@@ -512,8 +506,6 @@ export const api = {
   getStageLogs: (linkId: string) => request<StageLog[]>(`/pipeline/${linkId}/logs`),
   removeFromPipeline: (linkId: string) =>
     request(`/pipeline/${linkId}`, { method: "DELETE" }),
-  getStaleCandidates: () =>
-    request<{ items: (PipelineCard & { days_stale: number })[]; total: number }>("/pipeline/stale"),
   // 阶段停滞 → 待办同步（幂等，可重复调用）：返回本次新建/更新/取消数量
   syncStaleTasks: () =>
     request<{ created: number; updated: number; cancelled: number; total: number }>(

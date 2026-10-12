@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Modal, Select, Input, InputNumber, Button, Space, message, Alert, Typography, Divider } from "antd";
-import { FileTextOutlined, SendOutlined, DownloadOutlined } from "@ant-design/icons";
+import { Modal, Select, Input, Button, Space, message, Alert, Typography, Divider } from "antd";
+import { SendOutlined, DownloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import type { PipelineCard, DocTemplate } from "../types";
 import { downloadBlob, dateStamp, escapeHtml } from "../utils/file";

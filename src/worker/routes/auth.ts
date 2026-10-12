@@ -475,44 +475,6 @@ auth.get("/me", async (c) => {
   });
 });
 
-// ---- 退出登录 ----
-auth.post("/logout", async (c) => {
-  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
-  if (token) await c.env.SESSIONS.delete(token);
-  return c.json({ ok: true });
-});
-
-// ---- 管理员：创建普通用户 ----
-auth.post("/users", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
-  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
-
-  const { phone, name, password, role_id } = await c.req.json<{ phone: string; name: string; password: string; role_id?: string | null }>();
-  if (!phone || !name || !password) return c.json({ error: "手机号、姓名、密码均为必填" }, 400);
-
-  const existing = await c.env.DB.prepare("SELECT id FROM users WHERE phone = ?").bind(phone).first();
-  if (existing) return c.json({ error: "该手机号已存在" }, 409);
-
-  // 校验角色存在
-  let finalRoleId: string | null = null;
-  if (role_id) {
-    const r = await c.env.DB.prepare("SELECT id FROM roles WHERE id = ?").bind(role_id).first();
-    if (!r) return c.json({ error: "角色不存在" }, 400);
-    finalRoleId = role_id;
-  }
-
-  const id = genId();
-  const passwordHash = await hashPassword(password);
-  const myCode = await newReferralCode(c.env.DB);
-  // 管理员自建账号同样给 1 个月试用（与审批通过一致），到期未续费进入冻结只读。
-  // 邀请码也要一并生成 —— 否则这类用户永远拿不到自己的推广码。
-  await c.env.DB.prepare("INSERT INTO users (id, phone, name, password_hash, role, role_id, status, paid_until, referral_code) VALUES (?, ?, ?, ?, 'user', ?, 'active', datetime('now', '+1 month'), ?)")
-    .bind(id, phone, name, passwordHash, finalRoleId, myCode).run();
-
-  return c.json({ id, phone, name, role: "user", role_id: finalRoleId });
-});
-
 // ---- 管理员：用户列表（含注册状态，支持 ?status=pending 只看待审批）----
 auth.get("/users", async (c) => {
   const session = await getSession(c);

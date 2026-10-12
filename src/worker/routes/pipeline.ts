@@ -106,40 +106,6 @@ pipeline.get("/", async (c) => {
   return c.json({ columns, stats });
 });
 
-// ---- 统计：面试中停留过久的候选人（>7 天）----
-// 放在 /:linkId 之前，避免 "stale" 被当作 linkId 匹配。
-pipeline.get("/stale", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
-
-  const conditions: string[] = ["tj.stage NOT IN ('hired','rejected','withdrawn')"];
-  const params: (string | number)[] = [];
-  if (session.role !== "admin") {
-    conditions.push("t.owner_id = ?");
-    params.push(session.userId);
-  }
-
-  const rows = await c.env.DB.prepare(`
-    SELECT tj.id as link_id, tj.stage, tj.updated_at as stage_updated_at,
-           t.id as talent_id, t.name, j.title as job_title
-    FROM talent_jobs tj
-    JOIN talents t ON tj.talent_id = t.id
-    LEFT JOIN jobs j ON tj.job_id = j.id
-    WHERE ${conditions.join(" AND ")}
-  `).bind(...params).all();
-
-  const today = Date.now();
-  const items = (rows.results as any[])
-    .map((r) => ({
-      ...r,
-      days_stale: Math.floor((today - new Date(r.stage_updated_at + "Z").getTime()) / 86400000),
-    }))
-    .filter((r) => r.days_stale >= 7)
-    .sort((a, b) => b.days_stale - a.days_stale);
-
-  return c.json({ items, total: items.length });
-});
-
 // ---- 阶段停滞 → 待办提醒（幂等同步）----
 // 规则：候选人在非终态阶段停留 ≥ STALE_DAYS 天 → 生成「阶段停滞：X」待办（normal / system）；
 // 停留天数变化 → 更新待办内容；已被推进（不再停滞）→ 取消残留提醒。

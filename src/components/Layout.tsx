@@ -46,7 +46,7 @@ import PasswordModal from "./PasswordModal";
 import MembershipModal from "./MembershipModal";
 import ReferralModal from "./ReferralModal";
 import { isTouchDevice, setDeviceOverride } from "../utils/device";
-import { useIdentityProfile, notifyIdentityChanged } from "../useIdentity";
+import { useIdentityProfile } from "../useIdentity";
 import { navLabelFor } from "../identityProfiles";
 
 // 引导只自动播放一次，之后靠顶栏问号按钮手动唤出
