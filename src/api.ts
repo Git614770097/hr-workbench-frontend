@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary } from "./types";
 
 const BASE = "/api";
 
@@ -547,6 +547,17 @@ export const api = {
   getTaskSummary: () => request<TaskSummary>("/tasks/summary"),
   // 招聘概览首页聚合（全员可看，按 owner 隔离）
   getOverview: () => request<OverviewResponse>("/overview"),
+  // 工作台趋势折线：新增人才 / 进入面试 / 入职（周 / 天）
+  getTrend: (granularity: "week" | "day" = "week") =>
+    request<TrendResponse>(`/overview/trend?granularity=${granularity}`),
+  // 用户级 UI 偏好（工作台模块显隐等）
+  getMySetting: (key: string) =>
+    request<{ key: string; value: string | null }>(`/auth/me/settings?key=${encodeURIComponent(key)}`),
+  setMySetting: (key: string, value: string | null) =>
+    request<{ ok: boolean }>("/auth/me/settings", {
+      method: "PUT",
+      body: JSON.stringify({ key, value }),
+    }),
   createTask: (data: Partial<Task>) =>
     request<{ id: string }>("/tasks", { method: "POST", body: JSON.stringify(data) }),
   updateTask: (id: string, data: Partial<Task>) =>

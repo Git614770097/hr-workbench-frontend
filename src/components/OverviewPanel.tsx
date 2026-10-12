@@ -67,8 +67,9 @@ export default function OverviewPanel() {
 
   return (
     <Card
-      className="dash-card"
+      className="dash-card is-compact"
       style={{ marginTop: 16 }}
+      styles={{ body: { padding: "12px 16px" } }}
       title={
         <Tooltip title="按 talent_jobs 当前阶段统计：此刻每位候选人卡在哪一步。与下方漏斗的「曾到达」累计口径不同，数字会更小。">
           <span>各阶段当前停留</span>

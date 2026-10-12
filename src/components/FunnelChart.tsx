@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from "react";
+import { useEffect, useRef, useMemo, type MutableRefObject } from "react";
 import * as echarts from "echarts/core";
 import { FunnelChart } from "echarts/charts";
 import { TooltipComponent } from "echarts/components";
@@ -13,6 +13,8 @@ interface Props {
   /** 深色模式（跟随主题切换重绘） */
   dark?: boolean;
   height?: number;
+  /** 暴露 ECharts 实例，供「下载 PNG」使用 */
+  chartOut?: MutableRefObject<echarts.ECharts | null>;
 }
 
 const pct = (v: number) => `${(v * 100).toFixed(v >= 0.1 || v === 0 ? 0 : 1)}%`;
@@ -92,7 +94,7 @@ const gradientOf = (i: number, dark: boolean) => {
  * 与等分 flex 行的中心最大偏差 <1px，肉眼不可辨；且文字样式交给 CSS，
  * 主题切换天然生效，也省掉一个 graphic 组件依赖。
  */
-export default function FunnelChartView({ stages, stageStay = [], dark = false, height = 460 }: Props) {
+export default function FunnelChartView({ stages, stageStay = [], dark = false, height = 460, chartOut }: Props) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
 
@@ -115,7 +117,10 @@ export default function FunnelChartView({ stages, stageStay = [], dark = false, 
 
   useEffect(() => {
     if (!boxRef.current) return;
-    if (!chartRef.current) chartRef.current = echarts.init(boxRef.current);
+    if (!chartRef.current) {
+      chartRef.current = echarts.init(boxRef.current);
+      if (chartOut) chartOut.current = chartRef.current;
+    }
     const chart = chartRef.current;
 
     chart.setOption(
@@ -239,10 +244,11 @@ export default function FunnelChartView({ stages, stageStay = [], dark = false, 
 
   useEffect(() => {
     return () => {
+      if (chartOut) chartOut.current = null;
       chartRef.current?.dispose();
       chartRef.current = null;
     };
-  }, []);
+  }, [chartOut]);
 
   return (
     <div className="funnel-canvas" style={{ height }}>

@@ -816,7 +816,31 @@ export interface TaskSummary {
   today: number;
 }
 
-// ---- 招聘概览首页聚合（GET /api/overview）----
+// ---- 工作台首屏聚合（GET /api/overview）----
+export interface TodayInterviewItem {
+  id: string;
+  talent_id: string;
+  job_id: string | null;
+  scheduled_at: string | null;
+  round: string;
+  mode: string;
+  location: string | null;
+  meeting_url: string | null;
+  interviewer: string | null;
+  talent_name: string;
+  job_title: string | null;
+}
+
+export interface DueSoonTaskItem {
+  id: string;
+  title: string;
+  due_date: string;
+  source: string;
+  talent_id: string | null;
+  job_id: string | null;
+  talent_name: string | null;
+}
+
 export interface OverviewResponse {
   /** 在招职位数（status=open） */
   openJobs: number;
@@ -832,6 +856,45 @@ export interface OverviewResponse {
   weeklyStageReached: Record<string, number>;
   /** 待办汇总 */
   tasks: { pending: number; overdue: number; today: number };
+  /** 今日面试数（KPI 快照用） */
+  todayInterviewCount: number;
+  /** 今日面试列表（action 层用） */
+  todayInterviews: TodayInterviewItem[];
+  /** 近 3 天到期待办（含今日，action 层用） */
+  dueSoonTasks: DueSoonTaskItem[];
+}
+
+// ---- 工作台趋势折线（GET /api/overview/trend）----
+export interface TrendSeries {
+  key: string;
+  label: string;
+  color: string;
+  data: number[];
+}
+
+export interface TrendResponse {
+  granularity: "week" | "day";
+  labels: string[];
+  series: TrendSeries[];
+  total: { new_talents: number; interview: number; hired: number };
+  from_date: string;
+}
+
+// ---- 工作台「调整模块」配置（存 user_settings.workbench_modules）----
+export type WorkbenchModuleKey =
+  | "quick_actions"
+  | "today_focus"
+  | "kpi_band"
+  | "trend"
+  | "funnel"
+  | "sources"
+  | "cycles"
+  | "stay"
+  | "reject";
+
+export interface WorkbenchModuleConfig {
+  /** 被隐藏的模块 key 列表（缺省 = 全部显示） */
+  hidden: WorkbenchModuleKey[];
 }
 
 export const TASK_SOURCE_LABELS: Record<string, string> = {

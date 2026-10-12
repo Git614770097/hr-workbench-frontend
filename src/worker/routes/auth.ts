@@ -656,6 +656,44 @@ auth.post("/me/pushplus/test", async (c) => {
   return c.json(res);
 });
 
+// ---- 用户级 UI 偏好设置（key-value）----
+// 首个用途：工作台「调整模块」的模块显隐配置（key = workbench_modules，value = JSON 字符串）。
+// 属自服务接口（/api/auth/* 已放行），冻结用户也可读写自己的界面偏好。
+auth.get("/me/settings", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const key = (c.req.query("key") || "").trim();
+  if (!key) return c.json({ error: "缺少 key" }, 400);
+  if (key.length > 64) return c.json({ error: "key 过长" }, 400);
+
+  const row = await c.env.DB.prepare(
+    "SELECT value FROM user_settings WHERE user_id = ? AND key = ?"
+  ).bind(session.userId, key).first<{ value: string | null }>();
+
+  return c.json({ key, value: row?.value ?? null });
+});
+
+auth.put("/me/settings", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const body = await c.req.json<{ key?: string; value?: string | null }>();
+  const key = (body.key || "").trim();
+  if (!key) return c.json({ error: "缺少 key" }, 400);
+  if (key.length > 64) return c.json({ error: "key 过长" }, 400);
+
+  const value = body.value == null ? null : String(body.value);
+  if (value && value.length > 8000) return c.json({ error: "配置内容过大" }, 400);
+
+  await c.env.DB.prepare(
+    "INSERT INTO user_settings (user_id, key, value, updated_at) VALUES (?, ?, ?, datetime('now')) " +
+    "ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')"
+  ).bind(session.userId, key, value === "" ? null : value).run();
+
+  return c.json({ ok: true });
+});
+
 // ---- 当前用户：付款后申请管理员开通会员 ----
 // 冻结/到期用户扫码付款后，点「我已付款，申请开通」→ 通过 PushPlus 通知管理员。
 // 与忘记密码申请同理：同一账号 30 分钟内只推一次，防刷。

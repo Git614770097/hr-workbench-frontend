@@ -33,6 +33,15 @@ CREATE TABLE IF NOT EXISTS site_settings (
   value TEXT
 );
 
+-- 用户级 UI 偏好（key-value），首个用途：工作台「调整模块」模块显隐（key = workbench_modules）
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id TEXT NOT NULL REFERENCES users(id),
+  key TEXT NOT NULL,
+  value TEXT,
+  updated_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, key)
+);
+
 -- 人才档案表
 CREATE TABLE IF NOT EXISTS talents (
   id TEXT PRIMARY KEY,
