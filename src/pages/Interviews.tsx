@@ -32,6 +32,10 @@ function InterviewQuestionsPanel({ talentId, jobId }: { talentId?: string; jobId
     <AiResultCard
       title="AI 面试问题清单"
       hint="点「生成」，AI 会结合该候选人的简历/档案与目标岗位要求，给出针对性问题与考察点。"
+      fetchOnMount={async () => {
+        const r = await api.aiInterviewQuestionsGet(talentId);
+        return (r?.data ? { ...r.data, _persisted: true } : null) as Record<string, unknown> | null;
+      }}
       onGenerate={async () =>
         (await api.aiInterviewQuestions(talentId, jobId ?? null)) as unknown as Record<string, unknown>
       }
@@ -67,6 +71,10 @@ function CandidateSummaryPanel({ talentId, jobId }: { talentId?: string; jobId?:
     <AiResultCard
       title="AI 综合评估（汇总多轮）"
       hint="点「生成」，AI 会汇总该候选人各轮面试评价与用人部门意见，给出结构化结论与录用建议。需至少已填写一轮评价。"
+      fetchOnMount={async () => {
+        const r = await api.aiCandidateSummaryGet(talentId);
+        return (r?.data ? { ...r.data, _persisted: true } : null) as Record<string, unknown> | null;
+      }}
       onGenerate={async () =>
         (await api.aiCandidateSummary(talentId, jobId ?? null)) as unknown as Record<string, unknown>
       }
@@ -866,8 +874,8 @@ export default function Interviews() {
                 ),
                 children: (
                   <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                    <InterviewQuestionsPanel talentId={watchTalentId} jobId={watchJobId} />
-                    <CandidateSummaryPanel talentId={watchTalentId} jobId={watchJobId} />
+                    <InterviewQuestionsPanel key={watchTalentId} talentId={watchTalentId} jobId={watchJobId} />
+                    <CandidateSummaryPanel key={watchTalentId} talentId={watchTalentId} jobId={watchJobId} />
                   </Space>
                 ),
               },

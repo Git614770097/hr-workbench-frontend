@@ -4,7 +4,7 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { deepseekJsonSafe, toStringArray } from "../ai";
 import {
-  checkQuota, loadRecentArtifact, maskPii, saveArtifact, truncate,
+  checkQuota, loadLatestArtifact, loadRecentArtifact, maskPii, saveArtifact, truncate,
 } from "../aiGuard";
 
 // AI 提效接口：简历解读 / 沟通文案 / 面试问题 / 综合评估。
@@ -449,6 +449,73 @@ aiAssist.post("/candidate-summary", async (c) => {
 
   await saveArtifact(c.env.DB, session.userId, "candidate_summary", talent.id, "", result);
   return c.json(result);
+});
+
+// ---------------------------------------------------------------- 读取已生成结果（GET）
+// 下次进入页面时直接展示历史产出，不重算、不扣配额。
+// 返回 { data: <上次结果或 null> }；data 带 _persisted 标记，前端据此标「已保存」。
+async function requireTalent(
+  c: Context<{ Bindings: Env }>,
+  session: { userId: string; role: string },
+  talentId?: string | null
+): Promise<{ owner_id: string } | Response | null> {
+  if (!talentId) return c.json({ error: "缺少 talent_id" }, 400);
+  const row = await c.env.DB
+    .prepare("SELECT id, owner_id FROM talents WHERE id = ?")
+    .bind(talentId)
+    .first<{ id: string; owner_id: string }>();
+  if (!row) return c.json({ error: "人才不存在" }, 404);
+  if (session.role !== "admin" && row.owner_id !== session.userId) {
+    return c.json({ error: "无权操作该人才" }, 403);
+  }
+  return row;
+}
+
+function withPersisted(obj: Record<string, unknown> | null): { data: Record<string, unknown> | null } {
+  if (!obj) return { data: null };
+  return { data: { ...obj, _persisted: true } };
+}
+
+aiAssist.get("/resume-insight", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+  const talentId = c.req.query("talent_id");
+  const denied = await requireTalent(c, session, talentId);
+  if (isResponse(denied)) return denied;
+  const content = await loadLatestArtifact(c.env.DB, session.userId, "resume_insight", talentId!, "");
+  return c.json(withPersisted(content));
+});
+
+aiAssist.get("/outreach", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+  const talentId = c.req.query("talent_id");
+  const denied = await requireTalent(c, session, talentId);
+  if (isResponse(denied)) return denied;
+  // scene 传了（如 reject:warm）按场景取；不传则取该人才最近一条任意场景
+  const scene = c.req.query("scene");
+  const content = await loadLatestArtifact(c.env.DB, session.userId, "outreach", talentId!, scene);
+  return c.json(withPersisted(content));
+});
+
+aiAssist.get("/interview-questions", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+  const talentId = c.req.query("talent_id");
+  const denied = await requireTalent(c, session, talentId);
+  if (isResponse(denied)) return denied;
+  const content = await loadLatestArtifact(c.env.DB, session.userId, "interview_questions", talentId!, "");
+  return c.json(withPersisted(content));
+});
+
+aiAssist.get("/candidate-summary", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+  const talentId = c.req.query("talent_id");
+  const denied = await requireTalent(c, session, talentId);
+  if (isResponse(denied)) return denied;
+  const content = await loadLatestArtifact(c.env.DB, session.userId, "candidate_summary", talentId!, "");
+  return c.json(withPersisted(content));
 });
 
 export default aiAssist;

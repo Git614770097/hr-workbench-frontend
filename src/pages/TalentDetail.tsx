@@ -212,6 +212,10 @@ export default function TalentDetail() {
             style={{ marginBottom: 16 }}
             loadingTip={talent.resume_url ? "正在读取简历原文并生成解读…" : "AI 正在生成解读，约需 5-15 秒…"}
             hint="点击「生成」，AI 会基于档案字段与简历原文给出亮点、风险点和录用建议，供你筛选时参考。"
+            fetchOnMount={async () => {
+              const r = await api.aiResumeInsightGet(talent.id);
+              return (r?.data ? { ...r.data, _persisted: true } : null) as Record<string, unknown> | null;
+            }}
             onGenerate={async () => {
               const text = await readResumeText(talent);
               return (await api.aiResumeInsight({

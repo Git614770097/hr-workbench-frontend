@@ -625,6 +625,22 @@ export const api = {
       60000
     ),
 
+  // AI 读取已生成结果（GET，不重算、不扣配额）：下次进入页面直接展示历史产出。
+  // 返回 { data: <上次结果或 null> }；data 带 _persisted 标记。
+  aiResumeInsightGet: (talentId: string) =>
+    request<{ data: AiResumeInsight | null }>(`/ai/resume-insight?talent_id=${encodeURIComponent(talentId)}`),
+
+  aiOutreachGet: (talentId: string, scene?: string) =>
+    request<{ data: AiOutreach | null }>(
+      `/ai/outreach?talent_id=${encodeURIComponent(talentId)}${scene ? `&scene=${encodeURIComponent(scene)}` : ""}`
+    ),
+
+  aiInterviewQuestionsGet: (talentId: string) =>
+    request<{ data: AiInterviewQuestions | null }>(`/ai/interview-questions?talent_id=${encodeURIComponent(talentId)}`),
+
+  aiCandidateSummaryGet: (talentId: string) =>
+    request<{ data: AiCandidateSummary | null }>(`/ai/candidate-summary?talent_id=${encodeURIComponent(talentId)}`),
+
   // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
   getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {
     const qs = Object.entries(params)

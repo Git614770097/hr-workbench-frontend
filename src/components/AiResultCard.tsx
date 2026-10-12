@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Alert, Button, Card, Space, Spin, Tag, Typography } from "antd";
 import { RobotOutlined, ReloadOutlined, CopyOutlined } from "@ant-design/icons";
 import { copyText } from "../utils/clipboard";
@@ -21,15 +21,40 @@ export interface AiResultCardProps {
   style?: CSSProperties;
   /** 生成中按钮上方的补充说明，如「正在读取简历原文…」 */
   loadingTip?: string;
+  /** 进入时自动拉取历史结果（如上次已生成的文案），返回 null 表示没有；不消耗配额 */
+  fetchOnMount?: () => Promise<Record<string, unknown> | null>;
 }
 
 export default function AiResultCard({
-  title, onGenerate, render, toText, hint, extra, style, loadingTip,
+  title, onGenerate, render, toText, hint, extra, style, loadingTip, fetchOnMount,
 }: AiResultCardProps) {
   const [loading, setLoading] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(false);
   const [error, setError] = useState("");
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // 进入时尝试直接展示上次生成的结果，避免重复生成。
+  // 用 ref 固定首次挂载的 fetchOnMount，确保只拉一次（父组件重渲染不再重复请求；
+  // 候选人/场景切换由各调用方通过 key 重挂载本组件，从而用新闭包重新拉取）。
+  const fetchRef = useRef(fetchOnMount);
+  fetchRef.current = fetchOnMount;
+  useEffect(() => {
+    if (!fetchRef.current) return;
+    let cancelled = false;
+    setInitialLoading(true);
+    fetchRef.current()
+      .then((res) => {
+        if (cancelled) return;
+        if (res) {
+          setData(res);
+          setCopied(false);
+        }
+      })
+      .catch(() => {/* 读取失败静默：交给用户手动点生成 */})
+      .finally(() => { if (!cancelled) setInitialLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   const run = async () => {
     setLoading(true);
@@ -58,6 +83,8 @@ export default function AiResultCard({
     }
   };
 
+  const busy = loading || initialLoading;
+
   return (
     <Card
       size="small"
@@ -67,7 +94,9 @@ export default function AiResultCard({
           <RobotOutlined />
           <span>{title}</span>
           <Tag color="purple" style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "18px" }}>AI 生成</Tag>
-          {data?._cached ? (
+          {data?._persisted ? (
+            <Tag color="blue" style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "18px" }}>已保存</Tag>
+          ) : data?._cached ? (
             <Tag style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "18px" }}>缓存</Tag>
           ) : null}
         </Space>
@@ -86,11 +115,11 @@ export default function AiResultCard({
         </Space>
       }
     >
-      {loading ? (
+      {busy ? (
         <div style={{ textAlign: "center", padding: "18px 0" }}>
           <Spin />
           <div style={{ marginTop: 8, fontSize: 12, color: "#8c8c8c" }}>
-            {loadingTip || "AI 正在生成，约需 5-15 秒…"}
+            {initialLoading ? "正在加载上次生成的内容…" : loadingTip || "AI 正在生成，约需 5-15 秒…"}
           </div>
         </div>
       ) : error ? (

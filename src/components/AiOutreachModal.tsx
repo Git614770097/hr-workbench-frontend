@@ -33,6 +33,8 @@ export default function AiOutreachModal({ open, talent, pipelines, onClose }: Pr
 
   if (!talent) return null;
 
+  const sceneKey = scene === "reject" ? `reject:${tone}` : scene;
+
   const generate = async (): Promise<Record<string, unknown> | null> => {
     return (await api.aiOutreach({
       talent_id: talent.id,
@@ -40,6 +42,11 @@ export default function AiOutreachModal({ open, talent, pipelines, onClose }: Pr
       scene,
       ...(scene === "reject" ? { tone } : {}),
     })) as unknown as Record<string, unknown>;
+  };
+
+  const fetchOnMount = async (): Promise<Record<string, unknown> | null> => {
+    const r = await api.aiOutreachGet(talent.id, sceneKey);
+    return (r?.data ? { ...r.data, _persisted: true } : null) as Record<string, unknown> | null;
   };
 
   const toText = (d: any): string => {
@@ -107,6 +114,7 @@ export default function AiOutreachModal({ open, talent, pipelines, onClose }: Pr
       <AiResultCard
         key={`${scene}:${tone}:${jobId}`}
         title={outreachTitle(scene, tone)}
+        fetchOnMount={fetchOnMount}
         onGenerate={generate}
         toText={toText}
         hint="选好场景后点「生成」。婉拒信默认「温暖挽留型」：先认可对方的具体经历，再说明情况并保留联系。"

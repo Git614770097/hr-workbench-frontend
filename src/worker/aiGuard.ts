@@ -61,7 +61,7 @@ export async function checkQuota(db: D1Database, userId: string): Promise<QuotaI
   return { ok: used < AI_DAILY_LIMIT, used, limit: AI_DAILY_LIMIT };
 }
 
-/** 读缓存：同用户 + 同对象 + 同场景，且创建时间在有效期内 */
+/** 读缓存：同用户 + 同对象 + 同场景，且创建时间在有效期内（用于「重新生成」时省 token） */
 export async function loadRecentArtifact(
   db: D1Database,
   userId: string,
@@ -77,6 +77,40 @@ export async function loadRecentArtifact(
        ORDER BY created_at DESC LIMIT 1`
     )
     .bind(userId, bizType, bizId, scene ?? "", minutesAgoUtc(AI_CACHE_MINUTES))
+    .first<{ content: string }>();
+  if (!row?.content) return null;
+  try {
+    const obj = JSON.parse(row.content);
+    return obj && typeof obj === "object" ? (obj as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 读「最近一次」已生成结果，不限时间（用于下次进入页面时直接展示历史产出）。
+ * 不消耗配额、不调 AI——只是把上次落库的内容取回来。
+ * scene 传 undefined 表示「不限场景，取该对象最近一条」（沟通文案用）；
+ * 传具体值（含 ""）则按场景精确匹配。
+ */
+export async function loadLatestArtifact(
+  db: D1Database,
+  userId: string,
+  bizType: string,
+  bizId: string,
+  scene?: string
+): Promise<Record<string, unknown> | null> {
+  let sql = `SELECT content FROM ai_artifacts
+       WHERE owner_id = ? AND biz_type = ? AND biz_id = ?`;
+  const binds: (string | null)[] = [userId, bizType, bizId];
+  if (scene !== undefined) {
+    sql += ` AND IFNULL(scene, '') = ?`;
+    binds.push(scene ?? "");
+  }
+  sql += ` ORDER BY created_at DESC LIMIT 1`;
+  const row = await db
+    .prepare(sql)
+    .bind(...(binds as string[]))
     .first<{ content: string }>();
   if (!row?.content) return null;
   try {
