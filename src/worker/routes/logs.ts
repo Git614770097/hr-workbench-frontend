@@ -38,6 +38,20 @@ export function cnDay(offsetDays = 0): string {
 /** 明细表保留天数（滚动清理，见 purgeOldUsage） */
 const RETENTION_DAYS = 30;
 
+/** AI 功能名（ai_artifacts.biz_type → 展示名），与前端共用 */
+const AI_BIZ_LABELS: Record<string, string> = {
+  resume_insight: "简历解读",
+  outreach: "沟通文案",
+  interview_questions: "面试问题",
+  candidate_summary: "综合评估",
+};
+
+/** 指定中国时区日期当天 00:00 对应的 UTC 时刻（ai_artifacts.created_at 存的是 UTC） */
+function cnDayStartUtc(ymd: string): string {
+  const utcMidnight = new Date(`${ymd}T00:00:00Z`);
+  return new Date(utcMidnight.getTime() - 8 * 3600_000).toISOString().slice(0, 19).replace("T", " ");
+}
+
 /** 清理超期明细。聚合表不动（趋势图依赖它长期数据）。 */
 export async function purgeOldUsage(env: Env): Promise<void> {
   try {
@@ -117,6 +131,69 @@ logs.post("/report", async (c) => {
     }
   }
   return c.json({ ok: true, recorded: daily.length }, 200);
+});
+
+// ---- AI 功能使用（数据源：ai_artifacts，每次真实生成落一行；命中缓存不落行）----
+// 与页面 PV 埋点分开：AI 功能的价值看「生成了多少次、几个人在用」，
+// 比访问次数更能说明功能是否真的被用起来，也正好用来验证配额是否需要调整。
+logs.get("/ai-usage", async (c) => {
+  const admin = await requireAdmin(c);
+  if ("error" in admin) return c.json({ error: admin.error }, admin.status as any);
+
+  const days = Math.min(Math.max(Number(c.req.query("days")) || 7, 1), 90);
+  const from = cnDay(-(days - 1));
+  const to = cnDay();
+  const since = cnDayStartUtc(from);
+
+  const byType = await c.env.DB
+    .prepare(
+      `SELECT biz_type, COUNT(*) AS calls, COUNT(DISTINCT owner_id) AS users
+       FROM ai_artifacts WHERE created_at >= ?
+       GROUP BY biz_type ORDER BY calls DESC`
+    )
+    .bind(since)
+    .all<{ biz_type: string; calls: number; users: number }>();
+
+  const byDay = await c.env.DB
+    .prepare(
+      `SELECT substr(created_at, 1, 10) AS d, COUNT(*) AS calls
+       FROM ai_artifacts WHERE created_at >= ?
+       GROUP BY substr(created_at, 1, 10) ORDER BY d`
+    )
+    .bind(since)
+    .all<{ d: string; calls: number }>();
+
+  const byUser = await c.env.DB
+    .prepare(
+      `SELECT a.owner_id AS user_id, COALESCE(u.name, '未知') AS user_name, COUNT(*) AS calls
+       FROM ai_artifacts a LEFT JOIN users u ON u.id = a.owner_id
+       WHERE a.created_at >= ?
+       GROUP BY a.owner_id ORDER BY calls DESC LIMIT 20`
+    )
+    .bind(since)
+    .all<{ user_id: string; user_name: string; calls: number }>();
+
+  const totalRow = await c.env.DB
+    .prepare(
+      `SELECT COUNT(*) AS calls, COUNT(DISTINCT owner_id) AS users FROM ai_artifacts WHERE created_at >= ?`
+    )
+    .bind(since)
+    .first<{ calls: number; users: number }>();
+
+  return c.json({
+    days,
+    from,
+    to,
+    total: { calls: totalRow?.calls ?? 0, users: totalRow?.users ?? 0 },
+    by_type: (byType.results || []).map((r) => ({
+      biz_type: r.biz_type,
+      label: AI_BIZ_LABELS[r.biz_type] || r.biz_type,
+      calls: r.calls,
+      users: r.users,
+    })),
+    by_day: byDay.results || [],
+    by_user: byUser.results || [],
+  });
 });
 
 // ---- 概览：统计卡 + 热度排行 + 趋势 + 用户 × 模块矩阵 ----

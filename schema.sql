@@ -314,6 +314,17 @@ CREATE TABLE IF NOT EXISTS onboarding_items (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- ---- AI 辅助产出（简历解读 / 沟通文案 / 面试问题 / 综合评估的缓存与配额计数）----
+CREATE TABLE IF NOT EXISTS ai_artifacts (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  biz_type TEXT NOT NULL,                 -- resume_insight / outreach / interview_questions / candidate_summary
+  biz_id TEXT NOT NULL,                   -- 人才 id；导入核对中的未入库记录用 "pre:{recordKey}"
+  scene TEXT,                             -- 仅 outreach 用：场景+语气，如 reject:warm
+  content TEXT NOT NULL,                  -- 结构化结果 JSON 字符串
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_talents_owner ON talents(owner_id);
 CREATE INDEX IF NOT EXISTS idx_talent_social_talent ON talent_social(talent_id);
@@ -334,3 +345,5 @@ CREATE INDEX IF NOT EXISTS idx_contract_files_talent ON contract_files(talent_id
 CREATE INDEX IF NOT EXISTS idx_interviews_talent_job ON interviews(talent_job_id);
 CREATE INDEX IF NOT EXISTS idx_interviews_owner ON interviews(owner_id);
 CREATE INDEX IF NOT EXISTS idx_interviews_scheduled ON interviews(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_ai_artifacts_lookup ON ai_artifacts(owner_id, biz_type, biz_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_ai_artifacts_quota ON ai_artifacts(owner_id, created_at);

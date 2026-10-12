@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Card, Select, Space, Button, Table, Empty, Spin, Tag, Tooltip, message } from "antd";
 import {
   ReloadOutlined, SearchOutlined, BarChartOutlined, LineChartOutlined,
-  AppstoreOutlined, TeamOutlined, ThunderboltOutlined, ProfileOutlined,
+  AppstoreOutlined, TeamOutlined, ThunderboltOutlined, ProfileOutlined, RobotOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import * as echarts from "echarts/core";
@@ -105,6 +105,14 @@ export default function Logs() {
   const [eventPage, setEventPage] = useState(1);
   const [eventLoading, setEventLoading] = useState(false);
 
+  // AI 功能使用（ai_artifacts 聚合）
+  const [aiUsage, setAiUsage] = useState<{
+    total: { calls: number; users: number };
+    by_type: { biz_type: string; label: string; calls: number; users: number }[];
+    by_user: { user_id: string; user_name: string; calls: number }[];
+  } | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+
   // 跟随全局主题（ECharts 的文字/网格色需要显式给，否则暗色下看不清）
   const [isDark, setIsDark] = useState(
     () => document.documentElement.getAttribute("data-theme-mode") === "dark"
@@ -157,6 +165,18 @@ export default function Logs() {
     setEventPage(1);
     fetchEvents(1);
   }, [fetchEvents]);
+
+  // AI 使用统计跟随同一周期；失败静默（不影响主统计区）
+  useEffect(() => {
+    let cancelled = false;
+    setAiLoading(true);
+    api
+      .getAiUsage(days)
+      .then((res) => { if (!cancelled) setAiUsage(res); })
+      .catch(() => { if (!cancelled) setAiUsage(null); })
+      .finally(() => { if (!cancelled) setAiLoading(false); });
+    return () => { cancelled = true; };
+  }, [days]);
 
   const handleSearch = () => {
     setDays(draftDays);
@@ -344,6 +364,26 @@ export default function Logs() {
     ];
   }, [data?.menus, matrixMax, isDark]);
 
+  const aiColumns = [
+    { title: "AI 功能", dataIndex: "label", width: 160 },
+    {
+      title: "生成次数",
+      dataIndex: "calls",
+      width: 100,
+      sorter: (a: { calls: number }, b: { calls: number }) => a.calls - b.calls,
+      defaultSortOrder: "descend" as const,
+      render: (v: number) => <b>{v}</b>,
+    },
+    { title: "使用人数", dataIndex: "users", width: 100 },
+    {
+      title: "人均",
+      dataIndex: "calls",
+      width: 90,
+      render: (_: unknown, r: { calls: number; users: number }) =>
+        r.users ? (r.calls / r.users).toFixed(1) : "—",
+    },
+  ];
+
   const eventColumns = [
     {
       title: "时间",
@@ -514,6 +554,31 @@ export default function Logs() {
                 pagination={false}
                 scroll={{ x: 160 + Math.min(data?.menus.length || 0, 12) * 96 + 80 }}
               />
+            </div>
+
+            {/* AI 功能使用：数据源 ai_artifacts（每次真实生成落一行，命中缓存不落行） */}
+            <div className="logs-section">
+              <div className="logs-sec-head">
+                <span className="logs-sec-title">
+                  <RobotOutlined /> AI 功能使用
+                </span>
+                <span className="logs-sec-tip">近 {days} 天实际生成次数（命中缓存不计）；每用户每日上限 10 次</span>
+              </div>
+              <Table
+                rowKey="biz_type"
+                size="small"
+                loading={aiLoading}
+                columns={aiColumns}
+                dataSource={aiUsage?.by_type || []}
+                pagination={false}
+                locale={{ emptyText: "该周期内还没有 AI 生成记录" }}
+              />
+              {aiUsage && aiUsage.by_user.length > 0 && (
+                <div style={{ marginTop: 10, fontSize: 12, color: "#8c8c8c" }}>
+                  {`共 ${aiUsage.total.calls} 次生成、${aiUsage.total.users} 人使用：`}
+                  {aiUsage.by_user.map((u) => `${u.user_name} ${u.calls} 次`).join("，")}
+                </div>
+              )}
             </div>
 
             {/* 行为明细 */}

@@ -937,3 +937,54 @@ export interface UsageEventsResponse {
   page_size: number;
   items: UsageEventRow[];
 }
+
+// ---- AI 提效（简历解读 / 沟通文案 / 面试问题 / 综合评估）----
+// 约定：所有 AI 产出都是「草稿」，必须人工确认后才使用；系统永不代发。
+// 配额：每用户每日 10 次（ai_artifacts 按中国时区计日），同对象同场景 10 分钟内命中缓存。
+
+export interface AiResumeInsight {
+  highlights: string[];
+  risks: string[];
+  jd_fit: { score: number; reasons: string[] } | null;
+  suggestion: string;
+  _cached?: boolean;
+}
+
+export const AI_OUTREACH_SCENE_LABELS: Record<AiOutreachScene, string> = {
+  invite_call: "电话邀约脚本",
+  invite_wechat: "微信邀约文案",
+  reject: "婉拒信",
+  followup: "跟进催回",
+};
+
+export type AiOutreachScene = "invite_call" | "invite_wechat" | "reject" | "followup";
+export type AiRejectTone = "warm" | "polite";
+
+export const AI_REJECT_TONE_LABELS: Record<AiRejectTone, string> = {
+  warm: "温暖挽留型",
+  polite: "标准客气型",
+};
+
+export interface AiOutreach {
+  scene: AiOutreachScene;
+  tone: AiRejectTone | null;
+  title: string;
+  content: string;
+  tips: string[];
+  _cached?: boolean;
+}
+
+export interface AiInterviewQuestions {
+  questions: { q: string; focus: string }[];
+  _cached?: boolean;
+}
+
+export interface AiCandidateSummary {
+  summary: string;
+  strengths: string[];
+  risks: string[];
+  recommendation: string;
+  suggested_result: string;
+  rounds: number;
+  _cached?: boolean;
+}

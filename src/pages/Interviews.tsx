@@ -8,18 +8,113 @@ import {
   SearchOutlined, ReloadOutlined, PlusOutlined, VideoCameraOutlined,
   EnvironmentOutlined, PhoneOutlined, CalendarOutlined, ClockCircleOutlined,
   FieldTimeOutlined, CheckCircleOutlined, InfoCircleOutlined, UserOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
-import type { Interview } from "../types";
+import type { Interview, AiResumeInsight } from "../types";
 import {
   INTERVIEW_ROUND_LABELS, INTERVIEW_MODE_LABELS,
   INTERVIEW_STATUS_LABELS, INTERVIEW_RESULT_LABELS, STAGE_META,
 } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
+import AiResultCard from "../components/AiResultCard";
 import { useDismissible } from "../hooks/useDismissible";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
+
+/** AI 面试问题清单（面试前准备）：问题 + 考察点，可整单复制 */
+function InterviewQuestionsPanel({ talentId, jobId }: { talentId?: string; jobId?: string | null }) {
+  if (!talentId) {
+    return <Empty description="请先在「基础信息」Tab 选择候选人" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  }
+  return (
+    <AiResultCard
+      title="AI 面试问题清单"
+      hint="点「生成」，AI 会结合该候选人的简历/档案与目标岗位要求，给出针对性问题与考察点。"
+      onGenerate={async () =>
+        (await api.aiInterviewQuestions(talentId, jobId ?? null)) as unknown as Record<string, unknown>
+      }
+      toText={(d) => {
+        const qs = (d as { questions?: { q: string; focus: string }[] }).questions || [];
+        return qs.map((x, i) => `${i + 1}. ${x.q}\n   考察：${x.focus}`).join("\n");
+      }}
+      render={(d) => {
+        const qs = (d as { questions?: { q: string; focus: string }[] }).questions || [];
+        return (
+          <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13 }}>
+            {qs.map((x, i) => (
+              <li key={i} style={{ marginBottom: 8 }}>
+                <div>{x.q}</div>
+                {x.focus ? (
+                  <div style={{ fontSize: 12, color: "#8c8c8c" }}>考察：{x.focus}</div>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+        );
+      }}
+    />
+  );
+}
+
+/** AI 综合评估（多轮）：汇总各轮面试 + 部门意见，给出录用建议 */
+function CandidateSummaryPanel({ talentId, jobId }: { talentId?: string; jobId?: string | null }) {
+  if (!talentId) {
+    return <Empty description="请先在「基础信息」Tab 选择候选人" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+  }
+  return (
+    <AiResultCard
+      title="AI 综合评估（汇总多轮）"
+      hint="点「生成」，AI 会汇总该候选人各轮面试评价与用人部门意见，给出结构化结论与录用建议。需至少已填写一轮评价。"
+      onGenerate={async () =>
+        (await api.aiCandidateSummary(talentId, jobId ?? null)) as unknown as Record<string, unknown>
+      }
+      toText={(d) => {
+        const r = d as import("../types").AiCandidateSummary;
+        const lines = [r.summary];
+        if (r.strengths?.length) lines.push(`优势：\n${r.strengths.map((x) => `· ${x}`).join("\n")}`);
+        if (r.risks?.length) lines.push(`风险：\n${r.risks.map((x) => `· ${x}`).join("\n")}`);
+        if (r.recommendation) lines.push(`推荐级别：${r.recommendation}`);
+        if (r.suggested_result) lines.push(`建议结论：${r.suggested_result}`);
+        return lines.filter(Boolean).join("\n\n");
+      }}
+      render={(d) => {
+        const r = d as import("../types").AiCandidateSummary;
+        const recColor =
+          r.recommendation === "强烈推荐" ? "green" : r.recommendation === "推荐" ? "blue" : r.recommendation === "可考虑" ? "orange" : "red";
+        return (
+          <div style={{ fontSize: 13 }}>
+            <div style={{ marginBottom: 8 }}>{r.summary}</div>
+            <Space size={6} wrap style={{ marginBottom: 8 }}>
+              {r.recommendation ? <Tag color={recColor}>{r.recommendation}</Tag> : null}
+              {r.suggested_result ? (
+                <Tag>{({ pass: "建议通过", fail: "建议不通过", pending: "建议待定" } as Record<string, string>)[r.suggested_result] || r.suggested_result}</Tag>
+              ) : null}
+              {r.rounds ? <Tag>{`基于 ${r.rounds} 轮评价`}</Tag> : null}
+            </Space>
+            {r.strengths?.length ? (
+              <div style={{ marginBottom: 6 }}>
+                <Typography.Text strong style={{ fontSize: 12, color: "#389e0d" }}>优势</Typography.Text>
+                <ul style={{ margin: "4px 0 0", paddingLeft: 18, color: "#4b5563" }}>
+                  {r.strengths.map((x, i) => <li key={i}>{x}</li>)}
+                </ul>
+              </div>
+            ) : null}
+            {r.risks?.length ? (
+              <div>
+                <Typography.Text strong style={{ fontSize: 12, color: "#d4380d" }}>风险</Typography.Text>
+                <ul style={{ margin: "4px 0 0", paddingLeft: 18, color: "#4b5563" }}>
+                  {r.risks.map((x, i) => <li key={i}>{x}</li>)}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        );
+      }}
+    />
+  );
+}
 
 /** 面试安排 + 面试评价（挂在招聘看板的面试阶段上） */
 export default function Interviews() {
@@ -50,6 +145,12 @@ export default function Interviews() {
   const [searching, setSearching] = useState(false);
   const [linkOptions, setLinkOptions] = useState<{ label: string; value: string; jobId: string }[]>([]);
   const [loadingLinks, setLoadingLinks] = useState(false);
+  // AI 辅助面板需要「当前选中的候选人 + 岗位」；用 watch 保持响应式（切人即时刷新）。
+  // 注意必须写在 linkOptions 声明之后（TS 块级作用域：先声明后使用）。
+  const watchTalentId = Form.useWatch("talent_id", form) as string | undefined;
+  const watchLinkId = Form.useWatch("talent_job_id", form) as string | undefined;
+  const watchJobId =
+    editing?.job_id ?? linkOptions.find((o) => o.value === watchLinkId)?.jobId ?? null;
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const intro = useDismissible("interviews.intro");
@@ -637,6 +738,86 @@ export default function Interviews() {
                 forceRender: true,
                 children: (
                   <>
+                    {/* AI 总结本轮评价：复用 interviews/:id/ai-summary。
+                        仅编辑已保存的面试时可用（新面试还没有 id，也没内容可总结）。 */}
+                    {editing && (
+                      <div style={{ marginBottom: 16 }}>
+                        <AiResultCard
+                          title="AI 总结本轮评价"
+                          hint="填完评分与评语后点「生成」，AI 会归纳成结构化总结，可一键追加到评语末尾。"
+                          onGenerate={async () =>
+                            (await api.aiInterviewSummary(editing.id)) as unknown as Record<string, unknown>
+                          }
+                          toText={(d) => {
+                            const r = d as {
+                              summary: string; strengths: string[]; risks: string[];
+                              recommendation: string; suggested_result: string;
+                            };
+                            const lines = [r.summary];
+                            if (r.strengths?.length) lines.push(`优势：\n${r.strengths.map((x) => `· ${x}`).join("\n")}`);
+                            if (r.risks?.length) lines.push(`风险：\n${r.risks.map((x) => `· ${x}`).join("\n")}`);
+                            if (r.recommendation) lines.push(`推荐级别：${r.recommendation}`);
+                            return lines.filter(Boolean).join("\n\n");
+                          }}
+                          render={(d) => {
+                            const r = d as {
+                              summary: string; strengths: string[]; risks: string[];
+                              recommendation: string; suggested_result: string; _ai_fallback?: boolean;
+                            };
+                            if (r._ai_fallback) {
+                              return <Alert type="warning" showIcon message="AI 暂时不可用，未生成总结" />;
+                            }
+                            const recColor =
+                              r.recommendation === "强烈推荐" ? "green"
+                                : r.recommendation === "推荐" ? "blue"
+                                  : r.recommendation === "可考虑" ? "orange" : "red";
+                            return (
+                              <div style={{ fontSize: 13 }}>
+                                <div style={{ marginBottom: 8 }}>{r.summary}</div>
+                                <Space size={6} wrap style={{ marginBottom: 8 }}>
+                                  {r.recommendation ? <Tag color={recColor}>{r.recommendation}</Tag> : null}
+                                  {r.suggested_result ? (
+                                    <Tag>{({ pass: "建议通过", fail: "建议不通过", pending: "建议待定" } as Record<string, string>)[r.suggested_result] || r.suggested_result}</Tag>
+                                  ) : null}
+                                  <Button
+                                    size="small"
+                                    onClick={() => {
+                                      const text = [
+                                        r.summary,
+                                        r.strengths?.length ? `优势：${r.strengths.join("；")}` : "",
+                                        r.risks?.length ? `风险：${r.risks.join("；")}` : "",
+                                      ].filter(Boolean).join("\n");
+                                      const prev = (form.getFieldValue("evaluation") as string) || "";
+                                      const next = prev ? `${prev}\n\n${text}` : text;
+                                      form.setFieldValue("evaluation", next);
+                                      message.success("已追加到评语末尾（保存后生效）");
+                                    }}
+                                  >
+                                    追加到评语
+                                  </Button>
+                                </Space>
+                                {r.strengths?.length ? (
+                                  <div style={{ marginBottom: 6 }}>
+                                    <Typography.Text strong style={{ fontSize: 12, color: "#389e0d" }}>优势</Typography.Text>
+                                    <ul style={{ margin: "4px 0 0", paddingLeft: 18, color: "#4b5563" }}>
+                                      {r.strengths.map((x, i) => <li key={i}>{x}</li>)}
+                                    </ul>
+                                  </div>
+                                ) : null}
+                                {r.risks?.length ? (
+                                  <div>
+                                    <Typography.Text strong style={{ fontSize: 12, color: "#d4380d" }}>风险</Typography.Text>
+                                    <ul style={{ margin: "4px 0 0", paddingLeft: 18, color: "#4b5563" }}>
+                                      {r.risks.map((x, i) => <li key={i}>{x}</li>)}
+                                    </ul>
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          }}
+                        />
+                      </div>
+                    )}
                     <Form.Item name="result" label="面试结果">
                       <Select
                         allowClear
@@ -673,6 +854,21 @@ export default function Interviews() {
                       <Input.TextArea rows={4} placeholder="用人部门对候选人胜任度、团队匹配度的意见" />
                     </Form.Item>
                   </>
+                ),
+              },
+              {
+                key: "ai",
+                label: (
+                  <span>
+                    <RobotOutlined style={{ marginInlineEnd: 6 }} />
+                    AI 辅助
+                  </span>
+                ),
+                children: (
+                  <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                    <InterviewQuestionsPanel talentId={watchTalentId} jobId={watchJobId} />
+                    <CandidateSummaryPanel talentId={watchTalentId} jobId={watchJobId} />
+                  </Space>
                 ),
               },
             ]}

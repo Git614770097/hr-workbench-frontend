@@ -6,13 +6,18 @@ import {
 } from "antd";
 import {
   EditOutlined, DeleteOutlined, ArrowLeftOutlined, FilePdfOutlined, UploadOutlined,
-  CopyOutlined, CalendarOutlined,
+  CopyOutlined, CalendarOutlined, RobotOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
-import type { Task, TalentDetailData, TalentStageLog, User } from "../types";
+import type { Task, TalentDetailData, TalentStageLog, User, AiResumeInsight } from "../types";
 import { STATUS_LABELS, STATUS_COLORS, STAGE_META, PRIORITY_LABELS, PRIORITY_COLORS } from "../types";
 import TalentFormModal from "../components/TalentFormModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
+import AiResultCard from "../components/AiResultCard";
+import AiInsightView, { insightToText } from "../components/AiInsightView";
+import AiOutreachModal from "../components/AiOutreachModal";
+import { copyText } from "../utils/clipboard";
+import { parseResumeFile } from "../utils/resumeImport";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
 
@@ -25,25 +30,6 @@ function localYmd(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    // 非 HTTPS / 旧浏览器降级：临时 textarea + execCommand
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    let ok = false;
-    try { ok = document.execCommand("copy"); } catch { ok = false; }
-    document.body.removeChild(ta);
-    return ok;
-  }
 }
 
 /** 电话 / 邮箱旁的复制小图标 */
@@ -62,6 +48,26 @@ function CopyBtn({ text, label }: { text: string; label: string }) {
   );
 }
 
+/**
+ * 读取已上传简历的原文（AI 解读用）。
+ * 走一次性票据 URL 拉文件 → File → 复用导入链路的 pdfjs/mammoth 抽取。
+ * 任何一步失败都返回 null：后端会退化为「仅按字段解读」，不让解读功能被文件问题卡死。
+ */
+async function readResumeText(t: TalentDetailData): Promise<string | null> {
+  if (!t.resume_url) return null;
+  try {
+    const url = await api.getResumeUrl(t.id);
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    const name = t.resume_url.split("/").pop() || "resume.pdf";
+    const file = new File([blob], name, { type: blob.type || "application/pdf" });
+    return await parseResumeFile(file);
+  } catch {
+    return null;
+  }
+}
+
 export default function TalentDetail() {
   const profile = useIdentityProfile();
   const { id } = useParams<{ id: string }>();
@@ -71,6 +77,7 @@ export default function TalentDetail() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [outreachOpen, setOutreachOpen] = useState(false);
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -161,6 +168,7 @@ export default function TalentDetail() {
         </Space>
         <Space>
           <Button icon={<EditOutlined />} onClick={() => setEditModalOpen(true)}>编辑</Button>
+          <Button icon={<RobotOutlined />} onClick={() => setOutreachOpen(true)}>AI 沟通文案</Button>
           <Popconfirm title="确认删除？所有关联数据将被清除。" onConfirm={handleDeleteTalent}>
             <Button danger icon={<DeleteOutlined />}>删除</Button>
           </Popconfirm>
@@ -197,6 +205,23 @@ export default function TalentDetail() {
               </Descriptions.Item>
             </Descriptions>
           </Card>
+
+          {/* AI 简历解读：亮点/风险/与岗位匹配度。有简历文件时先抽取原文，失败则仅按字段 */}
+          <AiResultCard
+            title="AI 简历解读"
+            style={{ marginBottom: 16 }}
+            loadingTip={talent.resume_url ? "正在读取简历原文并生成解读…" : "AI 正在生成解读，约需 5-15 秒…"}
+            hint="点击「生成」，AI 会基于档案字段与简历原文给出亮点、风险点和录用建议，供你筛选时参考。"
+            onGenerate={async () => {
+              const text = await readResumeText(talent);
+              return (await api.aiResumeInsight({
+                talent_id: talent.id,
+                text,
+              })) as unknown as Record<string, unknown>;
+            }}
+            toText={(d) => insightToText(d as AiResumeInsight)}
+            render={(d) => <AiInsightView data={d as AiResumeInsight} />}
+          />
 
           {talent.skills.length > 0 && (
             <Card title="技能标签" style={{ marginBottom: 16 }}>
@@ -363,6 +388,14 @@ export default function TalentDetail() {
         talentId={talent.id}
         onClose={() => setEditModalOpen(false)}
         onSuccess={fetchData}
+      />
+
+      {/* AI 沟通文案：邀约 / 婉拒 / 跟进，生成后由用户自行复制发送 */}
+      <AiOutreachModal
+        open={outreachOpen}
+        talent={talent}
+        pipelines={pipeline}
+        onClose={() => setOutreachOpen(false)}
       />
     </div>
   );

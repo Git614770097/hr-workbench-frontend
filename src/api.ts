@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary } from "./types";
 
 const BASE = "/api";
 
@@ -589,6 +589,42 @@ export const api = {
       _ai_fallback?: boolean;
     }>(`/interviews/${id}/ai-summary`, { method: "POST" }, 60000),
 
+  // AI 提效：简历深度解读（详情页传 talent_id，导入核对弹窗传 fields）
+  // text 为前端抽取的简历原文（PDF/Word），不传则仅按字段解读
+  aiResumeInsight: (data: {
+    talent_id?: string;
+    job_id?: string | null;
+    text?: string | null;
+    pre_key?: string | null;
+    fields?: Record<string, unknown> | null;
+  }) =>
+    request<AiResumeInsight>("/ai/resume-insight", { method: "POST", body: JSON.stringify(data) }, 60000),
+
+  // AI 提效：沟通文案（邀约 / 婉拒 / 跟进）。婉拒信默认温暖挽留型
+  aiOutreach: (data: {
+    talent_id: string;
+    job_id?: string | null;
+    scene: AiOutreachScene;
+    tone?: AiRejectTone;
+  }) =>
+    request<AiOutreach>("/ai/outreach", { method: "POST", body: JSON.stringify(data) }, 60000),
+
+  // AI 提效：针对该候选人与岗位生成面试问题清单
+  aiInterviewQuestions: (talentId: string, jobId?: string | null) =>
+    request<AiInterviewQuestions>(
+      "/ai/interview-questions",
+      { method: "POST", body: JSON.stringify({ talent_id: talentId, job_id: jobId ?? null }) },
+      60000
+    ),
+
+  // AI 提效：多轮面试评价汇总成候选人综合评估
+  aiCandidateSummary: (talentId: string, jobId?: string | null) =>
+    request<AiCandidateSummary>(
+      "/ai/candidate-summary",
+      { method: "POST", body: JSON.stringify({ talent_id: talentId, job_id: jobId ?? null }) },
+      60000
+    ),
+
   // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
   getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {
     const qs = Object.entries(params)
@@ -653,4 +689,13 @@ export const api = {
       .join("&");
     return request<UsageEventsResponse>(`/logs/events${qs ? `?${qs}` : ""}`);
   },
+  // AI 功能使用统计（数据源 ai_artifacts，仅管理员）
+  getAiUsage: (days = 7) =>
+    request<{
+      days: number; from: string; to: string;
+      total: { calls: number; users: number };
+      by_type: { biz_type: string; label: string; calls: number; users: number }[];
+      by_day: { d: string; calls: number }[];
+      by_user: { user_id: string; user_name: string; calls: number }[];
+    }>(`/logs/ai-usage?days=${days}`),
 };

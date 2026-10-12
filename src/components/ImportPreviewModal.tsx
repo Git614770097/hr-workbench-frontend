@@ -8,6 +8,9 @@ import { useDict } from "../dict";
 import type { ParsedTalent } from "../utils/resumeImport";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
+import { api } from "../api";
+import AiResultCard from "./AiResultCard";
+import AiInsightView, { insightToText } from "./AiInsightView";
 
 interface Props {
   record: ParsedTalent | null;
@@ -203,6 +206,36 @@ export default function ImportPreviewModal({
               <label style={{ fontSize: 13, color: "#5b6472" }}>备注</label>
               <Input.TextArea size="small" value={record.notes} placeholder="备注" autoSize={{ minRows: 2, maxRows: 4 }} onChange={(e) => onChange("notes", e.target.value)} />
             </div>
+
+            {/* AI 解读（入库前预审）：此时还没有人才 id，用解析字段做通用解读，
+                帮 HR 在「保存并录入」前判断这人值不值得进库。
+                key 挂 record.key：切到下一条时重置结果，避免看到上一条的解读 */}
+            <AiResultCard
+              key={`insight-${record.key}`}
+              title="AI 解读（入库前预审）"
+              style={{ marginTop: 12 }}
+              hint="点「生成」，AI 会基于当前解析字段给出亮点、风险与建议，帮你决定这条是否值得录入。"
+              onGenerate={async () => {
+                return (await api.aiResumeInsight({
+                  pre_key: record.key,
+                  fields: {
+                    name: record.name,
+                    age: record.age,
+                    gender: record.gender,
+                    education: record.education,
+                    school: record.school,
+                    current_company: record.current_company,
+                    current_title: record.current_title,
+                    years_experience: record.years_experience,
+                    city: record.city,
+                    skills: record.skills,
+                    expected_salary: null,
+                  },
+                })) as unknown as Record<string, unknown>;
+              }}
+              toText={(d) => insightToText(d as import("../types").AiResumeInsight)}
+              render={(d) => <AiInsightView data={d as import("../types").AiResumeInsight} />}
+            />
           </div>
         </div>
       )}

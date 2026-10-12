@@ -15,6 +15,7 @@ import { onboardingRoutes } from "./routes/onboarding";
 import { taskRoutes } from "./routes/tasks";
 import aiParseRoutes from "./routes/aiParse";
 import matchRoutes from "./routes/match";
+import aiAssistRoutes from "./routes/aiAssist";
 import demoRoutes from "./routes/demo";
 import { overview } from "./routes/overview";
 import logsRoutes, { purgeOldUsage } from "./routes/logs";
@@ -232,6 +233,20 @@ app.use("/api/roles/*", async (c, next) => {
   return next();
 });
 
+// AI 提效（简历解读 / 沟通文案 / 面试问题 / 综合评估）：
+// 不新增菜单，权限按业务语义分流——文案与简历解读属「人才库」，
+// 面试问题与综合评估属「面试管理」。
+// ⚠️ 必须在**同一个中间件内**按 path 分流：Hono 的 "/api/ai/*" 也匹配裸 /api/ai，
+// 若拆成两个 app.use 会叠加执行，变成「必须同时拥有两个权限」才放行。
+app.use("/api/ai/*", async (c, next) => {
+  const p = c.req.path;
+  const menuKey =
+    p.startsWith("/api/ai/outreach") || p.startsWith("/api/ai/resume-insight") ? "talents" : "interviews";
+  const blocked = await menuGuard(c, menuKey);
+  if (blocked) return blocked;
+  return next();
+});
+
 // ---- API Routes ----
 app.route("/api/auth", authRoutes);
 app.route("/api/talents", talentRoutes);
@@ -247,6 +262,7 @@ app.route("/api/onboarding", onboardingRoutes);
 app.route("/api/tasks", taskRoutes);
 app.route("/api/parse-resume", aiParseRoutes);
 app.route("/api/match", matchRoutes);
+app.route("/api/ai", aiAssistRoutes);
 app.route("/api/demo", demoRoutes);
 app.route("/api/overview", overview);
 // 使用日志（模块点击率）：鉴权在 logs.ts 内部按方法分流——
