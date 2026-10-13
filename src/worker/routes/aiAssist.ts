@@ -684,6 +684,78 @@ aiAssist.post("/next-step", async (c) => {
   return c.json(result);
 });
 
+// ---------------------------------------------------------------- 待办 AI 今日重点
+// 输入逾期/今日/未来 7 天的未完成待办，AI 排「今天先做什么」。
+// 与复盘同模式：前端传聚合数据（待办为 owner 隔离数据）；scope = 日期+集合指纹，10 分钟缓存。
+// AI 只做排序建议，不改动任何待办数据。
+aiAssist.post("/today-focus", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  const body = await c.req
+    .json<{ scope?: string; items?: { title?: string; content?: string; priority?: string; due?: string; talent?: string; job?: string; source?: string }[] }>()
+    .catch(() => null);
+  if (!body?.items || !Array.isArray(body.items) || body.items.length === 0) {
+    return c.json({ error: "没有待排期的待办" }, 400);
+  }
+  const items = body.items.slice(0, 30);
+
+  const scope = (body.scope || "all").slice(0, 160);
+  const cached = await loadRecentArtifact(c.env.DB, session.userId, "today_focus", scope, "");
+  if (cached) return c.json({ ...cached, _cached: true });
+  const denied = await quotaGuard(c, session.userId);
+  if (denied) return denied;
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "未配置 AI 密钥，无法生成建议", code: "AI_NO_KEY" }, 500);
+  }
+
+  const system = `你是一名高效的 HR 助理，帮招聘者把待办排出「今天先做什么」。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+
+字段说明：
+- top3: 今天优先处理的 2-3 件事，每条格式「待办标题 — 一句话理由」，理由须引用给定事实（逾期天数 / 到期时间 / 关联人或岗位），不超过 40 字
+- arrange: 一句话建议的处理顺序或时段安排（如「上午处理面试相关，下午跟进沟通」），不超过 40 字
+- defer: 可放一放的待办 0-2 条，格式「待办标题 — 为什么可以缓」，没有就给空数组
+
+排序依据（按重要度）：
+1. 面试/审批类有时效的优先——错过窗口损失最大；
+2. 逾期最久且关联人还在流程中的优先；
+3. 同等条件参考优先级字段（高 > 中 > 低）；
+4. 关联人已入职/已淘汰的待办可以缓。`;
+
+  const userPrompt = `【待办列表（未完成，共 ${items.length} 条）】\n${truncate(
+    JSON.stringify(items.map((x, i) => ({
+      序号: i + 1,
+      标题: x.title || "",
+      说明: x.content || "",
+      优先级: x.priority || "",
+      到期: x.due || "",
+      关联人才: x.talent || "",
+      关联岗位: x.job || "",
+      来源: x.source || "",
+    }))),
+    3000
+  )}\n\n请排出今日重点。`;
+
+  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.3 });
+  if (!raw) {
+    return c.json({ error: "AI 暂时不可用，请稍后重试", code: "AI_UNAVAILABLE" }, 502);
+  }
+
+  const result = {
+    top3: toStringArray(raw.top3, 3),
+    arrange: typeof raw.arrange === "string" ? raw.arrange.trim().slice(0, 60) : "",
+    defer: toStringArray(raw.defer, 2),
+  };
+  if (!result.top3.length) {
+    return c.json({ error: "AI 未生成有效内容，请重试", code: "AI_EMPTY" }, 502);
+  }
+
+  await saveArtifact(c.env.DB, session.userId, "today_focus", scope, "", result);
+  return c.json(result);
+});
+
 // ---------------------------------------------------------------- 读取已生成结果（GET）
 // 下次进入页面时直接展示历史产出，不重算、不扣配额。
 // 返回 { data: <上次结果或 null> }；data 带 _persisted 标记，前端据此标「已保存」。

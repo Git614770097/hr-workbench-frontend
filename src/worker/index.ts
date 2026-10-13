@@ -247,7 +247,9 @@ app.use("/api/ai/*", async (c, next) => {
         ? "jobs"
         : p.startsWith("/api/ai/recap-report") || p.startsWith("/api/ai/next-step")
           ? "pipeline" // AI 招聘复盘 / 看板下一步建议：招聘概览与看板语义，跟随 pipeline 权限
-          : "interviews";
+          : p.startsWith("/api/ai/today-focus")
+            ? "tasks" // AI 今日重点：待办日历语义，跟随 tasks 权限
+            : "interviews";
   const blocked = await menuGuard(c, menuKey);
   if (blocked) return blocked;
   return next();

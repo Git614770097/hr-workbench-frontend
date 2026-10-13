@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus } from "./types";
 
 const BASE = "/api";
 
@@ -670,6 +670,11 @@ export const api = {
   // 后端自查归属与数据；10 分钟缓存复用，配额共用。
   aiNextStep: (linkId: string) =>
     request<AiNextStep>("/ai/next-step", { method: "POST", body: JSON.stringify({ link_id: linkId }) }, 60000),
+
+  // AI 今日重点：逾期/今日/未来 7 天待办让 AI 排先后顺序。
+  // scope = 日期+待办集合指纹作 10 分钟缓存键；AI 只做排序建议，不改待办数据。
+  aiTodayFocus: (data: { scope: string; items: Record<string, unknown>[] }) =>
+    request<AiTodayFocus>("/ai/today-focus", { method: "POST", body: JSON.stringify(data) }, 60000),
 
   // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
   getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {

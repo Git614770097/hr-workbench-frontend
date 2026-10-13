@@ -2,24 +2,25 @@ import { useState, useEffect, useCallback, useMemo, useRef, type DragEvent } fro
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Card, Button, Space, Tag, Input, Select, Checkbox, Popconfirm, message,
-  Modal, Form, DatePicker, Empty, Spin, Tooltip, Dropdown, Calendar,
+  Modal, Form, DatePicker, Empty, Spin, Tooltip, Dropdown, Calendar, Alert,
 } from "antd";
 import type { CalendarProps } from "antd";
 import {
   PlusOutlined, DeleteOutlined, EditOutlined, ClockCircleOutlined,
   CheckCircleOutlined, CheckOutlined, MoreOutlined, LinkOutlined, UserOutlined,
-  DownloadOutlined,
+  DownloadOutlined, RobotOutlined, CopyOutlined, ReloadOutlined, CloseOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import type { MenuProps } from "antd";
 import { api } from "../api";
-import type { Task, User } from "../types";
+import type { Task, User, AiTodayFocus } from "../types";
 import { PRIORITY_LABELS, PRIORITY_COLORS, TASK_SOURCE_LABELS } from "../types";
 import { dayInfo, hasHolidayData, knownYears } from "../utils/holidays";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
 import { exportXlsx, dateStamp } from "../utils/file";
+import { copyText as copyToClipboard } from "../utils/clipboard";
 import { registerOnbFill, notifyOnbSaved } from "../components/onboardingAutoFill";
 
 const todayYmd = () => dayjs().format("YYYY-MM-DD");
@@ -107,6 +108,75 @@ export default function Tasks() {
     }
     setLoading(false);
   }, [talentFilter]);
+
+  // ---- AI 今日重点：逾期/今日/未来 7 天待办让 AI 排「今天先做什么」 ----
+  // AI 只做排序建议，不改待办数据；失败降级为规则排序（逾期 > 今天 > 优先级字段）
+  const [focus, setFocus] = useState<{ loading: boolean; data: AiTodayFocus | null; err: string }>({
+    loading: false, data: null, err: "",
+  });
+
+  // 排序输入范围：未完成且（已逾期 / 今天到期 / 7 天内到期）
+  const focusCandidates = useMemo(
+    () => tasks.filter(
+      (t) => t.status !== "done" && t.status !== "cancelled" &&
+        (t.overdue || t.due_today || (t.days_left != null && t.days_left <= 7))
+    ),
+    [tasks]
+  );
+
+  // 缓存键指纹：日期 + 待办集合（id/优先级/状态）——集合或优先级变了自动换键重新生成
+  const focusScope = useMemo(() => {
+    const fp = focusCandidates.map((t) => `${t.id}:${t.priority}:${t.status}`).sort().join("|");
+    return `${todayYmd()}:${fp.slice(0, 100)}`;
+  }, [focusCandidates]);
+
+  // 降级用：规则排序（逾期 > 今天 > 优先级字段）
+  const ruleFocus = useMemo(() => {
+    const rank = (p: string) => (p === "high" ? 0 : p === "normal" ? 1 : 2);
+    return [...focusCandidates].sort(
+      (a, b) =>
+        (b.overdue ? 2 : 0) + (b.due_today ? 1 : 0) - ((a.overdue ? 2 : 0) + (a.due_today ? 1 : 0)) ||
+        rank(a.priority) - rank(b.priority)
+    );
+  }, [focusCandidates]);
+
+  const genFocus = async () => {
+    if (!focusCandidates.length) {
+      message.info("未来 7 天没有未完成待办，不需要排优先级");
+      return;
+    }
+    setFocus({ loading: true, data: null, err: "" });
+    try {
+      const r = await api.aiTodayFocus({
+        scope: focusScope,
+        items: focusCandidates.slice(0, 30).map((t) => ({
+          title: t.title,
+          content: t.content || "",
+          priority: PRIORITY_LABELS[t.priority] || t.priority,
+          due: t.overdue ? `已逾期 ${Math.abs(t.days_left ?? 0)} 天` : t.due_today ? "今天到期" : `${t.days_left} 天后到期`,
+          talent: t.talent_name || "",
+          job: t.job_title || "",
+          source: TASK_SOURCE_LABELS[t.source] || t.source,
+        })),
+      });
+      setFocus({ loading: false, data: r, err: "" });
+    } catch (err) {
+      setFocus({ loading: false, data: null, err: (err as Error).message || "生成失败，请稍后重试" });
+    }
+  };
+
+  const copyFocus = async () => {
+    if (!focus.data) return;
+    const text = [
+      "今日重点：",
+      ...focus.data.top3.map((x, i) => `${i + 1}. ${x}`),
+      ...(focus.data.arrange ? ["", `建议安排：${focus.data.arrange}`] : []),
+      ...(focus.data.defer.length ? ["", ...focus.data.defer.map((x) => `可缓：${x}`)] : []),
+    ].join("\n");
+    const ok = await copyToClipboard(text);
+    if (ok) message.success("已复制今日重点");
+    else message.error("复制失败，请手动选择文本复制");
+  };
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
@@ -433,15 +503,26 @@ export default function Tasks() {
           className="task-calendar-card"
           styles={{ body: { padding: "12px 16px 16px" } }}
           title={
-            <Button
-              className="task-new-btn"
-              size="small"
-              icon={<PlusOutlined />}
-              data-onb-action="new-task"
-              onClick={() => openCreate(selected)}
-            >
-              新建待办
-            </Button>
+            <Space size={8}>
+              <Button
+                className="task-new-btn"
+                size="small"
+                icon={<PlusOutlined />}
+                data-onb-action="new-task"
+                onClick={() => openCreate(selected)}
+              >
+                新建待办
+              </Button>
+              <Button
+                size="small"
+                icon={<RobotOutlined />}
+                onClick={genFocus}
+                loading={focus.loading}
+                disabled={focusCandidates.length === 0}
+              >
+                AI 排今日重点
+              </Button>
+            </Space>
           }
           extra={
             <Space size={12} wrap style={{ fontSize: 12, color: "#8c8c8c" }}>
@@ -491,6 +572,55 @@ export default function Tasks() {
             </Space>
           }
         >
+          {/* AI 今日重点：生成后内嵌展示（复制/重新生成）；AI 失败时降级为规则排序 */}
+          {focus.loading && (
+            <div style={{ textAlign: "center", padding: "10px 0" }}><Spin /></div>
+          )}
+          {!focus.loading && (focus.data || focus.err) && (
+            <Card
+              size="small"
+              style={{ marginBottom: 12 }}
+              title={<Space size={6}><RobotOutlined />今日重点</Space>}
+              extra={
+                <Space size={2}>
+                  {focus.data && (
+                    <Button size="small" type="text" icon={<CopyOutlined />} onClick={copyFocus}>复制</Button>
+                  )}
+                  <Tooltip title="重新生成">
+                    <Button size="small" type="text" icon={<ReloadOutlined />} onClick={genFocus} loading={focus.loading} />
+                  </Tooltip>
+                  <Tooltip title="关闭">
+                    <Button size="small" type="text" icon={<CloseOutlined />} onClick={() => setFocus({ loading: false, data: null, err: "" })} />
+                  </Tooltip>
+                </Space>
+              }
+            >
+              {focus.data ? (
+                <>
+                  {focus.data.top3.map((x, i) => (
+                    <div key={i} style={{ lineHeight: 1.8 }}>{i + 1}. {x}</div>
+                  ))}
+                  {focus.data.arrange && (
+                    <div style={{ marginTop: 6, color: "#666", fontSize: 12 }}>建议安排：{focus.data.arrange}</div>
+                  )}
+                  {focus.data.defer.length > 0 && (
+                    <div style={{ marginTop: 4 }}>
+                      {focus.data.defer.map((x, i) => (
+                        <div key={i} style={{ color: "#8c8c8c", fontSize: 12 }}>· 可缓：{x}</div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={`AI 暂不可用（${focus.err}），按规则排序的今日重点：`}
+                  description={ruleFocus.slice(0, 3).map((t, i) => <div key={i}>· {t.title}（{dueText(t)}）</div>)}
+                />
+              )}
+            </Card>
+          )}
           {missingHoliday && (
             <div className="task-cal-tip">
               未内置 {viewYear} 年节假日安排，当前节假日标记仅按周六周日判断

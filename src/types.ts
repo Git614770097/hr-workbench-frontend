@@ -729,6 +729,16 @@ export interface AiNextStep {
   draft: string;
 }
 
+// AI 今日重点（/ai/today-focus）：把逾期/今日/未来 7 天待办排个先后
+export interface AiTodayFocus {
+  /** 今天优先处理的 2-3 件事，每条「待办标题 — 一句话理由」 */
+  top3: string[];
+  /** 建议的处理顺序/时段安排（一句话） */
+  arrange: string;
+  /** 可放一放的待办 + 理由（可空） */
+  defer: string[];
+}
+
 export interface FunnelSourceItem {
   source: string;
   entered: number;  // 进入流程的投递数
