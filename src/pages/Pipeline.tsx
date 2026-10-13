@@ -11,7 +11,7 @@ import {
   HistoryOutlined, UserOutlined, MessageOutlined,
   SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, BarsOutlined,
   PhoneOutlined, CalendarOutlined, DownloadOutlined, FileTextOutlined,
-  RobotOutlined,
+  RobotOutlined, EyeOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -336,12 +336,14 @@ export default function Pipeline() {
         ),
       }));
     items.push({ type: "divider" });
+    items.push({ key: "detail", label: "查看详情", icon: <EyeOutlined /> });
     items.push({ key: "logs", label: "查看流转记录", icon: <HistoryOutlined /> });
     items.push({ key: "remove", label: termFor(profile, "移出该岗位"), icon: <DeleteOutlined />, danger: true });
     return items;
   };
 
   const onStageMenuClick = (card: PipelineCard, key: string) => {
+    if (key === "detail") return openDrawer(card);
     if (key === "logs") return openLogs(card);
     if (key === "remove") return handleRemove(card);
     moveStage(card.link_id, key as Stage, card.name);
@@ -622,14 +624,16 @@ export default function Pipeline() {
                               checked={selected.includes(card.link_id)}
                               onChange={(e) => toggleSelect(card.link_id, e.target.checked)}
                             />
-                            {/* 点姓名开详情抽屉：不离开看板即可查看/操作；完整档案在抽屉底部入口 */}
-                            <a
-                              className="pipe-card-name"
-                              onClick={() => openDrawer(card)}
-                              title={termFor(profile, "查看详情")}
-                            >
-                              {card.name}
-                            </a>
+                            {/* 点姓名开详情抽屉：不离开看板即可查看/操作；完整档案在抽屉底部入口。
+                                Tooltip 即时提示（原生 title 延迟大，很多人发现不了这个入口） */}
+                            <Tooltip title={termFor(profile, "点击姓名查看详情")}>
+                              <a
+                                className="pipe-card-name"
+                                onClick={() => openDrawer(card)}
+                              >
+                                {card.name}
+                              </a>
+                            </Tooltip>
                           </span>
                           <Dropdown
                             menu={{ items: buildStageMenu(card), onClick: ({ key }) => onStageMenuClick(card, key) }}

@@ -586,7 +586,7 @@ html[data-theme-mode="dark"] .resume-doc-preview,
 .pipe-card.pipe-card-selected { border-color: #3b82f6; background: #f5f9ff; }
 .pipe-batch-bar { border-color: #3b82f6; }
 .pipe-card-name { font-size: 0.88rem; font-weight: 600; color: #1a1a2e; text-decoration: none; cursor: pointer; }
-.pipe-card-name:hover { color: #3b82f6; }
+.pipe-card-name:hover { color: #3b82f6; text-decoration: underline; }
 .pipe-card-sub { font-size: 0.76rem; color: #6b7280; margin-top: 0.22rem; line-height: 1.45; }
 .pipe-card-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem; }
 /* 静态属性行（年限/学历/城市合并）：比 sub 行再浅一档 */
