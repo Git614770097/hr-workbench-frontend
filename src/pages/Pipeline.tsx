@@ -15,6 +15,8 @@ import {
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
+import AiThinking from "../components/AiThinking";
+import { TypeText } from "../utils/useTypewriter";
 import type { PipelineCard, PipelineResponse, Stage, StageLog, User, Job, AiNextStep } from "../types";
 import {
   PIPELINE_STAGES, STAGE_META, PRIORITY_LABELS,
@@ -871,13 +873,13 @@ export default function Pipeline() {
                 AI 下一步建议
               </Typography.Text>
               {aiTip.loading ? (
-                <div style={{ textAlign: "center", padding: "10px 0" }}><Spin /></div>
+                <AiThinking steps={["正在读取候选人上下文…", "正在分析阶段与停留…", "正在组织建议…"]} />
               ) : aiTip.data ? (
                 <div style={{ border: "1px solid #f0f0f0", borderRadius: 8, padding: 10 }}>
                   <Tag color="geekblue" style={{ marginBottom: 6 }}>{AI_ACTION_LABELS[aiTip.data.action] || "建议"}</Tag>
-                  <div style={{ fontWeight: 600, lineHeight: 1.5 }}>{aiTip.data.suggestion}</div>
+                  <div style={{ fontWeight: 600, lineHeight: 1.5 }}><TypeText text={aiTip.data.suggestion} /></div>
                   {aiTip.data.reasons.map((r, i) => (
-                    <div key={i} style={{ fontSize: 12, color: "#666", marginTop: 2 }}>· {r}</div>
+                    <div key={i} style={{ fontSize: 12, color: "#666", marginTop: 2 }}>· <TypeText text={r} /></div>
                   ))}
                   <Space size={8} style={{ marginTop: 8 }}>
                     {aiTip.data.draft && (

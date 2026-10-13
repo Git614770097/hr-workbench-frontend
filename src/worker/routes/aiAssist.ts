@@ -459,12 +459,14 @@ aiAssist.post("/job-draft", async (c) => {
   if (session instanceof Response) return session;
 
   const body = await c.req
-    .json<{ title?: string; department?: string | null; city?: string | null }>()
+    .json<{ title?: string; department?: string | null; city?: string | null; mode?: string; description?: string; requirements?: string }>()
     .catch(() => null);
   const title = (body?.title || "").trim();
   if (!title) return c.json({ error: "请先填写岗位名称，再点 AI 一键起草" }, 400);
+  // optimize：编辑已有 JD 时的「AI 优化文案」——只改写表达保留事实，缓存键与起草分开
+  const optimize = body?.mode === "optimize";
 
-  const bizId = `job:${title}`;
+  const bizId = `${optimize ? "opt" : "job"}:${title}`;
   const scene = "";
   const cached = await loadRecentArtifact(c.env.DB, session.userId, "job_draft", bizId, scene);
   if (cached) return c.json({ ...cached, _cached: true });
@@ -482,7 +484,18 @@ aiAssist.post("/job-draft", async (c) => {
     body?.city ? `工作城市：${body.city}` : "",
   ].filter(Boolean).join("\n");
 
-  const system = `你是一名资深招聘顾问，擅长撰写岗位 JD 并给出合理的任职门槛建议。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+  const system = optimize
+    ? `你是一名资深招聘顾问，负责优化已有的岗位 JD 文案。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+
+字段说明：
+- description: 优化后的岗位职责——在原稿基础上改写：动词开头、结构清晰、突出重点，6-10 条每条一行，每条不超过 40 字
+- requirements: 优化后的任职要求——合并冗余表述、补齐明显缺失项，5-8 条每条一行，每条不超过 40 字
+
+要求：
+1. 保留原稿中的确定事实（技术栈、薪资、经验门槛），不要编造新的要求或福利。
+2. 优化的是表达与结构，不是改岗位本身；不要输出 salary/education/experience 建议。
+3. description / requirements 输出纯文本，每条一行。`
+    : `你是一名资深招聘顾问，擅长撰写岗位 JD 并给出合理的任职门槛建议。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
 
 字段说明：
 - description: 岗位职责，6-10 条，每条一行，聚焦该岗位实际工作内容，具体可执行，不超过 40 字
@@ -496,7 +509,9 @@ aiAssist.post("/job-draft", async (c) => {
 2. 职责与要求要贴合该岗位真实日常，避免放之四海皆准的套话。
 3. 不要回写岗位名称、部门、城市等用户已填的信息。`;
 
-  const userPrompt = `【岗位上下文】\n${ctx}\n\n请生成该岗位的岗位职责、任职要求，并给出学历 / 经验 / 薪资门槛建议。`;
+  const userPrompt = optimize
+    ? `【岗位上下文】\n${ctx}\n\n【原稿·岗位职责】\n${truncate(maskPii((body?.description || "").trim()), 800) || "（空）"}\n\n【原稿·任职要求】\n${truncate(maskPii((body?.requirements || "").trim()), 800) || "（空）"}\n\n请优化这两段文案。`
+    : `【岗位上下文】\n${ctx}\n\n请生成该岗位的岗位职责、任职要求，并给出学历 / 经验 / 薪资门槛建议。`;
 
   const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.4 });
   if (!raw) {
@@ -514,14 +529,82 @@ aiAssist.post("/job-draft", async (c) => {
   const eduRaw = typeof raw.education === "string" ? raw.education.trim() : "";
   const education = EDU.find((e) => eduRaw.includes(e)) || "";
 
-  const result = {
-    description: toLines(raw.description),
-    requirements: toLines(raw.requirements),
-    salary_range: typeof raw.salary_range === "string" ? raw.salary_range.trim().slice(0, 40) : "",
-    education,
-    experience: typeof raw.experience === "string" ? raw.experience.trim().slice(0, 20) : "",
-  };
+  const result = optimize
+    ? {
+        description: toLines(raw.description),
+        requirements: toLines(raw.requirements),
+        salary_range: "",
+        education: "",
+        experience: "",
+      }
+    : {
+        description: toLines(raw.description),
+        requirements: toLines(raw.requirements),
+        salary_range: typeof raw.salary_range === "string" ? raw.salary_range.trim().slice(0, 40) : "",
+        education,
+        experience: typeof raw.experience === "string" ? raw.experience.trim().slice(0, 20) : "",
+      };
   await saveArtifact(c.env.DB, session.userId, "job_draft", bizId, scene, result);
+  return c.json(result);
+});
+
+// ---------------------------------------------------------------- AI 岗位诊断
+// 单岗位「为什么招人慢」：结合漏斗人数、各阶段停留、画像概况、备注样本给判断与建议。
+// 与复盘同模式：前端传聚合数据（岗位详情为 owner 隔离数据）；scope = job_id，10 分钟缓存。
+aiAssist.post("/job-diagnosis", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  const body = await c.req
+    .json<{ scope?: string; report?: Record<string, unknown> }>()
+    .catch(() => null);
+  if (!body?.report || typeof body.report !== "object") return c.json({ error: "缺少岗位数据" }, 400);
+
+  const scope = (body.scope || "all").slice(0, 120);
+  const cached = await loadRecentArtifact(c.env.DB, session.userId, "job_diagnosis", scope, "");
+  if (cached) return c.json({ ...cached, _cached: true });
+  const denied = await quotaGuard(c, session.userId);
+  if (denied) return denied;
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "未配置 AI 密钥，无法生成诊断", code: "AI_NO_KEY" }, 500);
+  }
+
+  const system = `你是一名资深招聘负责人，诊断单个岗位「为什么招人慢/难」。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+
+字段说明：
+- verdict: 一句话判断瓶颈在哪，不超过 50 字
+- reasons: 2-3 条依据，每条必须引用给定数据中的具体数字，不超过 40 字
+- actions: 3 条下一步可执行建议，每条不超过 40 字，动作要具体（补充 JD / 调整渠道 / 放宽门槛 / 加快推进等）
+
+判断维度（按漏斗顺序定位）：
+1. 进入量是否足够——总量少是曝光/渠道问题，不是筛选问题；
+2. 各阶段转化——某一级流失明显偏高，看 JD 期望与候选人质量的错位；
+3. 停留时长——有人的阶段停留久，是处理效率问题；
+4. 已入职 vs 已淘汰分布——判断门槛与吸引力的平衡。
+
+要求：
+1. 只基于给定数据；候选人总数 < 5 时明确说样本不足，给保守建议，不下重结论。
+2. 建议要贴合岗位状态：在招给推进建议，已关闭给复盘式建议。`;
+
+  const userPrompt = `【岗位招聘数据】\n${truncate(JSON.stringify(body.report), 3500)}\n\n请诊断这个岗位的招聘瓶颈。`;
+
+  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.4 });
+  if (!raw) {
+    return c.json({ error: "AI 暂时不可用，请稍后重试", code: "AI_UNAVAILABLE" }, 502);
+  }
+
+  const result = {
+    verdict: typeof raw.verdict === "string" ? raw.verdict.trim().slice(0, 60) : "",
+    reasons: toStringArray(raw.reasons, 3),
+    actions: toStringArray(raw.actions, 3),
+  };
+  if (!result.verdict && !result.reasons.length && !result.actions.length) {
+    return c.json({ error: "AI 未生成有效内容，请重试", code: "AI_EMPTY" }, 502);
+  }
+
+  await saveArtifact(c.env.DB, session.userId, "job_diagnosis", scope, "", result);
   return c.json(result);
 });
 

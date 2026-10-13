@@ -739,6 +739,16 @@ export interface AiTodayFocus {
   defer: string[];
 }
 
+// AI 岗位诊断（/ai/job-diagnosis）：单岗位「为什么招人慢」
+export interface AiJobDiagnosis {
+  /** 一句话判断（瓶颈在哪） */
+  verdict: string;
+  /** 2-3 条依据（引用具体数字） */
+  reasons: string[];
+  /** 3 条可执行建议 */
+  actions: string[];
+}
+
 export interface FunnelSourceItem {
   source: string;
   entered: number;  // 进入流程的投递数

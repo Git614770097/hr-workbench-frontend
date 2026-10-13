@@ -7,11 +7,14 @@ import {
 import {
   PlusOutlined, SearchOutlined, ReloadOutlined,
   TeamOutlined, PlayCircleOutlined, PauseCircleOutlined, StopOutlined,
-  CheckOutlined, DownloadOutlined,
+  CheckOutlined, DownloadOutlined, RobotOutlined, CopyOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
-import type { Job, JobDetail, JobCandidate, User } from "../types";
+import AiThinking from "../components/AiThinking";
+import { TypeText } from "../utils/useTypewriter";
+import type { Job, JobDetail, JobCandidate, User, AiJobDiagnosis } from "../types";
+import { copyText as copyToClipboard } from "../utils/clipboard";
 import {
   JOB_STATUS_LABELS, JOB_STATUS_COLORS, PRIORITY_LABELS,
   PRIORITY_COLORS, PIPELINE_STAGES, STAGE_META,
@@ -80,6 +83,71 @@ export default function Jobs() {
   const [detail, setDetail] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // AI 岗位诊断：单岗位「为什么招人慢」——结合漏斗/停留/画像；失败降级为数据提示
+  const [diag, setDiag] = useState<{ loading: boolean; data: AiJobDiagnosis | null; err: string }>({
+    loading: false, data: null, err: "",
+  });
+
+  // 组装诊断数据：漏斗人数 + 进行中阶段平均停留 + 终态分布 + 画像概况 + 备注样本（截断脱敏）
+  const genDiagnosis = async () => {
+    if (!detail) return;
+    setDiag({ loading: true, data: null, err: "" });
+    try {
+      const cs = detail.candidates;
+      const toDays = (s: string | null) => {
+        if (!s) return null;
+        const d = new Date(s.length === 10 ? s + "T00:00:00Z" : s.replace(" ", "T") + "Z");
+        return isNaN(d.getTime()) ? null : Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
+      };
+      const avgStay = (stage: string) => {
+        const days = cs
+          .filter((c) => c.stage === stage)
+          .map((c) => toDays(c.updated_at))
+          .filter((n): n is number => n != null);
+        return days.length ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : null;
+      };
+      const report = {
+        岗位: {
+          名称: detail.title, 部门: detail.department || "", 城市: detail.city || "",
+          状态: detail.status, HC: detail.headcount, 优先级: detail.priority,
+          创建天数: toDays(detail.created_at),
+          职责摘要: (detail.description || "").slice(0, 300) || "（空）",
+          要求摘要: (detail.requirements || "").slice(0, 300) || "（空）",
+        },
+        各阶段人数: detail.stage_counts,
+        候选人总数: cs.length,
+        进行中阶段平均停留天数: Object.fromEntries(
+          PIPELINE_STAGES.filter((s) => !s.terminal).map((s) => [s.label, avgStay(s.key)])
+        ),
+        终态: {
+          已入职: cs.filter((c) => c.stage === "hired").length,
+          已淘汰: cs.filter((c) => c.stage === "rejected").length,
+          已放弃: cs.filter((c) => c.stage === "withdrawn").length,
+        },
+        候选人平均年限: cs.length ? Math.round((cs.reduce((a, c) => a + (c.years_experience || 0), 0) / cs.length) * 10) / 10 : null,
+        备注样本: cs.filter((c) => c.notes).slice(0, 3).map((c) => (c.notes || "").slice(0, 60)),
+      };
+      const r = await api.aiJobDiagnosis({ scope: detail.id, report });
+      setDiag({ loading: false, data: r, err: "" });
+    } catch (err) {
+      setDiag({ loading: false, data: null, err: (err as Error).message || "生成失败，请稍后重试" });
+    }
+  };
+
+  const copyDiag = async () => {
+    if (!diag.data) return;
+    const text = [
+      diag.data.verdict,
+      "",
+      ...diag.data.reasons.map((x) => `· ${x}`),
+      "",
+      ...diag.data.actions.map((x, i) => `${i + 1}. ${x}`),
+    ].join("\n");
+    const ok = await copyToClipboard(text);
+    if (ok) message.success("已复制诊断全文");
+    else message.error("复制失败，请手动选择文本复制");
+  };
+
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
   })();
@@ -142,6 +210,7 @@ export default function Jobs() {
   const openDetail = async (job: Job) => {
     setDetailLoading(true);
     setDetail({ ...job, candidates: [], stage_counts: {} } as JobDetail);
+    setDiag({ loading: false, data: null, err: "" }); // 换岗位时清空上一条的 AI 诊断
     try {
       const d = await api.getJob(job.id);
       setDetail(d);
@@ -450,6 +519,49 @@ export default function Jobs() {
                 )}
               </div>
             )}
+
+            {/* AI 岗位诊断：结合漏斗/停留/画像分析「为什么招人慢」；AI 失败时降级为数据提示 */}
+            <div style={{ marginBottom: 16 }}>
+              {diag.loading ? (
+                <AiThinking steps={["正在读取岗位漏斗…", "正在定位瓶颈…", "正在生成建议…"]} />
+              ) : diag.data ? (
+                <div style={{ border: "1px solid #f0f0f0", borderRadius: 8, padding: 12 }}>
+                  <div style={{ marginBottom: 8 }}>
+                    <Tag color="geekblue" style={{ marginInlineEnd: 8 }}><RobotOutlined /> AI 诊断</Tag>
+                    <b><TypeText text={diag.data.verdict} /></b>
+                  </div>
+                  {diag.data.reasons.map((r, i) => (
+                    <div key={i} style={{ fontSize: 12, color: "#666", lineHeight: 1.7 }}>· <TypeText text={r} /></div>
+                  ))}
+                  <div style={{ marginTop: 6 }}>
+                    {diag.data.actions.map((a, i) => (
+                      <div key={i} style={{ lineHeight: 1.8 }}>{i + 1}. <TypeText text={a} /></div>
+                    ))}
+                  </div>
+                  <Space size={8} style={{ marginTop: 8 }}>
+                    <Button size="small" icon={<CopyOutlined />} onClick={copyDiag}>复制</Button>
+                    <Button size="small" type="text" icon={<RobotOutlined />} onClick={genDiagnosis}>重新生成</Button>
+                    <Button size="small" type="text" onClick={() => setDiag({ loading: false, data: null, err: "" })}>收起</Button>
+                  </Space>
+                </div>
+              ) : (
+                <>
+                  <Button size="small" icon={<RobotOutlined />} onClick={genDiagnosis}>AI 诊断：为什么招人慢</Button>
+                  {diag.err && (
+                    <div
+                      style={{
+                        marginTop: 8, fontSize: 12, lineHeight: 1.7, borderRadius: 8, padding: "8px 12px",
+                        color: "#ad6800", background: "#fffbe6", border: "1px solid #ffe58f",
+                      }}
+                    >
+                      AI 暂不可用（{diag.err}）。当前共 {detail.candidates.length} 名候选人：
+                      {PIPELINE_STAGES.map((s) => `${s.label} ${detail.stage_counts[s.key] || 0}`).join("、")}
+                      ，可据此先自行判断。
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
             {detail.candidates.length === 0 ? (
               <Empty description={termFor(profile, "该岗位还没有候选人")} image={Empty.PRESENTED_IMAGE_SIMPLE} />

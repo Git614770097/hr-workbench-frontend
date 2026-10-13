@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis } from "./types";
 
 const BASE = "/api";
 
@@ -652,7 +652,7 @@ export const api = {
 
   // AI 提效：新增岗位表单「AI 一键起草」——基于岗位名称生成职责 / 要求 / 学历 / 经验 / 薪资建议。
   // 回填到表单对应字段，用户可任意修改后再保存（AI 只出草稿）。
-  aiJobDraft: (data: { title: string; department?: string | null; city?: string | null }) =>
+  aiJobDraft: (data: { title: string; department?: string | null; city?: string | null; mode?: "draft" | "optimize"; description?: string; requirements?: string }) =>
     request<{
       description: string;
       requirements: string;
@@ -675,6 +675,11 @@ export const api = {
   // scope = 日期+待办集合指纹作 10 分钟缓存键；AI 只做排序建议，不改待办数据。
   aiTodayFocus: (data: { scope: string; items: Record<string, unknown>[] }) =>
     request<AiTodayFocus>("/ai/today-focus", { method: "POST", body: JSON.stringify(data) }, 60000),
+
+  // AI 岗位诊断：岗位详情聚合数据（漏斗/停留/画像）→「为什么招人慢」的判断与建议。
+  // scope = job_id 作 10 分钟缓存键。
+  aiJobDiagnosis: (data: { scope: string; report: Record<string, unknown> }) =>
+    request<AiJobDiagnosis>("/ai/job-diagnosis", { method: "POST", body: JSON.stringify(data) }, 60000),
 
   // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
   getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {

@@ -14,6 +14,8 @@ import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import type { MenuProps } from "antd";
 import { api } from "../api";
+import AiThinking from "../components/AiThinking";
+import { TypeText } from "../utils/useTypewriter";
 import type { Task, User, AiTodayFocus } from "../types";
 import { PRIORITY_LABELS, PRIORITY_COLORS, TASK_SOURCE_LABELS } from "../types";
 import { dayInfo, hasHolidayData, knownYears } from "../utils/holidays";
@@ -574,7 +576,7 @@ export default function Tasks() {
         >
           {/* AI 今日重点：生成后内嵌展示（复制/重新生成）；AI 失败时降级为规则排序 */}
           {focus.loading && (
-            <div style={{ textAlign: "center", padding: "10px 0" }}><Spin /></div>
+            <AiThinking steps={["正在读取待办…", "正在评估优先级…", "正在安排今日重点…"]} />
           )}
           {!focus.loading && (focus.data || focus.err) && (
             <Card
@@ -598,15 +600,15 @@ export default function Tasks() {
               {focus.data ? (
                 <>
                   {focus.data.top3.map((x, i) => (
-                    <div key={i} style={{ lineHeight: 1.8 }}>{i + 1}. {x}</div>
+                    <div key={i} style={{ lineHeight: 1.8 }}>{i + 1}. <TypeText text={x} /></div>
                   ))}
                   {focus.data.arrange && (
-                    <div style={{ marginTop: 6, color: "#666", fontSize: 12 }}>建议安排：{focus.data.arrange}</div>
+                    <div style={{ marginTop: 6, color: "#666", fontSize: 12 }}>建议安排：<TypeText text={focus.data.arrange} /></div>
                   )}
                   {focus.data.defer.length > 0 && (
                     <div style={{ marginTop: 4 }}>
                       {focus.data.defer.map((x, i) => (
-                        <div key={i} style={{ color: "#8c8c8c", fontSize: 12 }}>· 可缓：{x}</div>
+                        <div key={i} style={{ color: "#8c8c8c", fontSize: 12 }}>· 可缓：<TypeText text={x} /></div>
                       ))}
                     </div>
                   )}

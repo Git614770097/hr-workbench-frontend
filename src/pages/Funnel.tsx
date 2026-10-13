@@ -15,6 +15,8 @@ import {
 } from "@ant-design/icons";
 import * as echarts from "echarts/core";
 import { api } from "../api";
+import AiThinking from "../components/AiThinking";
+import { TypeText } from "../utils/useTypewriter";
 import { downloadBlob, dateStamp, csvCell, exportXlsx } from "../utils/file";
 import { copyText as copyToClipboard } from "../utils/clipboard";
 import type {
@@ -686,7 +688,7 @@ export default function Funnel() {
       </Card>
 
       {/* AI 招聘复盘：生成后内嵌展示（复制全文 / 重新生成）；AI 失败时降级显示规则诊断 */}
-      {!loading && analysisReady && (recap || recapErr) && (
+      {!loading && analysisReady && (recap || recapErr || recapLoading) && (
         <Card
           size="small"
           style={{ marginBottom: 16 }}
@@ -699,14 +701,16 @@ export default function Funnel() {
             </Space>
           }
         >
-          {recap ? (
+          {recapLoading ? (
+            <AiThinking steps={["正在读取数据…", "正在分析漏斗与周期…", "正在组织复盘结论…"]} />
+          ) : recap ? (
             <div className="wb-recap">
-              <p style={{ margin: "0 0 10px", lineHeight: 1.7 }}>{recap.summary}</p>
+              <p style={{ margin: "0 0 10px", lineHeight: 1.7 }}><TypeText text={recap.summary} /></p>
               {recap.bottlenecks.map((b, i) => (
-                <div key={`b${i}`} style={{ lineHeight: 1.8 }}>· <b>瓶颈</b>：{b}</div>
+                <div key={`b${i}`} style={{ lineHeight: 1.8 }}>· <b>瓶颈</b>：<TypeText text={b} /></div>
               ))}
               {recap.suggestions.map((sg, i) => (
-                <div key={`s${i}`} style={{ lineHeight: 1.8 }}>· <b>建议</b>：{sg}</div>
+                <div key={`s${i}`} style={{ lineHeight: 1.8 }}>· <b>建议</b>：<TypeText text={sg} /></div>
               ))}
             </div>
           ) : (

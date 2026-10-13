@@ -138,6 +138,43 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
     }
   };
 
+  // 编辑已有 JD 时的「AI 优化文案」：把已填的职责/要求交给 AI 改写表达（保留事实，只优化结构），
+  // 返回后覆盖这两个字段——点按钮即是要改写，结果仍是草稿可继续修改。
+  const handleAiOptimize = async () => {
+    const vals = form.getFieldsValue();
+    const title = (vals.title || "").trim();
+    const desc = (vals.description || "").trim();
+    const req = (vals.requirements || "").trim();
+    if (!title || (!desc && !req)) {
+      message.warning(termFor(profile, "请先填写岗位名称和职责/要求，再点 AI 优化文案"));
+      return;
+    }
+    setAiFilling(true);
+    try {
+      const r = await api.aiJobDraft({
+        title,
+        department: (vals.department || "").trim() || null,
+        city: (vals.city || "").trim() || null,
+        mode: "optimize",
+        description: desc,
+        requirements: req,
+      });
+      const patch: Record<string, any> = {};
+      if (r.description) patch.description = r.description;
+      if (r.requirements) patch.requirements = r.requirements;
+      if (Object.keys(patch).length) {
+        form.setFieldsValue(patch);
+        message.success(termFor(profile, "AI 已优化职责与要求，请核对修改后保存"));
+      } else {
+        message.info(termFor(profile, "AI 未产生改动，可稍后重试"));
+      }
+    } catch (err) {
+      message.error((err as Error).message);
+    } finally {
+      setAiFilling(false);
+    }
+  };
+
   return (
     <Modal
       title={termFor(profile, isEdit ? "编辑岗位" : "新增岗位")}
@@ -220,10 +257,13 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12.5, color: "#8c8c8c" }}>
-            {termFor(profile, "岗位职责 / 任职要求等可一键 AI 起草，生成后请核对修改")}
+            {termFor(profile, "职责 / 要求可 AI 起草；已有文案可 AI 优化，生成后请核对")}
           </span>
           <Button icon={<RobotOutlined />} loading={aiFilling} onClick={handleAiFill}>
             {termFor(profile, "AI 一键起草")}
+          </Button>
+          <Button icon={<RobotOutlined />} loading={aiFilling} disabled={aiFilling} onClick={handleAiOptimize} style={{ marginInlineStart: 8 }}>
+            {termFor(profile, "AI 优化文案")}
           </Button>
         </div>
 

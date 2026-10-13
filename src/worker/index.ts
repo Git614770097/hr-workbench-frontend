@@ -243,8 +243,8 @@ app.use("/api/ai/*", async (c, next) => {
   const menuKey =
     p.startsWith("/api/ai/outreach") || p.startsWith("/api/ai/resume-insight")
       ? "talents"
-      : p.startsWith("/api/ai/job-draft")
-        ? "jobs"
+      : p.startsWith("/api/ai/job-draft") || p.startsWith("/api/ai/job-diagnosis")
+        ? "jobs" // JD 起草/优化与岗位诊断：岗位管理语义，跟随 jobs 权限
         : p.startsWith("/api/ai/recap-report") || p.startsWith("/api/ai/next-step")
           ? "pipeline" // AI 招聘复盘 / 看板下一步建议：招聘概览与看板语义，跟随 pipeline 权限
           : p.startsWith("/api/ai/today-focus")
