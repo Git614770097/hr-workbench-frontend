@@ -36,12 +36,26 @@ export default function ResumePreviewModal({ talent, onClose }: Props) {
     setPdfUrl("");
     (async () => {
       try {
+        // 无简历文件直接报错，不去请求票据（避免无意义的接口往返后干等）
+        if (!talent.resume_url) throw new Error("该人才暂无简历文件");
         // 先取 60s 短期票据再拉取/预览，不再把会话 token 放进 URL
         const url = await api.getResumeUrl(talent.id);
         if (isWord) {
           setLoading(true);
-          const res = await fetch(url);
-          if (!res.ok) throw new Error("简历文件加载失败");
+          // 文件下载加 60s 超时兜底：KV 冷启动 / 大文件挂起时不再无限转圈
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 60000);
+          let res: Response;
+          try {
+            res = await fetch(url, { signal: ctrl.signal });
+          } catch (e) {
+            clearTimeout(timer);
+            throw new Error(
+              (e as Error)?.name === "AbortError" ? "简历下载超时（60 秒），请稍后重试" : "网络异常，简历下载失败"
+            );
+          }
+          clearTimeout(timer);
+          if (!res.ok) throw new Error(`简历文件加载失败（${res.status}）`);
           const buf = await res.arrayBuffer();
           const result = await mammoth.convertToHtml({ arrayBuffer: buf });
           if (!cancelled) setDocHtml(result.value);
@@ -66,14 +80,15 @@ export default function ResumePreviewModal({ talent, onClose }: Props) {
       footer={null}
       destroyOnClose
     >
-      {talent && (isWord ? (
+      {talent && (error ? (
+        // 错误优先展示：此前 PDF 分支不渲染 error，票据失败时会永久转圈（看起来像一直加载）
+        <Alert message={error} type="error" showIcon />
+      ) : isWord ? (
         loading ? (
           <div style={{ textAlign: "center", padding: "4rem" }}>
             <Spin size="large" />
             <div style={{ marginTop: 12, color: "#888" }}>正在解析 Word 简历…</div>
           </div>
-        ) : error ? (
-          <Alert message={error} type="error" showIcon />
         ) : (
           <div className="resume-doc-preview" dangerouslySetInnerHTML={{ __html: docHtml }} />
         )
