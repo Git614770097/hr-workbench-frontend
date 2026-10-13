@@ -1367,6 +1367,16 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 .approvals-page .ant-tabs-tabpane { height: 100%; overflow: auto; }
 .appr-pane { display: flex; flex-direction: column; height: 100%; }
 .appr-pane .toolbar { flex: none; }
+/* 列表撑满 Tab 内容区剩余高度：表头固定、表体内部滚动 */
+.appr-pane .appr-table-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 空态（未设 scroll.y）时让 Empty 在整卡高度内垂直居中 */
+.appr-pane .appr-table-host .ant-table-wrapper { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.appr-pane .appr-table-host .ant-spin-nested-loading,
+.appr-pane .appr-table-host .ant-spin-container,
+.appr-pane .appr-table-host .ant-table,
+.appr-pane .appr-table-host .ant-table-container,
+.appr-pane .appr-table-host .ant-table-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.appr-pane .appr-table-host .ant-table-content > table { flex: 1; min-height: 280px; }
 .appr-pane:has(.ant-table-placeholder) .ant-table-wrapper { flex: 1; display: flex; flex-direction: column; }
 .appr-pane:has(.ant-table-placeholder) .ant-spin-nested-loading { flex: 1; display: flex; flex-direction: column; }
 .appr-pane:has(.ant-table-placeholder) .ant-spin-container { flex: 1; display: flex; flex-direction: column; }

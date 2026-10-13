@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Tabs, Table, Button, Space, Tag, Modal, Form, Input, message,
@@ -8,6 +8,26 @@ import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import type { ApprovalFlow, ApprovalInstance } from "../types";
 
+// 让列表（表格）撑满 Tab 内容区剩余高度：表头固定、表体内部滚动，避免一屏只露几行留大片空白。
+// 取容器高度减去 antd size="middle" 表头（约 47px）作为 scroll.y；低于下限则退回自然高度。
+function useTableFill() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [y, setY] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const calc = () => {
+      const h = el.clientHeight - 47;
+      setY(h > 200 ? h : undefined);
+    };
+    calc();
+    const ro = new ResizeObserver(calc);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, y] as const;
+}
+
 // ---- 流程模板配置 ----
 function FlowSettings() {
   const [flows, setFlows] = useState<ApprovalFlow[]>([]);
@@ -15,6 +35,7 @@ function FlowSettings() {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
+  const [hostRef, scrollY] = useTableFill();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -64,6 +85,7 @@ function FlowSettings() {
           <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
         </Space>
       </div>
+      <div ref={hostRef} className="appr-table-host">
       <Table<ApprovalFlow>
         className="profiles-table"
         rowKey="id"
@@ -71,6 +93,7 @@ function FlowSettings() {
         loading={loading}
         size="middle"
         pagination={false}
+        scroll={flows.length ? { y: scrollY } : undefined}
         locale={{ emptyText: <Empty description="还没有审批流程，点上方「新建流程」按你公司的流程建一个" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
         columns={[
           { title: "流程名称", dataIndex: "name", key: "name", width: 180 },
@@ -101,6 +124,7 @@ function FlowSettings() {
           },
         ]}
       />
+      </div>
 
       <Modal title="新建审批流程" open={open} onCancel={() => setOpen(false)} onOk={handleSave}
         confirmLoading={saving} okText="创建" cancelText="取消" destroyOnClose>
@@ -143,6 +167,7 @@ function InstanceList() {
   const [items, setItems] = useState<ApprovalInstance[]>([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | undefined>("pending");
+  const [hostRef, scrollY] = useTableFill();
   const [decideTarget, setDecideTarget] = useState<ApprovalInstance | null>(null);
   const [decision, setDecision] = useState<"approve" | "reject">("approve");
   const [comment, setComment] = useState("");
@@ -217,12 +242,14 @@ function InstanceList() {
         </Space>
       </div>
 
+      <div ref={hostRef} className="appr-table-host">
       <Table<ApprovalInstance>
         className="profiles-table"
         rowKey="id"
         dataSource={items}
         loading={loading}
         size="middle"
+        scroll={items.length ? { y: scrollY } : undefined}
         locale={{ emptyText: <Empty description="暂无审批记录" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
         columns={[
           {
@@ -287,6 +314,7 @@ function InstanceList() {
           },
         ]}
       />
+      </div>
 
       <Modal
         title={decideTarget?.title}
