@@ -245,7 +245,9 @@ app.use("/api/ai/*", async (c, next) => {
       ? "talents"
       : p.startsWith("/api/ai/job-draft")
         ? "jobs"
-        : "interviews";
+        : p.startsWith("/api/ai/recap-report")
+          ? "pipeline" // AI 招聘复盘：属于招聘概览/看板语义，跟随 pipeline 权限
+          : "interviews";
   const blocked = await menuGuard(c, menuKey);
   if (blocked) return blocked;
   return next();

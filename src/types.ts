@@ -707,6 +707,16 @@ export interface FunnelResponse {
   reject_reasons: FunnelRejectReason[];
 }
 
+// AI 招聘复盘报告（/ai/recap-report）：把概览聚合数据讲成结论
+export interface AiRecapReport {
+  /** 整体判断一段话（80-150 字） */
+  summary: string;
+  /** 2-3 条瓶颈定位，须引用具体数字 */
+  bottlenecks: string[];
+  /** 3 条可执行建议 */
+  suggestions: string[];
+}
+
 export interface FunnelSourceItem {
   source: string;
   entered: number;  // 进入流程的投递数

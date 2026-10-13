@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport } from "./types";
 
 const BASE = "/api";
 
@@ -660,6 +660,11 @@ export const api = {
       education: string;
       experience: string;
     }>("/ai/job-draft", { method: "POST", body: JSON.stringify(data) }, 60000),
+
+  // AI 招聘复盘报告：概览分析层聚合数据（漏斗/周期/渠道/淘汰/停留/诊断）→ 叙述性复盘。
+  // 纯聚合数字无 PII；scope（筛选组合）作 10 分钟缓存键。
+  aiRecapReport: (data: { scope: string; report: Record<string, unknown> }) =>
+    request<AiRecapReport>("/ai/recap-report", { method: "POST", body: JSON.stringify(data) }, 60000),
 
   // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
   getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {

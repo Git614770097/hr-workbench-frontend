@@ -11,13 +11,15 @@ import {
   InfoCircleOutlined, AppstoreOutlined, CalendarOutlined, AimOutlined,
   UserAddOutlined, FileTextOutlined, LineChartOutlined, PictureOutlined,
   FileExcelOutlined, AlertOutlined, BgColorsOutlined,
+  RobotOutlined, CopyOutlined, CloseOutlined,
 } from "@ant-design/icons";
 import * as echarts from "echarts/core";
 import { api } from "../api";
 import { downloadBlob, dateStamp, csvCell, exportXlsx } from "../utils/file";
+import { copyText as copyToClipboard } from "../utils/clipboard";
 import type {
   FunnelResponse, FunnelStayItem, Job, User, OverviewResponse, TrendResponse,
-  WorkbenchModuleKey,
+  WorkbenchModuleKey, AiRecapReport,
 } from "../types";
 import FunnelChartView from "../components/FunnelChart";
 import OverviewPanel from "../components/OverviewPanel";
@@ -253,6 +255,67 @@ export default function Funnel() {
     }
     return hints.slice(0, 3);
   })();
+
+  // ---- AI 招聘复盘：把当前筛选口径的聚合数据交给 AI 生成叙述性复盘 ----
+  // 纯聚合数字（无个人 PII），60s 超时；失败降级为规则诊断文本，不让功能挂死
+  const [recap, setRecap] = useState<AiRecapReport | null>(null);
+  const [recapLoading, setRecapLoading] = useState(false);
+  const [recapErr, setRecapErr] = useState("");
+  const recapScope = `${jobFilter || "all"}:${daysFilter || "all"}:${ownerFilter || "all"}`;
+  const genRecap = async () => {
+    if (!data || !s) return;
+    setRecapLoading(true);
+    setRecapErr("");
+    try {
+      const jobLabel = jobs.find((j) => j.id === jobFilter)?.title || "全部岗位";
+      const timeLabel = TIME_RANGES.find((t) => t.value === daysFilter)?.label || "全部时间";
+      const ownerLabel = isAdmin && ownerFilter ? users.find((u) => u.id === ownerFilter)?.name || ownerFilter : "";
+      const r = await api.aiRecapReport({
+        scope: recapScope,
+        report: {
+          统计范围: [jobLabel, timeLabel, ownerLabel].filter(Boolean).join(" · "),
+          总体: {
+            进入流程: s.total, 进行中: s.in_progress, 已入职: s.hired,
+            已淘汰: s.rejected, 已放弃: s.withdrawn, 整体转化率: pct(s.overall_rate),
+          },
+          漏斗各阶段: stages.map((st) => ({
+            阶段: st.label, 人数: st.count, 较上一级转化率: pct(st.rate), 流失人数: st.drop,
+          })),
+          各阶段当前停留: data.stage_stay.map((x) => ({
+            阶段: x.label, 人数: x.count, 平均停留天数: x.avg_days,
+          })),
+          招聘周期天数: {
+            入库到首面: data.cycles.tti, 首面到Offer: data.cycles.to_offer,
+            Offer到入职: data.cycles.to_hire, 全流程: data.cycles.total,
+          },
+          渠道效果: data.sources.map((x) => ({
+            渠道: x.source, 进入: x.entered, 入职: x.hired,
+            转化率: pct(x.rate), 平均周期天数: x.avg_cycle_days,
+          })),
+          淘汰原因分布: data.reject_reasons.map((x) => ({ 原因: x.reason, 人数: x.count })),
+          规则诊断: diagnosis,
+        },
+      });
+      setRecap(r);
+    } catch (err) {
+      setRecap(null);
+      setRecapErr((err as Error).message || "生成失败，请稍后重试");
+    }
+    setRecapLoading(false);
+  };
+
+  const copyRecap = async () => {
+    if (!recap) return;
+    const text = [
+      recap.summary,
+      "",
+      ...recap.bottlenecks.map((b) => `· 瓶颈：${b}`),
+      ...recap.suggestions.map((sg) => `· 建议：${sg}`),
+    ].join("\n");
+    const ok = await copyToClipboard(text);
+    if (ok) message.success("已复制复盘全文");
+    else message.error("复制失败，请手动选择文本复制");
+  };
 
   // ---- 图表 PNG 下载 ----
   const downloadPng = (inst: echarts.ECharts | null, name: string) => {
@@ -564,6 +627,7 @@ export default function Funnel() {
               ]}
             />
           )}
+          <Button size="small" icon={<RobotOutlined />} onClick={genRecap} loading={recapLoading} disabled={!data}>AI 复盘</Button>
           <Button size="small" icon={<FileExcelOutlined />} onClick={exportWorkbook} disabled={!data}>导出汇报 Excel</Button>
           <Button size="small" icon={<DownloadOutlined />} onClick={exportFunnel} disabled={!data}>导出数据</Button>
         </Space>
@@ -620,6 +684,45 @@ export default function Funnel() {
           </div>
         </div>
       </Card>
+
+      {/* AI 招聘复盘：生成后内嵌展示（复制全文 / 重新生成）；AI 失败时降级显示规则诊断 */}
+      {!loading && analysisReady && (recap || recapErr) && (
+        <Card
+          size="small"
+          style={{ marginBottom: 16 }}
+          title={<Space size={8}><RobotOutlined />AI 招聘复盘</Space>}
+          extra={
+            <Space size={8}>
+              <Button size="small" icon={<CopyOutlined />} onClick={copyRecap} disabled={!recap}>复制全文</Button>
+              <Button size="small" onClick={genRecap} loading={recapLoading}>重新生成</Button>
+              <Button size="small" type="text" icon={<CloseOutlined />} onClick={() => { setRecap(null); setRecapErr(""); }} />
+            </Space>
+          }
+        >
+          {recap ? (
+            <div className="wb-recap">
+              <p style={{ margin: "0 0 10px", lineHeight: 1.7 }}>{recap.summary}</p>
+              {recap.bottlenecks.map((b, i) => (
+                <div key={`b${i}`} style={{ lineHeight: 1.8 }}>· <b>瓶颈</b>：{b}</div>
+              ))}
+              {recap.suggestions.map((sg, i) => (
+                <div key={`s${i}`} style={{ lineHeight: 1.8 }}>· <b>建议</b>：{sg}</div>
+              ))}
+            </div>
+          ) : (
+            <Alert
+              type="warning"
+              showIcon
+              message={`AI 暂不可用（${recapErr}），先看系统规则诊断：`}
+              description={
+                diagnosis.length > 0
+                  ? diagnosis.map((h, i) => <div key={i}>· {h}</div>)
+                  : "当前数据量还不足以给出诊断，先积累一些候选人数据再来。"
+              }
+            />
+          )}
+        </Card>
+      )}
 
       {loading ? (
         <div style={{ textAlign: "center", padding: "3rem" }}><Spin size="large" /></div>

@@ -525,6 +525,61 @@ aiAssist.post("/job-draft", async (c) => {
   return c.json(result);
 });
 
+// ---------------------------------------------------------------- 招聘复盘报告
+// 把概览分析层的聚合数据（漏斗/周期/渠道/淘汰/停留 + 规则诊断）交给 AI 生成叙述性复盘。
+// 只有聚合数字、无个人 PII，不做归属校验；scope（筛选组合）作缓存键，10 分钟内复用不烧 token。
+aiAssist.post("/recap-report", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  const body = await c.req
+    .json<{ scope?: string; report?: Record<string, unknown> }>()
+    .catch(() => null);
+  if (!body?.report || typeof body.report !== "object") return c.json({ error: "缺少分析数据" }, 400);
+
+  const scope = (body.scope || "all").slice(0, 120);
+  const cached = await loadRecentArtifact(c.env.DB, session.userId, "recap_report", scope, "");
+  if (cached) return c.json({ ...cached, _cached: true });
+  const denied = await quotaGuard(c, session.userId);
+  if (denied) return denied;
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "未配置 AI 密钥，无法生成复盘", code: "AI_NO_KEY" }, 500);
+  }
+
+  const system = `你是一名资深招聘负责人，擅长把招聘数据讲成结论。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+
+字段说明：
+- summary: 整体判断一段话，80-150 字，先说总量与整体转化，再点出最突出的问题
+- bottlenecks: 2-3 条瓶颈定位，每条必须引用给定数据中的具体数字，不超过 40 字
+- suggestions: 3 条下一步可执行建议，每条不超过 40 字，动作要具体（不要「加强」「优化」这类空话）
+
+要求：
+1. 只基于给定数据推断，不要编造；某块数据为空或样本太小（n<3）就明确说数据不足。
+2. 转化率结论要结合样本量，样本小不下重判断。
+3. 语言务实，像写给业务负责人的一段汇报，不要标题党、不要排比煽情。`;
+
+  const userPrompt = `【招聘分析数据（当前筛选口径下的聚合统计）】\n${truncate(JSON.stringify(body.report), 3500)}\n\n请生成招聘复盘。`;
+
+  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.4 });
+  if (!raw) {
+    return c.json({ error: "AI 暂时不可用，请稍后重试", code: "AI_UNAVAILABLE" }, 502);
+  }
+
+  const result = {
+    summary: typeof raw.summary === "string" ? raw.summary.trim().slice(0, 300) : "",
+    bottlenecks: toStringArray(raw.bottlenecks, 3),
+    suggestions: toStringArray(raw.suggestions, 3),
+  };
+  if (!result.summary && !result.bottlenecks.length && !result.suggestions.length) {
+    return c.json({ error: "AI 未生成有效内容，请重试", code: "AI_EMPTY" }, 502);
+  }
+
+  await saveArtifact(c.env.DB, session.userId, "recap_report", scope, "", result);
+  return c.json(result);
+});
+
 // ---------------------------------------------------------------- 读取已生成结果（GET）
 // 下次进入页面时直接展示历史产出，不重算、不扣配额。
 // 返回 { data: <上次结果或 null> }；data 带 _persisted 标记，前端据此标「已保存」。
