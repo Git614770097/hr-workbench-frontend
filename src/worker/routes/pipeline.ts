@@ -767,6 +767,39 @@ pipeline.get("/:linkId/logs", async (c) => {
   return c.json(rows.results);
 });
 
+// ---- 编辑投递关联信息（看板卡片抽屉内的评分 / 阶段备注）----
+// 只更新传入的字段：rating 传 null 表示清除评分，notes 传 null 表示清空备注
+pipeline.patch("/:linkId", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const linkId = c.req.param("linkId");
+  const body = await c.req.json<{ rating?: number | null; notes?: string | null }>();
+  if (body.rating === undefined && body.notes === undefined) {
+    return c.json({ error: "没有可更新的字段" }, 400);
+  }
+  if (body.rating != null && (body.rating < 1 || body.rating > 5)) {
+    return c.json({ error: "评分需在 1-5 之间" }, 400);
+  }
+
+  const link = await c.env.DB.prepare(`
+    SELECT tj.id, t.owner_id FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
+  `).bind(linkId).first<any>();
+  if (!link) return c.json({ error: "候选人记录不存在" }, 404);
+  if (session.role !== "admin" && link.owner_id !== session.userId) return c.json({ error: "无权限" }, 403);
+
+  // 动态拼 SET：占位符与绑定值同序同量，避免参数错位导致 500
+  const sets: string[] = [];
+  const vals: (number | string | null)[] = [];
+  if (body.rating !== undefined) { sets.push("rating = ?"); vals.push(body.rating); }
+  if (body.notes !== undefined) { sets.push("notes = ?"); vals.push(body.notes ? body.notes.trim() || null : null); }
+  sets.push("updated_at = datetime('now')");
+  vals.push(linkId);
+
+  await c.env.DB.prepare(`UPDATE talent_jobs SET ${sets.join(", ")} WHERE id = ?`).bind(...vals).run();
+  return c.json({ ok: true });
+});
+
 // ---- 从岗位移除候选人（同时清理待办关联）----
 pipeline.delete("/:linkId", async (c) => {
   const session = await getSession(c);

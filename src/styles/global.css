@@ -565,6 +565,9 @@ html[data-theme-mode="dark"] .resume-doc-preview,
   border-radius: 9px; background: rgba(0, 0, 0, 0.08);
   font-size: 0.7rem; line-height: 18px; text-align: center; font-weight: 600;
 }
+/* 列头下的小字统计：N 人 · M 超时（超时红色提示该列卡人） */
+.pipe-col-sub { padding: 0.3rem 0.7rem 0; font-size: 0.68rem; color: #9aa0aa; }
+.pipe-col-stale { color: #ff4d4f; font-weight: 500; }
 .pipe-col-body { flex: 1; padding: 0.5rem; overflow-y: auto; max-height: 62vh; }
 .pipe-col-body.drop-target { background: rgba(59, 130, 246, 0.07); }
 
@@ -582,7 +585,7 @@ html[data-theme-mode="dark"] .resume-doc-preview,
 /* 批量选中态：蓝色边框 + 浅蓝底，与停留超时（红）区分开 */
 .pipe-card.pipe-card-selected { border-color: #3b82f6; background: #f5f9ff; }
 .pipe-batch-bar { border-color: #3b82f6; }
-.pipe-card-name { font-size: 0.88rem; font-weight: 600; color: #1a1a2e; text-decoration: none; }
+.pipe-card-name { font-size: 0.88rem; font-weight: 600; color: #1a1a2e; text-decoration: none; cursor: pointer; }
 .pipe-card-name:hover { color: #3b82f6; }
 .pipe-card-sub { font-size: 0.76rem; color: #6b7280; margin-top: 0.22rem; line-height: 1.45; }
 .pipe-card-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.4rem; }
@@ -807,6 +810,8 @@ html[data-theme-mode="dark"] .task-new-btn:hover {
 /* 暗黑模式 */
 html[data-theme-mode="dark"] .pipe-col { background: #1a1a1a; border-color: #303030; }
 html[data-theme-mode="dark"] .pipe-col-head { border-bottom-color: #303030; }
+html[data-theme-mode="dark"] .pipe-col-sub { color: #737a85; }
+html[data-theme-mode="dark"] .pipe-col-count { background: rgba(255, 255, 255, 0.12); }
 html[data-theme-mode="dark"] .pipe-card { background: #1f1f1f; border-color: #303030; }
 html[data-theme-mode="dark"] .pipe-card:hover { border-color: #3f3f3f; }
 html[data-theme-mode="dark"] .pipe-card-name { color: #e5e7eb; }

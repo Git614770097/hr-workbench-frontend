@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
   Card, Button, Select, Input, Space, Tag, Dropdown, message, Empty,
   Segmented, Spin, Tooltip, Modal, Timeline, Rate, Descriptions, Alert, Typography,
-  Checkbox,
+  Checkbox, Drawer,
 } from "antd";
 import {
   ReloadOutlined, SearchOutlined, UserAddOutlined, MoreOutlined,
@@ -25,7 +25,7 @@ import AnimatedNumber from "../components/AnimatedNumber";
 import { DemoSeedButton } from "../components/DemoSeed";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
-import { downloadBlob, dateStamp, csvCell } from "../utils/file";
+import { dateStamp, exportXlsx } from "../utils/file";
 import { copyText as copyToClipboard } from "../utils/clipboard";
 import OfferModal from "../components/OfferModal";
 
@@ -74,6 +74,13 @@ export default function Pipeline() {
   const [rejectModal, setRejectModal] = useState<{ linkIds: string[]; talentName: string } | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejectNote, setRejectNote] = useState("");
+  // 卡片详情抽屉：点卡片姓名打开，不跳页即可查看联系方式/评分/备注/流转并直接操作
+  const [drawer, setDrawer] = useState<{ open: boolean; card: PipelineCard | null; logs: StageLog[]; logsLoading: boolean }>({
+    open: false, card: null, logs: [], logsLoading: false,
+  });
+  const [noteDraft, setNoteDraft] = useState("");
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -235,6 +242,53 @@ export default function Pipeline() {
     }
   };
 
+  // ---- 卡片详情抽屉 ----
+  const openDrawer = (card: PipelineCard) => {
+    setDrawer({ open: true, card, logs: [], logsLoading: true });
+    setNoteDraft(card.stage_notes || "");
+    api.getStageLogs(card.link_id)
+      .then((logs) => setDrawer((d) => (d.card?.link_id === card.link_id ? { ...d, logs, logsLoading: false } : d)))
+      .catch(() => setDrawer((d) => ({ ...d, logsLoading: false })));
+  };
+
+  // 抽屉内打星：点击即保存，清空（value 0）视为清除评分
+  const saveRating = async (value: number) => {
+    const card = drawer.card;
+    if (!card) return;
+    const rating = value > 0 ? value : null;
+    try {
+      await api.updatePipelineLink(card.link_id, { rating });
+      message.success(rating ? `已评为 ${rating} 星` : "已清除评分");
+      setDrawer((d) => (d.card ? { ...d, card: { ...d.card, rating } } : d));
+      fetchPipeline();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
+  const saveNote = async () => {
+    const card = drawer.card;
+    if (!card) return;
+    setNoteSaving(true);
+    try {
+      await api.updatePipelineLink(card.link_id, { notes: noteDraft || null });
+      message.success("备注已保存");
+      setDrawer((d) => (d.card ? { ...d, card: { ...d.card, stage_notes: noteDraft || null } } : d));
+      fetchPipeline();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+    setNoteSaving(false);
+  };
+
+  // 抽屉内的流转/移出：先收起抽屉再执行，避免操作后抽屉里展示的是旧阶段
+  const drawerMenuClick = (card: PipelineCard, key: string) => {
+    if (key === "logs") return openLogs(card);
+    setDrawer((d) => ({ ...d, open: false }));
+    if (key === "remove") return handleRemove(card);
+    moveStage(card.link_id, key as Stage, card.name);
+  };
+
   // 每列的阶段切换菜单（其余阶段 + 移出）
   const buildStageMenu = (card: PipelineCard): MenuProps["items"] => {
     const items: MenuProps["items"] = PIPELINE_STAGES
@@ -267,42 +321,56 @@ export default function Pipeline() {
 
   const filtered = !!(jobFilter || ownerFilter || appliedQ);
 
-  /** 导出当前视图下的看板明细（人才 × 岗位 × 阶段）为 CSV */
-  const exportPipeline = () => {
-    const rows: string[] = [];
+  /** 导出当前视图下的看板明细（人才 × 岗位 × 阶段）为 Excel（exceljs 按需动态加载） */
+  const exportPipeline = async () => {
     const stageKeys = visibleStages.map((s) => s.key);
     const total = stageKeys.reduce((n, k) => n + (columns[k] || []).length, 0);
     if (!total) { message.warning("当前视图下没有可导出的数据"); return; }
 
-    const jobLabel = jobs.find((j) => j.id === jobFilter)?.title || termFor(profile, "全部岗位");
-    const viewLabel = view === "active" ? "进行中" : "全部阶段";
-    rows.push(termFor(profile, "招聘看板导出"));
-    rows.push([termFor(profile, `岗位：${jobLabel}`), `视图：${viewLabel}`, `导出时间：${new Date().toLocaleString("zh-CN")}`].map(csvCell).join(","));
-    rows.push("");
+    const rows = stageKeys.flatMap((k) =>
+      (columns[k] || []).map((c) => ({
+        name: c.name,
+        stage: STAGE_META[c.stage]?.label || c.stage,
+        job: c.job_title || "—",
+        rating: c.rating != null ? c.rating : "—",
+        title: c.current_title || "—",
+        company: c.current_company || "—",
+        years: c.years_experience != null ? c.years_experience : "—",
+        edu: c.education || "—",
+        city: c.city || "—",
+        source: c.source || "—",
+        days: c.days_in_stage != null ? c.days_in_stage : "—",
+        phone: c.phone || "—",
+      }))
+    );
 
-    rows.push(termFor(profile, "候选人,当前阶段,岗位,评分,当前职位,当前公司,年限,学历,城市,来源渠道,阶段停留(天),联系电话"));
-    for (const k of stageKeys) {
-      for (const c of columns[k] || []) {
-        rows.push([
-          c.name,
-          STAGE_META[c.stage]?.label || c.stage,
-          c.job_title || "—",
-          c.rating != null ? c.rating : "—",
-          c.current_title || "—",
-          c.current_company || "—",
-          c.years_experience != null ? c.years_experience : "—",
-          c.education || "—",
-          c.city || "—",
-          c.source || "—",
-          c.days_in_stage != null ? c.days_in_stage : "—",
-          c.phone || "—",
-        ].map(csvCell).join(","));
-      }
+    setExporting(true);
+    try {
+      await exportXlsx(`${termFor(profile, "招聘看板")}_${dateStamp()}.xlsx`, [
+        {
+          name: view === "active" ? termFor(profile, "进行中") : termFor(profile, "全部阶段"),
+          columns: [
+            { header: termFor(profile, "候选人"), key: "name", width: 12 },
+            { header: termFor(profile, "当前阶段"), key: "stage", width: 12 },
+            { header: termFor(profile, "岗位"), key: "job", width: 22 },
+            { header: termFor(profile, "评分"), key: "rating", width: 8 },
+            { header: termFor(profile, "当前职位"), key: "title", width: 18 },
+            { header: termFor(profile, "当前公司"), key: "company", width: 22 },
+            { header: termFor(profile, "年限"), key: "years", width: 8 },
+            { header: termFor(profile, "学历"), key: "edu", width: 10 },
+            { header: termFor(profile, "城市"), key: "city", width: 12 },
+            { header: termFor(profile, "来源渠道"), key: "source", width: 12 },
+            { header: termFor(profile, "阶段停留(天)"), key: "days", width: 13 },
+            { header: termFor(profile, "联系电话"), key: "phone", width: 14 },
+          ],
+          rows,
+        },
+      ]);
+      message.success(`已导出 ${total} 条看板记录`);
+    } catch (err) {
+      message.error((err as Error).message || "导出失败，请稍后重试");
     }
-
-    const blob = new Blob(["\ufeff" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" });
-    downloadBlob(blob, `${termFor(profile, "招聘看板")}_${dateStamp()}.csv`);
-    message.success(`已导出 ${total} 条看板记录`);
+    setExporting(false);
   };
 
   return (
@@ -350,7 +418,7 @@ export default function Pipeline() {
             ]}
           />
           <Button icon={<ReloadOutlined />} onClick={fetchPipeline} loading={loading}>刷新</Button>
-          <Button icon={<DownloadOutlined />} onClick={exportPipeline}>导出</Button>
+          <Button icon={<DownloadOutlined />} onClick={exportPipeline} loading={exporting}>导出</Button>
           <Button type="primary" icon={<UserAddOutlined />} onClick={() => setAddOpen(true)}>
             {termFor(profile, "加入招聘看板")}
           </Button>
@@ -450,7 +518,7 @@ export default function Pipeline() {
                 : termFor(profile, "招聘看板还是空的，点右上角把人才挂到岗位上")
             }
           >
-            {!filtered && (
+            {!filtered && import.meta.env.DEV && (
               <div style={{ marginTop: 8 }}>
                 <DemoSeedButton onDone={fetchPipeline} />
                 <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
@@ -464,6 +532,8 @@ export default function Pipeline() {
         <div className="pipe-board">
           {visibleStages.map((s) => {
             const list = columns[s.key] || [];
+            // 列头小字统计：超时 = 本阶段停留 ≥7 天且非终态，一眼看出哪列卡住了人
+            const staleCount = list.filter((c) => c.days_in_stage >= 7 && !s.terminal).length;
             return (
               <div
                 key={s.key}
@@ -493,9 +563,13 @@ export default function Pipeline() {
                   {s.label}
                   <span className="pipe-col-count">{list.length}</span>
                 </div>
+                <div className="pipe-col-sub">
+                  {list.length} 人
+                  {staleCount > 0 && <span className="pipe-col-stale"> · {staleCount} 超时</span>}
+                </div>
                 <div className={`pipe-col-body${dropTarget === s.key ? " drop-target" : ""}`}>
                   {list.length === 0 ? (
-                    <div className="pipe-empty">拖拽卡片到此</div>
+                    <div className="pipe-empty">{filtered ? "无符合条件的候选人" : "拖拽卡片到此"}</div>
                   ) : (
                     list.map((card) => {
                       // 停留预警分级：≥7 天黄色、≥14 天红色（仅非终态阶段）
@@ -515,9 +589,14 @@ export default function Pipeline() {
                               checked={selected.includes(card.link_id)}
                               onChange={(e) => toggleSelect(card.link_id, e.target.checked)}
                             />
-                            <Link className="pipe-card-name" to={`/talents/${card.talent_id}`}>
+                            {/* 点姓名开详情抽屉：不离开看板即可查看/操作；完整档案在抽屉底部入口 */}
+                            <a
+                              className="pipe-card-name"
+                              onClick={() => openDrawer(card)}
+                              title={termFor(profile, "查看详情")}
+                            >
                               {card.name}
-                            </Link>
+                            </a>
                           </span>
                           <Dropdown
                             menu={{ items: buildStageMenu(card), onClick: ({ key }) => onStageMenuClick(card, key) }}
@@ -545,15 +624,7 @@ export default function Pipeline() {
                               </Tag>
                             </Tooltip>
                           )}
-                          {card.rating != null && (
-                            <Tag
-                              color={card.rating >= 4 ? "gold" : card.rating === 3 ? "orange" : undefined}
-                              style={{ fontSize: 11, marginInlineEnd: 0 }}
-                              title={termFor(profile, "阶段评分（1-5）：可在人才详情的投递记录中调整")}
-                            >
-                              ★ {card.rating}
-                            </Tag>
-                          )}
+                          {/* 评分展示入口已收进卡片详情抽屉（数据保留，导出仍含评分列），卡片降噪 */}
                         </div>
 
                         {/* 静态属性合并为一行次要文字，降噪（原先 3 个 Tag） */}
@@ -674,6 +745,134 @@ export default function Pipeline() {
         onClose={() => setAddOpen(false)}
         onSuccess={fetchPipeline}
       />
+
+      {/* 卡片详情抽屉：不离开看板即可查看联系方式/评分/备注/最近流转并直接操作 */}
+      <Drawer
+        title={drawer.card?.name}
+        open={drawer.open}
+        onClose={() => setDrawer((d) => ({ ...d, open: false }))}
+        width={420}
+        footer={
+          drawer.card ? (
+            <div style={{ textAlign: "center" }}>
+              <Button type="link" icon={<UserOutlined />} onClick={() => navigate(`/talents/${drawer.card!.talent_id}`)}>
+                {termFor(profile, "查看完整档案")}
+              </Button>
+            </div>
+          ) : null
+        }
+      >
+        {drawer.card && (
+          <>
+            <Space wrap size={4} style={{ marginBottom: 12 }}>
+              <Tag color={STAGE_META[drawer.card.stage]?.color}>
+                {STAGE_META[drawer.card.stage]?.label || drawer.card.stage}
+              </Tag>
+              {drawer.card.job_title && <Tag color="blue">{drawer.card.job_title}</Tag>}
+              {drawer.card.owner_name && <Tag>负责人 {drawer.card.owner_name}</Tag>}
+            </Space>
+
+            <Descriptions column={1} size="small" bordered style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="当前职位">{drawer.card.current_title || "—"}</Descriptions.Item>
+              <Descriptions.Item label="当前公司">{drawer.card.current_company || "—"}</Descriptions.Item>
+              <Descriptions.Item label="联系电话">
+                {drawer.card.phone ? (
+                  <Space size={4}>
+                    <span>{drawer.card.phone}</span>
+                    <Button type="link" size="small" icon={<PhoneOutlined />} onClick={() => copyText(drawer.card!.phone!, "电话")} />
+                  </Space>
+                ) : "—"}
+              </Descriptions.Item>
+              <Descriptions.Item label="工作年限">{drawer.card.years_experience != null ? `${drawer.card.years_experience} 年` : "—"}</Descriptions.Item>
+              <Descriptions.Item label="学历">{drawer.card.education || "—"}</Descriptions.Item>
+              <Descriptions.Item label="城市">{drawer.card.city || "—"}</Descriptions.Item>
+              <Descriptions.Item label="来源渠道">{drawer.card.source || "—"}</Descriptions.Item>
+              <Descriptions.Item label="阶段停留">{drawer.card.days_in_stage === 0 ? "今天更新" : `${drawer.card.days_in_stage} 天`}</Descriptions.Item>
+              {drawer.card.next_interview_at && (
+                <Descriptions.Item label="面试安排">{fmtDate(drawer.card.next_interview_at)}</Descriptions.Item>
+              )}
+              {drawer.card.next_follow && (
+                <Descriptions.Item label="跟进待办">{fmtDate(drawer.card.next_follow)}</Descriptions.Item>
+              )}
+            </Descriptions>
+
+            {/* 评分：卡片上的入口收到这里，点击即保存 */}
+            <div style={{ marginBottom: 16 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
+                阶段评分（点击打星，再次点击同一颗星可清除）
+              </Typography.Text>
+              <Rate value={drawer.card.rating ?? 0} onChange={saveRating} />
+            </div>
+
+            {/* 阶段备注：团队内共享的跟进摘要，看板卡片上同步展示 */}
+            <div style={{ marginBottom: 16 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
+                阶段备注
+              </Typography.Text>
+              <Input.TextArea
+                rows={3}
+                value={noteDraft}
+                onChange={(e) => setNoteDraft(e.target.value)}
+                placeholder="如：已电话沟通，期望薪资 25k，下周一约二面…"
+              />
+              <Button
+                size="small"
+                type="primary"
+                ghost
+                style={{ marginTop: 8 }}
+                loading={noteSaving}
+                disabled={noteDraft === (drawer.card.stage_notes || "")}
+                onClick={saveNote}
+              >
+                保存备注
+              </Button>
+            </div>
+
+            {/* 快速流转：复用卡片菜单（流转到…/查看流转记录/移出该岗位） */}
+            <div style={{ marginBottom: 16 }}>
+              <Dropdown
+                trigger={["click"]}
+                menu={{ items: buildStageMenu(drawer.card), onClick: ({ key }) => drawerMenuClick(drawer.card!, key) }}
+              >
+                <Button icon={<SwapOutlined />}>流转到…</Button>
+              </Dropdown>
+            </div>
+
+            {/* 最近流转（抽屉内最多展示 5 条，完整记录走菜单「查看流转记录」） */}
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>最近流转</Typography.Text>
+            {drawer.logsLoading ? (
+              <div style={{ textAlign: "center", padding: "1.5rem" }}><Spin /></div>
+            ) : drawer.logs.length === 0 ? (
+              <Empty description="暂无流转记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <Timeline
+                style={{ marginTop: 8 }}
+                items={drawer.logs.slice(0, 5).map((l) => ({
+                  color: STAGE_META[l.to_stage]?.color || "blue",
+                  children: (
+                    <div>
+                      <div style={{ fontSize: "0.85rem" }}>
+                        {l.from_stage ? (
+                          <>
+                            <Tag style={{ fontSize: 11 }}>{STAGE_META[l.from_stage]?.label || l.from_stage}</Tag>
+                            →
+                          </>
+                        ) : "加入流程："}
+                        <Tag color={STAGE_META[l.to_stage]?.color} style={{ fontSize: 11 }}>
+                          {STAGE_META[l.to_stage]?.label || l.to_stage}
+                        </Tag>
+                      </div>
+                      <Typography.Text type="secondary" style={{ fontSize: "0.75rem", display: "block", marginTop: 2 }}>
+                        {l.user_name || "系统"} · {new Date(l.created_at + "Z").toLocaleString("zh-CN")}
+                      </Typography.Text>
+                    </div>
+                  ),
+                }))}
+              />
+            )}
+          </>
+        )}
+      </Drawer>
 
       {/* 流转记录 */}
       <Modal

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message,
-  Empty, Typography, Select, DatePicker, Alert, Tabs, Popconfirm,
+  Empty, Typography, Select, DatePicker, Alert, Tabs, Popconfirm, Row, Col,
 } from "antd";
 import { PlusOutlined, ReloadOutlined, EditOutlined, RollbackOutlined } from "@ant-design/icons";
 import { Link } from "react-router-dom";
@@ -317,50 +317,81 @@ export default function RequisitionPanel({
         okText={editingId ? "保存" : "提交"}
         cancelText="取消"
         destroyOnClose
-        width={600}
+        width={680}
       >
-        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }}
+        {/* 两列布局：短字段并排，需求原因独占一行 */}
+        <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "80px" }}
           initialValues={{ headcount: 1, job_type: "fulltime", priority: "normal" }}>
-          <Form.Item name="department" label="需求部门" rules={[{ required: true, message: "请填写需求部门" }]}>
-            <Input placeholder="如：产品部 / 销售一部" />
-          </Form.Item>
-          <Form.Item name="title" label="岗位名称" rules={[{ required: true, message: "请填写岗位名称" }]}>
-            <Input placeholder="如：前端开发工程师" />
-          </Form.Item>
-          <Form.Item name="headcount" label="需求人数" rules={[{ required: true }]}>
-            <InputNumber min={1} max={999} style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="priority" label="优先级">
-            <Select options={Object.entries(PRIORITY_LABELS).map(([value, label]) => ({ value, label }))} />
-          </Form.Item>
-          <Form.Item name="job_type" label="用工类型">
-            <Select options={Object.entries(JOB_TYPE_LABELS).map(([value, label]) => ({ value, label }))} />
-          </Form.Item>
-          <Form.Item name="city" label="工作城市">
-            <Select
-              allowClear
-              showSearch
-              placeholder="选择城市"
-              optionFilterProp="label"
-              options={cities.map((c) => ({ value: c, label: c }))}
-            />
-          </Form.Item>
-          <Form.Item name="education" label="学历要求">
-            <Select
-              allowClear
-              placeholder="最低学历要求"
-              options={EDUCATION_OPTIONS.map((e) => ({ value: e, label: e }))}
-            />
-          </Form.Item>
-          <Form.Item name="experience" label="经验要求">
-            <Input placeholder="如：3-5 年" />
-          </Form.Item>
-          <Form.Item name="salary_range" label="薪资范围">
-            <Input placeholder="如：15-25K" />
-          </Form.Item>
-          <Form.Item name="expect_date" label="期望到岗">
-            <DatePicker style={{ width: "100%" }} placeholder="选择期望到岗日期" />
-          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="department" label="需求部门" rules={[{ required: true, message: "请填写需求部门" }]}>
+                <Input placeholder="如：产品部" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="title" label="岗位名称" rules={[{ required: true, message: "请填写岗位名称" }]}>
+                <Input placeholder="如：前端开发工程师" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="headcount" label="需求人数" rules={[{ required: true }]}>
+                <InputNumber min={1} max={999} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="priority" label="优先级">
+                <Select options={Object.entries(PRIORITY_LABELS).map(([value, label]) => ({ value, label }))} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="job_type" label="用工类型">
+                <Select options={Object.entries(JOB_TYPE_LABELS).map(([value, label]) => ({ value, label }))} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="city" label="工作城市">
+                <Select
+                  allowClear
+                  showSearch
+                  placeholder="选择城市"
+                  optionFilterProp="label"
+                  options={cities.map((c) => ({ value: c, label: c }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="education" label="学历要求">
+                <Select
+                  allowClear
+                  placeholder="最低学历要求"
+                  options={EDUCATION_OPTIONS.map((e) => ({ value: e, label: e }))}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="experience" label="经验要求">
+                <Input placeholder="如：3-5 年" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="salary_range" label="薪资范围">
+                <Input placeholder="如：15-25K" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="expect_date" label="期望到岗">
+                <DatePicker style={{ width: "100%" }} placeholder="选择期望到岗日期" />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item name="reason" label="需求原因">
             <Input.TextArea rows={3} placeholder="说明业务背景与需求缘由" />
           </Form.Item>

@@ -504,6 +504,9 @@ export const api = {
       body: JSON.stringify({ stage, remark, reject_reason: rejectReason }),
     }),
   getStageLogs: (linkId: string) => request<StageLog[]>(`/pipeline/${linkId}/logs`),
+  // 抽屉内独立编辑评分/备注：只传需要改的字段，rating 传 null 清除评分，notes 传 null 清空备注
+  updatePipelineLink: (linkId: string, data: { rating?: number | null; notes?: string | null }) =>
+    request<{ ok: boolean }>(`/pipeline/${linkId}`, { method: "PATCH", body: JSON.stringify(data) }),
   removeFromPipeline: (linkId: string) =>
     request(`/pipeline/${linkId}`, { method: "DELETE" }),
   // 阶段停滞 → 待办同步（幂等，可重复调用）：返回本次新建/更新/取消数量
