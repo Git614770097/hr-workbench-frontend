@@ -1141,14 +1141,14 @@ html[data-theme-mode="dark"] .funnel-caliber b { color: #4a9eff; }
 .wb-cycle-bars-cap { font-size: 12px; color: #8c8c8c; margin-bottom: 8px; }
 .wb-cycle-bar-row { display: flex; align-items: center; gap: 10px; margin: 7px 0; }
 .wb-cycle-bar-lab { flex: 0 0 84px; font-size: 13px; color: #4b5563; }
-.wb-cycle-bar-track { flex: 1; height: 18px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
-.wb-cycle-bar-fill { height: 100%; border-radius: 4px; background: #3b82f6; transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+.wb-cycle-bar-track { display: block; flex: 1; height: 18px; background: #f3f4f6; border-radius: 4px; overflow: hidden; }
+.wb-cycle-bar-fill { display: block; height: 100%; border-radius: 4px; background: #3b82f6; transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
 .wb-cycle-bar-fill.is-bottleneck { background: #ef4444; }
 .wb-cycle-bar-val { flex: 0 0 48px; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; color: #1f2937; font-weight: 500; }
 /* 渠道效果：转化率列内嵌迷你条 */
 .wb-rate-cell { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
-.wb-rate-bar { width: 48px; height: 7px; background: #f0f2f5; border-radius: 4px; overflow: hidden; flex: 0 0 auto; }
-.wb-rate-fill { height: 100%; border-radius: 4px; transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+.wb-rate-bar { display: block; width: 48px; height: 7px; background: #f0f2f5; border-radius: 4px; overflow: hidden; flex: 0 0 auto; }
+.wb-rate-fill { display: block; height: 100%; border-radius: 4px; transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
 html[data-theme-mode="dark"] .wb-cycle-bar-lab { color: #b0b6c0; }
 html[data-theme-mode="dark"] .wb-cycle-bar-track { background: #2b2b2b; }
 html[data-theme-mode="dark"] .wb-cycle-bar-val { color: #e5e7eb; }
