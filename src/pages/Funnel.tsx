@@ -466,13 +466,14 @@ export default function Funnel() {
         <Button icon={<AppstoreOutlined />} onClick={() => setCfgOpen(true)}>调整模块</Button>
       </div>
 
-      {/* ===== 行动层：左「今日重点」+ 右 KPI 快照 ===== */}
+      {/* ===== 行动层：左「今日重点」+ 右 KPI 快照（栅格与分析层同源：xl 14/10） ===== */}
       {(!isHidden("today_focus") || !isHidden("kpi_band")) && (
-        <div className="wb-hero">
+        <Row gutter={[16, 16]} className="wb-hero">
           {/* 左栏：今日重点（两栏：今日面试 / 近 3 天到期） */}
           {!isHidden("today_focus") && (
-            overview ? (
-              <Card className="wb-focus-card" title="今日重点" styles={{ body: { padding: "14px 18px" } }}>
+            <Col xs={24} xl={14}>
+              {overview ? (
+                <Card className="wb-focus-card" title="今日重点" styles={{ body: { padding: "14px 18px" } }}>
                 <div className="wb-focus">
                   <div className="wb-focus-col">
                     <div className="wb-focus-head">
@@ -537,43 +538,46 @@ export default function Funnel() {
               </Card>
             ) : (
               ovLoading ? <Card className="wb-hero-skel"><Skeleton active paragraph={{ rows: 3 }} /></Card> : null
-            )
+            )}
+            </Col>
           )}
 
           {/* 右栏：KPI 快照 2×2 */}
           {!isHidden("kpi_band") && (
-            <div className="page-stats wb-kpi">
-              <div className="stat">
-                <span className="stat-icon is-neutral"><AimOutlined /></span>
-                <span className="stat-body">
-                  <span className="stat-num is-neutral"><AnimatedNumber value={overview?.openJobs ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                  <span className="stat-label">{termFor(profile, "在招岗位")}</span>
-                </span>
+            <Col xs={24} xl={10}>
+              <div className="page-stats wb-kpi">
+                <div className="stat">
+                  <span className="stat-icon is-neutral"><AimOutlined /></span>
+                  <span className="stat-body">
+                    <span className="stat-num is-neutral"><AnimatedNumber value={overview?.openJobs ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                    <span className="stat-label">{termFor(profile, "在招岗位")}</span>
+                  </span>
+                </div>
+                <div className="stat">
+                  <span className="stat-icon is-neutral"><TeamOutlined /></span>
+                  <span className="stat-body">
+                    <span className="stat-num"><AnimatedNumber value={overview?.activeCandidates ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                    <span className="stat-label">{termFor(profile, "待推进")}</span>
+                  </span>
+                </div>
+                <div className="stat">
+                  <span className="stat-icon is-good"><RiseOutlined /></span>
+                  <span className="stat-body">
+                    <span className="stat-num is-good"><AnimatedNumber value={overview?.weeklyNewTalents ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                    <span className="stat-label">本周新增</span>
+                  </span>
+                </div>
+                <div className="stat">
+                  <span className="stat-icon is-warn"><CalendarOutlined /></span>
+                  <span className="stat-body">
+                    <span className="stat-num is-warn"><AnimatedNumber value={overview?.todayInterviewCount ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                    <span className="stat-label">今日面试</span>
+                  </span>
+                </div>
               </div>
-              <div className="stat">
-                <span className="stat-icon is-neutral"><TeamOutlined /></span>
-                <span className="stat-body">
-                  <span className="stat-num"><AnimatedNumber value={overview?.activeCandidates ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                  <span className="stat-label">{termFor(profile, "待推进")}</span>
-                </span>
-              </div>
-              <div className="stat">
-                <span className="stat-icon is-good"><RiseOutlined /></span>
-                <span className="stat-body">
-                  <span className="stat-num is-good"><AnimatedNumber value={overview?.weeklyNewTalents ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                  <span className="stat-label">本周新增</span>
-                </span>
-              </div>
-              <div className="stat">
-                <span className="stat-icon is-warn"><CalendarOutlined /></span>
-                <span className="stat-body">
-                  <span className="stat-num is-warn"><AnimatedNumber value={overview?.todayInterviewCount ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                  <span className="stat-label">今日面试</span>
-                </span>
-              </div>
-            </div>
+            </Col>
           )}
-        </div>
+        </Row>
       )}
 
       {/* ===== 分析层：招聘概览 ===== */}

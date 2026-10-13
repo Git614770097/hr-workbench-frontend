@@ -1574,14 +1574,12 @@ html[data-theme-mode="dark"] .logs-page .logs-sec-tip { color: #8b95a5; }
 }
 .wb-quick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
-/* ---- 行动层：左「今日重点」+ 右 KPI（2×2）---- */
-.wb-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  align-items: stretch;
-  gap: 16px;
-  margin-bottom: 16px;
-}
+/* ---- 行动层：左「今日重点」+ 右 KPI（2×2）----
+   分栏复用 antd Row/Col xl 14/10（与分析层同源，保证左右栏严格等宽）。
+   此处只负责高度撑满与间距。 */
+.wb-hero { margin-bottom: 16px; }
+.wb-hero > .ant-col { display: flex; flex-direction: column; }
+.wb-hero .wb-focus-card { flex: 1 1 auto; }
 .wb-hero-skel { min-width: 0; }
 
 /* ---- 今日重点 ---- */
@@ -1757,13 +1755,9 @@ html[data-theme-mode="dark"] .wb-mod-item:hover { background: #262626; }
 html[data-theme-mode="dark"] .wb-mod-item-label { color: #e5e7eb; }
 html[data-theme-mode="dark"] .wb-mod-item-desc { color: #6b7280; }
 
-/* 中窄屏：行动层左右两栏改为上下堆叠；今日重点内部两栏改单列 */
-@media (max-width: 1100px) {
-  .wb-hero { grid-template-columns: minmax(0, 1fr); }
-  .wb-focus { height: auto; }
-}
+/* 窄屏：行动层左右两栏由 antd Col(xs=24) 自动堆叠；今日重点内部两栏改单列 */
 @media (max-width: 900px) {
-  .wb-focus { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  .wb-focus { grid-template-columns: minmax(0, 1fr); gap: 14px; height: auto; }
 }
 @media (max-width: 576px) {
   .wb-mod-list { grid-template-columns: minmax(0, 1fr); }
