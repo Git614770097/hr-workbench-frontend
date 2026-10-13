@@ -1,13 +1,28 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message,
-  Popconfirm, Empty, Typography, Select, DatePicker, Alert,
+  Empty, Typography, Select, DatePicker, Alert, Tabs, Popconfirm,
 } from "antd";
-import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, EditOutlined, RollbackOutlined } from "@ant-design/icons";
+import { Link } from "react-router-dom";
 import dayjs from "dayjs";
 import { api } from "../api";
+import { useDict } from "../dict";
 import type { Requisition } from "../types";
-import { REQUISITION_STATUS_LABELS, JOB_TYPE_LABELS } from "../types";
+import {
+  REQUISITION_STATUS_LABELS, JOB_TYPE_LABELS, EDUCATION_OPTIONS,
+  PRIORITY_LABELS, PRIORITY_COLORS,
+} from "../types";
+
+type StatusKey = "" | "pending" | "approved" | "rejected" | "closed";
+
+const STATUS_TABS: { key: StatusKey; label: string }[] = [
+  { key: "", label: "全部" },
+  { key: "pending", label: "待审批" },
+  { key: "approved", label: "已通过" },
+  { key: "rejected", label: "已驳回" },
+  { key: "closed", label: "已关闭" },
+];
 
 /** 招聘需求：用人部门提需求 → 审批 → 一键转正式岗位（并入岗位管理页） */
 export default function RequisitionPanel({
@@ -23,8 +38,10 @@ export default function RequisitionPanel({
   /** 提交入口已由父级 toolbar 提供时，隐藏组件内部的触发按钮 */
   hideSubmitButton?: boolean;
 }) {
+  const { cities } = useDict();
   const [items, setItems] = useState<Requisition[]>([]);
   const [loading, setLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusKey>("");
   const [innerOpen, setInnerOpen] = useState(false);
   const open = submitOpen ?? innerOpen;
   const setOpen = (v: boolean) => {
@@ -35,6 +52,8 @@ export default function RequisitionPanel({
   const [rejectTarget, setRejectTarget] = useState<Requisition | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [form] = Form.useForm();
+  // 编辑模式：editingId 非空表示正在编辑某条需求
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,17 +69,63 @@ export default function RequisitionPanel({
 
   useEffect(() => { load(); }, [load]);
 
+  // 按状态筛选（前端过滤，避免频繁请求；数据量不大）
+  const filtered = useMemo(
+    () => (statusFilter ? items.filter((i) => i.status === statusFilter) : items),
+    [items, statusFilter]
+  );
+
+  // 各状态数量（用于 Tab 徽标）
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { "": items.length };
+    for (const i of items) c[i.status] = (c[i.status] || 0) + 1;
+    return c;
+  }, [items]);
+
+  const today = dayjs().format("YYYY-MM-DD");
+
+  const openCreate = () => {
+    setEditingId(null);
+    form.resetFields();
+    setOpen(true);
+  };
+
+  const openEdit = (row: Requisition) => {
+    setEditingId(row.id);
+    form.setFieldsValue({
+      department: row.department,
+      title: row.title,
+      headcount: row.headcount,
+      job_type: row.job_type,
+      city: row.city,
+      salary_range: row.salary_range,
+      education: row.education,
+      experience: row.experience,
+      priority: row.priority,
+      expect_date: row.expect_date ? dayjs(row.expect_date) : null,
+      reason: row.reason,
+    });
+    setOpen(true);
+  };
+
   const handleSave = async () => {
     const v = await form.validateFields();
     setSaving(true);
     try {
-      await api.createRequisition({
+      const payload = {
         ...v,
         expect_date: v.expect_date ? dayjs(v.expect_date).format("YYYY-MM-DD") : null,
-      });
-      message.success("招聘需求已提交，等待 HR 审批");
+      };
+      if (editingId) {
+        await api.updateRequisition(editingId, payload);
+        message.success("需求已更新");
+      } else {
+        await api.createRequisition(payload);
+        message.success("招聘需求已提交，等待 HR 审批");
+      }
       setOpen(false);
       form.resetFields();
+      setEditingId(null);
       load();
     } catch (e) {
       message.error((e as Error).message);
@@ -71,8 +136,8 @@ export default function RequisitionPanel({
 
   const handleApprove = async (row: Requisition) => {
     try {
-      await api.approveRequisition(row.id);
-      message.success("已通过，并自动生成正式岗位");
+      const r = await api.approveRequisition(row.id);
+      message.success(`已通过，已生成正式岗位${r.job_id ? "" : ""}`);
       load();
     } catch (e) {
       message.error((e as Error).message);
@@ -92,8 +157,22 @@ export default function RequisitionPanel({
     }
   };
 
+  const handleWithdraw = async (row: Requisition) => {
+    try {
+      await api.withdrawRequisition(row.id);
+      message.success("已撤回");
+      load();
+    } catch (e) {
+      message.error((e as Error).message);
+    }
+  };
+
   const statusColor = (s: string) =>
     s === "approved" ? "green" : s === "rejected" ? "red" : s === "closed" ? "default" : "gold";
+
+  // 期望到岗已过期且仍待审批 → 标红
+  const isOverdue = (row: Requisition) =>
+    row.status === "pending" && !!row.expect_date && row.expect_date < today;
 
   return (
     <div>
@@ -106,7 +185,7 @@ export default function RequisitionPanel({
       <div className="toolbar">
         <Space>
           {!hideSubmitButton && (
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setOpen(true); }}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
               提交招聘需求
             </Button>
           )}
@@ -116,70 +195,132 @@ export default function RequisitionPanel({
         </Space>
       </div>
 
+      <Tabs
+        activeKey={statusFilter}
+        onChange={(k) => setStatusFilter(k as StatusKey)}
+        items={STATUS_TABS.map((t) => ({
+          key: t.key,
+          label: `${t.label}${counts[t.key] ? ` (${counts[t.key]})` : ""}`,
+        }))}
+        style={{ marginBottom: 8 }}
+      />
+
       <Table<Requisition>
         className="profiles-table"
         rowKey="id"
-        dataSource={items}
+        dataSource={filtered}
         loading={loading}
         size="middle"
-        scroll={{ x: 1000 }}
+        scroll={{ x: 1100 }}
         locale={{ emptyText: <Empty description="还没有招聘需求" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
         columns={[
           { title: "需求部门", dataIndex: "department", key: "department", width: 110 },
           { title: "岗位名称", dataIndex: "title", key: "title", width: 150 },
           { title: "HC", dataIndex: "headcount", key: "headcount", width: 60, align: "center" },
           {
+            title: "优先级",
+            dataIndex: "priority",
+            key: "priority",
+            width: 70,
+            align: "center",
+            render: (v: string) => (
+              <Tag color={PRIORITY_COLORS[v] || "default"}>{PRIORITY_LABELS[v] || v}</Tag>
+            ),
+          },
+          {
             title: "类型",
             key: "job_type",
             width: 90,
             render: (_: unknown, r: Requisition) => JOB_TYPE_LABELS[r.job_type] || r.job_type,
           },
-          { title: "城市", dataIndex: "city", key: "city", width: 90, render: (v: string | null) => v || "—" },
+          { title: "城市", dataIndex: "city", key: "city", width: 80, render: (v: string | null) => v || "—" },
           {
             title: "期望到岗",
             dataIndex: "expect_date",
             key: "expect_date",
-            width: 100,
-            render: (v: string | null) => v || "—",
+            width: 110,
+            render: (v: string | null, r: Requisition) =>
+              v ? (
+                <span style={{ color: isOverdue(r) ? "#dc2626" : undefined, fontWeight: isOverdue(r) ? 600 : 400 }}>
+                  {v}{isOverdue(r) && " 已逾期"}
+                </span>
+              ) : "—",
           },
           {
             title: "状态",
             dataIndex: "status",
             key: "status",
-            width: 100,
+            width: 90,
             render: (v: string) => <Tag color={statusColor(v)}>{REQUISITION_STATUS_LABELS[v] || v}</Tag>,
           },
           {
             title: "操作",
             key: "act",
-            width: 150,
+            width: 200,
             align: "center",
-            render: (_: unknown, r: Requisition) =>
-              r.status === "pending" && isAdmin ? (
-                <Space size={12}>
-                  <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => handleApprove(r)}>
-                    通过
-                  </Button>
-                  <Button type="link" size="small" danger style={{ paddingInline: 0 }}
-                    onClick={() => { setRejectTarget(r); setRejectReason(""); }}>
-                    驳回
-                  </Button>
-                </Space>
-              ) : r.status === "approved" ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>已生成岗位</Typography.Text>
-              ) : r.status === "rejected" ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>{r.reject_reason || "已驳回"}</Typography.Text>
-              ) : (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>—</Typography.Text>
-              ),
+            render: (_: unknown, r: Requisition) => {
+              if (r.status === "pending") {
+                return (
+                  <Space size={8}>
+                    {isAdmin ? (
+                      <>
+                        <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => handleApprove(r)}>
+                          通过
+                        </Button>
+                        <Button type="link" size="small" danger style={{ paddingInline: 0 }}
+                          onClick={() => { setRejectTarget(r); setRejectReason(""); }}>
+                          驳回
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button type="link" size="small" icon={<EditOutlined />} style={{ paddingInline: 0 }}
+                          onClick={() => openEdit(r)}>
+                          编辑
+                        </Button>
+                        <Popconfirm title="确认撤回该需求？" onConfirm={() => handleWithdraw(r)} okText="撤回" cancelText="取消">
+                          <Button type="link" size="small" icon={<RollbackOutlined />} style={{ paddingInline: 0 }}>
+                            撤回
+                          </Button>
+                        </Popconfirm>
+                      </>
+                    )}
+                  </Space>
+                );
+              }
+              if (r.status === "approved") {
+                return (
+                  <Link to={`/jobs${r.job_id ? `?focus=${r.job_id}` : ""}`} className="ant-btn-link" style={{ fontSize: 12 }}>
+                    查看岗位 →
+                  </Link>
+                );
+              }
+              if (r.status === "rejected") {
+                return (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {r.reject_reason || "已驳回"}
+                  </Typography.Text>
+                );
+              }
+              return <Typography.Text type="secondary" style={{ fontSize: 12 }}>—</Typography.Text>;
+            },
           },
         ]}
       />
 
-      <Modal title="提交招聘需求" open={open} onCancel={() => setOpen(false)} onOk={handleSave}
-        confirmLoading={saving} okText="提交" cancelText="取消" destroyOnClose width={560}>
+      <Modal
+        title={editingId ? "编辑招聘需求" : "提交招聘需求"}
+        open={open}
+        onCancel={() => { setOpen(false); setEditingId(null); form.resetFields(); }}
+        onOk={handleSave}
+        confirmLoading={saving}
+        okText={editingId ? "保存" : "提交"}
+        cancelText="取消"
+        destroyOnClose
+        width={600}
+      >
         <Form form={form} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }}
-          initialValues={{ headcount: 1, job_type: "fulltime" }}>
+          initialValues={{ headcount: 1, job_type: "fulltime", priority: "normal" }}>
           <Form.Item name="department" label="需求部门" rules={[{ required: true, message: "请填写需求部门" }]}>
             <Input placeholder="如：产品部 / 销售一部" />
           </Form.Item>
@@ -189,11 +330,30 @@ export default function RequisitionPanel({
           <Form.Item name="headcount" label="需求人数" rules={[{ required: true }]}>
             <InputNumber min={1} max={999} style={{ width: "100%" }} />
           </Form.Item>
+          <Form.Item name="priority" label="优先级">
+            <Select options={Object.entries(PRIORITY_LABELS).map(([value, label]) => ({ value, label }))} />
+          </Form.Item>
           <Form.Item name="job_type" label="用工类型">
             <Select options={Object.entries(JOB_TYPE_LABELS).map(([value, label]) => ({ value, label }))} />
           </Form.Item>
           <Form.Item name="city" label="工作城市">
-            <Input placeholder="如：上海" />
+            <Select
+              allowClear
+              showSearch
+              placeholder="选择城市"
+              optionFilterProp="label"
+              options={cities.map((c) => ({ value: c, label: c }))}
+            />
+          </Form.Item>
+          <Form.Item name="education" label="学历要求">
+            <Select
+              allowClear
+              placeholder="最低学历要求"
+              options={EDUCATION_OPTIONS.map((e) => ({ value: e, label: e }))}
+            />
+          </Form.Item>
+          <Form.Item name="experience" label="经验要求">
+            <Input placeholder="如：3-5 年" />
           </Form.Item>
           <Form.Item name="salary_range" label="薪资范围">
             <Input placeholder="如：15-25K" />

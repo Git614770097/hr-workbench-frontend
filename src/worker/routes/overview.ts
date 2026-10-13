@@ -89,6 +89,10 @@ overview.get("/", async (c) => {
     const weekStart = chinaWeekStartUtc();
     const today = todayCn();
     const dueSoonTo = addDays(today, 3); // 近 3 天到期（含今日）
+    // 上周周一 00:00（UTC），用于环比「上周新增」
+    const prevWeekStart = new Date(new Date(weekStart).getTime() - 7 * DAY_MS).toISOString();
+    // 上周同日（今天 -7 天），用于环比「今日面试」
+    const prevWeekday = addDays(today, -7);
 
     // 在招职位数
     const openJobsRow = await db
@@ -122,6 +126,13 @@ overview.get("/", async (c) => {
       .bind(weekStart, ...ownerBind)
       .first<{ c: number }>();
     const weeklyNewTalents = weekNewRow?.c ?? 0;
+
+    // 上周新增人才（环比用）
+    const prevWeekNewRow = await db
+      .prepare(`SELECT COUNT(*) c FROM talents WHERE created_at >= ? AND created_at < ?${isAdmin ? "" : " AND owner_id = ?"}`)
+      .bind(prevWeekStart, weekStart, ...ownerBind)
+      .first<{ c: number }>();
+    const prevWeekNewTalents = prevWeekNewRow?.c ?? 0;
 
     // 本周各阶段「到达」人次（job_stage_logs 的 to_stage，按 owner 隔离）
     const weekStageRows = await db
@@ -158,6 +169,16 @@ overview.get("/", async (c) => {
       .bind(today, ...ownerBind)
       .first<{ c: number }>();
     const todayInterviewCount = ivCountRow?.c ?? 0;
+
+    // 上周同日面试数（环比用）
+    const prevIvCountRow = await db
+      .prepare(
+        `SELECT COUNT(*) c FROM interviews iv
+         WHERE iv.status = 'scheduled' AND substr(iv.scheduled_at, 1, 10) = ?${ivOwnerAnd}`
+      )
+      .bind(prevWeekday, ...ownerBind)
+      .first<{ c: number }>();
+    const prevWeekdayInterviewCount = prevIvCountRow?.c ?? 0;
 
     const ivRows = await db
       .prepare(
@@ -201,6 +222,8 @@ overview.get("/", async (c) => {
       activeCandidates,
       stageCounts,
       weeklyNewTalents,
+      /** 上周新增人才（环比基准） */
+      prevWeekNewTalents,
       weeklyStageReached,
       tasks: {
         pending: taskRow?.total ?? 0,
@@ -209,6 +232,8 @@ overview.get("/", async (c) => {
       },
       /** 今日面试数（用于 KPI 快照） */
       todayInterviewCount,
+      /** 上周同日面试数（环比基准） */
+      prevWeekdayInterviewCount,
       /** 今日面试列表（最多 20 条） */
       todayInterviews: ivRows.results || [],
       /** 近 3 天到期待办（含今日，最多 20 条） */
@@ -217,29 +242,31 @@ overview.get("/", async (c) => {
   });
 });
 
-// GET /api/overview/trend?granularity=week|day
+// GET /api/overview/trend?range=4w|12w|24w
 // 工作台「趋势折线」：新增人才 / 进入面试 / 入职 的时间序列。
 // 口径：新增=talents.created_at；进入面试=曾在日志中到达 interview1；入职=到达 hired。
 // 与漏斗同源（job_stage_logs），保证「进入面试 / 入职」两线可与漏斗对齐解读。
 // 分桶在中国时区（周一对齐）；不含含筛选的岗位维度，先做整体趋势。
+// 统一用周粒度，三档窗口长度对称（4周看节奏 / 12周看季度 / 24周看半年）。
 overview.get("/trend", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const isAdmin = session.role === "admin";
   const uid = session.userId;
-  const granularity: "week" | "day" = c.req.query("granularity") === "day" ? "day" : "week";
+  const range = c.req.query("range") || "12w";
+  const COUNT_MAP: Record<string, number> = { "4w": 4, "12w": 12, "24w": 24 };
+  const count = COUNT_MAP[range] ?? 12;
 
-  const cacheKey = `https://edge-cache.internal/api/overview/trend?g=${granularity}&role=${isAdmin ? "admin" : "user"}&uid=${uid}`;
+  const cacheKey = `https://edge-cache.internal/api/overview/trend?range=${range}&role=${isAdmin ? "admin" : "user"}&uid=${uid}`;
 
   return cachedJson(c.executionCtx, cacheKey, 60, async () => {
     const db = c.env.DB;
     const ownerBind: string[] = isAdmin ? [] : [uid];
 
-    const count = granularity === "week" ? 12 : 30;
-    const step = granularity === "week" ? 7 : 1;
+    const step = 7; // 统一周粒度
     const todayDi = cnDayIndex(Date.now());
-    const lastStart = granularity === "week" ? weekStartDayIndex(todayDi) : todayDi;
+    const lastStart = weekStartDayIndex(todayDi);
     const startDi = lastStart - (count - 1) * step;
 
     const labels = Array.from({ length: count }, (_, i) => dayLabel(startDi + i * step));
@@ -247,7 +274,7 @@ overview.get("/trend", async (c) => {
 
     const bucketOf = (ms: number): number => {
       const di = cnDayIndex(ms);
-      return granularity === "week" ? (weekStartDayIndex(di) - startDi) / 7 : di - startDi;
+      return (weekStartDayIndex(di) - startDi) / 7;
     };
 
     const newTalents = new Array(count).fill(0);
@@ -286,7 +313,8 @@ overview.get("/trend", async (c) => {
     const sum = (a: number[]) => a.reduce((x, y) => x + y, 0);
 
     return {
-      granularity,
+      granularity: "week" as const,
+      range,
       labels,
       series: [
         { key: "new_talents", label: "新增人才", color: "#3b82f6", data: newTalents },

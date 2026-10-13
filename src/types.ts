@@ -852,12 +852,16 @@ export interface OverviewResponse {
   stageCounts: Record<string, number>;
   /** 本周新增人才数（中国时区周一为界） */
   weeklyNewTalents: number;
+  /** 上周新增人才数（环比基准） */
+  prevWeekNewTalents: number;
   /** 本周各阶段「到达」人次（job_stage_logs.to_stage），键为阶段 key */
   weeklyStageReached: Record<string, number>;
   /** 待办汇总 */
   tasks: { pending: number; overdue: number; today: number };
   /** 今日面试数（KPI 快照用） */
   todayInterviewCount: number;
+  /** 上周同日面试数（环比基准） */
+  prevWeekdayInterviewCount: number;
   /** 今日面试列表（action 层用） */
   todayInterviews: TodayInterviewItem[];
   /** 近 3 天到期待办（含今日，action 层用） */
@@ -873,7 +877,9 @@ export interface TrendSeries {
 }
 
 export interface TrendResponse {
-  granularity: "week" | "day";
+  granularity: "week";
+  /** 窗口长度：4w / 12w / 24w */
+  range: string;
   labels: string[];
   series: TrendSeries[];
   total: { new_talents: number; interview: number; hired: number };

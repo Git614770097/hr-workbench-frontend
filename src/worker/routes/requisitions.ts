@@ -134,4 +134,57 @@ requisitions.post("/:id/reject", async (c) => {
   return c.json({ ok: true });
 });
 
+/** 编辑需求：仅 pending 状态可改，且只能改自己创建的（admin 可改任意） */
+requisitions.put("/:id", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const id = c.req.param("id");
+  const req = await c.env.DB.prepare("SELECT * FROM requisitions WHERE id = ?").bind(id).first<any>();
+  if (!req) return c.json({ error: "需求不存在" }, 404);
+  if (req.status !== "pending") return c.json({ error: "仅待审批状态可编辑" }, 400);
+  if (session.role !== "admin" && req.owner_id !== session.userId) {
+    return c.json({ error: "无权限，只能编辑自己提交的需求" }, 403);
+  }
+
+  let b: any;
+  try { b = await c.req.json(); } catch { return c.json({ error: "请求参数格式不正确" }, 400); }
+
+  // 只允许更新业务字段，状态/审批相关字段不动
+  const fields = ["department", "title", "headcount", "job_type", "city", "salary_range", "education", "experience", "reason", "expect_date", "priority"];
+  const sets: string[] = [];
+  const vals: any[] = [];
+  for (const f of fields) {
+    if (b[f] !== undefined) {
+      sets.push(`${f} = ?`);
+      vals.push(b[f] === "" ? null : b[f]);
+    }
+  }
+  if (sets.length === 0) return c.json({ ok: true });
+  sets.push("updated_at = datetime('now')");
+  vals.push(id);
+
+  await c.env.DB.prepare(`UPDATE requisitions SET ${sets.join(", ")} WHERE id = ?`).bind(...vals).run();
+  return c.json({ ok: true });
+});
+
+/** 撤回需求：仅 pending 状态可撤回，撤回后 status=closed（终态，不再审批） */
+requisitions.post("/:id/withdraw", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const id = c.req.param("id");
+  const req = await c.env.DB.prepare("SELECT owner_id, status FROM requisitions WHERE id = ?").bind(id).first<{ owner_id: string; status: string }>();
+  if (!req) return c.json({ error: "需求不存在" }, 404);
+  if (req.status !== "pending") return c.json({ error: "仅待审批状态可撤回" }, 400);
+  if (session.role !== "admin" && req.owner_id !== session.userId) {
+    return c.json({ error: "无权限，只能撤回自己提交的需求" }, 403);
+  }
+
+  await c.env.DB.prepare(
+    "UPDATE requisitions SET status='closed', updated_at=datetime('now') WHERE id=?"
+  ).bind(id).run();
+  return c.json({ ok: true });
+});
+
 export { requisitions as requisitionRoutes };

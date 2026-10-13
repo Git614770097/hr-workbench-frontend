@@ -54,6 +54,18 @@ const pct = (v: number) => `${(v * 100).toFixed(v >= 0.1 || v === 0 ? 0 : 1)}%`;
 const dayText = (v: number | null) => (v == null ? "—" : `${v}`);
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
+/** 环比文案：curr vs prev。上升绿、下降橙、持平灰；prev=0 时用「新增」避免除零 */
+function wowText(curr: number, prev: number): { text: string; tone: "up" | "down" | "flat" } {
+  if (prev === 0) {
+    if (curr === 0) return { text: "持平", tone: "flat" };
+    return { text: "新增", tone: "up" };
+  }
+  const p = ((curr - prev) / prev) * 100;
+  if (Math.abs(p) < 0.5) return { text: "持平", tone: "flat" };
+  const sign = p > 0 ? "+" : "";
+  return { text: `${sign}${p.toFixed(0)}%`, tone: p > 0 ? "up" : "down" };
+}
+
 /** 客户端中国时区今天 YYYY-MM-DD */
 
 export default function Funnel() {
@@ -69,7 +81,7 @@ export default function Funnel() {
 
   // ---- 工作台：趋势折线 ----
   const [trend, setTrend] = useState<TrendResponse | null>(null);
-  const [trendGran, setTrendGran] = useState<"week" | "day">("week");
+  const [trendRange, setTrendRange] = useState<"4w" | "12w" | "24w">("12w");
   const [trendLoading, setTrendLoading] = useState(true);
 
   // ---- 工作台：模块显隐 ----
@@ -145,12 +157,12 @@ export default function Funnel() {
   useEffect(() => {
     let alive = true;
     setTrendLoading(true);
-    api.getTrend(trendGran)
+    api.getTrend(trendRange)
       .then((r) => { if (alive) setTrend(r); })
       .catch(() => { /* 趋势失败不阻塞 */ })
       .finally(() => { if (alive) setTrendLoading(false); });
     return () => { alive = false; };
-  }, [trendGran]);
+  }, [trendRange]);
 
   // ---- 模块显隐配置（存后端用户设置）----
   useEffect(() => {
@@ -486,7 +498,14 @@ export default function Funnel() {
                     <span className="stat-icon is-good"><RiseOutlined /></span>
                     <span className="stat-body">
                       <span className="stat-num is-good"><AnimatedNumber value={overview.weeklyNewTalents ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                      <span className="stat-label">本周新增</span>
+                      <span className="stat-label">
+                        本周新增
+                        {(() => {
+                          const w = wowText(overview.weeklyNewTalents ?? 0, overview.prevWeekNewTalents ?? 0);
+                          const color = w.tone === "up" ? "#16a34a" : w.tone === "down" ? "#ea580c" : "#94a3b8";
+                          return <span className="wb-wow" style={{ color }}>较上周 {w.text}</span>;
+                        })()}
+                      </span>
                     </span>
                   </div>
                 </>
@@ -498,7 +517,14 @@ export default function Funnel() {
                     <span className="stat-icon is-warn"><CalendarOutlined /></span>
                     <span className="stat-body">
                       <span className="stat-num is-warn"><AnimatedNumber value={overview.todayInterviewCount ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                      <span className="stat-label">今日面试</span>
+                      <span className="stat-label">
+                        今日面试
+                        {(() => {
+                          const w = wowText(overview.todayInterviewCount ?? 0, overview.prevWeekdayInterviewCount ?? 0);
+                          const color = w.tone === "up" ? "#16a34a" : w.tone === "down" ? "#ea580c" : "#94a3b8";
+                          return <span className="wb-wow" style={{ color }}>较上周 {w.text}</span>;
+                        })()}
+                      </span>
                     </span>
                   </Link>
                   <Link to="/tasks" className="stat is-link">
@@ -528,9 +554,13 @@ export default function Funnel() {
             <Segmented
               className="app-pill-seg"
               size="small"
-              value={trendGran}
-              onChange={(v) => setTrendGran(v as "week" | "day")}
-              options={[{ label: "近 12 周", value: "week" }, { label: "近 30 天", value: "day" }]}
+              value={trendRange}
+              onChange={(v) => setTrendRange(v as "4w" | "12w" | "24w")}
+              options={[
+                { label: "近 4 周", value: "4w" },
+                { label: "近 12 周", value: "12w" },
+                { label: "近 24 周", value: "24w" },
+              ]}
             />
           )}
           <Button size="small" icon={<FileExcelOutlined />} onClick={exportWorkbook} disabled={!data}>导出汇报 Excel</Button>
