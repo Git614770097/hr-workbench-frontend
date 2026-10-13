@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
-  Card, Button, Select, Space, Row, Col, Empty, Spin, Tooltip, message, Table,
+  Card, Button, Select, Space, Empty, Spin, Tooltip, message, Table,
   Alert, Segmented, Skeleton, Popover,
 } from "antd";
 import {
@@ -637,301 +638,349 @@ export default function Funnel() {
           </Empty>
         </Card>
       ) : (
-        <Row gutter={[16, 16]}>
-          {/* ===== 左：图表主区 ===== */}
-          <Col xs={24} xl={14}>
-            {/* 趋势折线 */}
-            {!isHidden("trend") && (
-              <Card
-                title={<Space><LineChartOutlined />招聘趋势</Space>}
-                styles={{ body: { padding: "12px 16px" } }}
-                extra={
-                  <Tooltip title="新增人才=talents 入库；进入面试=曾到达「初试」；入职=曾到达「已入职」。与漏斗同源。">
-                    <Button
-                      size="small" type="text" icon={<PictureOutlined />}
-                      onClick={() => downloadPng(trendChartRef.current, "招聘趋势")}
-                    >PNG</Button>
-                  </Tooltip>
-                }
-              >
-                {trendLoading && !trend ? (
-                  <Skeleton active paragraph={{ rows: 4 }} />
-                ) : (
-                  <WorkbenchTrendChart data={trend} dark={isDark} height={260} chartOut={trendChartRef} />
-                )}
-              </Card>
-            )}
+        (() => {
+          // ===== 分析层模块扁平化：按显隐过滤后，用估算高度贪心分到两列（各 50%）=====
+          // 隐藏任何模块后，剩余模块自动重新落位补位，两列高度始终接近；
+          // h 为估算高度（px），只用于落位决策，+16 对应列内 gap
+          const modules: { key: string; h: number; node: ReactNode }[] = [];
 
-            {/* 转化漏斗 */}
-            {!isHidden("funnel") && (
-              <Card
-                title={<Space><FunnelPlotOutlined />转化漏斗</Space>}
-                style={{ marginTop: isHidden("trend") ? 0 : 16 }}
-                styles={{ body: { padding: "20px 24px" } }}
-                extra={
-                  <Space size={12}>
-                    <Tooltip title="阶段人数按「曾到达」统计：只要候选人到过该阶段就计入，因此漏斗逐级递减，不会因为后期淘汰而回退">
-                      <span style={{ fontSize: 12, color: "#8c8c8c" }}>统计口径说明</span>
-                    </Tooltip>
-                    <Popover
-                      placement="bottomRight"
-                      trigger="click"
-                      content={
-                        <div className="wb-pal-list">
-                          {FUNNEL_PALETTES.map((p) => (
-                            <button
-                              type="button"
-                              key={p.id}
-                              className={`wb-pal-item${palette === p.id ? " is-active" : ""}`}
-                              onClick={() => updatePalette(p.id)}
-                            >
-                              <span className="wb-pal-swatch">
-                                {p.levels.map((l, i) => (
-                                  <i key={i} style={{ background: `linear-gradient(180deg, ${l.from}, ${l.to})` }} />
-                                ))}
-                              </span>
-                              <span className="wb-pal-text">
-                                <b>{p.name}</b>
-                                <em>{p.desc}</em>
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      }
-                    >
-                      <Tooltip title="切换漏斗配色">
-                        <Button size="small" type="text" icon={<BgColorsOutlined />} />
-                      </Tooltip>
-                    </Popover>
-                    <Tooltip title="下载高清 PNG（白底，可直接贴进汇报 PPT）">
+          // 招聘趋势
+          if (!isHidden("trend")) {
+            modules.push({
+              key: "trend",
+              h: 340, // 260 图 + 卡头/内边距
+              node: (
+                <Card
+                  title={<Space><LineChartOutlined />招聘趋势</Space>}
+                  styles={{ body: { padding: "12px 16px" } }}
+                  extra={
+                    <Tooltip title="新增人才=talents 入库；进入面试=曾到达「初试」；入职=曾到达「已入职」。与漏斗同源。">
                       <Button
                         size="small" type="text" icon={<PictureOutlined />}
-                        onClick={() => downloadPng(funnelChartRef.current, "转化漏斗")}
+                        onClick={() => downloadPng(trendChartRef.current, "招聘趋势")}
                       >PNG</Button>
                     </Tooltip>
-                  </Space>
-                }
-              >
-                <FunnelChartView
-                  stages={stages}
-                  stageStay={data!.stage_stay}
-                  dark={isDark}
-                  palette={palette}
-                  height={Math.round(stages.length * 76 + 52)}
-                  chartOut={funnelChartRef}
-                />
+                  }
+                >
+                  {trendLoading && !trend ? (
+                    <Skeleton active paragraph={{ rows: 4 }} />
+                  ) : (
+                    <WorkbenchTrendChart data={trend} dark={isDark} height={260} chartOut={trendChartRef} />
+                  )}
+                </Card>
+              ),
+            });
+          }
 
-                <div className="funnel-branches">
-                  <div className="funnel-branch">
-                    <span className="funnel-dot" style={{ background: "#ef4444" }} />
-                    已淘汰
-                    <b style={{ color: "#ef4444", marginLeft: 6 }}>{s!.rejected}</b> 人
-                  </div>
-                  <div className="funnel-branch">
-                    <span className="funnel-dot" style={{ background: "#94a3b8" }} />
-                    已放弃
-                    <b style={{ color: "#94a3b8", marginLeft: 6 }}>{s!.withdrawn}</b> 人
-                  </div>
-                  <span className="funnel-branch-tip">
-                    {termFor(profile, "（终态分支不计入漏斗主线，人才可能在任何一级进入终态）")}
-                  </span>
-                </div>
-
-                {/* 诊断提示（原「结论」卡精简而来） */}
-                {diagnosis.length > 0 && (
-                  <div className="wb-diagnosis">
-                    {diagnosis.map((h, i) => (
-                      <div className="wb-diagnosis-line" key={i}>· {h}</div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="funnel-caliber">
-                  <InfoCircleOutlined /> 统计口径：各阶段人数按「<b>曾到达</b>」统计 —— 候选人只要到过该阶段就计入，因此漏斗逐级递减、不会因后期淘汰而回退；已淘汰 / 已放弃属于终态分支，单独计列，不计入主线。
-                </div>
-              </Card>
-            )}
-
-            {/* 渠道效果 */}
-            {!isHidden("sources") && data!.sources.length > 0 && (
-              <Card
-                title={<Space><TeamOutlined />渠道效果</Space>}
-                style={{ marginTop: 16 }}
-                styles={{ body: { padding: "16px 18px" } }}
-                extra={
-                  <Tooltip title={termFor(profile, "按人才来源统计各阶段分布与入职转化、平均招聘周期；同一人才投多个岗位按投递记录分别计入，与漏斗口径一致。来源在人才库「来源渠道」字段或导入简历时维护。")}>
-                    <span style={{ fontSize: 12, color: "#8c8c8c" }}>口径说明</span>
-                  </Tooltip>
-                }
-              >
-                {(() => {
-                  const unknown = data!.sources.find((x) => x.source === "未记录");
-                  const total = data!.sources.reduce((a, x) => a + x.entered, 0);
-                  if (!unknown || total === 0 || unknown.entered / total <= 0.4) return null;
-                  return (
-                    <Alert
-                      type="warning"
-                      showIcon
-                      style={{ marginBottom: 12 }}
-                      message={termFor(profile, `有 ${unknown.entered} 条候选人未记录来源（占 ${pct(unknown.entered / total)}），统计可能失真。新导入可在「导入简历」时选择本批来源，存量可在人才库编辑补录`)}
-                    />
-                  );
-                })()}
-                <Table
-                  size="small"
-                  pagination={false}
-                  rowKey="source"
-                  dataSource={data!.sources}
-                  columns={[
-                    {
-                      title: "来源渠道", dataIndex: "source",
-                      render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span>,
-                    },
-                    { title: "进入", dataIndex: "entered", align: "right" },
-                    { title: "进行中", dataIndex: "in_progress", align: "right" },
-                    {
-                      title: "入职", dataIndex: "hired", align: "right",
-                      render: (v: number) => <b style={{ color: "#10b981" }}>{v}</b>,
-                    },
-                    {
-                      title: "转化率", dataIndex: "rate", align: "right",
-                      render: (v: number) => {
-                        const color = v >= 0.3 ? "#10b981" : v > 0 ? "#d48806" : "#bfbfbf";
-                        const w = Math.max(3, v * 100);
-                        return (
-                          <span className="wb-rate-cell">
-                            <span className="wb-rate-bar">
-                              <span className="wb-rate-fill" style={{ width: `${w}%`, background: color }} />
-                            </span>
-                            <b style={{ color }}>{pct(v)}</b>
-                          </span>
-                        );
-                      },
-                    },
-                    {
-                      title: "平均周期", dataIndex: "avg_cycle_days", align: "right",
-                      render: (v: number | null) => (v == null ? "—" : `${v} 天`),
-                    },
-                  ]}
-                />
-              </Card>
-            )}
-          </Col>
-
-          {/* ===== 右：分析窄栏（精简后）===== */}
-          <Col xs={24} xl={10}>
-            {/* 招聘周期（精简版：一行构成 + 紧凑表格） */}
-            {!isHidden("cycles") && (
-              <Card
-                title="招聘周期"
-                styles={{ body: { padding: "14px 18px" } }}
-                extra={
-                  <Tooltip title="平均值易被个别拖很久的候选人拉高，故同时给出中位数（典型水平）与 P90（长尾）">
-                    <span style={{ fontSize: 12, color: "#8c8c8c" }}>指标说明</span>
-                  </Tooltip>
-                }
-              >
-                {segTotal != null && (
-                  <div className="wb-cycle-line">
-                    耗时构成：{segs.map((sg, i) => (
-                      <span key={sg.name}>
-                        {i > 0 && <span className="wb-cycle-sep"> · </span>}
-                        {sg.name} <b>{r1(sg.days)}</b> 天
-                      </span>
-                    ))}
-                    <span className="wb-cycle-note">（{data!.cycles.segments.n} 名入职者）</span>
-                  </div>
-                )}
-                {(() => {
-                  const bars = CYCLE_ROWS.filter((r) => r.key !== "total").map((cr) => ({
-                    key: cr.key,
-                    title: cr.title,
-                    avg: data!.cycles[cr.key].avg ?? 0,
-                  }));
-                  const maxAvg = bars.reduce((m, b) => Math.max(m, b.avg), 0);
-                  return (
-                    <div className="wb-cycle-bars">
-                      <div className="wb-cycle-bars-cap">各环节平均耗时（瓶颈环节标红）</div>
-                      {bars.map((b) => {
-                        const w = maxAvg > 0 ? Math.max(4, (b.avg / maxAvg) * 100) : 0;
-                        const isMax = b.avg > 0 && b.avg === maxAvg;
-                        return (
-                          <div className="wb-cycle-bar-row" key={b.key}>
-                            <span className="wb-cycle-bar-lab">{b.title}</span>
-                            <span className="wb-cycle-bar-track">
-                              <span
-                                className={`wb-cycle-bar-fill${isMax ? " is-bottleneck" : ""}`}
-                                style={{ width: `${w}%` }}
-                              />
-                            </span>
-                            <span className="wb-cycle-bar-val">{b.avg > 0 ? `${r1(b.avg)} 天` : "—"}</span>
+          // 转化漏斗
+          if (!isHidden("funnel") && s) {
+            modules.push({
+              key: "funnel",
+              h: stages.length * 76 + 260, // 漏斗主体 + 终态分支/诊断/口径区
+              node: (
+                <Card
+                  title={<Space><FunnelPlotOutlined />转化漏斗</Space>}
+                  styles={{ body: { padding: "20px 24px" } }}
+                  extra={
+                    <Space size={12}>
+                      <Tooltip title="阶段人数按「曾到达」统计：只要候选人到过该阶段就计入，因此漏斗逐级递减，不会因为后期淘汰而回退">
+                        <span style={{ fontSize: 12, color: "#8c8c8c" }}>统计口径说明</span>
+                      </Tooltip>
+                      <Popover
+                        placement="bottomRight"
+                        trigger="click"
+                        content={
+                          <div className="wb-pal-list">
+                            {FUNNEL_PALETTES.map((p) => (
+                              <button
+                                type="button"
+                                key={p.id}
+                                className={`wb-pal-item${palette === p.id ? " is-active" : ""}`}
+                                onClick={() => updatePalette(p.id)}
+                              >
+                                <span className="wb-pal-swatch">
+                                  {p.levels.map((l, i) => (
+                                    <i key={i} style={{ background: `linear-gradient(180deg, ${l.from}, ${l.to})` }} />
+                                  ))}
+                                </span>
+                                <span className="wb-pal-text">
+                                  <b>{p.name}</b>
+                                  <em>{p.desc}</em>
+                                </span>
+                              </button>
+                            ))}
                           </div>
+                        }
+                      >
+                        <Tooltip title="切换漏斗配色">
+                          <Button size="small" type="text" icon={<BgColorsOutlined />} />
+                        </Tooltip>
+                      </Popover>
+                      <Tooltip title="下载高清 PNG（白底，可直接贴进汇报 PPT）">
+                        <Button
+                          size="small" type="text" icon={<PictureOutlined />}
+                          onClick={() => downloadPng(funnelChartRef.current, "转化漏斗")}
+                        >PNG</Button>
+                      </Tooltip>
+                    </Space>
+                  }
+                >
+                  <FunnelChartView
+                    stages={stages}
+                    stageStay={data!.stage_stay}
+                    dark={isDark}
+                    palette={palette}
+                    height={Math.round(stages.length * 76 + 52)}
+                    chartOut={funnelChartRef}
+                  />
+
+                  <div className="funnel-branches">
+                    <div className="funnel-branch">
+                      <span className="funnel-dot" style={{ background: "#ef4444" }} />
+                      已淘汰
+                      <b style={{ color: "#ef4444", marginLeft: 6 }}>{s.rejected}</b> 人
+                    </div>
+                    <div className="funnel-branch">
+                      <span className="funnel-dot" style={{ background: "#94a3b8" }} />
+                      已放弃
+                      <b style={{ color: "#94a3b8", marginLeft: 6 }}>{s.withdrawn}</b> 人
+                    </div>
+                    <span className="funnel-branch-tip">
+                      {termFor(profile, "（终态分支不计入漏斗主线，人才可能在任何一级进入终态）")}
+                    </span>
+                  </div>
+
+                  {/* 诊断提示（原「结论」卡精简而来） */}
+                  {diagnosis.length > 0 && (
+                    <div className="wb-diagnosis">
+                      {diagnosis.map((h, i) => (
+                        <div className="wb-diagnosis-line" key={i}>· {h}</div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="funnel-caliber">
+                    <InfoCircleOutlined /> 统计口径：各阶段人数按「<b>曾到达</b>」统计 —— 候选人只要到过该阶段就计入，因此漏斗逐级递减、不会因后期淘汰而回退；已淘汰 / 已放弃属于终态分支，单独计列，不计入主线。
+                  </div>
+                </Card>
+              ),
+            });
+          }
+
+          // 招聘周期
+          if (!isHidden("cycles") && s) {
+            modules.push({
+              key: "cycles",
+              h: 430, // 构成行 + 耗时条 + 指标表
+              node: (
+                <Card
+                  title="招聘周期"
+                  styles={{ body: { padding: "14px 18px" } }}
+                  extra={
+                    <Tooltip title="平均值易被个别拖很久的候选人拉高，故同时给出中位数（典型水平）与 P90（长尾）">
+                      <span style={{ fontSize: 12, color: "#8c8c8c" }}>指标说明</span>
+                    </Tooltip>
+                  }
+                >
+                  {segTotal != null && (
+                    <div className="wb-cycle-line">
+                      耗时构成：{segs.map((sg, i) => (
+                        <span key={sg.name}>
+                          {i > 0 && <span className="wb-cycle-sep"> · </span>}
+                          {sg.name} <b>{r1(sg.days)}</b> 天
+                        </span>
+                      ))}
+                      <span className="wb-cycle-note">（{data!.cycles.segments.n} 名入职者）</span>
+                    </div>
+                  )}
+                  {(() => {
+                    const bars = CYCLE_ROWS.filter((r) => r.key !== "total").map((cr) => ({
+                      key: cr.key,
+                      title: cr.title,
+                      avg: data!.cycles[cr.key].avg ?? 0,
+                    }));
+                    const maxAvg = bars.reduce((m, b) => Math.max(m, b.avg), 0);
+                    return (
+                      <div className="wb-cycle-bars">
+                        <div className="wb-cycle-bars-cap">各环节平均耗时（瓶颈环节标红）</div>
+                        {bars.map((b) => {
+                          const w = maxAvg > 0 ? Math.max(4, (b.avg / maxAvg) * 100) : 0;
+                          const isMax = b.avg > 0 && b.avg === maxAvg;
+                          return (
+                            <div className="wb-cycle-bar-row" key={b.key}>
+                              <span className="wb-cycle-bar-lab">{b.title}</span>
+                              <span className="wb-cycle-bar-track">
+                                <span
+                                  className={`wb-cycle-bar-fill${isMax ? " is-bottleneck" : ""}`}
+                                  style={{ width: `${w}%` }}
+                                />
+                              </span>
+                              <span className="wb-cycle-bar-val">{b.avg > 0 ? `${r1(b.avg)} 天` : "—"}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                  <table className="wb-table">
+                    <thead>
+                      <tr><th>环节</th><th>均值</th><th>中位</th><th>P90</th><th>样本</th></tr>
+                    </thead>
+                    <tbody>
+                      {CYCLE_ROWS.map((cr) => {
+                        const st = data!.cycles[cr.key];
+                        return (
+                          <tr key={cr.key}>
+                            <td>{cr.title}</td>
+                            <td><b>{dayText(st.avg)}</b> 天</td>
+                            <td>{dayText(st.p50)} 天</td>
+                            <td>{dayText(st.p90)} 天</td>
+                            <td className="is-muted">{st.n > 0 ? `${st.n} 人` : "—"}</td>
+                          </tr>
                         );
                       })}
-                    </div>
-                  );
-                })()}
-                <table className="wb-table">
-                  <thead>
-                    <tr><th>环节</th><th>均值</th><th>中位</th><th>P90</th><th>样本</th></tr>
-                  </thead>
-                  <tbody>
-                    {CYCLE_ROWS.map((cr) => {
-                      const st = data!.cycles[cr.key];
-                      return (
-                        <tr key={cr.key}>
-                          <td>{cr.title}</td>
-                          <td><b>{dayText(st.avg)}</b> 天</td>
-                          <td>{dayText(st.p50)} 天</td>
-                          <td>{dayText(st.p90)} 天</td>
-                          <td className="is-muted">{st.n > 0 ? `${st.n} 人` : "—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </Card>
-            )}
+                    </tbody>
+                  </table>
+                </Card>
+              ),
+            });
+          }
 
-            {/* 各阶段当前停留 */}
-            {!isHidden("stay") && <OverviewPanel />}
-
-            {/* 淘汰原因分布（精简版：紧凑条） */}
-            {!isHidden("reject") && data!.reject_reasons.length > 0 && (
-              <Card
-                title="淘汰原因分布"
-                style={{ marginTop: 16 }}
-                styles={{ body: { padding: "14px 18px" } }}
-                extra={
-                  <Tooltip title="看板把候选人拖入「已淘汰」时选择的标准原因，自动按流转日志汇总；高频原因可用于修正 JD 与画像">
-                    <span style={{ fontSize: 12, color: "#8c8c8c" }}>说明</span>
-                  </Tooltip>
-                }
-              >
-                {data!.reject_reasons.slice(0, 8).map((r, i) => (
-                  <div className="wb-reject-row" key={r.reason}>
-                    <div className="wb-reject-top">
-                      <span>{r.reason}</span>
-                      <b>{r.count} 人</b>
-                    </div>
-                    <div className="funnel-analysis-bar">
-                      <div
-                        className="funnel-analysis-fill"
-                        style={{
-                          width: `${Math.max(3, (r.count / data!.reject_reasons[0].count) * 100)}%`,
-                          background: "#ef4444",
-                        }}
+          // 渠道效果
+          if (!isHidden("sources") && s && data!.sources.length > 0) {
+            modules.push({
+              key: "sources",
+              h: 120 + (data!.sources.length + 1) * 40, // 卡头 + 提示区 + 表格行
+              node: (
+                <Card
+                  title={<Space><TeamOutlined />渠道效果</Space>}
+                  styles={{ body: { padding: "16px 18px" } }}
+                  extra={
+                    <Tooltip title={termFor(profile, "按人才来源统计各阶段分布与入职转化、平均招聘周期；同一人才投多个岗位按投递记录分别计入，与漏斗口径一致。来源在人才库「来源渠道」字段或导入简历时维护。")}>
+                      <span style={{ fontSize: 12, color: "#8c8c8c" }}>口径说明</span>
+                    </Tooltip>
+                  }
+                >
+                  {(() => {
+                    const unknown = data!.sources.find((x) => x.source === "未记录");
+                    const total = data!.sources.reduce((a, x) => a + x.entered, 0);
+                    if (!unknown || total === 0 || unknown.entered / total <= 0.4) return null;
+                    return (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                        message={termFor(profile, `有 ${unknown.entered} 条候选人未记录来源（占 ${pct(unknown.entered / total)}），统计可能失真。新导入可在「导入简历」时选择本批来源，存量可在人才库编辑补录`)}
                       />
+                    );
+                  })()}
+                  <Table
+                    size="small"
+                    pagination={false}
+                    rowKey="source"
+                    dataSource={data!.sources}
+                    columns={[
+                      {
+                        title: "来源渠道", dataIndex: "source",
+                        render: (v: string) => <span style={{ fontWeight: 600 }}>{v}</span>,
+                      },
+                      { title: "进入", dataIndex: "entered", align: "right" },
+                      { title: "进行中", dataIndex: "in_progress", align: "right" },
+                      {
+                        title: "入职", dataIndex: "hired", align: "right",
+                        render: (v: number) => <b style={{ color: "#10b981" }}>{v}</b>,
+                      },
+                      {
+                        title: "转化率", dataIndex: "rate", align: "right",
+                        render: (v: number) => {
+                          const color = v >= 0.3 ? "#10b981" : v > 0 ? "#d48806" : "#bfbfbf";
+                          const w = Math.max(3, v * 100);
+                          return (
+                            <span className="wb-rate-cell">
+                              <span className="wb-rate-bar">
+                                <span className="wb-rate-fill" style={{ width: `${w}%`, background: color }} />
+                              </span>
+                              <b style={{ color }}>{pct(v)}</b>
+                            </span>
+                          );
+                        },
+                      },
+                      {
+                        title: "平均周期", dataIndex: "avg_cycle_days", align: "right",
+                        render: (v: number | null) => (v == null ? "—" : `${v} 天`),
+                      },
+                    ]}
+                  />
+                </Card>
+              ),
+            });
+          }
+
+          // 各阶段当前停留
+          if (!isHidden("stay")) {
+            modules.push({ key: "stay", h: 340, node: <OverviewPanel /> });
+          }
+
+          // 淘汰原因分布
+          if (!isHidden("reject") && s && data!.reject_reasons.length > 0) {
+            modules.push({
+              key: "reject",
+              h: 130 + Math.min(8, data!.reject_reasons.length) * 52, // 卡头 + 紧凑条行
+              node: (
+                <Card
+                  title="淘汰原因分布"
+                  styles={{ body: { padding: "14px 18px" } }}
+                  extra={
+                    <Tooltip title="看板把候选人拖入「已淘汰」时选择的标准原因，自动按流转日志汇总；高频原因可用于修正 JD 与画像">
+                      <span style={{ fontSize: 12, color: "#8c8c8c" }}>说明</span>
+                    </Tooltip>
+                  }
+                >
+                  {data!.reject_reasons.slice(0, 8).map((r, i) => (
+                    <div className="wb-reject-row" key={r.reason}>
+                      <div className="wb-reject-top">
+                        <span>{r.reason}</span>
+                        <b>{r.count} 人</b>
+                      </div>
+                      <div className="funnel-analysis-bar">
+                        <div
+                          className="funnel-analysis-fill"
+                          style={{
+                            width: `${Math.max(3, (r.count / data!.reject_reasons[0].count) * 100)}%`,
+                            background: "#ef4444",
+                          }}
+                        />
+                      </div>
+                      {i === 7 && data!.reject_reasons.length > 8 && (
+                        <div className="wb-reject-more">另有 {data!.reject_reasons.length - 8} 类原因（见导出）</div>
+                      )}
                     </div>
-                    {i === 7 && data!.reject_reasons.length > 8 && (
-                      <div className="wb-reject-more">另有 {data!.reject_reasons.length - 8} 类原因（见导出）</div>
-                    )}
-                  </div>
-                ))}
-              </Card>
-            )}
-          </Col>
-        </Row>
+                  ))}
+                </Card>
+              ),
+            });
+          }
+
+          // 贪心落位：放进累计高度较小的那一列（+16 为列内 gap）
+          const cols: { key: string; node: ReactNode }[][] = [[], []];
+          const colH = [0, 0];
+          for (const m of modules) {
+            const t = colH[0] <= colH[1] ? 0 : 1;
+            cols[t].push(m);
+            colH[t] += m.h + 16;
+          }
+          return (
+            <div className="wb-cols">
+              {cols.map((col, ci) => (
+                <div className="wb-col" key={ci}>
+                  {col.map((m) => (
+                    <div key={m.key}>{m.node}</div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        })()
       )}
 
       <WorkbenchModulesModal

@@ -288,6 +288,49 @@ interviews.put("/:id", async (c) => {
   return c.json({ ok: true, item: decorate(row), advanced_to: advancedTo });
 });
 
+/**
+ * 快捷更新（列表行内改期 / 快捷状态）：只更新传入的字段，不动评价相关字段。
+ * 与 PUT /:id 的区别：PUT 是完整表单提交（含评价与自动推进联动），这里是轻量单字段修改。
+ */
+interviews.patch("/:id", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const id = c.req.param("id");
+  const exist = await c.env.DB.prepare("SELECT * FROM interviews WHERE id = ?").bind(id).first<any>();
+  if (!exist) return c.json({ error: "面试记录不存在" }, 404);
+  // admin 可操作全部面试（列表/详情同样放开），普通用户只能操作自己安排的
+  if (session.role !== "admin" && exist.owner_id !== session.userId) return c.json({ error: "无权操作该面试记录" }, 403);
+
+  let b: { status?: string; scheduled_at?: string | null; duration?: number };
+  try { b = await c.req.json(); } catch { return c.json({ error: "请求参数格式不正确" }, 400); }
+  if (b.status === undefined && b.scheduled_at === undefined && b.duration === undefined) {
+    return c.json({ error: "没有可更新的字段" }, 400);
+  }
+  if (b.status !== undefined && !["scheduled", "done", "cancelled", "no_show"].includes(b.status)) {
+    return c.json({ error: "状态值不合法" }, 400);
+  }
+  if (b.duration !== undefined && b.duration !== null && (b.duration < 5 || b.duration > 600)) {
+    return c.json({ error: "时长需在 5-600 分钟之间" }, 400);
+  }
+  if (b.scheduled_at != null && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(b.scheduled_at)) {
+    return c.json({ error: "面试时间格式不正确" }, 400);
+  }
+
+  // 动态拼 SET：占位符与绑定值同序同量，避免参数错位导致 500
+  const sets: string[] = [];
+  const vals: (string | number | null)[] = [];
+  if (b.status !== undefined) { sets.push("status = ?"); vals.push(b.status); }
+  if (b.scheduled_at !== undefined) { sets.push("scheduled_at = ?"); vals.push(b.scheduled_at ? b.scheduled_at.trim() : null); }
+  if (b.duration !== undefined) { sets.push("duration = ?"); vals.push(b.duration ?? 60); }
+  sets.push("updated_at = datetime('now')");
+  vals.push(id);
+
+  await c.env.DB.prepare(`UPDATE interviews SET ${sets.join(", ")} WHERE id = ?`).bind(...vals).run();
+  const row = await c.env.DB.prepare(`${SELECT_SQL} WHERE iv.id = ?`).bind(id).first();
+  return c.json({ ok: true, item: decorate(row) });
+});
+
 /** 删除面试记录 */
 interviews.delete("/:id", async (c) => {
   const session = await getSession(c);

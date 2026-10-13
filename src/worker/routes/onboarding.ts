@@ -88,7 +88,7 @@ onboarding.post("/", async (c) => {
   return c.json({ ok: true, id });
 });
 
-/** 更新材料状态 / 备注 */
+/** 更新材料状态 / 备注 / 必交（只更新传入字段：行内快捷切状态时不会误重置其它字段） */
 onboarding.put("/:id", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
@@ -97,20 +97,31 @@ onboarding.put("/:id", async (c) => {
   if (!row) return c.json({ error: "材料项不存在" }, 404);
   if (row.owner_id !== session.userId && session.role !== "admin") return c.json({ error: "无权操作" }, 403);
 
-  let b: any;
+  let b: { status?: string; remark?: string | null; required?: boolean | number };
   try { b = await c.req.json(); } catch { return c.json({ error: "请求参数格式不正确" }, 400); }
-  await c.env.DB.prepare(`
-    UPDATE onboarding_items SET status = ?, remark = ?, required = ?,
-      submitted_at = CASE WHEN ? = 'pending' THEN NULL ELSE COALESCE(submitted_at, datetime('now')) END,
-      updated_at = datetime('now')
-    WHERE id = ?
-  `).bind(
-    b.status || "pending",
-    b.remark ?? null,
-    b.required === false ? 0 : 1,
-    b.status || "pending",
-    id
-  ).run();
+  if (b.status === undefined && b.remark === undefined && b.required === undefined) {
+    return c.json({ error: "没有可更新的字段" }, 400);
+  }
+  if (b.status !== undefined && !["pending", "submitted", "verified"].includes(b.status)) {
+    return c.json({ error: "状态值不合法" }, 400);
+  }
+
+  // 动态拼 SET：占位符与绑定值同序同量；未传字段保持原值
+  const sets: string[] = [];
+  const vals: (string | number | null)[] = [];
+  if (b.status !== undefined) {
+    sets.push("status = ?");
+    vals.push(b.status);
+    // 退回待提交清空提交时间；提交/核验时补记首次提交时间
+    sets.push("submitted_at = CASE WHEN ? = 'pending' THEN NULL ELSE COALESCE(submitted_at, datetime('now')) END");
+    vals.push(b.status);
+  }
+  if (b.remark !== undefined) { sets.push("remark = ?"); vals.push(b.remark ? String(b.remark).trim() || null : null); }
+  if (b.required !== undefined) { sets.push("required = ?"); vals.push(b.required === false || b.required === 0 ? 0 : 1); }
+  sets.push("updated_at = datetime('now')");
+  vals.push(id);
+
+  await c.env.DB.prepare(`UPDATE onboarding_items SET ${sets.join(", ")} WHERE id = ?`).bind(...vals).run();
   return c.json({ ok: true });
 });
 

@@ -583,6 +583,9 @@ export const api = {
   updateInterview: (id: string, data: Partial<Interview>) =>
     request<{ ok: boolean; item: Interview; advanced_to?: string | null }>(`/interviews/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteInterview: (id: string) => request<{ ok: boolean }>(`/interviews/${id}`, { method: "DELETE" }),
+  // 行内快捷更新（列表改期/快捷状态）：只传需要改的字段，不动评价字段，也不触发自动推进
+  quickUpdateInterview: (id: string, data: { status?: string; scheduled_at?: string | null; duration?: number }) =>
+    request<{ ok: boolean; item: Interview }>(`/interviews/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
   // AI 面试评价总结：面试官填完评价后一键生成结构化总结
   aiInterviewSummary: (id: string) =>

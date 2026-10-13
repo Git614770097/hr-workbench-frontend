@@ -1693,6 +1693,17 @@ html[data-theme-mode="dark"] .wb-pal-swatch { box-shadow: 0 0 0 1px rgba(255, 25
   font-size: 1rem; font-weight: 600; color: #1f2937;
 }
 
+/* ---- 分析层双列：各模块 50% 等宽 ----
+   模块扁平化后按估算高度贪心落位（见 Funnel.tsx），隐藏模块后自动补位；
+   列内间距统一走 gap，组件残留的 marginTop（如 OverviewPanel）在此归零避免叠加。
+   <992px 退化为单列，与原 Row/Col 响应式行为一致。 */
+.wb-cols { display: flex; gap: 16px; align-items: flex-start; }
+.wb-cols > .wb-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.wb-cols .ant-card { margin-top: 0 !important; }
+@media (max-width: 991px) {
+  .wb-cols { flex-direction: column; }
+}
+
 /* ---- 漏斗内诊断提示（原「结论」卡精简）---- */
 .wb-diagnosis {
   margin-top: 12px; padding: 10px 12px; border-radius: 8px;

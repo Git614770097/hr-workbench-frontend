@@ -3,12 +3,13 @@ import { Link } from "react-router-dom";
 import {
   Card, Table, Input, Select, Button, Space, Tag, Modal, Form, message,
   DatePicker, InputNumber, Alert, Typography, Popconfirm, Empty, Rate, Tooltip, Tabs,
+  Dropdown,
 } from "antd";
 import {
   SearchOutlined, ReloadOutlined, PlusOutlined, VideoCameraOutlined,
   EnvironmentOutlined, PhoneOutlined, CalendarOutlined, ClockCircleOutlined,
   FieldTimeOutlined, CheckCircleOutlined, InfoCircleOutlined, UserOutlined,
-  RobotOutlined,
+  RobotOutlined, CloseCircleOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
@@ -334,27 +335,73 @@ export default function Interviews() {
     }
   };
 
+  // ---- 行内快捷操作（免开编辑弹窗）----
+  // 快捷状态：待面试 → 已完成/未到/已取消，点状态标签直接改
+  const quickStatus = async (row: Interview, next: "done" | "no_show" | "cancelled") => {
+    try {
+      await api.quickUpdateInterview(row.id, { status: next });
+      message.success(
+        `「${row.talent_name}」已标记为「${INTERVIEW_STATUS_LABELS[next]}」` +
+        (next === "done" ? "，可点「编辑/评价」补录评价" : "")
+      );
+      load();
+    } catch (e) {
+      message.error((e as Error).message);
+    }
+  };
+
+  // 行内改期：点列表时间列弹小窗改时间/时长
+  const [resched, setResched] = useState<{ row: Interview; date: dayjs.Dayjs | null; duration: number | null } | null>(null);
+  const [reschedSaving, setReschedSaving] = useState(false);
+  const saveResched = async () => {
+    if (!resched) return;
+    setReschedSaving(true);
+    try {
+      await api.quickUpdateInterview(resched.row.id, {
+        scheduled_at: resched.date ? resched.date.format("YYYY-MM-DD HH:mm") : null,
+        duration: resched.duration ?? undefined,
+      });
+      message.success(`「${resched.row.talent_name}」面试时间已更新`);
+      setResched(null);
+      load();
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setReschedSaving(false);
+    }
+  };
+
   // 结果 Tag 配色
   const resultColor = (res: string | null | undefined) =>
     res === "pass" ? "green" : res === "fail" ? "red" : res === "pending" ? "gold" : "default";
   const statusColor = (s: string) =>
     s === "done" ? "green" : s === "cancelled" ? "default" : s === "no_show" ? "orange" : "blue";
 
-  // 时间展示：今天高亮 + 已过期标注
+  // 时间展示：今天高亮 + 已过期标注；点击直接改期（免开编辑弹窗）
   const timeCell = (r: Interview) => {
-    if (!r.scheduled_at) return <Typography.Text type="secondary">未安排</Typography.Text>;
+    const openResched = () =>
+      setResched({ row: r, date: r.scheduled_at ? dayjs(r.scheduled_at) : null, duration: r.duration ?? 60 });
+    if (!r.scheduled_at) {
+      return <a onClick={openResched} style={{ fontSize: 12 }}>未安排 · 点击安排</a>;
+    }
     const timeTxt = String(r.scheduled_at).slice(11, 16);
+    // 时长跟在时间后展示（此前该字段填了但无处可见）
+    const durationTxt = r.duration ? <span style={{ color: "#9aa0aa", fontSize: 12 }}> {r.duration}分钟</span> : null;
     if (r.is_today) {
       return (
         <Space size={6}>
           <Tag color="blue" style={{ marginInlineEnd: 0 }}>今天</Tag>
-          <span>{timeTxt}</span>
+          <Tooltip title="点击改期">
+            <a onClick={openResched}>{timeTxt}{durationTxt}</a>
+          </Tooltip>
         </Space>
       );
     }
     return (
       <Space size={6}>
-        <span>{String(r.scheduled_at).slice(5, 10)} {timeTxt}</span>
+        <Tooltip title="点击改期">
+          <a onClick={openResched}>{String(r.scheduled_at).slice(5, 10)} {timeTxt}{durationTxt}</a>
+        </Tooltip>
         {r.is_overdue ? <Tag color="red" style={{ marginInlineEnd: 0 }}>已过期</Tag> : null}
       </Space>
     );
@@ -387,7 +434,7 @@ export default function Interviews() {
     {
       title: "面试时间",
       key: "time",
-      width: 170,
+      width: 185,
       render: (_: unknown, r: Interview) => timeCell(r),
     },
     {
@@ -436,7 +483,29 @@ export default function Interviews() {
       title: "状态",
       key: "status",
       width: 90,
-      render: (_: unknown, r: Interview) => <Tag color={statusColor(r.status)}>{r.status_label}</Tag>,
+      render: (_: unknown, r: Interview) => {
+        // 待面试：点标签直接快捷改状态（完成/未到/取消），免进编辑弹窗
+        if (r.status === "scheduled") {
+          return (
+            <Dropdown
+              trigger={["click"]}
+              menu={{
+                items: [
+                  { key: "done", label: "标记为已完成", icon: <CheckCircleOutlined /> },
+                  { key: "no_show", label: "标记为未到", icon: <ClockCircleOutlined /> },
+                  { key: "cancelled", label: "标记为已取消", icon: <CloseCircleOutlined /> },
+                ],
+                onClick: ({ key }) => quickStatus(r, key as "done" | "no_show" | "cancelled"),
+              }}
+            >
+              <Tag color={statusColor(r.status)} style={{ cursor: "pointer" }} title="点击快捷更新状态">
+                {r.status_label}
+              </Tag>
+            </Dropdown>
+          );
+        }
+        return <Tag color={statusColor(r.status)}>{r.status_label}</Tag>;
+      },
     },
     {
       title: "评价",
@@ -639,6 +708,44 @@ export default function Interviews() {
           pagination={{ pageSize: 10, showSizeChanger: false, showTotal: (t) => `共 ${t} 条` }}
         />
       </Card>
+
+      {/* 行内改期：点列表时间列直接弹小窗，免开完整编辑弹窗 */}
+      <Modal
+        title={`改期 · ${resched?.row.talent_name || ""}`}
+        open={!!resched}
+        onCancel={() => setResched(null)}
+        onOk={saveResched}
+        confirmLoading={reschedSaving}
+        okText="保存"
+        cancelText="取消"
+        width={380}
+        destroyOnClose
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 4 }}>面试时间</Typography.Text>
+            <DatePicker
+              showTime={{ format: "HH:mm", minuteStep: 15 }}
+              format="YYYY-MM-DD HH:mm"
+              style={{ width: "100%" }}
+              placeholder="选择面试时间"
+              value={resched?.date ?? null}
+              onChange={(d) => setResched((s) => (s ? { ...s, date: d } : s))}
+            />
+          </div>
+          <div>
+            <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 4 }}>时长（分钟）</Typography.Text>
+            <InputNumber
+              min={15}
+              max={480}
+              step={15}
+              style={{ width: "100%" }}
+              value={resched?.duration ?? 60}
+              onChange={(v) => setResched((s) => (s ? { ...s, duration: v } : s))}
+            />
+          </div>
+        </div>
+      </Modal>
 
       {/* 安排 / 编辑面试：基础信息 / 面试评价 / 用人部门评价 三个 Tab */}
       <Modal

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Button, Space, Tag, Modal, Form, Input, message, Progress,
-  Popconfirm, Empty, Typography, Checkbox, Select, Divider,
+  Popconfirm, Empty, Typography, Checkbox, Select, Divider, Dropdown,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined, UserOutlined,
@@ -24,6 +24,8 @@ export default function Onboarding() {
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 全部视图下隐藏「材料全部核验完」的候选人（办结归档，避免越堆越多）；默认隐藏可切回
+  const [hideDone, setHideDone] = useState(true);
 
   // 候选人搜索（与「新增合同」同一套可搜索下拉，避免让用户手填 ID）
   const searchTalents = useCallback(async (q: string) => {
@@ -72,9 +74,14 @@ export default function Onboarding() {
     }
   };
 
+  // 状态三态互切（支持回退）：点状态标签直接改，退回待提交会清空提交时间（后端处理）
   const handleToggle = async (row: OnboardingItem, next: "pending" | "submitted" | "verified") => {
+    if (row.status === next) return;
     try {
       await api.updateOnboardingItem(row.id, { status: next });
+      message.success(
+        next === "pending" ? "已退回「待提交」" : `已标记为「${ONBOARDING_STATUS_LABELS[next]}」`
+      );
       load();
     } catch (e) {
       message.error((e as Error).message);
@@ -100,14 +107,36 @@ export default function Onboarding() {
   const statusColor = (s: string) => (s === "verified" ? "green" : s === "submitted" ? "blue" : "default");
 
   // 分组：选了候选人按「材料分组」看细节；没选则按「候选人」看全部在办人
-  const grouped = useMemo(() => {
+  interface Group { key: string; label: string; sub: string; list: OnboardingItem[] }
+  const groups = useMemo((): Group[] => {
+    if (talentId) {
+      // 单人视图：按材料分组，顶部进度条已覆盖整体进度
+      const acc: Record<string, OnboardingItem[]> = {};
+      for (const it of items) {
+        const k = it.category || "其他材料";
+        (acc[k] = acc[k] || []).push(it);
+      }
+      return Object.entries(acc).map(([label, list]) => ({ key: label, label, sub: "", list }));
+    }
+    // 全部视图：按候选人分组，分组头带岗位与完成进度（非待提交即视为完成，与顶部口径一致）
     const acc: Record<string, OnboardingItem[]> = {};
     for (const it of items) {
-      const k = talentId ? (it.category || "其他材料") : (it.talent_name || "未命名候选人");
-      (acc[k] = acc[k] || []).push(it);
+      (acc[it.talent_id] = acc[it.talent_id] || []).push(it);
     }
-    return acc;
-  }, [items, talentId]);
+    const list: Group[] = Object.values(acc).map((g) => {
+      const done = g.filter((r) => r.status !== "pending").length;
+      const first = g[0];
+      return {
+        key: first.talent_id,
+        label: first.talent_name || "未命名候选人",
+        sub: [first.job_title, `${done}/${g.length} 项`].filter(Boolean).join(" · "),
+        list: g,
+      };
+    });
+    // 隐藏已办结：材料全部核验完的候选人不再出现在「全部在办人」里
+    if (hideDone) return list.filter((g) => g.list.some((r) => r.status !== "verified"));
+    return list;
+  }, [items, talentId, hideDone]);
 
   return (
     <div className="page-fill profiles-page">
@@ -176,6 +205,14 @@ export default function Onboarding() {
             </Button>
           </Space>
           <Space>
+            {!talentId && (
+              <Checkbox
+                checked={hideDone}
+                onChange={(e) => setHideDone(e.target.checked)}
+              >
+                隐藏已办结
+              </Checkbox>
+            )}
             <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
           </Space>
         </div>
@@ -188,14 +225,27 @@ export default function Onboarding() {
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             style={{ margin: 0 }}
           />
+        ) : groups.length === 0 && !loading ? (
+          <Empty
+            description="没有进行中的入职办理：清单都已办结（已隐藏，可勾掉右上角「隐藏已办结」查看）"
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            style={{ margin: 0 }}
+          />
         ) : (
-          Object.entries(grouped).map(([cat, list]) => (
-            <div key={cat} style={{ marginBottom: 8 }}>
-              <Divider orientation="left" plain>{cat}</Divider>
+          groups.map((g) => (
+            <div key={g.key} style={{ marginBottom: 8 }}>
+              <Divider orientation="left" plain>
+                {g.label}
+                {g.sub && (
+                  <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400, marginInlineStart: 8 }}>
+                    {g.sub}
+                  </Typography.Text>
+                )}
+              </Divider>
               <Table<OnboardingItem>
                 className="profiles-table"
                 rowKey="id"
-                dataSource={list}
+                dataSource={g.list}
                 size="small"
                 pagination={false}
                 columns={[
@@ -224,26 +274,34 @@ export default function Onboarding() {
                     dataIndex: "status",
                     key: "status",
                     width: 110,
-                    render: (v: string) => <Tag color={statusColor(v)}>{ONBOARDING_STATUS_LABELS[v] || v}</Tag>,
+                    render: (v: string, r: OnboardingItem) => (
+                      // 点状态标签三态互切（支持回退），替代原先两个常驻按钮
+                      <Dropdown
+                        trigger={["click"]}
+                        menu={{
+                          items: (["pending", "submitted", "verified"] as const).map((s) => ({
+                            key: s,
+                            label: ONBOARDING_STATUS_LABELS[s],
+                          })),
+                          onClick: ({ key }) => handleToggle(r, key as "pending" | "submitted" | "verified"),
+                        }}
+                      >
+                        <Tag color={statusColor(v)} style={{ cursor: "pointer" }} title="点击切换状态">
+                          {ONBOARDING_STATUS_LABELS[v] || v}
+                        </Tag>
+                      </Dropdown>
+                    ),
                   },
                   {
                     title: "操作",
                     key: "act",
-                    width: 220,
+                    width: 70,
                     render: (_: unknown, r: OnboardingItem) => (
-                      <Space size={4} wrap>
-                        <Button size="small" onClick={() => handleToggle(r, "submitted")} disabled={r.status !== "pending"}>
-                          标记已提交
-                        </Button>
-                        <Button size="small" onClick={() => handleToggle(r, "verified")} disabled={r.status === "verified"}>
-                          标记已核验
-                        </Button>
-                        <Popconfirm title="删除该项？" onConfirm={async () => {
-                          try { await api.deleteOnboardingItem(r.id); load(); } catch (e) { message.error((e as Error).message); }
-                        }} okText="删除" cancelText="取消">
-                          <Button type="link" size="small" danger>删除</Button>
-                        </Popconfirm>
-                      </Space>
+                      <Popconfirm title="删除该项？" onConfirm={async () => {
+                        try { await api.deleteOnboardingItem(r.id); load(); } catch (e) { message.error((e as Error).message); }
+                      }} okText="删除" cancelText="取消">
+                        <Button type="link" size="small" danger>删除</Button>
+                      </Popconfirm>
                     ),
                   },
                 ]}
