@@ -109,7 +109,7 @@ export default function AiResultCard({
               {copied ? "已复制" : "复制全部"}
             </Button>
           ) : null}
-          <Button size="small" type="primary" ghost icon={<ReloadOutlined />} loading={loading} onClick={run}>
+          <Button className="ai-btn" size="small" icon={<ReloadOutlined />} loading={loading} onClick={run}>
             {data ? "重新生成" : "生成"}
           </Button>
         </Space>

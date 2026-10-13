@@ -5,7 +5,7 @@ import {
 } from "antd";
 import type { InputRef } from "antd";
 import {
-  PlusOutlined, ThunderboltOutlined,
+  PlusOutlined, RobotOutlined,
   SearchOutlined, ReloadOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
@@ -457,9 +457,8 @@ export default function Profiles() {
                 style={{ flex: 1, minWidth: 0 }}
               />
               <Button
-                type="primary"
-                ghost
-                icon={<ThunderboltOutlined />}
+                className="ai-btn"
+                icon={<RobotOutlined />}
                 loading={genJd}
                 onClick={handleGenJd}
                 style={{ flexShrink: 0 }}
@@ -483,9 +482,9 @@ export default function Profiles() {
                   {jd.trim() ? `当前 ${jd.trim().length} 字` : "还没有内容"}
                 </Typography.Text>
                 <Button
-                  type="primary"
+                  className="ai-btn"
                   size="small"
-                  icon={<ThunderboltOutlined />}
+                  icon={<RobotOutlined />}
                   loading={generating}
                   onClick={handleGenerate}
                 >

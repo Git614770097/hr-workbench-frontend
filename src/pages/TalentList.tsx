@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
   Popconfirm, message, Dropdown, Alert, Modal, Empty, Form, Radio,
-  Checkbox, Popover,
+  Checkbox, Popover, Tooltip,
 } from "antd";
 import {
   ImportOutlined, FilePdfOutlined, ExportOutlined,
@@ -736,7 +736,9 @@ export default function TalentList() {
               <Button icon={<SettingOutlined />}>列设置</Button>
             </Popover>
             {/* AI 盘点：按当前筛选口径生成储备简报，打开后自动生成 */}
-            <Button icon={<RobotOutlined />} onClick={genInventory}>AI 盘点</Button>
+            <Tooltip title="按当前筛选口径，让 AI 生成人才储备画像、缺口与运营建议">
+              <Button className="ai-btn" icon={<RobotOutlined />} onClick={genInventory}>AI 盘点</Button>
+            </Tooltip>
           </Space>
           <Space>
             {fieldDefs.length > COLLAPSED_COUNT && (

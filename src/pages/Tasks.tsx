@@ -515,15 +515,24 @@ export default function Tasks() {
               >
                 新建待办
               </Button>
-              <Button
-                size="small"
-                icon={<RobotOutlined />}
-                onClick={genFocus}
-                loading={focus.loading}
-                disabled={focusCandidates.length === 0}
+              <Tooltip
+                title={
+                  focusCandidates.length === 0
+                    ? "暂无可排的待办（逾期 / 今日 / 未来 7 天）：先新建待办，再来让 AI 排优先级"
+                    : "让 AI 结合候选人实时状态，排出今天先处理哪几件事"
+                }
               >
-                AI 排今日重点
-              </Button>
+                <Button
+                  className="ai-btn"
+                  size="small"
+                  icon={<RobotOutlined />}
+                  onClick={genFocus}
+                  loading={focus.loading}
+                  disabled={focusCandidates.length === 0}
+                >
+                  AI 排今日重点
+                </Button>
+              </Tooltip>
             </Space>
           }
           extra={

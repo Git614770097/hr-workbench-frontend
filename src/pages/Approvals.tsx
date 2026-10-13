@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Tabs, Table, Button, Space, Tag, Modal, Form, Input, message,
-  Popconfirm, Empty, Typography, Alert, Steps, Select,
+  Popconfirm, Empty, Typography, Alert, Steps, Select, Tooltip,
 } from "antd";
 import { PlusOutlined, ReloadOutlined, RobotOutlined } from "@ant-design/icons";
 import { api } from "../api";
@@ -364,9 +364,17 @@ function InstanceList() {
             </div>
           ) : (
             <div>
-              <Button size="small" icon={<RobotOutlined />} onClick={genSummary} disabled={!decideTarget}>
-                AI 摘要：10 秒看懂批的是什么
-              </Button>
+              <Tooltip
+                title={
+                  !decideTarget
+                    ? "先选择一条审批"
+                    : "10 秒看懂批的是什么：AI 把候选人、岗位、条件与风险点浓缩成一屏（只摆事实，不给批准/驳回结论）"
+                }
+              >
+                <Button className="ai-btn" size="small" icon={<RobotOutlined />} onClick={genSummary} disabled={!decideTarget}>
+                  AI 摘要
+                </Button>
+              </Tooltip>
               {aiSum.err && decideTarget && (
                 <div style={{ marginTop: 6, fontSize: 12, color: "#ad6800" }}>
                   AI 暂不可用（{aiSum.err}）。可看：{decideTarget.title}（发起于 {Math.max(0, Math.floor((Date.now() - new Date(decideTarget.created_at.replace(" ", "T") + "Z").getTime()) / 86400000))} 天前，当前第 {(decideTarget.current_step ?? 0) + 1} 环）。

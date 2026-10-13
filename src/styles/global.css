@@ -1808,3 +1808,38 @@ html[data-theme-mode="dark"] .wb-mod-item-desc { color: #6b7280; }
 .job-link:hover { text-decoration: underline; opacity: 0.85; }
 .job-badge-link { display: inline-flex; align-items: center; transition: opacity 0.2s; }
 .job-badge-link:hover { opacity: 0.75; }
+
+/* ===== 统一 AI 入口按钮（.ai-btn）=====
+   全系统 AI 触发入口统一视觉：淡紫底 + 紫字 + 机器人图标，与结果卡「AI 生成」紫色角标呼应，
+   让用户形成「紫色机器人按钮 = AI 能力」的一致认知。
+   用 !important 覆盖 antd Button 默认态/悬停态——否则会被 .ant-btn-default:not(:disabled):hover 盖掉。 */
+.ai-btn:not(:disabled) {
+  color: #722ed1 !important;
+  border-color: #d3adf7 !important;
+  background: #f9f0ff !important;
+}
+.ai-btn:not(:disabled):hover {
+  color: #9254de !important;
+  border-color: #9254de !important;
+  background: #efdbff !important;
+}
+.ai-btn:disabled {
+  color: rgba(0, 0, 0, 0.25) !important;
+  border-color: #d9d9d9 !important;
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+html[data-theme-mode="dark"] .ai-btn:not(:disabled) {
+  color: #b37feb !important;
+  border-color: #4b3a63 !important;
+  background: #1f1730 !important;
+}
+html[data-theme-mode="dark"] .ai-btn:not(:disabled):hover {
+  color: #d3adf7 !important;
+  border-color: #9254de !important;
+  background: #241a38 !important;
+}
+html[data-theme-mode="dark"] .ai-btn:disabled {
+  color: rgba(255, 255, 255, 0.3) !important;
+  border-color: #303030 !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+}

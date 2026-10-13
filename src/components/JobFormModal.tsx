@@ -259,10 +259,10 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
           <span style={{ fontSize: 12.5, color: "#8c8c8c" }}>
             {termFor(profile, "职责 / 要求可 AI 起草；已有文案可 AI 优化，生成后请核对")}
           </span>
-          <Button icon={<RobotOutlined />} loading={aiFilling} onClick={handleAiFill}>
+          <Button className="ai-btn" icon={<RobotOutlined />} loading={aiFilling} onClick={handleAiFill}>
             {termFor(profile, "AI 一键起草")}
           </Button>
-          <Button icon={<RobotOutlined />} loading={aiFilling} disabled={aiFilling} onClick={handleAiOptimize} style={{ marginInlineStart: 8 }}>
+          <Button className="ai-btn" icon={<RobotOutlined />} loading={aiFilling} disabled={aiFilling} onClick={handleAiOptimize} style={{ marginInlineStart: 8 }}>
             {termFor(profile, "AI 优化文案")}
           </Button>
         </div>

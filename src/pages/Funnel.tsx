@@ -629,7 +629,9 @@ export default function Funnel() {
               ]}
             />
           )}
-          <Button size="small" icon={<RobotOutlined />} onClick={genRecap} loading={recapLoading} disabled={!data}>AI 复盘</Button>
+          <Tooltip title="按当前筛选口径，让 AI 写出叙述性复盘（瓶颈 + 建议），可复制用于汇报">
+            <Button className="ai-btn" size="small" icon={<RobotOutlined />} onClick={genRecap} loading={recapLoading} disabled={!data}>AI 复盘</Button>
+          </Tooltip>
           <Button size="small" icon={<FileExcelOutlined />} onClick={exportWorkbook} disabled={!data}>导出汇报 Excel</Button>
           <Button size="small" icon={<DownloadOutlined />} onClick={exportFunnel} disabled={!data}>导出数据</Button>
         </Space>

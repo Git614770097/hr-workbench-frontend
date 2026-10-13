@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Button, Space, Tag, Modal, Form, Input, message, Progress,
-  Popconfirm, Empty, Typography, Checkbox, Select, Divider, Dropdown, Alert,
+  Popconfirm, Empty, Typography, Checkbox, Select, Divider, Dropdown, Alert, Tooltip,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined, UserOutlined, RobotOutlined,
@@ -237,17 +237,37 @@ export default function Onboarding() {
         {/* 工具行：左侧数据操作，右侧刷新 */}
         <div className="toolbar">
           <Space>
-            <Button
-              type="primary" icon={<ThunderboltOutlined />}
-              onClick={handleInit}
-              disabled={!talentId || items.length > 0}
+            <Tooltip
+              title={
+                !talentId
+                  ? "先在右上角选择一位候选人"
+                  : items.length > 0
+                    ? "已有清单；如需补充材料请用「AI 生成清单」或「添加材料项」"
+                    : "生成标准入职材料清单（固定模板）"
+              }
             >
-              一键生成默认清单
-            </Button>
+              <Button
+                type="primary" icon={<ThunderboltOutlined />}
+                onClick={handleInit}
+                disabled={!talentId || items.length > 0}
+              >
+                一键生成默认清单
+              </Button>
+            </Tooltip>
             {/* AI 生成：按岗位/城市出材料初稿，已有清单时也可用来补充材料 */}
-            <Button icon={<RobotOutlined />} onClick={genChecklist} disabled={!talentId || aiCheck.loading}>
-              AI 生成清单
-            </Button>
+            <Tooltip
+              title={
+                !talentId
+                  ? "先在右上角选择一位候选人"
+                  : aiCheck.loading
+                    ? "正在生成…"
+                    : "AI 按岗位与城市生成材料初稿，可先预览勾选再入库（比「默认清单」更贴合岗位）"
+              }
+            >
+              <Button className="ai-btn" icon={<RobotOutlined />} onClick={genChecklist} disabled={!talentId || aiCheck.loading}>
+                AI 生成清单
+              </Button>
+            </Tooltip>
             <Button
               icon={<PlusOutlined />}
               onClick={() => { form.resetFields(); setOpen(true); }}

@@ -168,7 +168,9 @@ export default function TalentDetail() {
         </Space>
         <Space>
           <Button icon={<EditOutlined />} onClick={() => setEditModalOpen(true)}>编辑</Button>
-          <Button icon={<RobotOutlined />} onClick={() => setOutreachOpen(true)}>AI 沟通文案</Button>
+          <Tooltip title="按场景生成邀约 / 婉拒 / 跟进话术，复制后由你自行发送">
+            <Button className="ai-btn" icon={<RobotOutlined />} onClick={() => setOutreachOpen(true)}>AI 沟通文案</Button>
+          </Tooltip>
           <Popconfirm title="确认删除？所有关联数据将被清除。" onConfirm={handleDeleteTalent}>
             <Button danger icon={<DeleteOutlined />}>删除</Button>
           </Popconfirm>

@@ -892,7 +892,9 @@ export default function Pipeline() {
                 </div>
               ) : (
                 <>
-                  <Button size="small" icon={<RobotOutlined />} onClick={() => genAiTip(drawer.card!)}>生成 AI 建议</Button>
+                  <Tooltip title="结合阶段、停留天数、备注与评分，给出下一步动作建议与跟进话术草稿">
+                    <Button className="ai-btn" size="small" icon={<RobotOutlined />} onClick={() => genAiTip(drawer.card!)}>AI 建议</Button>
+                  </Tooltip>
                   {aiTip.err && (
                     <Alert
                       type="warning" showIcon style={{ marginTop: 8 }}

@@ -550,7 +550,9 @@ export default function Jobs() {
                 </div>
               ) : (
                 <>
-                  <Button size="small" icon={<RobotOutlined />} onClick={genDiagnosis}>AI 诊断：为什么招人慢</Button>
+                  <Tooltip title="结合该岗位的漏斗、各阶段停留与画像，分析「为什么招人慢」并给改进建议">
+                    <Button className="ai-btn" size="small" icon={<RobotOutlined />} onClick={genDiagnosis}>AI 诊断</Button>
+                  </Tooltip>
                   {diag.err && (
                     <div
                       style={{

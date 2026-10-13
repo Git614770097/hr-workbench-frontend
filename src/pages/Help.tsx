@@ -192,12 +192,46 @@ const CATEGORIES: Category[] = [
       {
         q: "系统里有哪些 AI 能力？",
         a: (
+          <>
+            <Paragraph type="secondary" style={{ marginBottom: 4 }}>
+              所有 AI 入口统一为「紫色底 + 机器人图标」的按钮，鼠标悬停可看用途说明。按模块列：
+            </Paragraph>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              <IfPerm any={["/jobs"]}>
+                <li><Text type="secondary">岗位管理：新增 / 编辑岗位「AI 一键起草」「AI 优化文案」；岗位详情「AI 诊断」分析为什么招人慢</Text></li>
+              </IfPerm>
+              <IfPerm any={["/profiles"]}>
+                <li><Text type="secondary">人才画像：「AI 生成 JD」「AI 生成画像」（生成后用于匹配度评分）</Text></li>
+              </IfPerm>
+              <IfPerm any={["/talents"]}>
+                <li><Text type="secondary">人才库：列表工具栏「AI 盘点」生成储备简报；导入简历时「AI 解读」做入库前预审</Text></li>
+                <li><Text type="secondary">人才详情：「AI 简历解读」看亮点与风险；「AI 沟通文案」生成邀约 / 婉拒 / 跟进话术</Text></li>
+              </IfPerm>
+              <IfPerm any={["/pipeline"]}>
+                <li><Text type="secondary">招聘看板：卡片详情「AI 建议」给出下一步动作与跟进话术草稿</Text></li>
+                <li><Text type="secondary">审批中心：通过 / 驳回弹窗「AI 摘要」10 秒看懂批的是什么 + 风险点（只摆事实，不给批准结论）</Text></li>
+                <li><Text type="secondary">入职办理：「AI 生成清单」按岗位与城市出材料初稿，预览勾选后再入库</Text></li>
+              </IfPerm>
+              <IfPerm any={["/funnel"]}>
+                <li><Text type="secondary">招聘概览：「AI 复盘」按当前筛选口径写出复盘结论（瓶颈 + 建议），可复制用于汇报</Text></li>
+              </IfPerm>
+              <IfPerm any={["/interviews"]}>
+                <li><Text type="secondary">面试管理：按候选人 + 岗位生成「面试问题清单」，评价后「AI 总结」</Text></li>
+              </IfPerm>
+              <IfPerm any={["/tasks"]}>
+                <li><Text type="secondary">待办日历：「AI 排今日重点」结合候选人实时状态，排出今天先处理哪几件事</Text></li>
+              </IfPerm>
+            </ul>
+          </>
+        ),
+      },
+      {
+        q: "AI 有次数限制吗？超时了怎么办？",
+        a: (
           <ul style={{ margin: 0, paddingLeft: 20 }}>
-            <li><Text type="secondary">人才画像页：「AI 生成 JD」「AI 生成画像」</Text></li>
-            <li><Text type="secondary">导入简历：自动解析简历内容并填入核对弹窗</Text></li>
-            <IfPerm any={["/contracts"]}>
-              <li><Text type="secondary">合同管理：从合同文件中智能提取签订日期</Text></li>
-            </IfPerm>
+            <li><Text type="secondary">普通用户每日有 AI 次数上限（默认 10 次，管理员不限），用完后当天自动重置</Text></li>
+            <li><Text type="secondary">对同一对象重复点击，10 分钟内直接读上次结果，不重复扣次数</Text></li>
+            <li><Text type="secondary">单次响应最长约一分钟；超时或服务不可用时页面会给出降级提示（如显示规则结论），不影响其他功能</Text></li>
           </ul>
         ),
       },
