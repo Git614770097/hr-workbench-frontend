@@ -1388,6 +1388,11 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 /* 审批进度 Steps：窄列内隐藏步骤间的横向连接线，避免待办列表每行「进度」格出现一条多余横线
    （步骤圆点 + 当前步高亮 + 文本保留，仅去连线；antd v5 用 :where() 降特异性，普通类选择器即可覆盖） */
 .approvals-page .profiles-table .ant-steps-item-tail { display: none; }
+/* 滚动表体末行去除底部边框：列表撑满后若行数少，末行下边框会浮在空白区中间，像一条多余横线
+   （行与行之间的分隔线保留，仅去末行下边框；antd v5 用 :where() 降特异性，普通类选择器即可覆盖） */
+.approvals-page .profiles-table .ant-table-body .ant-table-tbody > tr:last-child > td {
+  border-bottom: none;
+}
 
 /* ===== 我的推广（邀请码）弹窗 ===== */
 .referral-code-box {
