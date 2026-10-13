@@ -580,6 +580,110 @@ aiAssist.post("/recap-report", async (c) => {
   return c.json(result);
 });
 
+// ---------------------------------------------------------------- 看板卡片 AI 下一步建议
+// 输入 link_id：后端自查链路/候选人/岗位/面试并校验归属，输出决策建议 + 跟进话术草稿。
+// AI 只出草稿：话术必须用户手动复制，系统永不代发。
+aiAssist.post("/next-step", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  const body = await c.req.json<{ link_id?: string }>().catch(() => null);
+  if (!body?.link_id) return c.json({ error: "缺少候选人记录" }, 400);
+
+  const link = await c.env.DB
+    .prepare(
+      `SELECT tj.id, tj.stage, tj.rating, tj.notes AS stage_notes, tj.updated_at AS stage_updated_at,
+              tj.job_id, t.*
+       FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?`
+    )
+    .bind(body.link_id)
+    .first<any>();
+  if (!link) return c.json({ error: "候选人记录不存在" }, 404);
+  if (session.role !== "admin" && link.owner_id !== session.userId) {
+    return c.json({ error: "无权操作该候选人" }, 403);
+  }
+
+  const cached = await loadRecentArtifact(c.env.DB, session.userId, "next_step", link.id, "");
+  if (cached) return c.json({ ...cached, _cached: true });
+  const denied = await quotaGuard(c, session.userId);
+  if (denied) return denied;
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "未配置 AI 密钥，无法生成建议", code: "AI_NO_KEY" }, 500);
+  }
+
+  // 停留天数与 pipeline.ts 同算法（UTC 日差），不依赖前端传值
+  const stageDays = link.stage_updated_at
+    ? Math.max(0, Math.floor((Date.now() - new Date(link.stage_updated_at + "Z").getTime()) / 86400000))
+    : 0;
+
+  // 本岗位下一场待面试：已排期就不建议再约
+  const nextInterview = await c.env.DB
+    .prepare(
+      `SELECT scheduled_at FROM interviews
+       WHERE talent_id = ? AND job_id = ? AND status = 'pending' AND scheduled_at IS NOT NULL
+       ORDER BY scheduled_at ASC LIMIT 1`
+    )
+    .bind(link.talent_id, link.job_id)
+    .first<{ scheduled_at: string }>();
+
+  let jobText = "目标岗位：未指定";
+  if (link.job_id) {
+    const job = await c.env.DB.prepare("SELECT * FROM jobs WHERE id = ?").bind(link.job_id).first<any>();
+    if (job) {
+      jobText = `目标岗位：${job.title}（${job.department || "部门未填"}）\n任职要求：${truncate(maskPii(job.requirements || job.description || ""), 800) || "未填写"}`;
+    }
+  }
+
+  const STAGE_LABEL: Record<string, string> = {
+    applied: "已投递", screening: "简历筛选", interview1: "初试", interview2: "复试",
+    offer: "Offer", hired: "已入职", rejected: "已淘汰", withdrawn: "已放弃",
+  };
+
+  const system = `你是一名资深招聘负责人，基于候选人看板状态给招聘者一条明确的下一步动作建议。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+
+字段说明：
+- action: 动作类型，六选一："advance"（推进下一阶段）/ "arrange_interview"（安排面试）/ "push_offer"（推进 Offer 审批）/ "contact"（触达跟进）/ "standby"（转备选池）/ "drop"（建议淘汰）
+- suggestion: 一句话动作建议，不超过 50 字，要带具体时间（如「本周内」「2 天内」）
+- reasons: 2-3 条依据，每条不超过 35 字，必须引用给定事实（停留天数 / 备注 / 评分 / 面试安排）
+- draft: 招聘者可直接发出的跟进话术草稿（对候选人或部门负责人），不超过 120 字
+
+要求：
+1. 只基于给定信息判断；备注为空、评分缺失时给保守建议（contact / standby），不要臆造。
+2. 不要仅凭停留久就建议淘汰——没有备注佐证时先建议触达确认意向。
+3. 话术语气专业、平等，不施压不推销。`;
+
+  const userPrompt = `【候选人】\n${talentBrief(link)}\n\n【${jobText}】\n\n【看板状态】
+当前阶段：${STAGE_LABEL[link.stage] || link.stage}
+停留天数：${stageDays} 天
+阶段评分：${link.rating != null ? `${link.rating} / 5` : "未评分"}
+阶段备注：${truncate(maskPii(link.stage_notes || ""), 300) || "（无）"}
+已排面试：${nextInterview ? `有，${nextInterview.scheduled_at}` : "无"}
+
+请给出下一步动作建议。`;
+
+  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.4 });
+  if (!raw) {
+    return c.json({ error: "AI 暂时不可用，请稍后重试", code: "AI_UNAVAILABLE" }, 502);
+  }
+
+  const ACTIONS = ["advance", "arrange_interview", "push_offer", "contact", "standby", "drop"];
+  const suggestion = typeof raw.suggestion === "string" ? raw.suggestion.trim().slice(0, 60) : "";
+  if (!suggestion) {
+    return c.json({ error: "AI 未生成有效内容，请重试", code: "AI_EMPTY" }, 502);
+  }
+
+  const result = {
+    action: ACTIONS.includes(String(raw.action)) ? String(raw.action) : "contact",
+    suggestion,
+    reasons: toStringArray(raw.reasons, 3),
+    draft: typeof raw.draft === "string" ? raw.draft.trim().slice(0, 200) : "",
+  };
+  await saveArtifact(c.env.DB, session.userId, "next_step", link.id, "", result);
+  return c.json(result);
+});
+
 // ---------------------------------------------------------------- 读取已生成结果（GET）
 // 下次进入页面时直接展示历史产出，不重算、不扣配额。
 // 返回 { data: <上次结果或 null> }；data 带 _persisted 标记，前端据此标「已保存」。

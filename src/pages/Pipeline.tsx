@@ -11,10 +11,11 @@ import {
   HistoryOutlined, UserOutlined, MessageOutlined,
   SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, BarsOutlined,
   PhoneOutlined, CalendarOutlined, DownloadOutlined, FileTextOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
-import type { PipelineCard, PipelineResponse, Stage, StageLog, User, Job } from "../types";
+import type { PipelineCard, PipelineResponse, Stage, StageLog, User, Job, AiNextStep } from "../types";
 import {
   PIPELINE_STAGES, STAGE_META, PRIORITY_LABELS,
 } from "../types";
@@ -32,6 +33,12 @@ import OfferModal from "../components/OfferModal";
 const EMPTY_COLUMNS: Record<string, PipelineCard[]> = Object.fromEntries(
   PIPELINE_STAGES.map((s) => [s.key, []])
 );
+
+// AI 下一步建议的动作类型 → 展示文案
+const AI_ACTION_LABELS: Record<string, string> = {
+  advance: "建议推进", arrange_interview: "安排面试", push_offer: "推进 Offer",
+  contact: "触达跟进", standby: "转备选池", drop: "建议淘汰",
+};
 
 // 复制到剪贴板（看板卡片电话一键复制；失败时给可感知的提示）
 // 复制统一走 utils/clipboard（含 execCommand 降级），此处只包一层消息提示
@@ -243,8 +250,34 @@ export default function Pipeline() {
   };
 
   // ---- 卡片详情抽屉 ----
+  // AI 下一步建议：单卡决策建议 + 话术草稿（AI 只出草稿，用户复制后自行发送）
+  const [aiTip, setAiTip] = useState<{ loading: boolean; data: AiNextStep | null; err: string }>({
+    loading: false, data: null, err: "",
+  });
+
+  // 降级提示：AI 不可用时的规则兜底（停留/面试/评分三个信号）
+  const ruleTip = (card: PipelineCard) => {
+    const tips: string[] = [];
+    if (card.days_in_stage >= 7) tips.push(`已在当前阶段停留 ${card.days_in_stage} 天，建议尽快做出决定（推进或淘汰）`);
+    if (card.next_interview_at) tips.push(`面试已排期 ${fmtDate(card.next_interview_at)}，面试前一天电话确认到场`);
+    if (card.rating != null && card.rating > 0 && card.rating <= 2) tips.push(`阶段评分仅 ${card.rating} 星，注意投入产出，避免长期挂着`);
+    if (!tips.length) tips.push("当前没有明显风险信号；先补充阶段备注，AI 建议会更有依据");
+    return tips.map((t, i) => <div key={i}>· {t}</div>);
+  };
+
+  const genAiTip = async (card: PipelineCard) => {
+    setAiTip({ loading: true, data: null, err: "" });
+    try {
+      const r = await api.aiNextStep(card.link_id);
+      setAiTip({ loading: false, data: r, err: "" });
+    } catch (err) {
+      setAiTip({ loading: false, data: null, err: (err as Error).message || "生成失败，请稍后重试" });
+    }
+  };
+
   const openDrawer = (card: PipelineCard) => {
     setDrawer({ open: true, card, logs: [], logsLoading: true });
+    setAiTip({ loading: false, data: null, err: "" }); // 换卡片时清空上一张的 AI 建议
     setNoteDraft(card.stage_notes || "");
     api.getStageLogs(card.link_id)
       .then((logs) => setDrawer((d) => (d.card?.link_id === card.link_id ? { ...d, logs, logsLoading: false } : d)))
@@ -826,6 +859,43 @@ export default function Pipeline() {
               >
                 保存备注
               </Button>
+            </div>
+
+            {/* AI 下一步建议：结合阶段/停留/备注/评分给决策建议；AI 失败时降级为规则提示 */}
+            <div style={{ marginBottom: 16 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
+                AI 下一步建议
+              </Typography.Text>
+              {aiTip.loading ? (
+                <div style={{ textAlign: "center", padding: "10px 0" }}><Spin /></div>
+              ) : aiTip.data ? (
+                <div style={{ border: "1px solid #f0f0f0", borderRadius: 8, padding: 10 }}>
+                  <Tag color="geekblue" style={{ marginBottom: 6 }}>{AI_ACTION_LABELS[aiTip.data.action] || "建议"}</Tag>
+                  <div style={{ fontWeight: 600, lineHeight: 1.5 }}>{aiTip.data.suggestion}</div>
+                  {aiTip.data.reasons.map((r, i) => (
+                    <div key={i} style={{ fontSize: 12, color: "#666", marginTop: 2 }}>· {r}</div>
+                  ))}
+                  <Space size={8} style={{ marginTop: 8 }}>
+                    {aiTip.data.draft && (
+                      <Button size="small" icon={<MessageOutlined />} onClick={() => copyText(aiTip.data!.draft, "跟进话术")}>
+                        复制话术
+                      </Button>
+                    )}
+                    <Button size="small" type="text" icon={<RobotOutlined />} onClick={() => genAiTip(drawer.card!)}>重新生成</Button>
+                  </Space>
+                </div>
+              ) : (
+                <>
+                  <Button size="small" icon={<RobotOutlined />} onClick={() => genAiTip(drawer.card!)}>生成 AI 建议</Button>
+                  {aiTip.err && (
+                    <Alert
+                      type="warning" showIcon style={{ marginTop: 8 }}
+                      message={`AI 暂不可用（${aiTip.err}）`}
+                      description={ruleTip(drawer.card!)}
+                    />
+                  )}
+                </>
+              )}
             </div>
 
             {/* 快速流转：复用卡片菜单（流转到…/查看流转记录/移出该岗位） */}

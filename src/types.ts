@@ -717,6 +717,18 @@ export interface AiRecapReport {
   suggestions: string[];
 }
 
+// AI 看板下一步建议（/ai/next-step）：单卡决策建议 + 跟进话术草稿
+export interface AiNextStep {
+  /** 动作类型：advance / arrange_interview / push_offer / contact / standby / drop */
+  action: string;
+  /** 一句话动作建议（带具体时间） */
+  suggestion: string;
+  /** 2-3 条依据（引用停留天数/备注/评分等事实） */
+  reasons: string[];
+  /** 可复制的跟进话术草稿（AI 只出草稿，系统永不代发） */
+  draft: string;
+}
+
 export interface FunnelSourceItem {
   source: string;
   entered: number;  // 进入流程的投递数

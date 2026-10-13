@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep } from "./types";
 
 const BASE = "/api";
 
@@ -665,6 +665,11 @@ export const api = {
   // 纯聚合数字无 PII；scope（筛选组合）作 10 分钟缓存键。
   aiRecapReport: (data: { scope: string; report: Record<string, unknown> }) =>
     request<AiRecapReport>("/ai/recap-report", { method: "POST", body: JSON.stringify(data) }, 60000),
+
+  // AI 看板下一步建议：按看板链路 link_id 生成单卡决策建议 + 跟进话术草稿。
+  // 后端自查归属与数据；10 分钟缓存复用，配额共用。
+  aiNextStep: (linkId: string) =>
+    request<AiNextStep>("/ai/next-step", { method: "POST", body: JSON.stringify({ link_id: linkId }) }, 60000),
 
   // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
   getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {
