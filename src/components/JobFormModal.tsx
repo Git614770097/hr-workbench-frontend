@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import {
-  Modal, Form, Input, InputNumber, Select, DatePicker, AutoComplete, message, Alert, Divider,
+  Modal, Form, Input, InputNumber, Select, DatePicker, AutoComplete, message, Alert, Divider, Button,
 } from "antd";
+import { RobotOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
 import type { Job } from "../types";
@@ -25,6 +26,7 @@ interface Props {
 export default function JobFormModal({ open, jobId, prefill, fillToken, onClose, onSuccess }: Props) {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [aiFilling, setAiFilling] = useState(false);
   const [departments, setDepartments] = useState<string[]>([]);
   const { education: educationOptions, jobTypeLabels } = useDict();
   const profile = useIdentityProfile();
@@ -83,6 +85,57 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
       message.error((err as Error).message);
     }
     setSaving(false);
+  };
+
+  // 新增岗位「AI 一键起草」：基于已填的岗位名称（+部门/城市）生成职责/要求/学历/经验/薪资建议。
+  // 策略：只填空字段、不覆盖用户已填内容；学历双向模糊匹配字典选项；生成结果均为草稿，可改。
+  const handleAiFill = async () => {
+    const vals = form.getFieldsValue();
+    const title = (vals.title || "").trim();
+    if (!title) {
+      message.warning(termFor(profile, "请先填写岗位名称，再点 AI 一键起草"));
+      return;
+    }
+    setAiFilling(true);
+    try {
+      const r = await api.aiJobDraft({
+        title,
+        department: (vals.department || "").trim() || null,
+        city: (vals.city || "").trim() || null,
+      });
+      // 学历双向模糊匹配字典选项：匹配不到不强行填，避免脏值
+      let edu = r.education || "";
+      if (edu && !educationOptions.includes(edu)) {
+        edu = educationOptions.find((o) => o.includes(edu) || edu.includes(o)) || "";
+      }
+      const cur = form.getFieldsValue();
+      const patch: Record<string, any> = {};
+      const filled: string[] = [];
+      const setIfEmpty = (key: string, val: string, label: string) => {
+        if (val && !(cur[key] || "").toString().trim()) {
+          patch[key] = val;
+          filled.push(label);
+        }
+      };
+      setIfEmpty("description", r.description, "岗位职责");
+      setIfEmpty("requirements", r.requirements, "任职要求");
+      setIfEmpty("salary_range", r.salary_range, "薪资范围");
+      setIfEmpty("experience", r.experience, "经验要求");
+      if (edu && !(cur.education || "").toString().trim()) {
+        patch.education = edu;
+        filled.push("学历要求");
+      }
+      form.setFieldsValue(patch);
+      if (filled.length) {
+        message.success(termFor(profile, `AI 已起草 ${filled.length} 项，请核对修改后保存`));
+      } else {
+        message.info(termFor(profile, "这些字段都已填写，AI 未覆盖。如需重填请先清空对应字段"));
+      }
+    } catch (err) {
+      message.error((err as Error).message);
+    } finally {
+      setAiFilling(false);
+    }
   };
 
   return (
@@ -164,6 +217,15 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
         <Divider orientation="left" orientationMargin={0} style={{ fontSize: 13, color: "#8c8c8c", margin: "4px 0 16px" }}>
           {termFor(profile, "岗位说明")}
         </Divider>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, color: "#8c8c8c" }}>
+            {termFor(profile, "岗位职责 / 任职要求等可一键 AI 起草，生成后请核对修改")}
+          </span>
+          <Button icon={<RobotOutlined />} loading={aiFilling} onClick={handleAiFill}>
+            {termFor(profile, "AI 一键起草")}
+          </Button>
+        </div>
 
         <Form.Item name="description" label={termFor(profile, "岗位职责")} labelCol={{ flex: "88px" }}>
           <Input.TextArea rows={3} placeholder="一行一条，或用编号书写…" />

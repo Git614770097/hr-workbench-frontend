@@ -547,9 +547,9 @@ export const api = {
   getTaskSummary: () => request<TaskSummary>("/tasks/summary"),
   // 招聘概览首页聚合（全员可看，按 owner 隔离）
   getOverview: () => request<OverviewResponse>("/overview"),
-  // 工作台趋势折线：新增人才 / 进入面试 / 入职（周 / 天）
-  getTrend: (granularity: "week" | "day" = "week") =>
-    request<TrendResponse>(`/overview/trend?granularity=${granularity}`),
+  // 工作台趋势折线：新增人才 / 进入面试 / 入职（周粒度，4w/12w/24w 三档窗口）
+  getTrend: (range: "4w" | "12w" | "24w" = "12w") =>
+    request<TrendResponse>(`/overview/trend?range=${range}`),
   // 用户级 UI 偏好（工作台模块显隐等）
   getMySetting: (key: string) =>
     request<{ key: string; value: string | null }>(`/auth/me/settings?key=${encodeURIComponent(key)}`),
@@ -644,6 +644,17 @@ export const api = {
   aiCandidateSummaryGet: (talentId: string) =>
     request<{ data: AiCandidateSummary | null }>(`/ai/candidate-summary?talent_id=${encodeURIComponent(talentId)}`),
 
+  // AI 提效：新增岗位表单「AI 一键起草」——基于岗位名称生成职责 / 要求 / 学历 / 经验 / 薪资建议。
+  // 回填到表单对应字段，用户可任意修改后再保存（AI 只出草稿）。
+  aiJobDraft: (data: { title: string; department?: string | null; city?: string | null }) =>
+    request<{
+      description: string;
+      requirements: string;
+      salary_range: string;
+      education: string;
+      experience: string;
+    }>("/ai/job-draft", { method: "POST", body: JSON.stringify(data) }, 60000),
+
   // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
   getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {
     const qs = Object.entries(params)
@@ -658,6 +669,12 @@ export const api = {
     request<{ ok: boolean; job_id: string }>(`/requisitions/${id}/approve`, { method: "POST", body: "{}" }),
   rejectRequisition: (id: string, reason?: string) =>
     request<{ ok: boolean }>(`/requisitions/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  // 编辑需求（仅 pending 状态，只能改自己的）
+  updateRequisition: (id: string, data: Partial<Requisition>) =>
+    request<{ ok: boolean }>(`/requisitions/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  // 撤回需求（仅 pending 状态，只能撤自己的）
+  withdrawRequisition: (id: string) =>
+    request<{ ok: boolean }>(`/requisitions/${id}/withdraw`, { method: "POST", body: "{}" }),
 
   // 审批流
   getApprovalFlows: () => request<{ items: ApprovalFlow[] }>("/approvals/flows"),

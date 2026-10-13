@@ -451,6 +451,80 @@ aiAssist.post("/candidate-summary", async (c) => {
   return c.json(result);
 });
 
+// ---------------------------------------------------------------- 岗位信息 AI 起草
+// 新增岗位表单「AI 一键起草」：基于岗位名称（+部门/城市）生成职责、要求、薪资建议、学历、经验。
+// 复用统一护栏（配额 / 缓存 / 脱敏 / 截断）与 deepseekJsonSafe；岗位尚未创建，仅需会话即可。
+aiAssist.post("/job-draft", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  const body = await c.req
+    .json<{ title?: string; department?: string | null; city?: string | null }>()
+    .catch(() => null);
+  const title = (body?.title || "").trim();
+  if (!title) return c.json({ error: "请先填写岗位名称，再点 AI 一键起草" }, 400);
+
+  const bizId = `job:${title}`;
+  const scene = "";
+  const cached = await loadRecentArtifact(c.env.DB, session.userId, "job_draft", bizId, scene);
+  if (cached) return c.json({ ...cached, _cached: true });
+  const denied = await quotaGuard(c, session.userId);
+  if (denied) return denied;
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "未配置 AI 密钥，无法起草岗位，请手动填写", code: "AI_NO_KEY" }, 500);
+  }
+
+  const ctx = [
+    `岗位名称：${title}`,
+    body?.department ? `用人部门：${truncate(maskPii(body.department), 60)}` : "",
+    body?.city ? `工作城市：${body.city}` : "",
+  ].filter(Boolean).join("\n");
+
+  const system = `你是一名资深招聘顾问，擅长撰写岗位 JD 并给出合理的任职门槛建议。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+
+字段说明：
+- description: 岗位职责，6-10 条，每条一行，聚焦该岗位实际工作内容，具体可执行，不超过 40 字
+- requirements: 任职要求，5-8 条，每条一行，涵盖学历、经验、技能与软素质，不超过 40 字
+- salary_range: 薪资范围建议，格式如 "25-40K·14薪" 或 "面议"；行业信息不足时给大致区间并标注「建议」
+- education: 学历要求，四选一："大专" / "本科" / "硕士" / "博士"（复合要求取最低门槛，本科以上给"本科"即可）
+- experience: 经验要求，如 "3-5年" / "1-3年" / "5年以上"，简要即可
+
+要求：
+1. 只基于岗位名称与所给上下文推断，常见行业惯例可引用；薪资、福利等不确定项不要编造具体数字，用区间或"面议"。
+2. 职责与要求要贴合该岗位真实日常，避免放之四海皆准的套话。
+3. 不要回写岗位名称、部门、城市等用户已填的信息。`;
+
+  const userPrompt = `【岗位上下文】\n${ctx}\n\n请生成该岗位的岗位职责、任职要求，并给出学历 / 经验 / 薪资门槛建议。`;
+
+  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.4 });
+  if (!raw) {
+    return c.json({ error: "AI 暂时不可用，请稍后重试或手动填写", code: "AI_UNAVAILABLE" }, 502);
+  }
+
+  const toLines = (v: unknown): string =>
+    Array.isArray(v)
+      ? v.map((x) => (typeof x === "string" ? x.trim() : "")).filter(Boolean).join("\n")
+      : typeof v === "string"
+        ? v.trim()
+        : "";
+
+  const EDU = ["大专", "本科", "硕士", "博士"];
+  const eduRaw = typeof raw.education === "string" ? raw.education.trim() : "";
+  const education = EDU.find((e) => eduRaw.includes(e)) || "";
+
+  const result = {
+    description: toLines(raw.description),
+    requirements: toLines(raw.requirements),
+    salary_range: typeof raw.salary_range === "string" ? raw.salary_range.trim().slice(0, 40) : "",
+    education,
+    experience: typeof raw.experience === "string" ? raw.experience.trim().slice(0, 20) : "",
+  };
+  await saveArtifact(c.env.DB, session.userId, "job_draft", bizId, scene, result);
+  return c.json(result);
+});
+
 // ---------------------------------------------------------------- 读取已生成结果（GET）
 // 下次进入页面时直接展示历史产出，不重算、不扣配额。
 // 返回 { data: <上次结果或 null> }；data 带 _persisted 标记，前端据此标「已保存」。

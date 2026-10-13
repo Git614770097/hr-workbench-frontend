@@ -241,7 +241,11 @@ app.use("/api/roles/*", async (c, next) => {
 app.use("/api/ai/*", async (c, next) => {
   const p = c.req.path;
   const menuKey =
-    p.startsWith("/api/ai/outreach") || p.startsWith("/api/ai/resume-insight") ? "talents" : "interviews";
+    p.startsWith("/api/ai/outreach") || p.startsWith("/api/ai/resume-insight")
+      ? "talents"
+      : p.startsWith("/api/ai/job-draft")
+        ? "jobs"
+        : "interviews";
   const blocked = await menuGuard(c, menuKey);
   if (blocked) return blocked;
   return next();
