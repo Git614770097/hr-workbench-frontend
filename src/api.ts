@@ -302,15 +302,16 @@ export const api = {
     });
   },
 
-  // 简历预览/下载地址：先取 60s 短期票据再拼 URL（不再把 7 天会话 token 放进 URL）
+  // 简历预览/下载 URL：后端 GET /:id/resume 支持 ?token= 会话鉴权（iframe 预览场景无法带
+  // Authorization 头，走 query）。早期设计的 ticket 一次性票据后端未实现，直接用会话 token。
   getResumeUrl: async (talentId: string) => {
-    const { ticket } = await request<{ ticket: string }>(`/talents/${talentId}/resume/ticket`, { method: "POST" });
-    return `${BASE}/talents/${talentId}/resume?ticket=${encodeURIComponent(ticket)}`;
+    const t = getToken();
+    return `${BASE}/talents/${talentId}/resume${t ? `?token=${encodeURIComponent(t)}` : ""}`;
   },
 
   getResumeDownloadUrl: async (talentId: string) => {
-    const { ticket } = await request<{ ticket: string }>(`/talents/${talentId}/resume/ticket`, { method: "POST" });
-    return `${BASE}/talents/${talentId}/resume?ticket=${encodeURIComponent(ticket)}&download=1`;
+    const t = getToken();
+    return `${BASE}/talents/${talentId}/resume?download=1${t ? `&token=${encodeURIComponent(t)}` : ""}`;
   },
 
   deleteResume: (talentId: string) =>

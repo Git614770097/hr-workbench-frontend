@@ -126,11 +126,6 @@ const BASE_STEPS: OnbStep[] = [
     goTo: "/jobs",
     goToLabel: "去看看 AI 能力",
   },
-  {
-    center: true,
-    title: "AI 用量与额度",
-    desc: "AI 功能会消耗次数，普通用户每天有固定额度、中国时区凌晨重置；超额时会提示明天再来。管理员账号不限次数。",
-  },
 ];
 
 /**
