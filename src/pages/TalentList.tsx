@@ -3,11 +3,13 @@ import { Link } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
   Popconfirm, message, Dropdown, Alert, Modal, Empty, Form, Radio,
+  Checkbox, Popover,
 } from "antd";
 import {
   ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
   FileWordOutlined, TeamOutlined, PlusOutlined,
+  FileExcelOutlined, SettingOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -80,7 +82,28 @@ const COLLAPSED_COUNT = 4;
 // 列表每页条数
 const PAGE_SIZE = 10;
 
-import { escapeHtml, downloadBlob, dateStamp } from "../utils/file";
+// ---- 列显隐配置（姓名 / 操作列固定显示，其余可勾选，存 localStorage 跨会话记住）----
+// 顺序即列顺序；label 与列头一致
+const OPTIONAL_COL_LABELS: Record<string, string> = {
+  current_title: "职位",
+  years_experience: "年限",
+  age: "年龄",
+  education: "学历",
+  school: "院校",
+  city: "城市",
+  phone: "手机号",
+  email: "邮箱",
+  status: "状态",
+  entry_type: "来源",
+  tags: "标签",
+  owner_name: "创建人",
+};
+const OPTIONAL_COL_ORDER = Object.keys(OPTIONAL_COL_LABELS);
+// 默认只显示高频列：低频字段（年龄/院校/城市/邮箱）按需在「列设置」里打开
+const DEFAULT_VISIBLE_COLS = ["current_title", "years_experience", "education", "phone", "status", "entry_type", "tags"];
+const COLS_STORAGE_KEY = "talent_list_visible_cols";
+
+import { escapeHtml, downloadBlob, dateStamp, exportXlsx } from "../utils/file";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
 
@@ -151,6 +174,22 @@ export default function TalentList() {
   // 导出状态
   const [exporting, setExporting] = useState(false);
   const [printData, setPrintData] = useState<Talent[] | null>(null);
+
+  // 列显隐：从 localStorage 恢复（无保存或保存非法时用默认高频列；过滤掉不认识的 key 防脏数据）
+  const [visibleCols, setVisibleCols] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(COLS_STORAGE_KEY) || "null");
+      if (Array.isArray(saved)) {
+        const valid = saved.filter((k: string) => OPTIONAL_COL_ORDER.includes(k));
+        if (valid.length > 0) return valid;
+      }
+    } catch { /* 忽略脏数据 */ }
+    return DEFAULT_VISIBLE_COLS;
+  });
+  const changeVisibleCols = (keys: string[]) => {
+    setVisibleCols(keys);
+    try { localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(keys)); } catch { /* 存储失败不阻断 */ }
+  };
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -373,13 +412,40 @@ export default function TalentList() {
   };
 
   const exportMenuItems: MenuProps["items"] = [
+    { key: "excel", label: "导出 Excel", icon: <FileExcelOutlined /> },
     { key: "word", label: "导出 Word", icon: <FileWordOutlined /> },
     { key: "pdf", label: "导出 PDF", icon: <FilePdfOutlined /> },
   ];
 
   const onExportMenuClick: MenuProps["onClick"] = ({ key }) => {
-    if (key === "word") handleExportWord();
+    if (key === "excel") handleExportExcel();
+    else if (key === "word") handleExportWord();
     else if (key === "pdf") handleExportPdf();
+  };
+
+  // 导出 Excel（人才盘点 / 汇报用表格；字段顺序与 Word/PDF 完全一致）
+  const handleExportExcel = async () => {
+    try {
+      setExporting(true);
+      const rows = await fetchAllForExport();
+      if (rows.length === 0) { message.warning("暂无数据可导出"); return; }
+      await exportXlsx(`${termFor(profile, "人才库导出")}_${dateStamp()}.xlsx`, [
+        {
+          name: termFor(profile, "人才库"),
+          columns: exportColumns.map((c) => ({
+            header: c.title,
+            key: c.key,
+            width: c.key === "email" || c.key === "skills" ? 24 : 14,
+          })),
+          rows: rows.map((t) => Object.fromEntries(exportColumns.map((c) => [c.key, c.get(t)]))),
+        },
+      ]);
+      message.success(termFor(profile, `已导出 ${rows.length} 条人才（Excel）`));
+    } catch (err) {
+      message.error((err as Error).message || "导出失败");
+    } finally {
+      setExporting(false);
+    }
   };
 
   // 导出单份简历：根据 resume_url 扩展名判断原文件格式，PDF 导出 PDF、Word 导出 Word
@@ -431,8 +497,9 @@ export default function TalentList() {
     },
   };
 
-  const columns = [
-    {
+  // 列定义按 key 收进 colMap，再按「列设置」勾选结果组装（姓名/操作固定，其余可显隐）
+  const colMap: Record<string, any> = {
+    name: {
       title: "姓名",
       dataIndex: "name",
       key: "name",
@@ -442,18 +509,18 @@ export default function TalentList() {
         <Link to={`/talents/${record.id}`} style={{ fontWeight: 600 }}>{text}</Link>
       ),
     },
-    { title: "职位", dataIndex: "current_title", key: "current_title", width: 150, render: (v: string) => v || "—" },
-    {
+    current_title: { title: "职位", dataIndex: "current_title", key: "current_title", width: 150, render: (v: string) => v || "—" },
+    years_experience: {
       title: "年限", dataIndex: "years_experience", key: "years_experience", width: 90,
       render: (v: number | null) => (v != null ? `${v}年` : "—"),
     },
-    { title: "年龄", dataIndex: "age", key: "age", width: 80, render: (v: number | null) => (v != null ? v : "—") },
-    { title: "学历", dataIndex: "education", key: "education", width: 110, render: (v: string) => v || "—" },
-    { title: "院校", dataIndex: "school", key: "school", width: 160, render: (v: string) => v || "—" },
-    { title: "城市", dataIndex: "city", key: "city", width: 90, render: (v: string) => v || "—" },
-    { title: "手机号", dataIndex: "phone", key: "phone", width: 130, render: (v: string) => v || "—" },
-    { title: "邮箱", dataIndex: "email", key: "email", width: 200, render: (v: string) => v || "—" },
-    {
+    age: { title: "年龄", dataIndex: "age", key: "age", width: 80, render: (v: number | null) => (v != null ? v : "—") },
+    education: { title: "学历", dataIndex: "education", key: "education", width: 110, render: (v: string) => v || "—" },
+    school: { title: "院校", dataIndex: "school", key: "school", width: 160, render: (v: string) => v || "—" },
+    city: { title: "城市", dataIndex: "city", key: "city", width: 90, render: (v: string) => v || "—" },
+    phone: { title: "手机号", dataIndex: "phone", key: "phone", width: 130, render: (v: string) => v || "—" },
+    email: { title: "邮箱", dataIndex: "email", key: "email", width: 200, render: (v: string) => v || "—" },
+    status: {
       title: "状态",
       dataIndex: "status",
       key: "status",
@@ -464,7 +531,7 @@ export default function TalentList() {
         </Tag>
       ),
     },
-    {
+    entry_type: {
       title: "来源",
       dataIndex: "entry_type",
       key: "entry_type",
@@ -481,7 +548,7 @@ export default function TalentList() {
         );
       },
     },
-    {
+    tags: {
       title: "标签",
       dataIndex: "tags",
       key: "tags",
@@ -495,14 +562,14 @@ export default function TalentList() {
           </Space>
         ) : <span>—</span>,
     },
-    ...(isAdmin ? [{
+    owner_name: {
       title: "创建人",
       dataIndex: "owner_name",
       key: "owner_name",
       width: 120,
       render: (v: string) => v || "—",
-    }] : []),
-    {
+    },
+    action: {
       title: "操作",
       key: "action",
       width: 184,
@@ -522,7 +589,21 @@ export default function TalentList() {
         </Space>
       ),
     },
+  };
+
+  // 组装列：姓名 → 按勾选结果排可选列（创建人列仅 admin 可见）→ 操作
+  const optionalKeys = OPTIONAL_COL_ORDER.filter((k) => k !== "owner_name" || isAdmin);
+  const shownKeys = optionalKeys.filter((k) => visibleCols.includes(k));
+  const columns = [
+    colMap.name,
+    ...shownKeys.map((k) => colMap[k]),
+    colMap.action,
   ];
+  // 横向滚动宽度跟随可见列宽计算，避免固定 1500 在少列时出现过宽空白
+  const scrollX = 120 + 184 + shownKeys.reduce((a, k) => a + (colMap[k]?.width || 120), 0);
+
+  // 列设置弹层选项（创建人仅 admin 展示）
+  const colSettingOptions = optionalKeys.map((k) => ({ label: OPTIONAL_COL_LABELS[k], value: k }));
 
   return (
     <div className="page-fill">
@@ -617,6 +698,26 @@ export default function TalentList() {
                 批量操作{selectedKeys.length > 0 ? `（${selectedKeys.length}）` : ""}
               </Button>
             </Dropdown>
+            {/* 列设置：姓名/操作固定，其余列可勾选显隐，选择存 localStorage */}
+            <Popover
+              trigger="click"
+              placement="bottomRight"
+              content={
+                <div style={{ width: 240 }}>
+                  <div style={{ fontSize: 12, color: "#999", marginBottom: 8 }}>
+                    勾选要显示的列（姓名、操作固定显示）
+                  </div>
+                  <Checkbox.Group
+                    value={visibleCols}
+                    options={colSettingOptions}
+                    onChange={(vals) => changeVisibleCols(vals as string[])}
+                    style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                  />
+                </div>
+              }
+            >
+              <Button icon={<SettingOutlined />}>列设置</Button>
+            </Popover>
           </Space>
           <Space>
             {fieldDefs.length > COLLAPSED_COUNT && (
@@ -635,7 +736,7 @@ export default function TalentList() {
           rowKey="id"
           loading={loading}
           rowSelection={rowSelection}
-          scroll={{ x: 1500 }}
+          scroll={{ x: scrollX }}
           locale={{
             // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」
             emptyText: (
