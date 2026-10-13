@@ -2,14 +2,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Button, Select, Space, Row, Col, Empty, Spin, Tooltip, message, Table,
-  Alert, Segmented, Skeleton,
+  Alert, Segmented, Skeleton, Popover,
 } from "antd";
 import {
   ReloadOutlined, SearchOutlined, FunnelPlotOutlined, DownloadOutlined,
   RiseOutlined, TeamOutlined,
   InfoCircleOutlined, AppstoreOutlined, CalendarOutlined, AimOutlined,
   UserAddOutlined, FileTextOutlined, LineChartOutlined, PictureOutlined,
-  FileExcelOutlined, AlertOutlined,
+  FileExcelOutlined, AlertOutlined, BgColorsOutlined,
 } from "@ant-design/icons";
 import * as echarts from "echarts/core";
 import { api } from "../api";
@@ -27,6 +27,7 @@ import AnimatedNumber from "../components/AnimatedNumber";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
 import { loadWorkbenchConfig, saveWorkbenchConfig } from "../workbenchPrefs";
+import { FUNNEL_PALETTES, DEFAULT_FUNNEL_PALETTE, loadFunnelPalette, saveFunnelPalette } from "../funnelPalette";
 
 // 周期指标的配色（与漏斗同一套柔和色系，暗色模式取亮档）
 const KPI_COLORS_LIGHT = ["#2563eb", "#0891b2", "#d97706", "#059669"];
@@ -93,6 +94,9 @@ export default function Funnel() {
   // ---- 工作台：模块显隐 ----
   const [hidden, setHidden] = useState<WorkbenchModuleKey[]>([]);
   const [cfgOpen, setCfgOpen] = useState(false);
+
+  // ---- 工作台：漏斗配色（存 user_settings，跨设备同步）----
+  const [palette, setPalette] = useState<string>(DEFAULT_FUNNEL_PALETTE);
 
   // ---- 图表实例（供「下载 PNG」）----
   const funnelChartRef = useRef<echarts.ECharts | null>(null);
@@ -173,6 +177,9 @@ export default function Funnel() {
     loadWorkbenchConfig(currentUser).then((cfg) => {
       if (alive) setHidden(cfg.hidden);
     });
+    loadFunnelPalette().then((id) => {
+      if (alive) setPalette(id);
+    });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -181,6 +188,14 @@ export default function Funnel() {
     setHidden(h);
     saveWorkbenchConfig({ hidden: h }).then((ok) => {
       if (!ok) message.warning("已更新，但同步到账号失败（下次登录可能还原）");
+    });
+  };
+
+  /** 切换漏斗配色：立即生效 + 异步同步到账号 */
+  const updatePalette = (id: string) => {
+    setPalette(id);
+    saveFunnelPalette(id).then((ok) => {
+      if (!ok) message.warning("已应用，但同步到账号失败（下次登录可能还原）");
     });
   };
 
@@ -703,6 +718,36 @@ export default function Funnel() {
                     <Tooltip title="阶段人数按「曾到达」统计：只要候选人到过该阶段就计入，因此漏斗逐级递减，不会因为后期淘汰而回退">
                       <span style={{ fontSize: 12, color: "#8c8c8c" }}>统计口径说明</span>
                     </Tooltip>
+                    <Popover
+                      placement="bottomRight"
+                      trigger="click"
+                      content={
+                        <div className="wb-pal-list">
+                          {FUNNEL_PALETTES.map((p) => (
+                            <button
+                              type="button"
+                              key={p.id}
+                              className={`wb-pal-item${palette === p.id ? " is-active" : ""}`}
+                              onClick={() => updatePalette(p.id)}
+                            >
+                              <span className="wb-pal-swatch">
+                                {p.levels.map((l, i) => (
+                                  <i key={i} style={{ background: `linear-gradient(180deg, ${l.from}, ${l.to})` }} />
+                                ))}
+                              </span>
+                              <span className="wb-pal-text">
+                                <b>{p.name}</b>
+                                <em>{p.desc}</em>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      }
+                    >
+                      <Tooltip title="切换漏斗配色">
+                        <Button size="small" type="text" icon={<BgColorsOutlined />} />
+                      </Tooltip>
+                    </Popover>
                     <Tooltip title="下载高清 PNG（白底，可直接贴进汇报 PPT）">
                       <Button
                         size="small" type="text" icon={<PictureOutlined />}
@@ -716,7 +761,8 @@ export default function Funnel() {
                   stages={stages}
                   stageStay={data!.stage_stay}
                   dark={isDark}
-                  height={stages.length * 100 + 56}
+                  palette={palette}
+                  height={Math.round(stages.length * 76 + 52)}
                   chartOut={funnelChartRef}
                 />
 

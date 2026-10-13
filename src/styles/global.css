@@ -1646,6 +1646,26 @@ html[data-theme-mode="dark"] .wb-hero .page-stats.wb-kpi .stat {
   box-shadow: none;
 }
 
+/* ---- 漏斗配色切换（Popover 面板）---- */
+.wb-pal-list { display: flex; flex-direction: column; gap: 4px; width: 232px; }
+.wb-pal-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border: 1px solid transparent; border-radius: 8px;
+  background: none; cursor: pointer; text-align: left; width: 100%;
+}
+.wb-pal-item:hover { background: #f5f7fa; }
+.wb-pal-item.is-active { border-color: #3b82f6; background: #eff6ff; }
+.wb-pal-swatch { display: flex; flex: 0 0 auto; border-radius: 4px; overflow: hidden; box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08); }
+.wb-pal-swatch i { display: block; width: 12px; height: 26px; }
+.wb-pal-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.35; }
+.wb-pal-text b { font-size: 13px; font-weight: 600; color: #1f2937; }
+.wb-pal-text em { font-size: 11px; font-style: normal; color: #8c8c8c; }
+html[data-theme-mode="dark"] .wb-pal-item:hover { background: #262626; }
+html[data-theme-mode="dark"] .wb-pal-item.is-active { border-color: #3b82f6; background: #172554; }
+html[data-theme-mode="dark"] .wb-pal-text b { color: #e5e7eb; }
+html[data-theme-mode="dark"] .wb-pal-text em { color: #8b95a5; }
+html[data-theme-mode="dark"] .wb-pal-swatch { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12); }
+
 /* ---- 分析层小标题 + 工具 ---- */
 .wb-section-head {
   display: flex; align-items: center; justify-content: space-between;

@@ -4,6 +4,7 @@ import { FunnelChart } from "echarts/charts";
 import { TooltipComponent } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import type { FunnelStageItem, FunnelStayItem } from "../types";
+import { DEFAULT_FUNNEL_PALETTE, paletteLevels, type FunnelPaletteLevel } from "../funnelPalette";
 
 echarts.use([FunnelChart, TooltipComponent, CanvasRenderer]);
 
@@ -13,6 +14,8 @@ interface Props {
   /** 深色模式（跟随主题切换重绘） */
   dark?: boolean;
   height?: number;
+  /** 配色预设 id，见 funnelPalette.ts */
+  palette?: string;
   /** 暴露 ECharts 实例，供「下载 PNG」使用 */
   chartOut?: MutableRefObject<echarts.ECharts | null>;
 }
@@ -30,38 +33,18 @@ const NOTES_GAP = 14;  // 漏斗右缘与注释列之间的呼吸空隙
 const LABELS_W = 76;   // 左侧阶段名列宽度
 const LABELS_GAP = 14; // 漏斗左缘与阶段名列之间的呼吸空隙
 
-// ---- 配色：多色柔和（每层一个色相，统一明度/饱和度）----
-// 每层色相不同（蓝/青/绿/琥珀/紫）以区分阶段，但都取同一档明度与中等饱和度，
-// 所以既分得清层次，又不会像后端 STAGE_LABELS 的彩虹色那样跳。
-// ⚠️ 段内只做**同色系**渐变（400→600）；跨色相渐变（如蓝→青）过渡会发脏。
-type Level = { from: string; to: string; text: string };
+// ---- 配色 ----
+// 色板定义已抽到 funnelPalette.ts（含 5 套预设 + 用户切换 + 暗色自动推导）。
+// 这里只负责「按 id + 明暗取到当阶颜色」，不再维护具体颜色值。
+// 层级多于色板阶数时复用最后一阶（与用户手动选色时的预期一致：越到后面越深）。
 
-/** 亮色：填充 400→600，文字用同色系 800（对比度均 ≥4.5:1） */
-const LEVELS: Level[] = [
-  { from: "#60a5fa", to: "#2563eb", text: "#1e40af" }, // 蓝 - 简历筛选
-  { from: "#22d3ee", to: "#0891b2", text: "#155e75" }, // 青 - 初试
-  { from: "#34d399", to: "#059669", text: "#065f46" }, // 绿 - 复试
-  { from: "#fbbf24", to: "#d97706", text: "#92400e" }, // 琥珀 - Offer
-  { from: "#a78bfa", to: "#7c3aed", text: "#5b21b6" }, // 紫 - 已入职
-];
-/** 暗色：整体压深（600/700→800），文字统一白色 */
-const LEVELS_DARK: Level[] = [
-  { from: "#2563eb", to: "#1e3a8a", text: "#ffffff" },
-  { from: "#0e7490", to: "#164e63", text: "#ffffff" },
-  { from: "#047857", to: "#064e3b", text: "#ffffff" },
-  { from: "#b45309", to: "#78350f", text: "#ffffff" },
-  { from: "#6d28d9", to: "#4c1d95", text: "#ffffff" },
-];
-
-/** 取第 i 层的配色（层级多于配色表时复用最后一档） */
-const levelAt = (i: number, dark: boolean): Level => {
-  const arr = dark ? LEVELS_DARK : LEVELS;
-  return arr[Math.min(i, arr.length - 1)];
-};
+/** 取第 i 阶的配色 */
+const levelAt = (i: number, levels: FunnelPaletteLevel[]): FunnelPaletteLevel =>
+  levels[Math.min(i, levels.length - 1)];
 
 /** 纵向同色系渐变（上浅下深，增加段内立体感） */
-const gradientOf = (i: number, dark: boolean) => {
-  const l = levelAt(i, dark);
+const gradientOf = (i: number, levels: FunnelPaletteLevel[]) => {
+  const l = levelAt(i, levels);
   return {
     type: "linear" as const,
     x: 0,
@@ -94,9 +77,12 @@ const gradientOf = (i: number, dark: boolean) => {
  * 与等分 flex 行的中心最大偏差 <1px，肉眼不可辨；且文字样式交给 CSS，
  * 主题切换天然生效，也省掉一个 graphic 组件依赖。
  */
-export default function FunnelChartView({ stages, stageStay = [], dark = false, height = 460, chartOut }: Props) {
+export default function FunnelChartView({ stages, stageStay = [], dark = false, height = 460, palette = DEFAULT_FUNNEL_PALETTE, chartOut }: Props) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
+
+  // 当前生效的层级配色（palette 切换 / 明暗切换时整体变化）
+  const levels = useMemo(() => paletteLevels(palette, dark), [palette, dark]);
 
   const topCount = useMemo(
     () => Math.max(1, stages.length > 0 ? stages[0].count : 1),
@@ -208,9 +194,9 @@ export default function FunnelChartView({ stages, stageStay = [], dark = false, 
               rate: s.rate,
               drop: s.drop,
               avgDays: stayMap[s.key]?.avg_days ?? null,
-              itemStyle: { color: gradientOf(i, dark) },
+              itemStyle: { color: gradientOf(i, levels) },
               // 每级独立文字色：与该级同色系的深色（暗色模式为白色）
-              label: { color: levelAt(i, dark).text },
+              label: { color: levelAt(i, levels).text },
             })),
           },
         ],
@@ -240,7 +226,7 @@ export default function FunnelChartView({ stages, stageStay = [], dark = false, 
       chart.off("mouseout", onLeave);
       ro.disconnect();
     };
-  }, [stages, topCount, dark, JSON.stringify(stageStay)]);
+  }, [stages, topCount, dark, palette, JSON.stringify(stageStay)]);
 
   useEffect(() => {
     return () => {
