@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Table, Button, Space, Tag, Modal, Form, Input, message, Progress,
-  Popconfirm, Empty, Typography, Checkbox, Select, Divider, Dropdown,
+  Popconfirm, Empty, Typography, Checkbox, Select, Divider, Dropdown, Alert,
 } from "antd";
 import {
-  PlusOutlined, ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined, UserOutlined,
+  PlusOutlined, ReloadOutlined, ThunderboltOutlined, CheckCircleOutlined, UserOutlined, RobotOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
+import AiThinking from "../components/AiThinking";
 import type { OnboardingItem } from "../types";
 import { ONBOARDING_STATUS_LABELS } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
@@ -71,6 +72,53 @@ export default function Onboarding() {
       load();
     } catch (e) {
       message.error((e as Error).message);
+    }
+  };
+
+  // AI 入职清单：按岗位/城市上下文生成材料初稿 → 预览勾选 → 批量入库。
+  // AI 只起草，入库由人确认；失败降级提示走「一键生成默认清单」。
+  type AiItemOpt = { name: string; category: string; required: boolean; _on: boolean };
+  const [aiCheck, setAiCheck] = useState<{ open: boolean; loading: boolean; err: string; options: AiItemOpt[] }>({
+    open: false, loading: false, err: "", options: [],
+  });
+  const [aiSaving, setAiSaving] = useState(false);
+
+  const genChecklist = async () => {
+    if (!talentId) return;
+    setAiCheck({ open: true, loading: true, err: "", options: [] });
+    try {
+      const r = await api.aiOnboardChecklist(talentId);
+      setAiCheck({ open: true, loading: false, err: "", options: r.items.map((o) => ({ ...o, _on: true })) });
+    } catch (e) {
+      setAiCheck({ open: true, loading: false, err: (e as Error).message || "生成失败，请稍后重试", options: [] });
+    }
+  };
+
+  // 勾选项批量入库：并发写单条接口（清单为 owner 隔离数据，复用 createOnboardingItem）
+  const confirmChecklist = async () => {
+    if (!talentId) return;
+    const picked = aiCheck.options.filter((o) => o._on);
+    if (!picked.length) {
+      message.info("请至少勾选一项");
+      return;
+    }
+    setAiSaving(true);
+    try {
+      const rs = await Promise.allSettled(
+        picked.map((o) => api.createOnboardingItem({
+          talent_id: talentId, name: o.name, category: o.category, required: o.required ? 1 : 0,
+        }))
+      );
+      const ok = rs.filter((r) => r.status === "fulfilled").length;
+      const fail = rs.length - ok;
+      if (!ok) throw new Error("添加失败，请重试");
+      message.success(`已添加 ${ok} 项材料${fail ? `，${fail} 项失败请重试` : ""}`);
+      setAiCheck({ open: false, loading: false, err: "", options: [] });
+      load();
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setAiSaving(false);
     }
   };
 
@@ -195,6 +243,10 @@ export default function Onboarding() {
               disabled={!talentId || items.length > 0}
             >
               一键生成默认清单
+            </Button>
+            {/* AI 生成：按岗位/城市出材料初稿，已有清单时也可用来补充材料 */}
+            <Button icon={<RobotOutlined />} onClick={genChecklist} disabled={!talentId || aiCheck.loading}>
+              AI 生成清单
             </Button>
             <Button
               icon={<PlusOutlined />}
@@ -333,6 +385,58 @@ export default function Onboarding() {
             <Checkbox>必交（未完成会在进度里体现）</Checkbox>
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* AI 入职清单预览：勾选需要的项后批量入库；AI 失败可退回「一键生成默认清单」 */}
+      <Modal
+        title="AI 生成的入职材料清单"
+        open={aiCheck.open}
+        onCancel={() => setAiCheck((s) => ({ ...s, open: false }))}
+        footer={null}
+        width={520}
+        destroyOnClose
+      >
+        {aiCheck.loading ? (
+          <AiThinking steps={["正在读取入职上下文…", "正在匹配岗位与城市…", "正在整理材料清单…"]} />
+        ) : aiCheck.err ? (
+          <Alert
+            type="warning"
+            showIcon
+            message={`AI 暂不可用（${aiCheck.err}）`}
+            description="可点「一键生成默认清单」先生成通用清单，稍后再用 AI 补充。"
+          />
+        ) : (
+          <>
+            <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
+              勾选需要的材料项，确认后批量加入清单；必交/选交入库后可再调整。
+            </Typography.Text>
+            <div style={{ maxHeight: 320, overflow: "auto", marginBottom: 12 }}>
+              {aiCheck.options.map((o, i) => (
+                <div
+                  key={i}
+                  style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #f5f5f5" }}
+                >
+                  <Checkbox
+                    checked={o._on}
+                    onChange={(e) => setAiCheck((s) => ({
+                      ...s,
+                      options: s.options.map((x, j) => (j === i ? { ...x, _on: e.target.checked } : x)),
+                    }))}
+                  />
+                  <span style={{ flex: 1 }}>{o.name}</span>
+                  <Tag>{o.category}</Tag>
+                  <Tag color={o.required ? "orange" : "default"}>{o.required ? "必交" : "选交"}</Tag>
+                </div>
+              ))}
+            </div>
+            <Space style={{ width: "100%", justifyContent: "flex-end" }}>
+              <Button onClick={() => setAiCheck((s) => ({ ...s, open: false }))}>取消</Button>
+              <Button type="primary" loading={aiSaving} onClick={confirmChecklist}>
+                加入清单（{aiCheck.options.filter((o) => o._on).length} 项）
+              </Button>
+            </Space>
+          </>
+        )}
       </Modal>
     </div>
   );

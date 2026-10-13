@@ -245,8 +245,10 @@ app.use("/api/ai/*", async (c, next) => {
       ? "talents"
       : p.startsWith("/api/ai/job-draft") || p.startsWith("/api/ai/job-diagnosis")
         ? "jobs" // JD 起草/优化与岗位诊断：岗位管理语义，跟随 jobs 权限
-        : p.startsWith("/api/ai/recap-report") || p.startsWith("/api/ai/next-step")
-          ? "pipeline" // AI 招聘复盘 / 看板下一步建议：招聘概览与看板语义，跟随 pipeline 权限
+      : p.startsWith("/api/ai/talent-inventory")
+        ? "talents" // AI 人才储备盘点：人才库语义，跟随 talents 权限
+        : p.startsWith("/api/ai/recap-report") || p.startsWith("/api/ai/next-step") || p.startsWith("/api/ai/approval-summary") || p.startsWith("/api/ai/onboard-checklist")
+          ? "pipeline" // AI 招聘复盘 / 看板建议 / 审批摘要 / 入职清单：招聘链路语义，跟随 pipeline 权限
           : p.startsWith("/api/ai/today-focus")
             ? "tasks" // AI 今日重点：待办日历语义，跟随 tasks 权限
             : "interviews";

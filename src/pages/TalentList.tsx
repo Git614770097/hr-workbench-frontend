@@ -9,11 +9,13 @@ import {
   ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
   FileWordOutlined, TeamOutlined, PlusOutlined,
-  FileExcelOutlined, SettingOutlined,
+  FileExcelOutlined, SettingOutlined, RobotOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
-import type { Talent, User, ComplianceItem, ComplianceResponse } from "../types";
+import AiThinking from "../components/AiThinking";
+import { TypeText } from "../utils/useTypewriter";
+import type { Talent, User, ComplianceItem, ComplianceResponse, AiTalentInventory } from "../types";
 import {
   STATUS_LABELS, STATUS_COLORS,
   ENTRY_TYPE_LABELS, ENTRY_TYPE_COLORS, ENTRY_TYPE_OPTIONS,
@@ -605,6 +607,21 @@ export default function TalentList() {
   // 列设置弹层选项（创建人仅 admin 展示）
   const colSettingOptions = optionalKeys.map((k) => ({ label: OPTIONAL_COL_LABELS[k], value: k }));
 
+  // AI 人才储备盘点：按当前筛选口径聚合人才结构后讲结论（库里有没有货、缺口在哪、怎么运营）。
+  // AI 失败降级提示本身，不阻塞列表任何功能。
+  const [inventory, setInventory] = useState<{ open: boolean; loading: boolean; err: string; data: AiTalentInventory | null }>({
+    open: false, loading: false, err: "", data: null,
+  });
+  const genInventory = useCallback(async () => {
+    setInventory((s) => ({ ...s, open: true, loading: true, err: "", data: null }));
+    try {
+      const r = await api.aiTalentInventory(buildFilterParams(applied));
+      setInventory({ open: true, loading: false, err: "", data: r });
+    } catch (e) {
+      setInventory({ open: true, loading: false, err: (e as Error).message || "生成失败，请稍后重试", data: null });
+    }
+  }, [applied]);
+
   return (
     <div className="page-fill">
       {/* 合规到期提醒：轻量 Alert + 名单弹窗（不做成独立看板） */}
@@ -718,6 +735,8 @@ export default function TalentList() {
             >
               <Button icon={<SettingOutlined />}>列设置</Button>
             </Popover>
+            {/* AI 盘点：按当前筛选口径生成储备简报，打开后自动生成 */}
+            <Button icon={<RobotOutlined />} onClick={genInventory}>AI 盘点</Button>
           </Space>
           <Space>
             {fieldDefs.length > COLLAPSED_COUNT && (
@@ -909,6 +928,46 @@ export default function TalentList() {
             },
           ]}
         />
+      </Modal>
+
+      {/* AI 人才储备盘点：画像 + 缺口 + 运营建议；AI 失败降级为错误提示（不阻塞列表） */}
+      <Modal
+        title="AI 人才储备盘点"
+        open={inventory.open}
+        onCancel={() => setInventory((s) => ({ ...s, open: false }))}
+        footer={
+          <Space>
+            <Button size="small" icon={<RobotOutlined />} onClick={genInventory} disabled={inventory.loading}>
+              重新生成
+            </Button>
+            <Button onClick={() => setInventory((s) => ({ ...s, open: false }))}>关闭</Button>
+          </Space>
+        }
+        width={560}
+      >
+        {inventory.loading ? (
+          <AiThinking steps={["正在聚合人才结构…", "正在比对在招岗位…", "正在形成盘点结论…"]} />
+        ) : inventory.err ? (
+          <Alert type="warning" showIcon message={`AI 暂不可用（${inventory.err}）`} />
+        ) : inventory.data ? (
+          <div>
+            <div style={{ lineHeight: 1.8, marginBottom: 10 }}>
+              <TypeText text={inventory.data.profile} />
+            </div>
+            {inventory.data.gaps.length > 0 && (
+              <>
+                <div style={{ fontWeight: 600, margin: "6px 0 4px" }}>储备缺口</div>
+                {inventory.data.gaps.map((g, i) => (
+                  <div key={i} style={{ lineHeight: 1.7, fontSize: 13 }}>• <TypeText text={g} /></div>
+                ))}
+              </>
+            )}
+            <div style={{ fontWeight: 600, margin: "8px 0 4px" }}>运营建议</div>
+            {inventory.data.actions.map((a, i) => (
+              <div key={i} style={{ lineHeight: 1.7, fontSize: 13 }}>{i + 1}. <TypeText text={a} /></div>
+            ))}
+          </div>
+        ) : null}
       </Modal>
     </div>
   );

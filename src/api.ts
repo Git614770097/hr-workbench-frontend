@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiQuotaInfo } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo } from "./types";
 
 const BASE = "/api";
 
@@ -688,6 +688,10 @@ export const api = {
   // AI 入职清单：按候选人入职上下文生成材料初稿；后端自查归属，10 分钟缓存。前端预览勾选后入库。
   aiOnboardChecklist: (talentId: string) =>
     request<AiOnboardChecklist>("/ai/onboard-checklist", { method: "POST", body: JSON.stringify({ talent_id: talentId }) }, 60000),
+
+  // AI 人才储备盘点：按筛选口径聚合人才结构后讲结论；后端自查聚合，10 分钟缓存。
+  aiTalentInventory: (params: Record<string, string | number>) =>
+    request<AiTalentInventory>("/ai/talent-inventory", { method: "POST", body: JSON.stringify(params) }, 60000),
 
   // ---- AI 配额（管理员不限额；普通用户上限可在系统设置里调）----
   // 读当前用户的今日用量与生效上限；limit=-1 / unlimited=true 表示不限。

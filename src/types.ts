@@ -762,6 +762,16 @@ export interface AiOnboardChecklist {
   items: { name: string; category: string; required: boolean }[];
 }
 
+// AI 人才储备盘点（/ai/talent-inventory）：按筛选口径讲「库里有没有货」
+export interface AiTalentInventory {
+  /** 一段储备画像（总量/结构/特征，带数字） */
+  profile: string;
+  /** 0-3 条储备缺口（引用数据对比） */
+  gaps: string[];
+  /** 2-3 条储备运营建议 */
+  actions: string[];
+}
+
 // AI 配额（/ai/quota）：管理员不限额（unlimited=true, limit=-1）；
 // 普通用户 limit 为生效上限，0 表示不限制。default_limit 是「系统设置里配的值」，
 // 管理员把自己的生效值设为 -1，所以要额外给默认值才能在设置页回显当前配置。

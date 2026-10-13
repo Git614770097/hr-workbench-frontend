@@ -755,6 +755,164 @@ aiAssist.post("/onboard-checklist", async (c) => {
   return c.json(result);
 });
 
+// ---------------------------------------------------------------- AI 人才储备盘点
+// 「库视角」盘点：按当前筛选口径聚合人才结构（状态/来源/城市/年限/技能标签），AI 讲结论。
+// 与招聘复盘分工：复盘管流程、盘点管储备。后端自查聚合，scope = 筛选指纹，10 分钟缓存。
+aiAssist.post("/talent-inventory", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  const body = await c.req.json<Record<string, unknown>>().catch(() => ({}) as Record<string, unknown>);
+  const str = (k: string) => String(body?.[k] ?? "").trim().slice(0, 80);
+  const q = str("q"), group = str("group"), status = str("status"),
+    city = str("city"), tags = str("tags"), title = str("title"), education = str("education");
+
+  // 筛选条件与 talents 列表接口同构（owner 隔离 + 同名字段同写法），保证盘点口径与列表所见一致
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+  if (session.role !== "admin") {
+    conditions.push("t.owner_id = ?");
+    params.push(session.userId);
+  }
+  if (q) {
+    conditions.push("(t.name LIKE ? OR t.current_company LIKE ? OR t.current_title LIKE ? OR t.skills LIKE ? OR t.industry LIKE ? OR t.notes LIKE ?)");
+    const like = `%${q}%`;
+    params.push(like, like, like, like, like, like);
+  }
+  if (title) { conditions.push("t.current_title LIKE ?"); params.push(`%${title}%`); }
+  if (education) { conditions.push("t.education LIKE ?"); params.push(`%${education}%`); }
+  if (status && !group) { conditions.push("t.status = ?"); params.push(status); }
+  if (city) { conditions.push("t.city LIKE ?"); params.push(`%${city}%`); }
+  if (tags) { conditions.push("t.tags LIKE ?"); params.push(`%${tags}%`); }
+  if (group) {
+    // 快捷分组语义与 talents 列表一致（group 与单值 status 互斥）
+    if (group === "active_pipeline") {
+      conditions.push("EXISTS (SELECT 1 FROM talent_jobs tj WHERE tj.talent_id = t.id AND tj.stage IN ('screening','interview1','interview2','offer'))");
+    } else if (group === "interviewed") {
+      conditions.push("EXISTS (SELECT 1 FROM interviews iv JOIN talent_jobs tj ON iv.talent_job_id = tj.id WHERE tj.talent_id = t.id) OR EXISTS (SELECT 1 FROM talent_jobs tj WHERE tj.talent_id = t.id AND tj.stage IN ('interview1','interview2'))");
+    } else if (group === "placed") {
+      conditions.push("(t.status = 'placed' OR t.stage = 'hired')");
+    } else if (group === "left") {
+      conditions.push("(t.resignation_date IS NOT NULL AND t.resignation_date <> '')");
+    } else if (group === "ended") {
+      conditions.push("t.stage IN ('rejected','withdrawn')");
+    } else if (group === "inactive") {
+      conditions.push("((t.stage = 'archived' OR NOT EXISTS (SELECT 1 FROM talent_jobs tj WHERE tj.talent_id = t.id)) AND t.status <> 'placed' AND (t.resignation_date IS NULL OR t.resignation_date = ''))");
+    }
+  }
+  const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+
+  const db = c.env.DB;
+  const [countRow, statusRows, sourceRows, cityRows, bucketRow, sampleRows, jobRows] = await Promise.all([
+    db.prepare(`SELECT COUNT(*) AS n FROM talents t ${where}`).bind(...params).first<{ n: number }>(),
+    db.prepare(`SELECT t.status AS k, COUNT(*) AS n FROM talents t ${where} GROUP BY t.status`).bind(...params).all(),
+    db.prepare(`SELECT t.source AS k, COUNT(*) AS n FROM talents t ${where} GROUP BY t.source`).bind(...params).all(),
+    db.prepare(`SELECT t.city AS k, COUNT(*) AS n FROM talents t ${where} GROUP BY t.city`).bind(...params).all(),
+    db.prepare(`
+      SELECT
+        SUM(CASE WHEN t.years_experience IS NULL THEN 1 ELSE 0 END) AS unk,
+        SUM(CASE WHEN t.years_experience < 1 THEN 1 ELSE 0 END) AS y0,
+        SUM(CASE WHEN t.years_experience >= 1 AND t.years_experience < 3 THEN 1 ELSE 0 END) AS y1,
+        SUM(CASE WHEN t.years_experience >= 3 AND t.years_experience < 5 THEN 1 ELSE 0 END) AS y3,
+        SUM(CASE WHEN t.years_experience >= 5 AND t.years_experience < 10 THEN 1 ELSE 0 END) AS y5,
+        SUM(CASE WHEN t.years_experience >= 10 THEN 1 ELSE 0 END) AS y10
+      FROM talents t ${where}
+    `).bind(...params).first<any>(),
+    // 技能/标签词频：取前 300 条样本在 JS 侧统计（skills/tags 为 JSON 数组字符串，SQL 不便聚合）
+    db.prepare(`SELECT t.skills, t.tags FROM talents t ${where} ORDER BY t.updated_at DESC LIMIT 300`).bind(...params).all<{ skills: string | null; tags: string | null }>(),
+    // 在招岗位（与 jobs 列表同规则 owner 隔离），用于缺口对比
+    db.prepare(`SELECT title, city, priority FROM jobs WHERE status = 'open' ${session.role !== "admin" ? "AND owner_id = ?" : ""} ORDER BY created_at DESC LIMIT 20`)
+      .bind(...(session.role !== "admin" ? [session.userId] : [])).all(),
+  ]);
+
+  const total = countRow?.n || 0;
+  if (total === 0) {
+    return c.json({ error: "当前筛选条件下没有人才，先调整筛选再盘点", code: "AI_EMPTY_INPUT" }, 400);
+  }
+
+  // 技能/标签词频 Top10（从样本 JSON 解析，脏 JSON 忽略）
+  const skillFreq = new Map<string, number>();
+  for (const row of sampleRows.results || []) {
+    for (const raw of [row.skills, row.tags]) {
+      if (!raw) continue;
+      try {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          for (const s of arr) {
+            const v = String(s || "").trim();
+            if (v) skillFreq.set(v, (skillFreq.get(v) || 0) + 1);
+          }
+        }
+      } catch { /* 脏 JSON 忽略 */ }
+    }
+  }
+  const topSkills = [...skillFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([k, n]) => `${k}(${n})`);
+
+  const topN = (rows: { results?: any[] }) =>
+    (rows.results || [])
+      .filter((r) => r.k)
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 6)
+      .map((r) => `${r.k}(${r.n})`)
+      .join("、") || "（无）";
+
+  const yr = bucketRow || {};
+  const yearsText = `未知(${yr.unk || 0})、1年以下(${yr.y0 || 0})、1-3年(${yr.y1 || 0})、3-5年(${yr.y3 || 0})、5-10年(${yr.y5 || 0})、10年以上(${yr.y10 || 0})`;
+
+  const report = {
+    筛选口径: { 关键词: q || "（全部）", 分组: group || "", 状态: status || "", 城市: city || "", 标签: tags || "", 职位: title || "", 学历: education || "" },
+    命中总量: total,
+    状态分布: topN(statusRows),
+    来源分布: topN(sourceRows),
+    城市分布: topN(cityRows),
+    年限分布: yearsText,
+    技能标签Top10_基于前300条样本: topSkills.join("、") || "（样本中无技能/标签）",
+    在招岗位: (jobRows.results || []).map((j: any) => `${j.title}${j.city ? `·${j.city}` : ""}`),
+  };
+
+  const scope = truncate(JSON.stringify(report), 120);
+  const cached = await loadRecentArtifact(c.env.DB, session.userId, "talent_inventory", scope, "");
+  if (cached) return c.json({ ...cached, _cached: true });
+  const denied = await quotaGuard(c, session.userId);
+  if (denied) return denied;
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "未配置 AI 密钥，无法生成盘点", code: "AI_NO_KEY" }, 500);
+  }
+
+  const system = `你是一名资深 HRBP，为 HR 主管生成「人才储备盘点」简报。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+
+字段说明：
+- profile: 一段储备画像，不超过 110 字——总量、结构特征（状态/来源/年限/城市/技能）、值得注意的点，用具体数字
+- gaps: 0-3 条储备缺口，每条不超过 40 字，必须引用数据对比（如「在招 X 岗位，库内相关人才仅 N 人」）；没有明显缺口就给空数组，不要硬凑
+- actions: 2-3 条可执行的储备运营建议（激活沉睡人才/定向补充渠道/调整筛选策略），每条不超过 40 字，禁止「加强」「优化」式空话
+
+要求：
+1. 只基于给定数据，样本有限的（技能标签基于前 300 条样本）要如实说明局限。
+2. 状态分布里的英文状态含义：new=新入库、screening=初筛中、placed=已入职、left=已离职、blocked=暂不合适、archived=已归档。`;
+
+  const userPrompt = `【人才库统计】\n${truncate(JSON.stringify(report), 2800)}\n\n请生成人才储备盘点。`;
+
+  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.3 });
+  if (!raw) {
+    return c.json({ error: "AI 暂时不可用，请稍后重试", code: "AI_UNAVAILABLE" }, 502);
+  }
+
+  const result = {
+    profile: typeof raw.profile === "string" ? raw.profile.trim().slice(0, 160) : "",
+    gaps: toStringArray(raw.gaps, 3),
+    actions: toStringArray(raw.actions, 3),
+  };
+  if (!result.profile) {
+    return c.json({ error: "AI 未生成有效内容，请重试", code: "AI_EMPTY" }, 502);
+  }
+
+  await saveArtifact(c.env.DB, session.userId, "talent_inventory", scope, "", result);
+  return c.json(result);
+});
+
 // ---------------------------------------------------------------- AI 岗位诊断
 // 单岗位「为什么招人慢」：结合漏斗人数、各阶段停留、画像概况、备注样本给判断与建议。
 // 与复盘同模式：前端传聚合数据（岗位详情为 owner 隔离数据）；scope = job_id，10 分钟缓存。
