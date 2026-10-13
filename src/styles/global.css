@@ -1800,3 +1800,11 @@ html[data-theme-mode="dark"] .wb-mod-item-desc { color: #6b7280; }
 @media (max-width: 420px) {
   .wb-strip { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ===== 岗位列表可点击元素（岗位名称 / 流程中人数）=====
+   本体是 <a onClick>，但缺悬停暗示导致用户难以发现。统一 hover 主色 + 下划线；
+   徽标（Badge）无法加下划线，用 hover 轻微放大反馈代替。 */
+.job-link { color: var(--color-primary, #1677ff); text-decoration: none; transition: opacity 0.2s; }
+.job-link:hover { text-decoration: underline; opacity: 0.85; }
+.job-badge-link { display: inline-flex; align-items: center; transition: opacity 0.2s; }
+.job-badge-link:hover { opacity: 0.75; }

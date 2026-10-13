@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Card, Button, Input, Select, Upload, Space, Tag, message, Modal, Alert,
-  Progress, Typography, Popconfirm, Table,
+  Progress, Typography, Popconfirm, Table, Tooltip,
 } from "antd";
 import {
   InboxOutlined, ArrowLeftOutlined, ThunderboltOutlined, DatabaseOutlined,
@@ -354,20 +354,16 @@ export default function Match() {
     .filter((c) => results[c.key])
     .sort((a, b) => results[b.key].score - results[a.key].score);
 
-  // 落地引导：从画像列表点「去匹配」跳来时，点破「选好画像 ≠ 完事，还要加候选人 + 开始匹配」
-  const [landingHint, setLandingHint] = useState<boolean>(
-    () => !!(location.state as { profileId?: string } | null)?.profileId
-  );
-
-  // 动态步骤引导：按当前状态告诉用户卡在哪一步、下一步点哪，把三步串成一条路
+  // 动态步骤引导：全页只保留这一条引导（落地场景、缺条件场景都收进这一条），
+  // 避免多条 Alert 叠加让用户分不清重点
   const stepHint: string | null = !profile
-    ? "第 1 步：先在下方「① 选择画像」里选中一个职位画像"
+    ? "第 1 步：在下方「① 选择画像」里选中一个职位画像"
     : candidates.length === 0
-      ? `第 2 步：添加候选人 —— 点「② 候选人」右上角的「从${termFor(brand, "人才库")}添加」一键加入，或直接拖拽简历文件上传`
+      ? `第 2 步：添加候选人 —— 点「② 候选人」右上角的「从${termFor(brand, "人才库")}添加」一键加入，或直接拖拽简历文件上传（就绪后点「③ 开始匹配」）`
       : running
         ? "正在评估中，请稍候…"
         : ranked.length === 0
-          ? "第 3 步：就绪！点「③ 匹配结果」右上角的「开始匹配」按钮"
+          ? "第 3 步：就绪！点右上角「开始匹配」"
           : null;
 
   return (
@@ -380,24 +376,7 @@ export default function Match() {
         </Typography.Text>
       </div>
 
-      {/* 落地引导：从画像页跳来时一次性展示，教用户走完剩余两步（可关闭） */}
-      {landingHint && (
-        <Alert
-          type="success"
-          showIcon
-          closable
-          onClose={() => setLandingHint(false)}
-          style={{ marginBottom: 12 }}
-          message={`已自动选中画像${profile ? `「${profile.job_title || profile.name}」` : ""}`}
-          description={
-            termFor(brand,
-              "接下来还有两步：① 在「候选人」里把要比的人加进来（点右上角「从人才库添加」最快，或拖拽简历上传）；" +
-              "② 点「开始匹配」看排序结果。跟着下方「当前该做什么」提示走即可。")
-          }
-        />
-      )}
-
-      {/* 动态步骤引导：当前卡在哪一步、下一步点哪 */}
+      {/* 动态步骤引导：全页唯一引导条——当前卡在哪一步、下一步点哪 */}
       {stepHint && (
         <Alert
           type="info"
@@ -525,34 +504,20 @@ export default function Match() {
         }
         size="small"
         extra={
-          <Button
-            type="primary"
-            icon={<ThunderboltOutlined />}
-            loading={running}
-            disabled={running}
-            onClick={handleMatch}
-          >
-            开始匹配
-          </Button>
+          <Tooltip title={!profile || candidates.length === 0 ? "先选画像并添加至少 1 位候选人" : ""}>
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              loading={running}
+              disabled={running || !profile || candidates.length === 0}
+              onClick={handleMatch}
+            >
+              开始匹配
+            </Button>
+          </Tooltip>
         }
       >
-        {/* 缺条件时把原因直接摆在页面上：原来按钮被 disabled（候选人为空时）且只在点击时弹 message，
-            用户看不出问题，表现就是「点了没反应」 */}
-        {!running && (!profile || candidates.length === 0) && (
-          <Alert
-            type="warning"
-            showIcon
-            style={{ marginBottom: 12 }}
-            message={
-              !profile && candidates.length === 0
-                ? termFor(brand, "还差两步：先在「① 选择画像」里选一个职位画像，再在「② 候选人」里上传简历或从人才库添加")
-                : !profile
-                  ? "还没选画像：请先在「① 选择画像」里选中本次要比对的职位画像"
-                  : termFor(brand, "还没有候选人：请在「② 候选人」里上传简历，或点右上角「从人才库添加」")
-            }
-          />
-        )}
-
+        {/* 缺条件的原因由顶部唯一的「当前该做什么」引导条承担，这里只留一行浅色说明，不再重复 Alert */}
         {running && (
           <Progress
             percent={progress.total ? Math.round((progress.done / progress.total) * 100) : 0}
@@ -570,9 +535,11 @@ export default function Match() {
           />
         )}
 
-        {ranked.length === 0 && !running && profile && candidates.length > 0 && (
+        {ranked.length === 0 && !running && (
           <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
-            点右上角「开始匹配」开始评估，结果会按匹配度从高到低排列。
+            {!profile || candidates.length === 0
+              ? termFor(brand, "先按上方「当前该做什么」提示补齐画像和候选人，这里就能开始匹配了")
+              : "点右上角「开始匹配」开始评估，结果会按匹配度从高到低排列。"}
           </Typography.Paragraph>
         )}
 

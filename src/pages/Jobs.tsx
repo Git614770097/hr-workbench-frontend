@@ -245,7 +245,9 @@ export default function Jobs() {
       key: "title",
       width: 200,
       render: (v: string, r: Job) => (
-        <a onClick={() => openDetail(r)} style={{ fontWeight: 600 }}>{v}</a>
+        <Tooltip title="点击查看岗位详情">
+          <a onClick={() => openDetail(r)} className="job-link" style={{ fontWeight: 600 }}>{v}</a>
+        </Tooltip>
       ),
     },
     { title: "部门", dataIndex: "department", key: "department", width: 110, render: (v: string) => v || "—" },
@@ -276,9 +278,11 @@ export default function Jobs() {
     {
       title: "流程中", dataIndex: "active_count", key: "active_count", width: 90,
       render: (v: number, r: Job) => (
-        <a onClick={() => openDetail(r)}>
-          <Badge count={v || 0} showZero color={(v || 0) > 0 ? "#3b82f6" : "#d9d9d9"} overflowCount={999} />
-        </a>
+        <Tooltip title="点击查看岗位详情">
+          <a onClick={() => openDetail(r)} className="job-badge-link">
+            <Badge count={v || 0} showZero color={(v || 0) > 0 ? "#3b82f6" : "#d9d9d9"} overflowCount={999} />
+          </a>
+        </Tooltip>
       ),
     },
     {
