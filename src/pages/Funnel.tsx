@@ -765,9 +765,18 @@ export default function Funnel() {
                     },
                     {
                       title: "转化率", dataIndex: "rate", align: "right",
-                      render: (v: number) => (
-                        <b style={{ color: v >= 0.3 ? "#10b981" : v > 0 ? "#d48806" : "#8c8c8c" }}>{pct(v)}</b>
-                      ),
+                      render: (v: number) => {
+                        const color = v >= 0.3 ? "#10b981" : v > 0 ? "#d48806" : "#bfbfbf";
+                        const w = Math.max(3, v * 100);
+                        return (
+                          <span className="wb-rate-cell">
+                            <span className="wb-rate-bar">
+                              <span className="wb-rate-fill" style={{ width: `${w}%`, background: color }} />
+                            </span>
+                            <b style={{ color }}>{pct(v)}</b>
+                          </span>
+                        );
+                      },
                     },
                     {
                       title: "平均周期", dataIndex: "avg_cycle_days", align: "right",
@@ -803,6 +812,35 @@ export default function Funnel() {
                     <span className="wb-cycle-note">（{data!.cycles.segments.n} 名入职者）</span>
                   </div>
                 )}
+                {(() => {
+                  const bars = CYCLE_ROWS.filter((r) => r.key !== "total").map((cr) => ({
+                    key: cr.key,
+                    title: cr.title,
+                    avg: data!.cycles[cr.key].avg ?? 0,
+                  }));
+                  const maxAvg = bars.reduce((m, b) => Math.max(m, b.avg), 0);
+                  return (
+                    <div className="wb-cycle-bars">
+                      <div className="wb-cycle-bars-cap">各环节平均耗时（瓶颈环节标红）</div>
+                      {bars.map((b) => {
+                        const w = maxAvg > 0 ? Math.max(4, (b.avg / maxAvg) * 100) : 0;
+                        const isMax = b.avg > 0 && b.avg === maxAvg;
+                        return (
+                          <div className="wb-cycle-bar-row" key={b.key}>
+                            <span className="wb-cycle-bar-lab">{b.title}</span>
+                            <span className="wb-cycle-bar-track">
+                              <span
+                                className={`wb-cycle-bar-fill${isMax ? " is-bottleneck" : ""}`}
+                                style={{ width: `${w}%` }}
+                              />
+                            </span>
+                            <span className="wb-cycle-bar-val">{b.avg > 0 ? `${r1(b.avg)} 天` : "—"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
                 <table className="wb-table">
                   <thead>
                     <tr><th>环节</th><th>均值</th><th>中位</th><th>P90</th><th>样本</th></tr>
