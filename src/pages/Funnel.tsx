@@ -18,7 +18,6 @@ import type {
   FunnelResponse, FunnelStayItem, Job, User, OverviewResponse, TrendResponse,
   WorkbenchModuleKey,
 } from "../types";
-import { INTERVIEW_ROUND_LABELS } from "../types";
 import FunnelChartView from "../components/FunnelChart";
 import OverviewPanel from "../components/OverviewPanel";
 import WorkbenchTrendChart from "../components/WorkbenchTrendChart";
@@ -56,24 +55,6 @@ const dayText = (v: number | null) => (v == null ? "—" : `${v}`);
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
 /** 客户端中国时区今天 YYYY-MM-DD */
-function todayCnStr(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(new Date());
-}
-
-/** 到期日 → 「今天 / 明天 / N 天后 / 已过期 x 天」 */
-function dueLabel(dateStr: string, today: string): string {
-  const a = Date.parse(dateStr + "T00:00:00Z");
-  const b = Date.parse(today + "T00:00:00Z");
-  if (Number.isNaN(a) || Number.isNaN(b)) return dateStr;
-  const d = Math.round((a - b) / 86400000);
-  if (d < 0) return `已过期 ${-d} 天`;
-  if (d === 0) return "今天";
-  if (d === 1) return "明天";
-  if (d === 2) return "后天";
-  return `${d} 天后`;
-}
 
 export default function Funnel() {
   const profile = useIdentityProfile();
@@ -233,10 +214,8 @@ export default function Funnel() {
     (data?.stage_stay || []).map((x) => [x.key, x])
   );
 
-  const today = todayCnStr();
   const overdue = overview?.tasks.overdue ?? 0;
   const dueSoon = overview?.dueSoonTasks ?? [];
-  const todayIv = overview?.todayInterviews ?? [];
 
   // ---- 诊断提示（原「结论」卡精简为漏斗下方的一段提示）----
   const diagnosis: string[] = (() => {
@@ -481,118 +460,64 @@ export default function Funnel() {
         <Button icon={<AppstoreOutlined />} onClick={() => setCfgOpen(true)}>调整模块</Button>
       </div>
 
-      {/* ===== 行动层：左「今日重点」+ 右 KPI 快照（栅格与分析层同源：xl 14/10） ===== */}
+      {/* ===== 行动层：通栏指标条（今日重点 + 关键指标 合并，去重） ===== */}
       {(!isHidden("today_focus") || !isHidden("kpi_band")) && (
-        <Row gutter={[16, 16]} className="wb-hero">
-          {/* 左栏：今日重点（两栏：今日面试 / 近 3 天到期） */}
-          {!isHidden("today_focus") && (
-            <Col xs={24} xl={14}>
-              {overview ? (
-                <Card className="wb-focus-card" title="今日重点" styles={{ body: { padding: "14px 18px" } }}>
-                <div className="wb-focus">
-                  <div className="wb-focus-col">
-                    <div className="wb-focus-head">
-                      <span className="wb-focus-title"><CalendarOutlined /> 今日面试</span>
-                      <span className="wb-focus-count">{overview.todayInterviewCount}</span>
-                    </div>
-                    {todayIv.length === 0 ? (
-                      <div className="wb-focus-empty">今天没有安排面试</div>
-                    ) : (
-                      <div className="wb-focus-body">
-                        {todayIv.slice(0, 6).map((iv) => (
-                          <div className="wb-focus-item" key={iv.id}>
-                            <span className="wb-focus-time">{(iv.scheduled_at || "").slice(11, 16)}</span>
-                            <span className="wb-focus-main">
-                              <b>{iv.talent_name}</b>
-                              <span className="wb-focus-sub">
-                                {INTERVIEW_ROUND_LABELS[iv.round as keyof typeof INTERVIEW_ROUND_LABELS] || iv.round}
-                                {iv.job_title ? ` · ${iv.job_title}` : ""}
-                              </span>
-                            </span>
-                          </div>
-                        ))}
-                        {todayIv.length > 6 && (
-                          <Link to="/interviews" className="wb-focus-more">还有 {todayIv.length - 6} 场 →</Link>
-                        )}
-                      </div>
-                    )}
+        <div className="wb-hero">
+          {overview ? (
+            <div className="page-stats wb-strip">
+              {/* 关键指标 */}
+              {!isHidden("kpi_band") && (
+                <>
+                  <div className="stat">
+                    <span className="stat-icon is-neutral"><AimOutlined /></span>
+                    <span className="stat-body">
+                      <span className="stat-num is-neutral"><AnimatedNumber value={overview.openJobs ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                      <span className="stat-label">{termFor(profile, "在招岗位")}</span>
+                    </span>
                   </div>
-
-                  <div className="wb-focus-col">
-                    <div className="wb-focus-head">
-                      <span className="wb-focus-title"><AlertOutlined /> 近 3 天到期</span>
-                      <span className="wb-focus-head-right">
-                        {overdue > 0 && (
-                          <Link to="/tasks" className="wb-focus-overdue" title={`${overdue} 项待办已逾期，建议优先清理`}>
-                            {overdue} 项逾期
-                          </Link>
-                        )}
-                        <span className="wb-focus-count is-warn">{dueSoon.length}</span>
+                  <div className="stat">
+                    <span className="stat-icon is-neutral"><TeamOutlined /></span>
+                    <span className="stat-body">
+                      <span className="stat-num"><AnimatedNumber value={overview.activeCandidates ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                      <span className="stat-label">{termFor(profile, "待推进")}</span>
+                    </span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-icon is-good"><RiseOutlined /></span>
+                    <span className="stat-body">
+                      <span className="stat-num is-good"><AnimatedNumber value={overview.weeklyNewTalents ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                      <span className="stat-label">本周新增</span>
+                    </span>
+                  </div>
+                </>
+              )}
+              {/* 今日重点：今日面试 / 近 3 天到期（带逾期红徽标，点击进对应页） */}
+              {!isHidden("today_focus") && (
+                <>
+                  <Link to="/interviews" className="stat is-link">
+                    <span className="stat-icon is-warn"><CalendarOutlined /></span>
+                    <span className="stat-body">
+                      <span className="stat-num is-warn"><AnimatedNumber value={overview.todayInterviewCount ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                      <span className="stat-label">今日面试</span>
+                    </span>
+                  </Link>
+                  <Link to="/tasks" className="stat is-link">
+                    <span className="stat-icon is-warn"><AlertOutlined /></span>
+                    <span className="stat-body">
+                      <span className="stat-num is-warn">{dueSoon.length}</span>
+                      <span className="stat-label">
+                        近 3 天到期
+                        {overdue > 0 && <span className="wb-focus-overdue">{overdue} 逾期</span>}
                       </span>
-                    </div>
-                    {dueSoon.length === 0 ? (
-                      <div className="wb-focus-empty">近 3 天没有到期待办</div>
-                    ) : (
-                      <div className="wb-focus-body">
-                        {dueSoon.slice(0, 6).map((t) => (
-                          <div className="wb-focus-item" key={t.id}>
-                            <span className="wb-focus-time is-warn">{dueLabel(t.due_date, today)}</span>
-                            <span className="wb-focus-main">
-                              <b>{t.title}</b>
-                              {t.talent_name && <span className="wb-focus-sub">{t.talent_name}</span>}
-                            </span>
-                          </div>
-                        ))}
-                        {dueSoon.length > 6 && (
-                          <Link to="/tasks" className="wb-focus-more">还有 {dueSoon.length - 6} 项 →</Link>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            ) : (
-              ovLoading ? <Card className="wb-hero-skel"><Skeleton active paragraph={{ rows: 3 }} /></Card> : null
-            )}
-            </Col>
-          )}
-
-          {/* 右栏：KPI 快照 2×2 */}
-          {!isHidden("kpi_band") && (
-            <Col xs={24} xl={10}>
-              <div className="page-stats wb-kpi">
-                <div className="stat">
-                  <span className="stat-icon is-neutral"><AimOutlined /></span>
-                  <span className="stat-body">
-                    <span className="stat-num is-neutral"><AnimatedNumber value={overview?.openJobs ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                    <span className="stat-label">{termFor(profile, "在招岗位")}</span>
-                  </span>
-                </div>
-                <div className="stat">
-                  <span className="stat-icon is-neutral"><TeamOutlined /></span>
-                  <span className="stat-body">
-                    <span className="stat-num"><AnimatedNumber value={overview?.activeCandidates ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                    <span className="stat-label">{termFor(profile, "待推进")}</span>
-                  </span>
-                </div>
-                <div className="stat">
-                  <span className="stat-icon is-good"><RiseOutlined /></span>
-                  <span className="stat-body">
-                    <span className="stat-num is-good"><AnimatedNumber value={overview?.weeklyNewTalents ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                    <span className="stat-label">本周新增</span>
-                  </span>
-                </div>
-                <div className="stat">
-                  <span className="stat-icon is-warn"><CalendarOutlined /></span>
-                  <span className="stat-body">
-                    <span className="stat-num is-warn"><AnimatedNumber value={overview?.todayInterviewCount ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                    <span className="stat-label">今日面试</span>
-                  </span>
-                </div>
-              </div>
-            </Col>
-          )}
-        </Row>
+                    </span>
+                  </Link>
+                </>
+              )}
+            </div>
+          ) : ovLoading ? (
+            <Card><Skeleton active paragraph={{ rows: 1 }} /></Card>
+          ) : null}
+        </div>
       )}
 
       {/* ===== 分析层：招聘概览 ===== */}
