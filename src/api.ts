@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiQuotaInfo } from "./types";
 
 const BASE = "/api";
 
@@ -680,6 +680,21 @@ export const api = {
   // scope = job_id 作 10 分钟缓存键。
   aiJobDiagnosis: (data: { scope: string; report: Record<string, unknown> }) =>
     request<AiJobDiagnosis>("/ai/job-diagnosis", { method: "POST", body: JSON.stringify(data) }, 60000),
+
+  // AI 审批摘要：审批弹窗「10 秒读卡」。后端按 instance_id 自查上下文，10 分钟缓存。
+  aiApprovalSummary: (instanceId: string) =>
+    request<AiApprovalSummary>("/ai/approval-summary", { method: "POST", body: JSON.stringify({ instance_id: instanceId }) }, 60000),
+
+  // AI 入职清单：按候选人入职上下文生成材料初稿；后端自查归属，10 分钟缓存。前端预览勾选后入库。
+  aiOnboardChecklist: (talentId: string) =>
+    request<AiOnboardChecklist>("/ai/onboard-checklist", { method: "POST", body: JSON.stringify({ talent_id: talentId }) }, 60000),
+
+  // ---- AI 配额（管理员不限额；普通用户上限可在系统设置里调）----
+  // 读当前用户的今日用量与生效上限；limit=-1 / unlimited=true 表示不限。
+  getAiQuota: () => request<AiQuotaInfo>("/ai/quota"),
+  // 仅管理员：保存普通用户每日上限（0 = 不限制）
+  setAiQuota: (limit: number) =>
+    request<{ ok: boolean; limit: number }>("/ai/quota", { method: "PUT", body: JSON.stringify({ limit }) }),
 
   // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
   getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {

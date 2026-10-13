@@ -749,6 +749,29 @@ export interface AiJobDiagnosis {
   actions: string[];
 }
 
+// AI 审批摘要（/ai/approval-summary）：审批「10 秒读卡」
+export interface AiApprovalSummary {
+  /** 3 句话内讲清「批的是什么」 */
+  summary: string;
+  /** 0-2 条风险点（引用数据；AI 不给批准/驳回的倾向性结论） */
+  risks: string[];
+}
+
+// AI 入职清单（/ai/onboard-checklist）：按岗位/城市上下文生成材料初稿，前端预览勾选后入库
+export interface AiOnboardChecklist {
+  items: { name: string; category: string; required: boolean }[];
+}
+
+// AI 配额（/ai/quota）：管理员不限额（unlimited=true, limit=-1）；
+// 普通用户 limit 为生效上限，0 表示不限制。default_limit 是「系统设置里配的值」，
+// 管理员把自己的生效值设为 -1，所以要额外给默认值才能在设置页回显当前配置。
+export interface AiQuotaInfo {
+  used: number;
+  limit: number;
+  unlimited: boolean;
+  default_limit: number;
+}
+
 export interface FunnelSourceItem {
   source: string;
   entered: number;  // 进入流程的投递数

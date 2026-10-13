@@ -7,8 +7,11 @@
 //       ② 避开「KV expirationTtl 必须 ≥60s」的坑（按日配额天然需要 24h+ TTL）；
 //       ③ 同一张表顺便承担缓存职责，一举两得。
 
-/** 每用户每日 AI 调用上限；超出返回 429，按中国时区凌晨重置 */
-export const AI_DAILY_LIMIT = 10;
+/** 普通用户每日 AI 调用上限默认值；可在系统设置→AI 配额里改，管理员不受限 */
+export const AI_DAILY_LIMIT = 20;
+
+/** site_settings 里存该配置的 key（值为 JSON：{ "limit": 20 }） */
+export const AI_QUOTA_SETTING_KEY = "ai_quota_config";
 
 /** 同对象同场景的缓存有效期（分钟）：期内重复请求直接读库，不烧 token */
 export const AI_CACHE_MINUTES = 10;
@@ -48,17 +51,45 @@ function minutesAgoUtc(minutes: number): string {
 export interface QuotaInfo {
   ok: boolean;
   used: number;
+  /** 生效上限；管理员为 -1 表示不限 */
   limit: number;
+  unlimited: boolean;
 }
 
-/** 今日已用次数（只 COUNT，不写库） */
-export async function checkQuota(db: D1Database, userId: string): Promise<QuotaInfo> {
+/**
+ * 读当前生效的每日上限（管理员可在系统设置里改）。
+ * 配置不存在/非法时回落到 AI_DAILY_LIMIT 默认值。
+ */
+export async function loadDailyLimit(db: D1Database): Promise<number> {
+  const row = await db
+    .prepare("SELECT value FROM site_settings WHERE key = ?")
+    .bind(AI_QUOTA_SETTING_KEY)
+    .first<{ value: string }>();
+  if (!row?.value) return AI_DAILY_LIMIT;
+  try {
+    const v = JSON.parse(row.value);
+    const n = Math.floor(Number(v?.limit));
+    // 0 视为"不限"，其余非法值回落默认；上界 9999 防手滑
+    if (Number.isFinite(n) && n >= 0 && n <= 9999) return n;
+  } catch {
+    /* 落到默认 */
+  }
+  return AI_DAILY_LIMIT;
+}
+
+/** 今日已用次数（只 COUNT，不写库）。管理员不限额，但仍统计已用次数便于展示。 */
+export async function checkQuota(db: D1Database, userId: string, role?: string): Promise<QuotaInfo> {
   const row = await db
     .prepare("SELECT COUNT(*) AS c FROM ai_artifacts WHERE owner_id = ? AND created_at >= ?")
     .bind(userId, chinaDayStartUtc())
     .first<{ c: number }>();
   const used = row?.c ?? 0;
-  return { ok: used < AI_DAILY_LIMIT, used, limit: AI_DAILY_LIMIT };
+  // 管理员不限：limit 记 -1，前端据此隐藏进度/不显示"已用完"
+  if (role === "admin") return { ok: true, used, limit: -1, unlimited: true };
+  const limit = await loadDailyLimit(db);
+  // limit = 0 语义为「不限制」（管理员可把普通用户也放开）
+  if (limit === 0) return { ok: true, used, limit: 0, unlimited: true };
+  return { ok: used < limit, used, limit, unlimited: false };
 }
 
 /** 读缓存：同用户 + 同对象 + 同场景，且创建时间在有效期内（用于「重新生成」时省 token） */

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card, Tabs, Input, Button, Alert, message, Typography, Select, Modal, Form, Tag, Table, Space, Popconfirm } from "antd";
+import { Card, Tabs, Input, InputNumber, Button, Alert, message, Typography, Select, Modal, Form, Tag, Table, Space, Popconfirm } from "antd";
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { useDict } from "../dict";
@@ -605,11 +605,78 @@ function ChangelogSettings() {
   );
 }
 
+// ---- AI 配额设置：管理员不限额；普通用户每日上限可调 ----
+function AiQuotaSettings() {
+  const [limit, setLimit] = useState<number>(20);
+  const [used, setUsed] = useState<number | null>(null);
+  const [unlimited, setUnlimited] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api
+      .getAiQuota()
+      .then((q) => {
+        // 管理员自己的 limit 恒为 -1（不限），要回显的是「系统设置里配的值」
+        setLimit(q.default_limit);
+        setUsed(q.used);
+        setUnlimited(q.unlimited);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.setAiQuota(limit);
+      message.success("AI 配额已保存，即时生效");
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 20 }}
+        message={`管理员账号不限 AI 次数（今日已用 ${used ?? 0} 次，仅供了解）。下方设置的次数只约束普通用户，中国时区凌晨自动重置。`}
+      />
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel extra="0 = 不限制；建议 10~100，防止 token 成本失控">普通用户每日 AI 次数上限</FieldLabel>
+        <InputNumber
+          value={limit}
+          onChange={(v) => setLimit(typeof v === "number" ? v : 0)}
+          min={0}
+          max={9999}
+          step={5}
+          disabled={loading}
+          style={{ width: 160 }}
+          addonAfter="次/ 天"
+        />
+        <div style={{ marginTop: 6 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            当前生效：{limit === 0 ? "不限制" : `每人每天 ${limit} 次`}
+          </Typography.Text>
+        </div>
+      </div>
+      <Button type="primary" loading={saving} disabled={loading} onClick={handleSave}>
+        保存
+      </Button>
+    </div>
+  );
+}
+
 export default function Settings() {
   // 后续再有全局配置（例如老带新奖励天数）直接加新 Tab，不必再动菜单
   const items = [
     { key: "pay", label: "收款码设置", children: <PaySettings /> },
     { key: "dict", label: "数据字典", children: <DictSettings /> },
+    { key: "ai", label: "AI 配额", children: <AiQuotaSettings /> },
     { key: "changelog", label: "更新公告", children: <ChangelogSettings /> },
   ];
 

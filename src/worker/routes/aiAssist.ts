@@ -4,7 +4,8 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { deepseekJsonSafe, toStringArray } from "../ai";
 import {
-  checkQuota, loadLatestArtifact, loadRecentArtifact, maskPii, saveArtifact, truncate,
+  AI_QUOTA_SETTING_KEY, checkQuota, loadDailyLimit, loadLatestArtifact, loadRecentArtifact,
+  maskPii, saveArtifact, truncate,
 } from "../aiGuard";
 
 // AI 提效接口：简历解读 / 沟通文案 / 面试问题 / 综合评估。
@@ -83,9 +84,16 @@ async function sessionOnly(c: Context<{ Bindings: Env }>): Promise<{ userId: str
   return session;
 }
 
-/** 配额校验；通过返回 null，否则返回要直接 return 的 429 响应 */
-async function quotaGuard(c: Context<{ Bindings: Env }>, userId: string): Promise<Response | null> {
-  const quota = await checkQuota(c.env.DB, userId);
+/**
+ * 配额校验；通过返回 null，否则返回要直接 return 的 429 响应。
+ * 管理员不限额（checkQuota 直接放行）；普通用户上限取系统设置里的配置。
+ */
+async function quotaGuard(
+  c: Context<{ Bindings: Env }>,
+  userId: string,
+  role?: string
+): Promise<Response | null> {
+  const quota = await checkQuota(c.env.DB, userId, role);
   if (!quota.ok) {
     return c.json(
       { error: `今日 AI 次数已用完（${quota.used}/${quota.limit}），明天自动重置`, code: "AI_QUOTA" },
@@ -137,7 +145,7 @@ aiAssist.post("/resume-insight", async (c) => {
   const scene = "";
   const cached = await loadRecentArtifact(c.env.DB, session.userId, "resume_insight", bizId, scene);
   if (cached) return c.json({ ...cached, _cached: true });
-  const denied = await quotaGuard(c, session.userId);
+  const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
   const apiKey = c.env.DEEPSEEK_API_KEY;
@@ -210,7 +218,7 @@ aiAssist.post("/outreach", async (c) => {
   const scene = body.scene === "reject" ? `reject:${body.tone || "warm"}` : body.scene;
   const cached = await loadRecentArtifact(c.env.DB, session.userId, "outreach", talent.id, scene);
   if (cached) return c.json({ ...cached, _cached: true });
-  const denied = await quotaGuard(c, session.userId);
+  const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
   const apiKey = c.env.DEEPSEEK_API_KEY;
@@ -285,7 +293,7 @@ aiAssist.post("/interview-questions", async (c) => {
 
   const cached = await loadRecentArtifact(c.env.DB, session.userId, "interview_questions", talent.id, "");
   if (cached) return c.json({ ...cached, _cached: true });
-  const denied = await quotaGuard(c, session.userId);
+  const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
   const apiKey = c.env.DEEPSEEK_API_KEY;
@@ -365,7 +373,7 @@ aiAssist.post("/candidate-summary", async (c) => {
 
   const cached = await loadRecentArtifact(c.env.DB, session.userId, "candidate_summary", talent.id, "");
   if (cached) return c.json({ ...cached, _cached: true });
-  const denied = await quotaGuard(c, session.userId);
+  const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
   const rows = await c.env.DB
@@ -470,7 +478,7 @@ aiAssist.post("/job-draft", async (c) => {
   const scene = "";
   const cached = await loadRecentArtifact(c.env.DB, session.userId, "job_draft", bizId, scene);
   if (cached) return c.json({ ...cached, _cached: true });
-  const denied = await quotaGuard(c, session.userId);
+  const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
   const apiKey = c.env.DEEPSEEK_API_KEY;
@@ -548,6 +556,205 @@ aiAssist.post("/job-draft", async (c) => {
   return c.json(result);
 });
 
+// ---------------------------------------------------------------- AI 审批摘要
+// 审批「10 秒读卡」：后端自查实例 + 候选人 + 岗位 + 快照 + 前级意见，生成摘要与风险点。
+// AI 只摆事实不给倾向性结论——批准/驳回由审批人独立决策。scope = instance_id，10 分钟缓存。
+const STAGE_ZH: Record<string, string> = {
+  applied: "已投递", screening: "初筛", interviewing: "面试中", offer: "Offer 阶段",
+  onboard: "待入职", hired: "已入职", rejected: "已淘汰", withdrawn: "已放弃",
+};
+
+aiAssist.post("/approval-summary", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  const body = await c.req.json<{ instance_id?: string }>().catch(() => null);
+  const id = (body?.instance_id || "").trim();
+  if (!id) return c.json({ error: "缺少审批单号" }, 400);
+
+  const inst = await c.env.DB.prepare(`
+    SELECT i.id, i.owner_id, i.scene, i.title, i.current_step, i.status, i.payload, i.created_at,
+           t.current_title, t.current_company, t.years_experience, t.education, t.expected_salary,
+           tj.stage, j.title AS job_title_full, j.salary_range AS job_salary, j.city AS job_city
+    FROM approval_instances i
+    JOIN talents t ON i.talent_id = t.id
+    LEFT JOIN talent_jobs tj ON tj.id = i.talent_job_id
+    LEFT JOIN jobs j ON j.id = tj.job_id
+    WHERE i.id = ?
+  `).bind(id).first<any>();
+  if (!inst) return c.json({ error: "审批不存在" }, 404);
+  // 归属校验：与 decide 接口同规则——admin 任意，普通用户限自己发起的
+  if (session.role !== "admin" && inst.owner_id !== session.userId) {
+    return c.json({ error: "无权查看该审批" }, 403);
+  }
+
+  const scope = id.slice(0, 120);
+  const cached = await loadRecentArtifact(c.env.DB, session.userId, "approval_summary", scope, "");
+  if (cached) return c.json({ ...cached, _cached: true });
+  const denied = await quotaGuard(c, session.userId, session.role);
+  if (denied) return denied;
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "未配置 AI 密钥，无法生成摘要", code: "AI_NO_KEY" }, 500);
+  }
+
+  // 步骤明细（含前级意见，脱敏截断）
+  const stepRows = await c.env.DB.prepare(
+    "SELECT step_index, step_name, decision, comment FROM approval_steps WHERE instance_id = ? ORDER BY step_index ASC"
+  ).bind(id).all();
+  const steps = (stepRows.results || []).map((s: any) => ({
+    环节: s.step_name,
+    结果: s.decision === "approve" ? "已通过" : s.decision === "reject" ? "已驳回" : "待处理",
+    意见: s.comment ? maskPii(String(s.comment)).slice(0, 80) : "",
+  }));
+
+  // payload 快照：发起审批时录入的 Offer 等信息，是「批什么」的核心
+  let payloadText = "（无）";
+  if (inst.payload) {
+    try { payloadText = truncate(JSON.stringify(JSON.parse(inst.payload)), 600); } catch { /* 脏快照忽略 */ }
+  }
+
+  const openDays = Math.max(0, Math.floor(
+    (Date.now() - new Date(String(inst.created_at).replace(" ", "T") + "Z").getTime()) / 86400000
+  ));
+
+  const report = {
+    审批事项: {
+      标题: inst.title, 场景: inst.scene, 状态: inst.status,
+      发起至今天数: openDays, 当前环节: (inst.current_step ?? 0) + 1,
+      快照内容: payloadText,
+    },
+    候选人: {
+      当前职位: inst.current_title || "", 当前公司: maskPii(inst.current_company || ""),
+      工作年限: inst.years_experience != null ? `${inst.years_experience}年` : "",
+      学历: inst.education || "", 期望薪资: inst.expected_salary || "",
+      招聘流程阶段: STAGE_ZH[inst.stage] || inst.stage || "",
+    },
+    岗位: { 名称: inst.job_title_full || "", 城市: inst.job_city || "", 薪资范围: inst.job_salary || "" },
+    审批步骤与意见: steps,
+  };
+
+  const system = `你是一名资深 HR 顾问，为审批人准备「10 秒读卡」审批摘要。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+
+字段说明：
+- summary: 不超过 3 句话，讲清「批的是什么」——谁、什么岗位/条件、审批请求的核心内容（从快照取），不超过 90 字
+- risks: 0-2 条风险点，每条必须引用给定数据中的具体事实，不超过 40 字；没有可指出的风险就给空数组，不要硬凑
+
+常见风险维度（仅作提示，只列数据能支撑的）：
+- 薪资：快照薪资超出岗位薪资范围，或明显高于候选人期望薪资
+- 时效：候选人流转或审批停滞过久
+- 信息缺失：快照缺少关键信息（如未写薪资、未写入职日期）
+- 门槛：候选人年限/学历与岗位要求明显不匹配
+
+要求：
+1. 只基于给定数据，查不到的字段不要编造。
+2. 严禁给出「建议批准 / 建议驳回」的倾向性结论——决策由审批人独立做出，你只负责把信息摆清楚。`;
+
+  const userPrompt = `【审批上下文】\n${truncate(JSON.stringify(report), 3200)}\n\n请生成审批摘要与风险提示。`;
+
+  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.3 });
+  if (!raw) {
+    return c.json({ error: "AI 暂时不可用，请稍后重试", code: "AI_UNAVAILABLE" }, 502);
+  }
+
+  const result = {
+    summary: typeof raw.summary === "string" ? raw.summary.trim().slice(0, 120) : "",
+    risks: toStringArray(raw.risks, 2),
+  };
+  if (!result.summary) {
+    return c.json({ error: "AI 未生成有效内容，请重试", code: "AI_EMPTY" }, 502);
+  }
+
+  await saveArtifact(c.env.DB, session.userId, "approval_summary", scope, "", result);
+  return c.json(result);
+});
+
+// ---------------------------------------------------------------- AI 入职清单生成
+// 按候选人入职上下文（岗位/部门/城市/年限）生成材料清单初稿，前端预览勾选后批量入库。
+// AI 只起草，入库动作由人在前端确认；scope = talent_id，10 分钟缓存。
+aiAssist.post("/onboard-checklist", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  const body = await c.req.json<{ talent_id?: string }>().catch(() => null);
+  const talentId = (body?.talent_id || "").trim();
+  if (!talentId) return c.json({ error: "请先选择候选人" }, 400);
+
+  const t = await c.env.DB.prepare("SELECT id, owner_id, name, years_experience FROM talents WHERE id = ?")
+    .bind(talentId).first<any>();
+  if (!t) return c.json({ error: "候选人不存在" }, 404);
+  if (session.role !== "admin" && t.owner_id !== session.userId) {
+    return c.json({ error: "无权为该候选人生成清单" }, 403);
+  }
+
+  // 入职上下文：优先取已入职（hired）的投递关联岗位，无则取最近一条关联岗位
+  const tj = await c.env.DB.prepare(`
+    SELECT j.title AS job_title, j.department AS job_dept, j.city AS job_city
+    FROM talent_jobs tj JOIN jobs j ON j.id = tj.job_id
+    WHERE tj.talent_id = ?
+    ORDER BY (tj.stage = 'hired') DESC, tj.updated_at DESC
+    LIMIT 1
+  `).bind(talentId).first<any>();
+
+  const scope = talentId.slice(0, 120);
+  const cached = await loadRecentArtifact(c.env.DB, session.userId, "onboard_checklist", scope, "");
+  if (cached) return c.json({ ...cached, _cached: true });
+  const denied = await quotaGuard(c, session.userId, session.role);
+  if (denied) return denied;
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "未配置 AI 密钥，无法生成清单", code: "AI_NO_KEY" }, 500);
+  }
+
+  const report = {
+    候选人: { 姓名: maskPii(t.name || ""), 工作年限: t.years_experience != null ? `${t.years_experience}年` : "未知" },
+    入职岗位: tj ? { 名称: tj.job_title || "", 部门: tj.job_dept || "", 城市: tj.job_city || "" } : null,
+  };
+
+  const system = `你是一名资深 HR，为新员工生成入职材料清单初稿。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+
+字段说明：
+- items: 材料清单，8-15 项，每项：
+  - name: 材料名称，不超过 20 字，如「劳动合同（一式两份）」「学历学位证明」
+  - category: 分组，四选一："证件材料" / "协议合同" / "公司事项" / "其他"
+  - required: 是否必交（true/false）；身份证、合同类必交，体检报告、照片等可选
+
+生成依据：
+1. 通用必备：身份证明、学历证明、银行卡、照片、体检报告；
+2. 协议合同：正式员工给劳动合同；工作年限为 0 或在校场景考虑实习协议；
+3. 离职证明：有工作经验的必列；
+4. 结合岗位特征补充（如异地入职考虑居住证明/社保转移，销售岗考虑客户资源交接说明）；
+5. 不确定的按常规给，宁多勿漏——前端会让人勾选裁剪。`;
+
+  const userPrompt = `【入职上下文】\n${truncate(JSON.stringify(report), 800)}\n\n请生成入职材料清单初稿。`;
+
+  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.3 });
+  if (!raw) {
+    return c.json({ error: "AI 暂时不可用，请稍后重试", code: "AI_UNAVAILABLE" }, 502);
+  }
+
+  // 清洗：白名单分组兜底、名称去空去重、上限 15 条
+  const CATS = ["证件材料", "协议合同", "公司事项", "其他"];
+  const seen = new Set<string>();
+  const items = (Array.isArray(raw.items) ? raw.items : [])
+    .map((x: any) => ({
+      name: String(x?.name || "").trim().slice(0, 40),
+      category: CATS.includes(String(x?.category || "")) ? String(x.category) : "其他",
+      required: !!x?.required,
+    }))
+    .filter((x: any) => x.name && !seen.has(x.name) && seen.add(x.name))
+    .slice(0, 15);
+  if (!items.length) {
+    return c.json({ error: "AI 未生成有效内容，请重试", code: "AI_EMPTY" }, 502);
+  }
+
+  const result = { items };
+  await saveArtifact(c.env.DB, session.userId, "onboard_checklist", scope, "", result);
+  return c.json(result);
+});
+
 // ---------------------------------------------------------------- AI 岗位诊断
 // 单岗位「为什么招人慢」：结合漏斗人数、各阶段停留、画像概况、备注样本给判断与建议。
 // 与复盘同模式：前端传聚合数据（岗位详情为 owner 隔离数据）；scope = job_id，10 分钟缓存。
@@ -563,7 +770,7 @@ aiAssist.post("/job-diagnosis", async (c) => {
   const scope = (body.scope || "all").slice(0, 120);
   const cached = await loadRecentArtifact(c.env.DB, session.userId, "job_diagnosis", scope, "");
   if (cached) return c.json({ ...cached, _cached: true });
-  const denied = await quotaGuard(c, session.userId);
+  const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
   const apiKey = c.env.DEEPSEEK_API_KEY;
@@ -623,7 +830,7 @@ aiAssist.post("/recap-report", async (c) => {
   const scope = (body.scope || "all").slice(0, 120);
   const cached = await loadRecentArtifact(c.env.DB, session.userId, "recap_report", scope, "");
   if (cached) return c.json({ ...cached, _cached: true });
-  const denied = await quotaGuard(c, session.userId);
+  const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
   const apiKey = c.env.DEEPSEEK_API_KEY;
@@ -688,7 +895,7 @@ aiAssist.post("/next-step", async (c) => {
 
   const cached = await loadRecentArtifact(c.env.DB, session.userId, "next_step", link.id, "");
   if (cached) return c.json({ ...cached, _cached: true });
-  const denied = await quotaGuard(c, session.userId);
+  const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
   const apiKey = c.env.DEEPSEEK_API_KEY;
@@ -786,7 +993,7 @@ aiAssist.post("/today-focus", async (c) => {
   const scope = (body.scope || "all").slice(0, 160);
   const cached = await loadRecentArtifact(c.env.DB, session.userId, "today_focus", scope, "");
   if (cached) return c.json({ ...cached, _cached: true });
-  const denied = await quotaGuard(c, session.userId);
+  const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
   const apiKey = c.env.DEEPSEEK_API_KEY;
@@ -904,6 +1111,44 @@ aiAssist.get("/candidate-summary", async (c) => {
   if (isResponse(denied)) return denied;
   const content = await loadLatestArtifact(c.env.DB, session.userId, "candidate_summary", talentId!, "");
   return c.json(withPersisted(content));
+});
+
+// ---------------------------------------------------------------- AI 配额配置
+// 管理员不限额；普通用户每日上限可在「系统设置 → AI 配额」调整。
+// 配置存 site_settings（key = ai_quota_config，值 JSON { limit }），未配置回落默认 20。
+// limit = 0 语义为「不限制」（管理员可把普通用户也放开）。
+aiAssist.get("/quota", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  const quota = await checkQuota(c.env.DB, session.userId, session.role);
+  const defaultLimit = await loadDailyLimit(c.env.DB);
+  return c.json({
+    used: quota.used,
+    limit: quota.limit,
+    unlimited: quota.unlimited,
+    // 管理员看到的是"默认值"，因为对自己的生效值恒为不限；避免误以为可改
+    default_limit: defaultLimit,
+  });
+});
+
+// 仅管理员：保存普通用户每日上限
+aiAssist.put("/quota", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const body = await c.req.json<{ limit?: unknown }>().catch(() => ({}) as { limit?: unknown });
+  const n = Math.floor(Number(body?.limit));
+  if (!Number.isFinite(n) || n < 0 || n > 9999) {
+    return c.json({ error: "次数需为 0-9999 的整数（0 表示不限制）" }, 400);
+  }
+  await c.env.DB.prepare(
+    "INSERT INTO site_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  )
+    .bind(AI_QUOTA_SETTING_KEY, JSON.stringify({ limit: n }))
+    .run();
+  return c.json({ ok: true, limit: n });
 });
 
 export default aiAssist;
