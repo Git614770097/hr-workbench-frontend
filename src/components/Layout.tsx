@@ -118,6 +118,9 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
   // —— 高频：每天第一眼看，独立平铺不折叠 ——
   { to: "/tasks", label: "待办日历", icon: <CarryOutOutlined />, color: "#f97316", perm: "tasks" },
 
+  // —— 分析复盘：独立页，不折叠，置于招聘主循环上方 ——
+  { to: "/funnel", label: "招聘概览", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
+
   // —— 招聘主循环：建岗 → 推人 → 面试 → 审批 → 入职 ——
   {
     id: "recruit",
@@ -162,9 +165,6 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
       { to: "/social", label: "社保公积金", icon: <SafetyCertificateOutlined />, color: "#0d9488", perm: "social" },
     ],
   },
-
-  // —— 分析复盘：独立页，不折叠 ——
-  { to: "/funnel", label: "招聘概览", icon: <FunnelPlotOutlined />, color: "#14b8a6", perm: "funnel" },
 
   // —— 系统管理：全部仅管理员 ——
   // 系统设置的 perm 用 "settings"，刻意不进 MENU_PERMISSIONS：与「角色管理」一样走
