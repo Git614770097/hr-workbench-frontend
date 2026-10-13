@@ -354,6 +354,22 @@ export default function Match() {
     .filter((c) => results[c.key])
     .sort((a, b) => results[b.key].score - results[a.key].score);
 
+  // 落地引导：从画像列表点「去匹配」跳来时，点破「选好画像 ≠ 完事，还要加候选人 + 开始匹配」
+  const [landingHint, setLandingHint] = useState<boolean>(
+    () => !!(location.state as { profileId?: string } | null)?.profileId
+  );
+
+  // 动态步骤引导：按当前状态告诉用户卡在哪一步、下一步点哪，把三步串成一条路
+  const stepHint: string | null = !profile
+    ? "第 1 步：先在下方「① 选择画像」里选中一个职位画像"
+    : candidates.length === 0
+      ? `第 2 步：添加候选人 —— 点「② 候选人」右上角的「从${termFor(brand, "人才库")}添加」一键加入，或直接拖拽简历文件上传`
+      : running
+        ? "正在评估中，请稍候…"
+        : ranked.length === 0
+          ? "第 3 步：就绪！点「③ 匹配结果」右上角的「开始匹配」按钮"
+          : null;
+
   return (
     <div className="page-fill">
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
@@ -364,8 +380,39 @@ export default function Match() {
         </Typography.Text>
       </div>
 
+      {/* 落地引导：从画像页跳来时一次性展示，教用户走完剩余两步（可关闭） */}
+      {landingHint && (
+        <Alert
+          type="success"
+          showIcon
+          closable
+          onClose={() => setLandingHint(false)}
+          style={{ marginBottom: 12 }}
+          message={`已自动选中画像${profile ? `「${profile.job_title || profile.name}」` : ""}`}
+          description={
+            termFor(brand,
+              "接下来还有两步：① 在「候选人」里把要比的人加进来（点右上角「从人才库添加」最快，或拖拽简历上传）；" +
+              "② 点「开始匹配」看排序结果。跟着下方「当前该做什么」提示走即可。")
+          }
+        />
+      )}
+
+      {/* 动态步骤引导：当前卡在哪一步、下一步点哪 */}
+      {stepHint && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message={<span><b>当前该做什么：</b>{stepHint}</span>}
+        />
+      )}
+
       {/* ① 选择画像 */}
-      <Card title="① 选择画像" size="small" style={{ marginBottom: 12 }}>
+      <Card
+        title={<Space size={6}>① 选择画像 {!profile ? <Tag color="orange">待选</Tag> : <Tag color="green">已选 ✓</Tag>}</Space>}
+        size="small"
+        style={{ marginBottom: 12 }}
+      >
         <Space wrap>
           <Select
             style={{ width: 360 }}
@@ -391,7 +438,7 @@ export default function Match() {
 
       {/* ② 候选人 */}
       <Card
-        title={`② 候选人（${candidates.length} 位）`}
+        title={<Space size={6}>② 候选人（{candidates.length} 位）{candidates.length === 0 ? <Tag color="orange">待添加</Tag> : <Tag color="green">已就绪 ✓</Tag>}</Space>}
         size="small"
         style={{ marginBottom: 12 }}
         extra={
@@ -470,7 +517,12 @@ export default function Match() {
 
       {/* ③ 匹配结果 */}
       <Card
-        title="③ 匹配结果"
+        title={
+          <Space size={6}>
+            ③ 匹配结果
+            {running ? <Tag color="blue">进行中</Tag> : ranked.length > 0 ? <Tag color="green">已完成 ✓</Tag> : <Tag color="orange">待开始</Tag>}
+          </Space>
+        }
         size="small"
         extra={
           <Button
