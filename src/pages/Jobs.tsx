@@ -15,6 +15,7 @@ import AiThinking from "../components/AiThinking";
 import { TypeText } from "../utils/useTypewriter";
 import type { Job, JobDetail, JobCandidate, User, AiJobDiagnosis } from "../types";
 import { copyText as copyToClipboard } from "../utils/clipboard";
+import { buildJobDiagnosisReport } from "../utils/jobReport";
 import {
   JOB_STATUS_LABELS, JOB_STATUS_COLORS, PRIORITY_LABELS,
   PRIORITY_COLORS, PIPELINE_STAGES, STAGE_META,
@@ -89,45 +90,12 @@ export default function Jobs() {
   });
 
   // 组装诊断数据：漏斗人数 + 进行中阶段平均停留 + 终态分布 + 画像概况 + 备注样本（截断脱敏）
+  // 组装逻辑抽到 utils/jobReport.ts，与「AI 助手」页共用同一份口径。
   const genDiagnosis = async () => {
     if (!detail) return;
     setDiag({ loading: true, data: null, err: "" });
     try {
-      const cs = detail.candidates;
-      const toDays = (s: string | null) => {
-        if (!s) return null;
-        const d = new Date(s.length === 10 ? s + "T00:00:00Z" : s.replace(" ", "T") + "Z");
-        return isNaN(d.getTime()) ? null : Math.max(0, Math.floor((Date.now() - d.getTime()) / 86400000));
-      };
-      const avgStay = (stage: string) => {
-        const days = cs
-          .filter((c) => c.stage === stage)
-          .map((c) => toDays(c.updated_at))
-          .filter((n): n is number => n != null);
-        return days.length ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : null;
-      };
-      const report = {
-        岗位: {
-          名称: detail.title, 部门: detail.department || "", 城市: detail.city || "",
-          状态: detail.status, HC: detail.headcount, 优先级: detail.priority,
-          创建天数: toDays(detail.created_at),
-          职责摘要: (detail.description || "").slice(0, 300) || "（空）",
-          要求摘要: (detail.requirements || "").slice(0, 300) || "（空）",
-        },
-        各阶段人数: detail.stage_counts,
-        候选人总数: cs.length,
-        进行中阶段平均停留天数: Object.fromEntries(
-          PIPELINE_STAGES.filter((s) => !s.terminal).map((s) => [s.label, avgStay(s.key)])
-        ),
-        终态: {
-          已入职: cs.filter((c) => c.stage === "hired").length,
-          已淘汰: cs.filter((c) => c.stage === "rejected").length,
-          已放弃: cs.filter((c) => c.stage === "withdrawn").length,
-        },
-        候选人平均年限: cs.length ? Math.round((cs.reduce((a, c) => a + (c.years_experience || 0), 0) / cs.length) * 10) / 10 : null,
-        备注样本: cs.filter((c) => c.notes).slice(0, 3).map((c) => (c.notes || "").slice(0, 60)),
-      };
-      const r = await api.aiJobDiagnosis({ scope: detail.id, report });
+      const r = await api.aiJobDiagnosis({ scope: detail.id, report: buildJobDiagnosisReport(detail) });
       setDiag({ loading: false, data: r, err: "" });
     } catch (err) {
       setDiag({ loading: false, data: null, err: (err as Error).message || "生成失败，请稍后重试" });
