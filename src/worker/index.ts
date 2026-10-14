@@ -241,8 +241,8 @@ app.use("/api/roles/*", async (c, next) => {
 app.use("/api/ai/*", async (c, next) => {
   const p = c.req.path;
   const menuKey =
-    p.startsWith("/api/ai/outreach") || p.startsWith("/api/ai/resume-insight")
-      ? "talents"
+    p.startsWith("/api/ai/outreach") || p.startsWith("/api/ai/resume-insight") || p.startsWith("/api/ai/resume-optimize")
+      ? "talents" // 沟通文案 / 简历解读 / 改简历：人才库语义，跟随 talents 权限
       : p.startsWith("/api/ai/job-draft") || p.startsWith("/api/ai/job-diagnosis")
         ? "jobs" // JD 起草/优化与岗位诊断：岗位管理语义，跟随 jobs 权限
       : p.startsWith("/api/ai/talent-inventory")

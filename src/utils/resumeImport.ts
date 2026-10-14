@@ -2,7 +2,7 @@ import mammoth from "mammoth";
 import { api } from "../api";
 import {
   extractName, extractPhone, extractEmail, extractAge, extractGender,
-  extractTitle, extractCompany, extractSchool, extractCity, extractSkills,
+  extractTitle, extractCompany, extractSchool, extractMajor, extractCity, extractSkills,
   extractYearsExperience, extractPdfLines, normalizeEducation,
 } from "./resumeParser";
 import { sanitizeField, sanitizeSkills } from "./fieldSanity";
@@ -62,6 +62,7 @@ export interface ParsedTalent {
   gender: string;
   education: string;
   school: string;
+  major: string;
   current_company: string;
   current_title: string;
   years_experience: number | null;
@@ -93,6 +94,7 @@ export function extractTalentLocal(
     gender: extractGender(text),
     education: normalizeEducation(text),
     school: sanitizeField("school", extractSchool(text)),
+    major: sanitizeField("major", extractMajor(text)),
     current_company: sanitizeField("current_company", extractCompany(text)),
     current_title: sanitizeField("current_title", extractTitle(text)),
     years_experience: extractYearsExperience(text),
@@ -120,6 +122,7 @@ export function extractTalentWithAI(
     gender: ai.gender || local.gender,
     education: ai.education || local.education,
     school: ai.school || local.school,
+    major: ai.major || local.major,
     current_company: ai.current_company || local.current_company,
     current_title: ai.current_title || local.current_title,
     years_experience: ai.years_experience ?? local.years_experience,
@@ -169,6 +172,7 @@ export function recordToData(r: ParsedTalent) {
     gender: r.gender || undefined,
     education: r.education || undefined,
     school: r.school || undefined,
+    major: r.major || undefined,
     current_company: r.current_company || undefined,
     current_title: r.current_title || undefined,
     years_experience: r.years_experience ?? undefined,

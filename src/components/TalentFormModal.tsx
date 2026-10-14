@@ -138,6 +138,9 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
             <Form.Item name="school" label="毕业院校">
               <Input placeholder="请输入毕业院校" />
             </Form.Item>
+            <Form.Item name="major" label="专业">
+              <Input placeholder="请输入所学专业" />
+            </Form.Item>
             <Form.Item name="current_company" label="当前公司">
               <Input placeholder="请输入当前公司" />
             </Form.Item>

@@ -53,6 +53,13 @@ function plausibleCity(s: string): boolean {
   return true;
 }
 
+function plausibleMajor(s: string): boolean {
+  if (s.length < 2 || s.length > 30) return false;
+  if (isNumericLike(s)) return false;              // "2013"、"2013-2016"
+  if (isPlaceName(s)) return false;                // 防把城市当专业
+  return true;
+}
+
 type Checker = (s: string) => boolean;
 
 const FIELD_CHECKERS: Record<string, Checker> = {
@@ -61,6 +68,7 @@ const FIELD_CHECKERS: Record<string, Checker> = {
   current_title: plausibleTitle,
   school: plausibleSchool,
   city: plausibleCity,
+  major: plausibleMajor,
 };
 
 /** 校验并清洗单个字段值；不合理则返回空字符串 */

@@ -185,6 +185,9 @@ export default function ImportPreviewModal({
               <label style={{ fontSize: 13, color: "#5b6472" }}>院校</label>
               <Input size="small" value={record.school} placeholder="请输入院校" onChange={(e) => onChange("school", e.target.value)} />
 
+              <label style={{ fontSize: 13, color: "#5b6472" }}>专业</label>
+              <Input size="small" value={record.major} placeholder="请输入所学专业" onChange={(e) => onChange("major", e.target.value)} />
+
               <label style={{ fontSize: 13, color: "#5b6472" }}>当前公司</label>
               <Input size="small" value={record.current_company} placeholder="请输入当前公司" onChange={(e) => onChange("current_company", e.target.value)} />
 

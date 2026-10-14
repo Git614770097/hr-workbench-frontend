@@ -32,8 +32,13 @@ import { registerOnbFill } from "../components/onboardingAutoFill";
 interface Filters {
   name: string;
   phone: string;
-  education: string;
-  years: number | null;
+  education: string[];      // 多选：任一命中即算（逗号串传给后端）
+  city: string[];           // 多选：城市自由文本
+  major: string;
+  years_min: number | null;
+  years_max: number | null;
+  age_min: number | null;
+  age_max: number | null;
   title: string;
   status: string;
   owner_id: string;
@@ -43,9 +48,9 @@ interface Filters {
 }
 
 const EMPTY_FILTERS: Filters = {
-  name: "", phone: "", education: "",
-  years: null, title: "", status: "", owner_id: "",
-  entry_type: "", tags: "", group: "all",
+  name: "", phone: "", education: [], city: [], major: "",
+  years_min: null, years_max: null, age_min: null, age_max: null,
+  title: "", status: "", owner_id: "", entry_type: "", tags: "", group: "all",
 };
 
 // 人才库快捷分组：点击即筛选，复用列表查询的 group 参数。
@@ -66,8 +71,13 @@ function buildFilterParams(f: Filters): Record<string, string | number> {
   const params: Record<string, string | number> = {};
   if (f.name) params.name = f.name;
   if (f.phone) params.phone = f.phone;
-  if (f.education) params.education = f.education;
-  if (f.years != null) params.years = f.years;
+  if (f.education.length) params.education = f.education.join(",");
+  if (f.city.length) params.city = f.city.join(",");
+  if (f.major) params.major = f.major;
+  if (f.years_min != null) params.years_min = f.years_min;
+  if (f.years_max != null) params.years_max = f.years_max;
+  if (f.age_min != null) params.age_min = f.age_min;
+  if (f.age_max != null) params.age_max = f.age_max;
   if (f.title) params.title = f.title;
   if (f.status) params.status = f.status;
   if (f.owner_id) params.owner_id = f.owner_id;
@@ -92,6 +102,7 @@ const OPTIONAL_COL_LABELS: Record<string, string> = {
   age: "年龄",
   education: "学历",
   school: "院校",
+  major: "专业",
   city: "城市",
   phone: "手机号",
   email: "邮箱",
@@ -101,6 +112,9 @@ const OPTIONAL_COL_LABELS: Record<string, string> = {
   owner_name: "创建人",
 };
 const OPTIONAL_COL_ORDER = Object.keys(OPTIONAL_COL_LABELS);
+// 保存的常用搜索（名称 + 一组筛选条件），存 localStorage 跨会话复用
+interface SavedSearch { name: string; filters: Filters; }
+const SAVED_SEARCHES_KEY = "talent_list_saved_searches";
 // 默认只显示高频列：低频字段（年龄/院校/城市/邮箱）按需在「列设置」里打开
 const DEFAULT_VISIBLE_COLS = ["current_title", "years_experience", "education", "phone", "status", "entry_type", "tags"];
 const COLS_STORAGE_KEY = "talent_list_visible_cols";
@@ -192,6 +206,36 @@ export default function TalentList() {
     setVisibleCols(keys);
     try { localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(keys)); } catch { /* 存储失败不阻断 */ }
   };
+
+  // 常用搜索：保存当前筛选条件并命名，下次一键复用
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SAVED_SEARCHES_KEY) || "null");
+      if (Array.isArray(saved)) return saved.filter((s: any) => s && typeof s.name === "string" && s.filters);
+    } catch { /* 忽略脏数据 */ }
+    return [];
+  });
+  const [saveSearchOpen, setSaveSearchOpen] = useState(false);
+  const [saveSearchName, setSaveSearchName] = useState("");
+  const persistSavedSearches = (list: SavedSearch[]) => {
+    setSavedSearches(list);
+    try { localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(list)); } catch { /* 存储失败不阻断 */ }
+  };
+  const applySavedSearch = (s: SavedSearch) => {
+    setDraft(s.filters);
+    setApplied(s.filters);
+    setPage(1);
+  };
+  const saveCurrentSearch = () => {
+    const name = saveSearchName.trim();
+    if (!name) { message.warning("请输入搜索名称"); return; }
+    persistSavedSearches([...savedSearches.filter((s) => s.name !== name), { name, filters: applied }]);
+    setSaveSearchOpen(false);
+    setSaveSearchName("");
+    message.success("已保存当前搜索");
+  };
+  const removeSavedSearch = (name: string) =>
+    persistSavedSearches(savedSearches.filter((s) => s.name !== name));
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -339,6 +383,7 @@ export default function TalentList() {
     { key: "age", title: "年龄", get: (t) => (t.age != null ? String(t.age) : "") },
     { key: "education", title: "学历", get: (t) => t.education || "" },
     { key: "school", title: "院校", get: (t) => t.school || "" },
+    { key: "major", title: "专业", get: (t) => t.major || "" },
     { key: "city", title: "城市", get: (t) => t.city || "" },
     { key: "phone", title: "手机号", get: (t) => t.phone || "" },
     { key: "email", title: "邮箱", get: (t) => t.email || "" },
@@ -477,9 +522,28 @@ export default function TalentList() {
   const fieldDefs: { key: string; label: string; control: React.ReactNode }[] = [
     { key: "name", label: "姓名", control: <Input style={controlStyle} placeholder="请输入姓名" value={draft.name} onChange={(e) => setField("name", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "title", label: "职位", control: <Input style={controlStyle} placeholder="请输入职位" value={draft.title} onChange={(e) => setField("title", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    { key: "years", label: "年限", control: <InputNumber style={controlStyle} value={draft.years} onChange={(v) => setField("years", v ?? null)} min={0} max={50} placeholder="请输入年限" /> },
-    { key: "education", label: "学历", control: <Select style={controlStyle} value={draft.education || undefined} onChange={(v) => setField("education", v || "")} allowClear placeholder="请选择学历" options={educationOptions.map((e) => ({ label: e, value: e }))} /> },
+    {
+      key: "years", label: "年限",
+      control: (
+        <Space.Compact style={controlStyle}>
+          <InputNumber style={{ width: "50%" }} value={draft.years_min} onChange={(v) => setField("years_min", v ?? null)} min={0} max={50} placeholder="最小" />
+          <InputNumber style={{ width: "50%" }} value={draft.years_max} onChange={(v) => setField("years_max", v ?? null)} min={0} max={50} placeholder="最大" />
+        </Space.Compact>
+      ),
+    },
+    { key: "education", label: "学历", control: <Select mode="multiple" maxTagCount="responsive" style={controlStyle} value={draft.education} onChange={(v) => setField("education", (v || []) as string[])} allowClear placeholder="请选择学历（可多选）" options={educationOptions.map((e) => ({ label: e, value: e }))} /> },
+    { key: "major", label: "专业", control: <Input style={controlStyle} placeholder="请输入专业" value={draft.major} onChange={(e) => setField("major", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    { key: "city", label: "城市", control: <Select mode="tags" style={controlStyle} value={draft.city} onChange={(v) => setField("city", (v || []) as string[])} tokenSeparators={[",", "，"]} placeholder="输入城市，回车可多个" /> },
     { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    {
+      key: "age", label: "年龄",
+      control: (
+        <Space.Compact style={controlStyle}>
+          <InputNumber style={{ width: "50%" }} value={draft.age_min} onChange={(v) => setField("age_min", v ?? null)} min={16} max={80} placeholder="最小" />
+          <InputNumber style={{ width: "50%" }} value={draft.age_max} onChange={(v) => setField("age_max", v ?? null)} min={16} max={80} placeholder="最大" />
+        </Space.Compact>
+      ),
+    },
     { key: "status", label: "状态", control: <Select style={controlStyle} value={draft.status || undefined} onChange={(v) => setField("status", v || "")} allowClear placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} /> },
     { key: "tags", label: "标签", control: <Select style={controlStyle} mode="tags" value={draft.tags ? draft.tags.split(",").filter(Boolean) : undefined} onChange={(v) => setField("tags", (v || []).join(","))} tokenSeparators={[","]} placeholder="按标签筛选" /> },
     { key: "entry_type", label: "录入方式", control: <Select style={controlStyle} value={draft.entry_type || undefined} onChange={(v) => setField("entry_type", v || "")} allowClear placeholder="全部方式" options={ENTRY_TYPE_OPTIONS} /> },
@@ -519,6 +583,7 @@ export default function TalentList() {
     age: { title: "年龄", dataIndex: "age", key: "age", width: 80, render: (v: number | null) => (v != null ? v : "—") },
     education: { title: "学历", dataIndex: "education", key: "education", width: 110, render: (v: string) => v || "—" },
     school: { title: "院校", dataIndex: "school", key: "school", width: 160, render: (v: string) => v || "—" },
+    major: { title: "专业", dataIndex: "major", key: "major", width: 140, render: (v: string) => v || "—" },
     city: { title: "城市", dataIndex: "city", key: "city", width: 90, render: (v: string) => v || "—" },
     phone: { title: "手机号", dataIndex: "phone", key: "phone", width: 130, render: (v: string) => v || "—" },
     email: { title: "邮箱", dataIndex: "email", key: "email", width: 200, render: (v: string) => v || "—" },
@@ -748,6 +813,22 @@ export default function TalentList() {
             )}
             <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
             <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
+            {/* 常用搜索：一键复用已保存的筛选；「保存」把当前条件命名后存本地 */}
+            <Dropdown
+              trigger={["click"]}
+              menu={{
+                items: savedSearches.length
+                  ? savedSearches.map((s) => ({ key: s.name, label: s.name }))
+                  : [{ key: "__empty", label: "暂无保存的搜索", disabled: true }],
+                onClick: ({ key }) => {
+                  const s = savedSearches.find((x) => x.name === key);
+                  if (s) applySavedSearch(s);
+                },
+              }}
+            >
+              <Button>常用搜索 <DownOutlined /></Button>
+            </Dropdown>
+            <Button onClick={() => setSaveSearchOpen(true)}>保存搜索</Button>
           </Space>
         </div>
         <Table
@@ -970,6 +1051,33 @@ export default function TalentList() {
             ))}
           </div>
         ) : null}
+      </Modal>
+
+      {/* 保存常用搜索：命名当前筛选条件并存入本地；已保存的可直接删除 */}
+      <Modal
+        title="保存常用搜索"
+        open={saveSearchOpen}
+        onOk={saveCurrentSearch}
+        onCancel={() => setSaveSearchOpen(false)}
+        okText="保存"
+      >
+        <Input
+          placeholder="给这组搜索条件起个名字，如「杭州本科3年以上」"
+          value={saveSearchName}
+          onChange={(e) => setSaveSearchName(e.target.value)}
+          onPressEnter={saveCurrentSearch}
+          allowClear
+        />
+        {savedSearches.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 6 }}>已保存（点 × 删除）</div>
+            <Space wrap size={[8, 8]}>
+              {savedSearches.map((s) => (
+                <Tag key={s.name} closable onClose={() => removeSavedSearch(s.name)}>{s.name}</Tag>
+              ))}
+            </Space>
+          </div>
+        )}
       </Modal>
     </div>
   );

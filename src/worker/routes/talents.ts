@@ -173,13 +173,32 @@ talents.get("/", async (c) => {
   const age = c.req.query("age");
   const education = (c.req.query("education") || "").trim();
   const school = (c.req.query("school") || "").trim();
+  const major = (c.req.query("major") || "").trim();
   const years = c.req.query("years");
   const title = (c.req.query("title") || "").trim();
   const entryType = c.req.query("entry_type");
+  // 检索增强：区间筛选（年龄 / 年限）
+  const ageMin = c.req.query("age_min");
+  const ageMax = c.req.query("age_max");
+  const yearsMin = c.req.query("years_min");
+  const yearsMax = c.req.query("years_max");
 
   const offset = (page - 1) * limit;
   const conditions: string[] = [];
   const params: (string | number)[] = [];
+
+  // 多选筛选：值以逗号分隔，任一命中即算（OR）——保留原单值 LIKE 的模糊语义。
+  // 学历/城市/标签三处共用（学历库内是选项精确值，城市为自由文本，LIKE 更宽容）。
+  const multiLike = (raw: string, col: string) => {
+    const vals = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    if (vals.length === 0) return;
+    conditions.push("(" + vals.map(() => `${col} LIKE ?`).join(" OR ") + ")");
+    for (const v of vals) params.push(`%${v}%`);
+  };
+  const toIntOrNull = (v: string | undefined): number | null => {
+    const n = parseInt(v ?? "", 10);
+    return Number.isFinite(n) ? n : null;
+  };
 
   if (session.role === "admin") {
     if (ownerId) { conditions.push("t.owner_id = ?"); params.push(ownerId); }
@@ -189,17 +208,25 @@ talents.get("/", async (c) => {
   }
 
   if (q) {
-    conditions.push("(t.name LIKE ? OR t.current_company LIKE ? OR t.current_title LIKE ? OR t.skills LIKE ? OR t.industry LIKE ? OR t.notes LIKE ?)");
+    conditions.push("(t.name LIKE ? OR t.current_company LIKE ? OR t.current_title LIKE ? OR t.skills LIKE ? OR t.industry LIKE ? OR t.major LIKE ? OR t.notes LIKE ?)");
     const like = `%${q}%`;
-    params.push(like, like, like, like, like, like);
+    params.push(like, like, like, like, like, like, like);
   }
   if (name) { conditions.push("t.name LIKE ?"); params.push(`%${name}%`); }
   if (phone) { conditions.push("t.phone LIKE ?"); params.push(`%${phone}%`); }
   if (email) { conditions.push("t.email LIKE ?"); params.push(`%${email}%`); }
   if (age && !isNaN(parseInt(age, 10))) { conditions.push("t.age = ?"); params.push(parseInt(age, 10)); }
-  if (education) { conditions.push("t.education LIKE ?"); params.push(`%${education}%`); }
+  if (education) multiLike(education, "t.education");
   if (school) { conditions.push("t.school LIKE ?"); params.push(`%${school}%`); }
+  if (major) { conditions.push("t.major LIKE ?"); params.push(`%${major}%`); }
   if (years && !isNaN(parseInt(years, 10))) { conditions.push("t.years_experience = ?"); params.push(parseInt(years, 10)); }
+  // 区间筛选：年龄 / 年限
+  const ageLo = toIntOrNull(ageMin), ageHi = toIntOrNull(ageMax);
+  if (ageLo != null) { conditions.push("t.age >= ?"); params.push(ageLo); }
+  if (ageHi != null) { conditions.push("t.age <= ?"); params.push(ageHi); }
+  const yearsLo = toIntOrNull(yearsMin), yearsHi = toIntOrNull(yearsMax);
+  if (yearsLo != null) { conditions.push("t.years_experience >= ?"); params.push(yearsLo); }
+  if (yearsHi != null) { conditions.push("t.years_experience <= ?"); params.push(yearsHi); }
   if (title) { conditions.push("t.current_title LIKE ?"); params.push(`%${title}%`); }
   if (status && !group) { conditions.push("t.status = ?"); params.push(status); }
   if (entryType) { conditions.push("t.entry_type = ?"); params.push(entryType); }
@@ -226,10 +253,11 @@ talents.get("/", async (c) => {
       conditions.push("((t.stage = 'archived' OR NOT EXISTS (SELECT 1 FROM talent_jobs tj WHERE tj.talent_id = t.id)) AND t.status <> 'placed' AND (t.resignation_date IS NULL OR t.resignation_date = ''))");
     }
   }
-  if (city) { conditions.push("t.city LIKE ?"); params.push(`%${city}%`); }
-  // 标签筛选：tags 是 JSON 数组字符串，模糊匹配包含该标签的记录
+  // 城市多选：值以逗号分隔，任一命中即算
+  if (city) multiLike(city, "t.city");
+  // 标签多选：tags 是 JSON 数组字符串，模糊匹配包含该标签的记录
   const tag = (c.req.query("tags") || "").trim();
-  if (tag) { conditions.push("t.tags LIKE ?"); params.push(`%${tag}%`); }
+  if (tag) multiLike(tag, "t.tags");
 
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
@@ -834,8 +862,8 @@ talents.post("/", async (c) => {
   const id = genId();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
   const tags = body.tags ? JSON.stringify(body.tags) : null;
-  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, tags, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, hire_date, next_follow_at, entry_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, tags, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.source || null, body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), dateOrNull(body.next_follow_at), normalizeEntryType(body.entry_type)).run();
+  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, major, current_company, current_title, years_experience, city, skills, tags, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, hire_date, next_follow_at, entry_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.major || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, tags, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.source || null, body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), dateOrNull(body.next_follow_at), normalizeEntryType(body.entry_type)).run();
 
   return c.json({ id, ...body });
 });
@@ -868,11 +896,11 @@ talents.put("/:id", async (c) => {
   // 标量字段统一走 undefined → null 转换（name 为 NOT NULL，前端编辑时必传，不会是 null）。
   const scalars: (string | number | null)[] = [
     body.name, body.phone, body.email, body.age, body.gender, body.education,
-    body.school, body.current_company, body.current_title, body.years_experience,
+    body.school, body.major, body.current_company, body.current_title, body.years_experience,
     body.city, skills, body.tags ? JSON.stringify(body.tags) : null, body.industry, body.expected_salary, body.expected_city,
     body.status, body.source, body.resume_url, body.notes,
   ].map((v) => (v === undefined ? null : v));
-  await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), source = COALESCE(?, source), resume_url = COALESCE(?, resume_url), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
+  await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), major = COALESCE(?, major), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), tags = COALESCE(?, tags), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), source = COALESCE(?, source), resume_url = COALESCE(?, resume_url), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
     .bind(...scalars, ...dateParams, id).run();
 
   // 合同/试用期日期有变更（含清空）→ 立即同步到期提醒待办
@@ -1030,8 +1058,8 @@ talents.post("/import", async (c) => {
   for (const item of items) {
     const id = genId();
     const skills = item.skills ? JSON.stringify(item.skills) : null;
-    await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, entry_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, session.userId, item.name || "", item.phone || null, item.email || null, item.age ?? null, item.gender || null, item.education || null, item.school || null, item.current_company || null, item.current_title || null, item.years_experience || null, item.city || null, skills, item.industry || null, item.expected_salary || null, item.expected_city || null, item.status || "active", item.source || null, item.resume_url || null, item.notes || null, dateOrNull(item.birth_date), dateOrNull(item.contract_end), dateOrNull(item.probation_end), dateOrNull(item.resignation_date), normalizeEntryType(item.entry_type, "import")).run();
+    await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, major, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, entry_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(id, session.userId, item.name || "", item.phone || null, item.email || null, item.age ?? null, item.gender || null, item.education || null, item.school || null, item.major || null, item.current_company || null, item.current_title || null, item.years_experience || null, item.city || null, skills, item.industry || null, item.expected_salary || null, item.expected_city || null, item.status || "active", item.source || null, item.resume_url || null, item.notes || null, dateOrNull(item.birth_date), dateOrNull(item.contract_end), dateOrNull(item.probation_end), dateOrNull(item.resignation_date), normalizeEntryType(item.entry_type, "import")).run();
     count++;
     created.push({ id, name: item.name || "" });
   }

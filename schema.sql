@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS talents (
   gender TEXT,        -- 性别: 男 / 女（AI 简历解析会识别并落库）
   education TEXT,     -- 学历: 高中及以下 / 中专 / 大专 / 本科 / 硕士 / 博士 / MBA/EMBA / 其他
   school TEXT,        -- 毕业院校
+  major TEXT,         -- 专业（所学专业）
   current_company TEXT,
   current_title TEXT,
   years_experience INTEGER,

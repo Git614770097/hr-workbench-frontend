@@ -58,6 +58,8 @@ const MPipeline = lazy(() => import("./mobile/MPipeline"));
 const MTalents = lazy(() => import("./mobile/MTalents"));
 const MFunnel = lazy(() => import("./mobile/MFunnel"));
 const TemplateLibrary = lazy(() => import("./pages/TemplateLibrary"));
+// AI 助手：AI 能力集中入口（写 JD / 改简历 / 跟进话术），所属「工具中心」分组
+const AiAssistant = lazy(() => import("./pages/AiAssistant"));
 // 帮助中心：轻量 FAQ 页，从顶栏问号进入，不占侧栏菜单
 const Help = lazy(() => import("./pages/Help"));
 
@@ -281,6 +283,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
           <Route path="/contracts" element={<RequirePerm user={user} perm="contracts"><Contracts /></RequirePerm>} />
           <Route path="/social" element={<RequirePerm user={user} perm="social"><Social /></RequirePerm>} />
           <Route path="/templates" element={<RequirePerm user={user} perm="templates"><TemplateLibrary /></RequirePerm>} />
+          <Route path="/ai-assistant" element={<RequirePerm user={user} perm="tools"><AiAssistant /></RequirePerm>} />
           {user.role === "admin" && <Route path="/roles" element={<Roles />} />}
           {user.role === "admin" && <Route path="/users" element={<Users />} />}
           {/* 系统设置：收款码/数据字典等全局配置，仅管理员；权限走 admin 硬放行，不占菜单权限 key */}

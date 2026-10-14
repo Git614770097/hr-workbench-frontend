@@ -1204,6 +1204,74 @@ aiAssist.post("/today-focus", async (c) => {
   return c.json(result);
 });
 
+// ---------------------------------------------------------------- HR 侧 AI 改简历
+// 把候选人简历精简、结构化并突出与目标岗位的匹配点，产出「优化稿」草稿。
+// 入口：AI 助手页——可传简历原文 text，不传则按已录入字段生成。
+// 产出为草稿，供 HR 参考后手动复制，不写回候选人记录。
+aiAssist.post("/resume-optimize", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  const body = await c.req
+    .json<{ talent_id?: string; job_id?: string | null; text?: string | null }>()
+    .catch(() => null);
+  if (!body?.talent_id) return c.json({ error: "缺少人才信息" }, 400);
+
+  const ctx = await loadContext(c, session, body.talent_id, body.job_id);
+  if (isResponse(ctx)) return ctx;
+  const { talent, job } = ctx;
+
+  const scene = "";
+  const cached = await loadRecentArtifact(c.env.DB, session.userId, "resume_optimize", talent.id, scene);
+  if (cached) return c.json({ ...cached, _cached: true });
+  const denied = await quotaGuard(c, session.userId, session.role);
+  if (denied) return denied;
+
+  const apiKey = c.env.DEEPSEEK_API_KEY;
+  if (!apiKey) {
+    return c.json({ error: "未配置 AI 密钥，无法优化简历", code: "AI_NO_KEY" }, 500);
+  }
+
+  const system = `你是一名资深招聘顾问，擅长把简历改得更精炼、更有针对性。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+
+字段说明：
+- headline: 一句话核心亮点（不超过 30 字，可放简历开头的定位句）
+- optimized: 优化后的简历正文（纯文本，按 个人概述 / 核心技能 / 工作经历 / 教育背景 分区块，要点式，全文控制在 400 字以内）
+- changes: 2-4 条关键改动说明（做了哪些精简、合并、突出），每条不超过 30 字
+- tips: 1-3 条进一步优化建议（如建议补充哪些信息、面试可强调的点），每条不超过 30 字
+
+要求：
+1. 只做「精简 + 结构化 + 突出重点」，绝不编造经历、数字、学历或技能。
+2. 有目标岗位时，围绕该岗位的关键要求组织并突出相关内容；没有则做通用优化。
+3. 原文缺失的信息标注「（建议补充）」，不要虚构。
+4. optimized 输出纯文本，不要使用 markdown 语法。`;
+
+  const jdText = job
+    ? `目标岗位：${job.title}（${job.department || "部门未填"}）\n任职要求：${truncate(maskPii(job.requirements || job.description || ""), 1500) || "未填写"}`
+    : "目标岗位：暂未指定（按通用优化，HR 可自行补充岗位信息）";
+
+  const resumeText = body.text ? truncate(maskPii(body.text)) : "";
+  const userPrompt = `【候选人信息】\n${talentBrief(talent)}\n\n【简历原文】\n${resumeText || "（未提供原文，请仅依据上方已录入字段做合理优化，不要编造）"}\n\n【${jdText}】\n\n请生成优化后的简历稿。`;
+
+  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.4 });
+  if (!raw) {
+    return c.json({ error: "AI 暂时不可用，请稍后重试", code: "AI_UNAVAILABLE" }, 502);
+  }
+
+  const result = {
+    headline: typeof raw.headline === "string" ? raw.headline.trim().slice(0, 60) : "",
+    optimized: typeof raw.optimized === "string" ? raw.optimized.trim() : "",
+    changes: toStringArray(raw.changes, 4),
+    tips: toStringArray(raw.tips, 3),
+  };
+  if (!result.optimized) {
+    return c.json({ error: "AI 未生成有效内容，请重试", code: "AI_EMPTY" }, 502);
+  }
+
+  await saveArtifact(c.env.DB, session.userId, "resume_optimize", talent.id, scene, result);
+  return c.json(result);
+});
+
 // ---------------------------------------------------------------- 读取已生成结果（GET）
 // 下次进入页面时直接展示历史产出，不重算、不扣配额。
 // 返回 { data: <上次结果或 null> }；data 带 _persisted 标记，前端据此标「已保存」。
@@ -1268,6 +1336,16 @@ aiAssist.get("/candidate-summary", async (c) => {
   const denied = await requireTalent(c, session, talentId);
   if (isResponse(denied)) return denied;
   const content = await loadLatestArtifact(c.env.DB, session.userId, "candidate_summary", talentId!, "");
+  return c.json(withPersisted(content));
+});
+
+aiAssist.get("/resume-optimize", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+  const talentId = c.req.query("talent_id");
+  const denied = await requireTalent(c, session, talentId);
+  if (isResponse(denied)) return denied;
+  const content = await loadLatestArtifact(c.env.DB, session.userId, "resume_optimize", talentId!, "");
   return c.json(withPersisted(content));
 });
 

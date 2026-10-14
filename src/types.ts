@@ -55,7 +55,7 @@ export const INTENDED_ROLE_LABELS: Record<string, string> = Object.fromEntries(
 // 菜单权限 key（与后端 src/worker/permissions.ts 保持一致）
 export type MenuKey =
   | "talents" | "contracts" | "social"
-  | "pipeline" | "interviews" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "users";
+  | "pipeline" | "interviews" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "tools" | "users";
 
 export const MENU_PERMISSIONS: { key: MenuKey; label: string; hint?: string }[] = [
   { key: "tasks", label: "待办日历" },
@@ -72,6 +72,7 @@ export const MENU_PERMISSIONS: { key: MenuKey; label: string; hint?: string }[] 
   { key: "social", label: "社保公积金", hint: "需同时勾选「人才库管理」" },
   { key: "profiles", label: "人才画像" },
   { key: "templates", label: "模板库管理" },
+  { key: "tools", label: "工具中心", hint: "AI 助手；页内各功能按其领域权限展示" },
   { key: "users", label: "用户管理" },
 ];
 
@@ -93,6 +94,7 @@ export interface Talent {
   gender: string | null;   // 性别：男 / 女
   education: string | null;
   school: string | null;
+  major: string | null;    // 专业（所学专业）
   current_company: string | null;
   current_title: string | null;
   years_experience: number | null;
@@ -1120,6 +1122,20 @@ export interface AiOutreach {
   tone: AiRejectTone | null;
   title: string;
   content: string;
+  tips: string[];
+  _cached?: boolean;
+}
+
+// HR 侧 AI 改简历：把候选人简历精简、结构化并突出与岗位的匹配点。
+// 产出为草稿，供 HR 参考后手动复制，不写回候选人记录。
+export interface AiResumeOptimize {
+  /** 一句话核心亮点（放简历开头的定位句） */
+  headline: string;
+  /** 优化后的简历正文（精简、结构化） */
+  optimized: string;
+  /** 关键改动说明（做了哪些精简/突出） */
+  changes: string[];
+  /** 进一步优化建议 */
   tips: string[];
   _cached?: boolean;
 }

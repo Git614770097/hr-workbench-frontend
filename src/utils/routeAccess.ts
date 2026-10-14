@@ -25,6 +25,9 @@ const DESKTOP_ROUTES: { path: string; perm: string }[] = [
   { path: "/profiles", perm: "profiles" },
   { path: "/talents", perm: "talents" },
   { path: "/templates", perm: "templates" },
+  // AI 助手放最后：它是"锦上添花"入口，优先级最低，
+  // 追加末尾不会改变任何既有用户的兜底落地页；同时让只有 tools 权限的账号能拿到落地页。
+  { path: "/ai-assistant", perm: "tools" },
 ];
 
 /**

@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiResumeOptimize } from "./types";
 
 const BASE = "/api";
 
@@ -243,6 +243,7 @@ export const api = {
       gender: string;
       education: string;
       school: string;
+      major: string;
       current_company: string;
       current_title: string;
       years_experience: number | null;
@@ -618,6 +619,18 @@ export const api = {
     tone?: AiRejectTone;
   }) =>
     request<AiOutreach>("/ai/outreach", { method: "POST", body: JSON.stringify(data) }, 60000),
+
+  // AI 提效：HR 侧改简历——把候选人简历精简、结构化并突出与岗位的匹配点。
+  // 传 text（简历原文）优先，不传则后端按已录入字段 + 岗位信息生成；产出为草稿不写回。
+  aiResumeOptimize: (data: {
+    talent_id: string;
+    job_id?: string | null;
+    text?: string | null;
+  }) =>
+    request<AiResumeOptimize>("/ai/resume-optimize", { method: "POST", body: JSON.stringify(data) }, 60000),
+
+  aiResumeOptimizeGet: (talentId: string) =>
+    request<{ data: AiResumeOptimize | null }>(`/ai/resume-optimize?talent_id=${encodeURIComponent(talentId)}`),
 
   // AI 提效：针对该候选人与岗位生成面试问题清单
   aiInterviewQuestions: (talentId: string, jobId?: string | null) =>

@@ -33,6 +33,8 @@ import {
   AppstoreOutlined,
   ProfileOutlined,
   BarChartOutlined,
+  ToolOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import { QuestionCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import type { User } from "../types";
@@ -149,6 +151,18 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
     children: [
       { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
       { to: "/profiles", label: "人才画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },
+    ],
+  },
+
+  // —— 工具中心：模板库 + AI 助手（AI 能力集中入口）——
+  {
+    id: "tools",
+    labelKey: "group-tools",
+    label: "工具中心",
+    icon: <ToolOutlined />,
+    color: "#7c3aed",
+    children: [
+      { to: "/ai-assistant", label: "AI 助手", icon: <RobotOutlined />, color: "#7c3aed", perm: "tools" },
       { to: "/templates", label: "模板库管理", icon: <FileTextOutlined />, color: "#8b5cf6", perm: "templates" },
     ],
   },

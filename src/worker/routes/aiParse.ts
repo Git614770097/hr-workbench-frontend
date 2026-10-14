@@ -20,6 +20,7 @@ interface ParsedResume {
   gender: string;
   education: string;
   school: string;
+  major: string;
   current_company: string;
   current_title: string;
   years_experience: number | null;
@@ -35,6 +36,7 @@ const EMPTY: ParsedResume = {
   gender: "",
   education: "",
   school: "",
+  major: "",
   current_company: "",
   current_title: "",
   years_experience: null,
@@ -71,6 +73,7 @@ async function callDeepSeek(apiKey: string, resumeText: string): Promise<Record<
 - gender: 性别（"男"或"女"，没有则空字符串）
 - education: 学历，取值限定为：博士 / 硕士 / 本科 / 大专 / 中专 / 高中及以下 / MBA/EMBA（必须严格从这些里选一个，如"硕士研究生"→"硕士"）
 - school: 毕业院校（最高学历对应的学校）
+- major: 所学专业（最高学历对应的就读专业名称，如"计算机科学与技术""工商管理"；没有则空字符串）
 - current_company: 当前/最近一家公司的名称
 - current_title: 当前/最近一个职位名称
 - years_experience: 工作年限（整数，没有则 null）
@@ -110,6 +113,7 @@ function normalizeAiResult(raw: Record<string, unknown>): ParsedResume {
     gender: normStr(raw.gender) === "女" ? "女" : normStr(raw.gender) === "男" ? "男" : "",
     education: normalizeEducation(normStr(raw.education)),
     school: sanitizeField("school", normStr(raw.school)),
+    major: sanitizeField("major", normStr(raw.major)),
     current_company: sanitizeField("current_company", normStr(raw.current_company)),
     current_title: sanitizeField("current_title", normStr(raw.current_title)),
     years_experience: normNum(raw.years_experience),
