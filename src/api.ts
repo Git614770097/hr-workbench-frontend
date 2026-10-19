@@ -949,7 +949,7 @@ export const api = {
     return request<{ items: ApprovalInstance[] }>(`/approvals/instances${qs}`);
   },
   createApprovalInstance: (data: { talent_job_id: string; scene?: string; flow_id?: string; title?: string; payload?: unknown }) =>
-    request<{ ok: boolean; id: string; total_steps: number }>("/approvals/instances", { method: "POST", body: JSON.stringify(data) }),
+    request<{ ok: boolean; id: string; auto_passed?: boolean; status?: string; total_steps: number; downstream?: string[] }>("/approvals/instances", { method: "POST", body: JSON.stringify(data) }),
   decideApproval: (id: string, decision: "approve" | "reject", comment?: string) =>
     request<{ ok: boolean; status: string; downstream?: string[] }>(`/approvals/instances/${id}/decide`, { method: "POST", body: JSON.stringify({ decision, comment }) }),
   cancelApproval: (id: string) =>

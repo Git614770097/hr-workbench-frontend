@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Modal, Select, Input, Button, Space, message, Alert, Typography, Divider } from "antd";
 import { SendOutlined, DownloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import type { BackgroundCheck, PipelineCard, DocTemplate } from "../types";
+import type { BackgroundCheck, PipelineCard, DocTemplate, User } from "../types";
 import { downloadBlob, dateStamp, escapeHtml } from "../utils/file";
 
 /**
@@ -29,6 +29,13 @@ export default function OfferModal({
   const [loadingTpl, setLoadingTpl] = useState(false);
   const [bg, setBg] = useState<BackgroundCheck | null>(null);
   const [bgLoading, setBgLoading] = useState(false);
+
+  // 单人/团队顶端判定：没有上一级审批人时，确认即通过并自动推进（后端同规则自动落库）。
+  // 团队子用户（team_id 指向管理员）走真审批：提交后 pending，由管理员在审批中心处理。
+  const currentUser: User | null = (() => {
+    try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
+  })();
+  const soloConfirm = !currentUser?.team_id || currentUser?.role === "manager" || currentUser?.role === "admin";
 
   // 拉「招聘入职」类模板
   useEffect(() => {
@@ -134,13 +141,19 @@ ${body}
     if (!card) return;
     setSubmitting(true);
     try {
-      await api.createApprovalInstance({
+      const r = await api.createApprovalInstance({
         talent_job_id: card.link_id,
         scene: "offer",
         title: `${card.name} · ${card.job_title || ""} Offer 审批`,
         payload: { salary, position: position || card.job_title, entry_date: entryDate, template: tpl?.name },
       });
-      message.success("已发起 Offer 审批，去「审批中心」查看进度");
+      if (r.auto_passed) {
+        // 单人确认：后端已自动通过并跑完下游，把发生了什么直接讲清楚，别让 HR 猜
+        const notes = r.downstream || [];
+        message.success(notes.length > 0 ? `已确认通过；${notes.join("；")}` : "已确认通过，已自动留档");
+      } else {
+        message.success("已发起 Offer 审批，等待团队管理员处理");
+      }
       onApproved?.();
       onClose();
     } catch (e) {
@@ -170,6 +183,9 @@ ${body}
                 候选人：<b>{card.name}</b>
                 {card.job_title ? ` · 应聘岗位：${card.job_title}` : ""}
                 {" · "}模板里的 <code>{"{{姓名}} {{岗位}}"}</code> 等占位符会自动替换
+                {soloConfirm
+                  ? " · 确认后自动推进：候选人流转到「已入职」，并生成入职材料清单与试用期跟进待办"
+                  : " · 提交后由团队管理员审批，通过后自动推进到「已入职」并生成入职材料清单"}
               </span>
             }
           />
@@ -253,7 +269,7 @@ ${body}
                 导出 Word 发给候选人
               </Button>
               <Button icon={<SendOutlined />} loading={submitting} onClick={handleSubmit} disabled={!card}>
-                发起 Offer 审批
+                {soloConfirm ? "确认发出 Offer" : "发起 Offer 审批"}
               </Button>
             </Space>
           </Space>

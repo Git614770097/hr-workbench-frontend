@@ -8,7 +8,7 @@ import { PlusOutlined, ReloadOutlined, RobotOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import AiThinking from "../components/AiThinking";
 import { TypeText } from "../utils/useTypewriter";
-import type { ApprovalFlow, ApprovalInstance, AiApprovalSummary } from "../types";
+import type { ApprovalFlow, ApprovalInstance, AiApprovalSummary, User } from "../types";
 
 // 让列表（表格）撑满 Tab 内容区剩余高度：表头固定、表体内部滚动，避免一屏只露几行留大片空白。
 // 取容器高度减去 antd size="middle" 表头（约 47px）作为 scroll.y；低于下限则退回自然高度。
@@ -75,7 +75,7 @@ function FlowSettings() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="在这里配置你公司的审批环节，例如「HR 主管审批 → 用人部门确认 → 总经理批准」。发起 Offer 审批时会按这里的步骤逐级流转；不配置则默认一步审批。"
+        message="在这里配置你公司的审批环节，例如「HR 主管审批 → 用人部门确认 → 总经理批准」。发起 Offer 审批时会按这里的步骤逐级流转；不配置则默认一步审批。个人账号与团队管理员确认后自动通过并留档，配置的环节名会记录在案。"
       />
       <div className="toolbar">
         <Space>
@@ -174,6 +174,13 @@ function InstanceList() {
   const [decision, setDecision] = useState<"approve" | "reject">("approve");
   const [comment, setComment] = useState("");
 
+  // 团队子用户（team_id 指向管理员）：自己的审批不能自己审，只展示待管理员处理；
+  // 个人账号/管理员的审批在发起时已自动通过，这里只会出现团队成员提交的单子。
+  const currentUser: User | null = (() => {
+    try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
+  })();
+  const isTeamMember = currentUser?.role === "user" && !!currentUser?.team_id;
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -239,7 +246,7 @@ function InstanceList() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="审批通过后系统会自动往下走：Offer 审批通过 → 候选人自动流转到「已入职」，并自动生成入职材料清单与试用期跟进待办，无需再去手工操作一遍。"
+        message="审批通过后系统会自动往下走：Offer 审批通过 → 候选人自动流转到「已入职」，并自动生成入职材料清单与试用期跟进待办，无需再去手工操作一遍。个人账号与团队管理员确认后自动通过并留档；团队成员提交的审批会按流程等待指定审批人处理。"
       />
       <div className="toolbar">
         <Space>
@@ -268,7 +275,11 @@ function InstanceList() {
         loading={loading}
         size="middle"
         scroll={items.length ? { y: scrollY } : undefined}
-        locale={{ emptyText: <Empty description="暂无审批记录" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+        locale={{ emptyText: <Empty
+          description={status === "pending"
+            ? (isTeamMember ? "暂无待处理的审批，团队成员提交的审批会出现在这里" : "暂无审批中的事项——目前仅你本人使用，确认后自动通过并留档")
+            : "暂无审批记录"}
+          image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
         columns={[
           {
             title: "审批事项",
@@ -310,10 +321,13 @@ function InstanceList() {
             render: (_: unknown, r: ApprovalInstance) =>
               r.status === "pending" ? (
                 <Space size={12}>
-                  <Button type="link" size="small" style={{ paddingInline: 0 }}
-                    onClick={() => { setDecideTarget(r); setDecision("approve"); setAiSum({ loading: false, data: null, err: "" }); }}>
-                    处理
-                  </Button>
+                  {/* 团队子用户不能审自己的单（后端同规则 403），这里直接不展示入口 */}
+                  {!(isTeamMember && r.owner_id === currentUser?.id) && (
+                    <Button type="link" size="small" style={{ paddingInline: 0 }}
+                      onClick={() => { setDecideTarget(r); setDecision("approve"); setAiSum({ loading: false, data: null, err: "" }); }}>
+                      处理
+                    </Button>
+                  )}
                   <Popconfirm
                     title="撤回这条审批？"
                     description="撤回后该审批直接结束，需要重新发起。"

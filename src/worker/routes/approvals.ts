@@ -87,6 +87,39 @@ async function runApprovalDownstream(
   return result;
 }
 
+/**
+ * 「没有人可批」判定 —— 审批人必须是发起人以外的第二个人，除非发起人本就是数据域顶端：
+ *  - 个人账号（无 team_id）：自己就是全部，发起即确认
+ *  - 团队管理员（role=manager，team_id=自己）：团队顶端，没有上一级
+ *  - 超管（admin）：平台顶端
+ * 团队子用户（team_id 指向管理员）不在此列：提交后保持 pending，由同团队管理员处理。
+ */
+function isSoloConfirmer(session: { role: string; teamId?: string | null }): boolean {
+  return !session.teamId || session.role === "manager" || session.role === "admin";
+}
+
+/**
+ * 走完最后一步：标记当前步骤已决 + 实例通过 + 触发下游联动（下游失败不回滚审批结果）。
+ * 创建时的「自动通过」与 decide 的最后一步共用，保证两条入口的下游行为一致。
+ */
+async function finalizeApproval(
+  env: Env,
+  inst: { id: string; scene: string; talent_id: string; talent_job_id: string | null; payload: string | null; current_step: number },
+  userId: string,
+  comment: string
+): Promise<Record<string, unknown>> {
+  await env.DB.prepare(`
+    UPDATE approval_steps SET decision = 'approve', comment = ?, acted_at = datetime('now')
+    WHERE instance_id = ? AND step_index = ? AND decision IS NULL
+  `).bind(comment, inst.id, inst.current_step).run();
+  await env.DB.prepare(
+    "UPDATE approval_instances SET status='approved', updated_at=datetime('now') WHERE id=?"
+  ).bind(inst.id).run();
+
+  // 通过后自动往下走：推阶段 / 生成入职材料清单（失败不回滚审批结果）
+  return runApprovalDownstream(env, inst, userId);
+}
+
 // ============ 流程模板（可自建）============
 
 /** 流程模板列表 */
@@ -177,10 +210,13 @@ approvals.post("/instances", async (c) => {
 
   const id = genId();
   const title = String(b.title || "").trim() || `${link.talent_name} · ${link.job_title || "候选人"}`;
+  // 注意：link 查的是 tj.id（talent_jobs 没有 talent_job_id 列），这里必须用 link.id——
+  // 早期版本误绑 link.talent_job_id（undefined），D1 bind 不收 undefined 直接 500，
+  // 导致「发起审批」自上线起就走不通（线上 approval_instances 一直是空表）。
   await c.env.DB.prepare(`
     INSERT INTO approval_instances (id, owner_id, flow_id, scene, talent_id, talent_job_id, title, current_step, status, payload)
     VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'pending', ?)
-  `).bind(id, session.userId, b.flow_id || null, b.scene || "offer", link.talent_id, link.talent_job_id, title,
+  `).bind(id, session.userId, b.flow_id || null, b.scene || "offer", link.talent_id, link.id, title,
     b.payload ? JSON.stringify(b.payload) : null).run();
 
   // 落第一步的待处理记录
@@ -188,7 +224,20 @@ approvals.post("/instances", async (c) => {
     "INSERT INTO approval_steps (id, instance_id, step_index, step_name, approver_id) VALUES (?, ?, 0, ?, ?)"
   ).bind(genId(), id, steps[0].name, steps[0].approver_id || null).run();
 
-  return c.json({ ok: true, id, total_steps: steps.length });
+  // 单人/团队顶端：没有第二个人可批，发起即确认 —— 直接落一条自动通过的实例，
+  // 保留下游联动（Offer 通过→已入职+入职清单+试期待办）与审批留痕，
+  // 不再让 HR 再去审批中心自己点一次「通过」。
+  // 团队子用户提交的审批保持 pending，由同团队的管理员在审批中心处理。
+  if (isSoloConfirmer(session)) {
+    const downstream = await finalizeApproval(c.env, {
+      id, scene: b.scene || "offer", talent_id: link.talent_id,
+      talent_job_id: link.id, payload: b.payload ? JSON.stringify(b.payload) : null,
+      current_step: 0,
+    }, session.userId, "本人确认，自动通过");
+    return c.json({ ok: true, id, auto_passed: true, status: "approved", total_steps: steps.length, ...downstream });
+  }
+
+  return c.json({ ok: true, id, auto_passed: false, status: "pending", total_steps: steps.length });
 });
 
 /** 审批列表：pending_only=1 只看待我处理 */
@@ -244,6 +293,20 @@ approvals.post("/instances/:id/decide", async (c) => {
   }
   if (inst.status !== "pending") return c.json({ error: "该审批已结束" }, 400);
 
+  // 真审批：发起人与审批人必须分离。团队子用户不能审自己发起的审批，
+  // 只能由同团队的管理员处理（管理员/超管不受此限，其自身审批在发起时已自动通过）。
+  if (inst.owner_id === session.userId && session.role === "user" && session.teamId) {
+    return c.json({ error: "自己的审批需由团队管理员处理" }, 403);
+  }
+  // 环节指定了审批人时，只有该审批人或超管能处理（为将来「指定审批人」留口子；
+  // 当前 UI 不分配审批人，此校验对所有存量流程无行为变化）
+  const curStep = await c.env.DB.prepare(
+    "SELECT approver_id FROM approval_steps WHERE instance_id = ? AND step_index = ?"
+  ).bind(id, inst.current_step).first<{ approver_id: string | null }>();
+  if (curStep?.approver_id && curStep.approver_id !== session.userId && session.role !== "admin") {
+    return c.json({ error: "该环节已指定审批人，需由其本人处理" }, 403);
+  }
+
   let b: any;
   try { b = await c.req.json(); } catch { return c.json({ error: "请求参数格式不正确" }, 400); }
   const decision = b.decision === "approve" ? "approve" : b.decision === "reject" ? "reject" : null;
@@ -285,12 +348,7 @@ approvals.post("/instances/:id/decide", async (c) => {
   }
 
   // 最后一步通过 → 整个流程通过
-  await c.env.DB.prepare(
-    "UPDATE approval_instances SET status='approved', updated_at=datetime('now') WHERE id=?"
-  ).bind(id).run();
-
-  // 通过后自动往下走：推阶段 / 生成入职材料清单（失败不回滚审批结果）
-  const downstream = await runApprovalDownstream(c.env, inst, session.userId);
+  const downstream = await finalizeApproval(c.env, inst, session.userId, b.comment || "通过");
   return c.json({ ok: true, status: "approved", ...downstream });
 });
 
