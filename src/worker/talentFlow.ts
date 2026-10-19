@@ -9,6 +9,7 @@
  * 就没有任何联动，链路是断的。
  */
 import { genId } from "./helpers";
+import { JOIN_TALENT_T, SELECT_LINK_CTX } from "./sqlFragments";
 
 export type Stage =
   | "screening" | "interview1" | "interview2" | "offer" | "hired" | "rejected" | "withdrawn";
@@ -102,15 +103,43 @@ export async function ensureOnboardingItems(
   return DEFAULT_ONBOARDING_ITEMS.length;
 }
 
+// ============ 阶段写入的三个原子操作 ============
+// 原本「加入看板 / 手动流转 / 批量流转 / 系统自动推进 / 批量推进」五处各写一份
+// UPDATE + INSERT，收敛后只有这里一份 SQL：以后 job_stage_logs 加字段、或阶段
+// 变更要补别的动作，改一处即可，不会出现某个入口写了日志另一个入口没写的口径漂移。
+
+/** 写一条阶段流转日志。返回 prepared 语句：单条走 .run()，批量直接 push 进 batch 数组。 */
+export function stageLogStmt(
+  db: D1Database,
+  opts: { linkId: string; fromStage: string | null; toStage: string; userId: string; remark?: string | null }
+) {
+  return db
+    .prepare("INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, ?, ?, ?, ?)")
+    .bind(genId(), opts.linkId, opts.fromStage ?? null, opts.toStage, opts.userId, opts.remark || null);
+}
+
+/** 改投递阶段（不动评分）。同样返回 prepared 语句，便于拼进 batch。 */
+export function setLinkStageStmt(db: D1Database, linkId: string, stage: string) {
+  return db
+    .prepare("UPDATE talent_jobs SET stage = ?, updated_at = datetime('now') WHERE id = ?")
+    .bind(stage, linkId);
+}
+
+/** 该人才是否已有未完成的「试用期跟进」待办（入职联动防重） */
+export async function hasProbationTask(db: D1Database, talentId: string): Promise<boolean> {
+  const dup = await db
+    .prepare("SELECT id FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND title LIKE '试用期跟进%'")
+    .bind(talentId)
+    .first();
+  return !!dup;
+}
+
 /** 推进到「已入职」时的副作用：试用期跟进待办（同人才已有未完成的同前缀待办则跳过） */
 async function createProbationTask(
   db: D1Database,
   opts: { ownerId: string; talentId: string; jobId: string | null; talentName: string }
 ): Promise<boolean> {
-  const dup = await db.prepare(
-    "SELECT id FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND title LIKE '试用期跟进%'"
-  ).bind(opts.talentId).first();
-  if (dup) return false;
+  if (await hasProbationTask(db, opts.talentId)) return false;
 
   await db.prepare(
     "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
@@ -136,10 +165,7 @@ export async function moveStageForward(
   db: D1Database,
   opts: { linkId: string; toStage: Stage; userId: string; remark?: string | null; hireDate?: string | null }
 ): Promise<{ moved: boolean; reason?: string; talentId?: string; talentName?: string }> {
-  const link = await db.prepare(`
-    SELECT tj.id, tj.stage as old_stage, tj.talent_id, tj.job_id, t.name as talent_name, t.owner_id
-    FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
-  `).bind(opts.linkId).first<any>();
+  const link = await db.prepare(SELECT_LINK_CTX).bind(opts.linkId).first<any>();
   if (!link) return { moved: false, reason: "not_found" };
 
   const old = link.old_stage as Stage;
@@ -151,12 +177,12 @@ export async function moveStageForward(
     return { moved: false, reason: "no_forward", talentId: link.talent_id };
   }
 
-  await db.prepare("UPDATE talent_jobs SET stage = ?, updated_at = datetime('now') WHERE id = ?")
-    .bind(opts.toStage, opts.linkId).run();
+  await setLinkStageStmt(db, opts.linkId, opts.toStage).run();
 
-  await db.prepare(
-    "INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, ?, ?, ?, ?)"
-  ).bind(genId(), opts.linkId, old, opts.toStage, opts.userId, opts.remark || null).run();
+  await stageLogStmt(db, {
+    linkId: opts.linkId, fromStage: old, toStage: opts.toStage,
+    userId: opts.userId, remark: opts.remark,
+  }).run();
 
   if (opts.toStage === "hired") {
     // Offer 里填的入职日期优先落库；COALESCE 不覆盖 HR 已手工填写的真实日期

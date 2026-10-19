@@ -6,6 +6,7 @@ import { sendPushPlus, notifyNewRegistration, notifyPasswordResetRequest, notify
 import { newReferralCode, getReferralConfig, grantReferralReward, notifyReferralReward } from "../referral";
 import { getSmsConfig, sendSmsCode, verifySmsCode } from "../sms";
 import { sessionGet } from "../kv";
+import { getSetting, getSettings, setSettings } from "../settings";
 const auth = new Hono<{ Bindings: Env }>();
 
 // ---- 密码哈希（PBKDF2-SHA256 + 每用户随机盐 + 10 万迭代）----
@@ -983,11 +984,7 @@ auth.put("/users/:id/membership", async (c) => {
 auth.get("/settings/pay", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  const rows = await c.env.DB.prepare(
-    "SELECT key, value FROM site_settings WHERE key IN ('pay_wechat_qr','pay_alipay_qr','pay_note')"
-  ).all<{ key: string; value: string }>();
-  const map: Record<string, string> = {};
-  (rows.results || []).forEach((r) => { map[r.key] = r.value; });
+  const map = await getSettings(c.env.DB, ["pay_wechat_qr", "pay_alipay_qr", "pay_note"]);
   return c.json({
     wechat_qr: map["pay_wechat_qr"] || null,
     alipay_qr: map["pay_alipay_qr"] || null,
@@ -1009,12 +1006,7 @@ auth.put("/settings/pay", async (c) => {
     ["pay_alipay_qr", (alipay_qr || "").trim()],
     ["pay_note", (note || "").trim()],
   ];
-  for (const [k, v] of items) {
-    await c.env.DB.prepare(
-      "INSERT INTO site_settings (key, value) VALUES (?, ?) " +
-      "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-    ).bind(k, v).run();
-  }
+  await setSettings(c.env.DB, items);
   return c.json({ ok: true });
 });
 
@@ -1062,11 +1054,7 @@ auth.get("/settings/dict", async (c) => {
 
   const cacheKey = "https://edge-cache.internal/api/settings/dict";
   return cachedJson(c.executionCtx, cacheKey, 120, async () => {
-    const rows = await c.env.DB.prepare(
-      "SELECT key, value FROM site_settings WHERE key IN ('dict_sources','dict_reject_reasons','dict_education','dict_job_types','dict_cities','dict_skills')"
-    ).all<{ key: string; value: string }>();
-    const map: Record<string, string> = {};
-    (rows.results || []).forEach((r) => { map[r.key] = r.value; });
+    const map = await getSettings(c.env.DB, DICT_KEYS);
 
     const parse = (k: string): string[] | Record<string, string> => {
       const raw = map[k];
@@ -1148,29 +1136,23 @@ auth.put("/settings/dict", async (c) => {
   if (jobTypes) items.push(["dict_job_types", JSON.stringify(jobTypes)]);
   if (cities) items.push(["dict_cities", JSON.stringify(cities)]);
   if (skills) items.push(["dict_skills", JSON.stringify(skills)]);
-  for (const [k, v] of items) {
-    await c.env.DB.prepare(
-      "INSERT INTO site_settings (key, value) VALUES (?, ?) " +
-      "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-    ).bind(k, v).run();
-  }
+  await setSettings(c.env.DB, items);
   // 字典变更后立即失效缓存，确保全站下拉即时刷新
   await invalidateCache("https://edge-cache.internal/api/settings/dict");
   return c.json({ ok: true });
 });
 
 // ---- 更新公告：存 site_settings（key = app_changelog，值为 JSON） ----
+const CHANGELOG_SETTING_KEY = "app_changelog";
 // 前端首屏读取 version 与本地已读版本比对，不同则弹窗提示「本次更新了什么」。
 // GET 登录即可（所有用户都要看公告）；PUT 仅管理员（改版本号 + 说明即触发全员下次打开弹窗）。
 auth.get("/settings/changelog", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  const row = await c.env.DB.prepare(
-    "SELECT value FROM site_settings WHERE key = 'app_changelog'"
-  ).first<{ value: string }>();
-  if (!row) return c.json({ version: null, title: null, updated_at: null, items: [] });
+  const raw = await getSetting(c.env.DB, CHANGELOG_SETTING_KEY);
+  if (!raw) return c.json({ version: null, title: null, updated_at: null, items: [] });
   try {
-    const v = JSON.parse(row.value);
+    const v = JSON.parse(raw);
     return c.json({
       version: v.version || null,
       title: v.title || null,
@@ -1201,10 +1183,7 @@ auth.put("/settings/changelog", async (c) => {
     updated_at: String(body.updated_at || "").trim(),
     items,
   });
-  await c.env.DB.prepare(
-    "INSERT INTO site_settings (key, value) VALUES ('app_changelog', ?) " +
-    "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ).bind(value).run();
+  await setSettings(c.env.DB, [[CHANGELOG_SETTING_KEY, value]]);
   return c.json({ ok: true });
 });
 

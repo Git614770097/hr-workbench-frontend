@@ -4,6 +4,7 @@ import { getSession } from "./auth";
 import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 import { moveStageForward, ensureOnboardingItems } from "../talentFlow";
+import { JOIN_TALENT_T, LEFT_JOIN_JOB_J } from "../sqlFragments";
 
 const approvals = new Hono<{ Bindings: Env }>();
 
@@ -180,8 +181,8 @@ approvals.post("/instances", async (c) => {
   const link = await c.env.DB.prepare(`
     SELECT tj.id, tj.talent_id, tj.stage, t.name as talent_name, t.owner_id, j.title as job_title
     FROM talent_jobs tj
-    JOIN talents t ON tj.talent_id = t.id
-    LEFT JOIN jobs j ON tj.job_id = j.id
+    ${JOIN_TALENT_T}
+    ${LEFT_JOIN_JOB_J}
     WHERE tj.id = ?
   `).bind(b.talent_job_id).first<any>();
   if (!link) return c.json({ error: "投递不存在" }, 404);

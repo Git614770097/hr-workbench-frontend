@@ -3,7 +3,8 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
-import { syncTalentStage, ensureOnboardingItems } from "../talentFlow";
+import { syncTalentStage, ensureOnboardingItems, stageLogStmt, setLinkStageStmt, hasProbationTask } from "../talentFlow";
+import { JOIN_TALENT_T, LEFT_JOIN_JOB_J, LEFT_JOIN_STAGE_LOG_L, SELECT_LINK_CTX, SELECT_LINK_OWNER } from "../sqlFragments";
 import { shiftToWorkday } from "../utils/workday";
 
 const pipeline = new Hono<{ Bindings: Env }>();
@@ -75,8 +76,8 @@ pipeline.get("/", async (c) => {
            j.id as job_id, j.title as job_title, j.department as job_department, j.city as job_city,
            u.name as owner_name
     FROM talent_jobs tj
-    JOIN talents t ON tj.talent_id = t.id
-    LEFT JOIN jobs j ON tj.job_id = j.id
+    ${JOIN_TALENT_T}
+    ${LEFT_JOIN_JOB_J}
     JOIN users u ON t.owner_id = u.id
     ${where}
     ORDER BY tj.updated_at DESC
@@ -125,8 +126,8 @@ pipeline.post("/sync-stale-tasks", async (c) => {
     SELECT tj.stage, tj.updated_at as stage_updated_at,
            t.id as talent_id, t.name, t.owner_id, j.title as job_title
     FROM talent_jobs tj
-    JOIN talents t ON tj.talent_id = t.id
-    LEFT JOIN jobs j ON tj.job_id = j.id
+    ${JOIN_TALENT_T}
+    ${LEFT_JOIN_JOB_J}
     WHERE ${conditions.join(" AND ")}
   `).bind(...params).all();
 
@@ -244,9 +245,9 @@ pipeline.get("/funnel", async (c) => {
            j.id AS job_id, j.title AS job_title,
            l.from_stage, l.to_stage, l.remark, l.created_at AS log_at
     FROM talent_jobs tj
-    JOIN talents t ON tj.talent_id = t.id
-    LEFT JOIN jobs j ON tj.job_id = j.id
-    LEFT JOIN job_stage_logs l ON l.talent_job_id = tj.id
+    ${JOIN_TALENT_T}
+    ${LEFT_JOIN_JOB_J}
+    ${LEFT_JOIN_STAGE_LOG_L}
     ${where}
     ORDER BY tj.id, l.created_at ASC
   `).bind(...params).all();
@@ -511,8 +512,9 @@ pipeline.post("/", async (c) => {
   await c.env.DB.prepare("INSERT INTO talent_jobs (id, talent_id, job_id, stage, notes) VALUES (?, ?, ?, ?, ?)")
     .bind(id, body.talent_id, body.job_id, stage, body.notes || null).run();
 
-  await c.env.DB.prepare("INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, NULL, ?, ?, ?)")
-    .bind(genId(), id, stage, session.userId, "加入招聘看板").run();
+  await stageLogStmt(c.env.DB, {
+    linkId: id, fromStage: null, toStage: stage, userId: session.userId, remark: "加入招聘看板",
+  }).run();
 
   // 同步人才全局阶段（冗余字段，派生自 talent_jobs）
   await syncTalentStage(c.env.DB, body.talent_id);
@@ -566,8 +568,9 @@ pipeline.post("/batch", async (c) => {
     return [
       c.env.DB.prepare("INSERT INTO talent_jobs (id, talent_id, job_id, stage, notes) VALUES (?, ?, ?, ?, ?)")
         .bind(id, t.id, body.job_id, stage, body.notes || null),
-      c.env.DB.prepare("INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, NULL, ?, ?, ?)")
-        .bind(genId(), id, stage, session.userId, "加入招聘看板"),
+      stageLogStmt(c.env.DB, {
+        linkId: id, fromStage: null, toStage: stage, userId: session.userId, remark: "加入招聘看板",
+      }),
     ];
   });
   await c.env.DB.batch(stmts);
@@ -600,7 +603,7 @@ pipeline.post("/batch-stage", async (c) => {
   const ph = ids.map(() => "?").join(",");
   const rows = await c.env.DB.prepare(`
     SELECT tj.id, tj.stage as old_stage, tj.talent_id, tj.job_id, t.name as talent_name, t.owner_id
-    FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id IN (${ph})
+    FROM talent_jobs tj ${JOIN_TALENT_T} WHERE tj.id IN (${ph})
   `).bind(...ids).all<any>();
 
   // 无权限的跳过；已处于目标阶段的跳过（不重复写日志）
@@ -619,11 +622,10 @@ pipeline.post("/batch-stage", async (c) => {
 
   const stmts: any[] = [];
   for (const r of targets) {
-    stmts.push(c.env.DB.prepare("UPDATE talent_jobs SET stage = ?, updated_at = datetime('now') WHERE id = ?")
-      .bind(stage, r.id));
-    stmts.push(c.env.DB.prepare(
-      "INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, ?, ?, ?, ?)"
-    ).bind(genId(), r.id, r.old_stage, stage, session.userId, remark || null));
+    stmts.push(setLinkStageStmt(c.env.DB, r.id, stage));
+    stmts.push(stageLogStmt(c.env.DB, {
+      linkId: r.id, fromStage: r.old_stage, toStage: stage, userId: session.userId, remark,
+    }));
   }
   await c.env.DB.batch(stmts);
 
@@ -689,10 +691,7 @@ pipeline.put("/:linkId/stage", async (c) => {
   if (!body.stage || !STAGES.includes(body.stage as Stage)) return c.json({ error: "阶段值不合法" }, 400);
 
   // 权限校验
-  const link = await c.env.DB.prepare(`
-    SELECT tj.id, tj.stage as old_stage, tj.talent_id, tj.job_id, t.name as talent_name, t.owner_id
-    FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
-  `).bind(linkId).first<any>();
+  const link = await c.env.DB.prepare(SELECT_LINK_CTX).bind(linkId).first<any>();
   if (!link) return c.json({ error: "候选人记录不存在" }, 404);
   if (!(await canTouch(c.env, session, link.owner_id))) {
     return c.json({ error: "无权限" }, 403);
@@ -708,17 +707,15 @@ pipeline.put("/:linkId/stage", async (c) => {
   await c.env.DB.prepare("UPDATE talent_jobs SET stage = ?, rating = COALESCE(?, rating), updated_at = datetime('now') WHERE id = ?")
     .bind(body.stage, body.rating ?? null, linkId).run();
 
-  await c.env.DB.prepare("INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(genId(), linkId, link.old_stage, body.stage, session.userId, remark || null).run();
+  await stageLogStmt(c.env.DB, {
+    linkId, fromStage: link.old_stage, toStage: body.stage, userId: session.userId, remark,
+  }).run();
 
   // 阶段推进到「已入职」时：联动人才全局状态为 placed（已入职），
   // 并生成一条「试用期跟进」待办（防重：同人才已有未完成的同前缀待办则跳过）
   let taskCreated = false;
   if (body.stage === "hired") {
-    const dupTask = await c.env.DB.prepare(
-      "SELECT id FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND title LIKE '试用期跟进%'"
-    ).bind(link.talent_id).first();
-    if (!dupTask) {
+    if (!(await hasProbationTask(c.env.DB, link.talent_id))) {
       const due = new Date(Date.now() + 90 * 86400000);
       const p = (n: number) => String(n).padStart(2, "0");
       const rawDue = `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`;
@@ -751,9 +748,7 @@ pipeline.get("/:linkId/logs", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const linkId = c.req.param("linkId");
-  const link = await c.env.DB.prepare(`
-    SELECT tj.id, t.owner_id FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
-  `).bind(linkId).first<any>();
+  const link = await c.env.DB.prepare(SELECT_LINK_OWNER).bind(linkId).first<any>();
   if (!link) return c.json({ error: "候选人记录不存在" }, 404);
   if (!(await canTouch(c.env, session, link.owner_id))) return c.json({ error: "无权限" }, 403);
 
@@ -781,9 +776,7 @@ pipeline.patch("/:linkId", async (c) => {
     return c.json({ error: "评分需在 1-5 之间" }, 400);
   }
 
-  const link = await c.env.DB.prepare(`
-    SELECT tj.id, t.owner_id FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
-  `).bind(linkId).first<any>();
+  const link = await c.env.DB.prepare(SELECT_LINK_OWNER).bind(linkId).first<any>();
   if (!link) return c.json({ error: "候选人记录不存在" }, 404);
   if (!(await canTouch(c.env, session, link.owner_id))) return c.json({ error: "无权限" }, 403);
 
@@ -805,9 +798,7 @@ pipeline.delete("/:linkId", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const linkId = c.req.param("linkId");
-  const link = await c.env.DB.prepare(`
-    SELECT tj.id, t.owner_id FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
-  `).bind(linkId).first<any>();
+  const link = await c.env.DB.prepare(SELECT_LINK_OWNER).bind(linkId).first<any>();
   if (!link) return c.json({ error: "候选人记录不存在" }, 404);
   if (!(await canTouch(c.env, session, link.owner_id))) return c.json({ error: "无权限" }, 403);
 

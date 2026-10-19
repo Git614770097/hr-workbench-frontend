@@ -7,6 +7,8 @@
 //       ② 避开「KV expirationTtl 必须 ≥60s」的坑（按日配额天然需要 24h+ TTL）；
 //       ③ 同一张表顺便承担缓存职责，一举两得。
 
+import { getSetting } from "./settings";
+
 /** 普通用户每日 AI 调用上限默认值；可在系统设置→AI 配额里改，管理员不受限 */
 export const AI_DAILY_LIMIT = 20;
 
@@ -61,13 +63,10 @@ export interface QuotaInfo {
  * 配置不存在/非法时回落到 AI_DAILY_LIMIT 默认值。
  */
 export async function loadDailyLimit(db: D1Database): Promise<number> {
-  const row = await db
-    .prepare("SELECT value FROM site_settings WHERE key = ?")
-    .bind(AI_QUOTA_SETTING_KEY)
-    .first<{ value: string }>();
-  if (!row?.value) return AI_DAILY_LIMIT;
+  const raw = await getSetting(db, AI_QUOTA_SETTING_KEY);
+  if (!raw) return AI_DAILY_LIMIT;
   try {
-    const v = JSON.parse(row.value);
+    const v = JSON.parse(raw);
     const n = Math.floor(Number(v?.limit));
     // 0 视为"不限"，其余非法值回落默认；上界 9999 防手滑
     if (Number.isFinite(n) && n >= 0 && n <= 9999) return n;

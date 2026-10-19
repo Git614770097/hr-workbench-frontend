@@ -11,6 +11,7 @@ import type { Env } from "./index";
 import { sendPushPlus } from "./reminders";
 import { escapeHtml } from "../utils/escapeHtml";
 import { genId } from "./helpers";
+import { getSetting } from "./settings";
 
 export interface ReferralConfig {
   enabled: boolean;
@@ -34,13 +35,12 @@ const DEFAULT_CONFIG: ReferralConfig = {
 
 // 配置存 site_settings（key = referral_config，值为 JSON）。
 // 未配置时回落到上面的默认值，所以不做后台配置 UI 也能跑。
+const REFERRAL_SETTING_KEY = "referral_config";
 export async function getReferralConfig(db: D1Database): Promise<ReferralConfig> {
-  const row = await db
-    .prepare("SELECT value FROM site_settings WHERE key = 'referral_config'")
-    .first<{ value: string }>();
-  if (!row?.value) return DEFAULT_CONFIG;
+  const raw = await getSetting(db, REFERRAL_SETTING_KEY);
+  if (!raw) return DEFAULT_CONFIG;
   try {
-    const parsed = JSON.parse(row.value) as Partial<ReferralConfig>;
+    const parsed = JSON.parse(raw) as Partial<ReferralConfig>;
     return { ...DEFAULT_CONFIG, ...parsed };
   } catch {
     return DEFAULT_CONFIG;

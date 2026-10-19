@@ -3,6 +3,7 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
+import { JOIN_TALENT_T } from "../sqlFragments";
 
 const jobs = new Hono<{ Bindings: Env }>();
 
@@ -119,7 +120,7 @@ jobs.get("/:id", async (c) => {
     SELECT tj.id as link_id, tj.stage, tj.rating, tj.notes, tj.created_at as linked_at, tj.updated_at,
            t.id as talent_id, t.name, t.phone, t.email, t.current_title, t.current_company,
            t.years_experience, t.education, t.city, t.age, t.resume_url
-    FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id
+    FROM talent_jobs tj ${JOIN_TALENT_T}
     WHERE tj.job_id = ?
     ORDER BY tj.updated_at DESC
   `).bind(id).all();

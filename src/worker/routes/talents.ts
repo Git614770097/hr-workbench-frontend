@@ -5,11 +5,42 @@ import { getSession } from "./auth";
 import { ownerScope, scopeConds, scopeParams } from "../scope";
 import { genId } from "../helpers";
 import { STAGES, syncTalentStage } from "./pipeline";
+import { stageLogStmt, setLinkStageStmt, hasProbationTask } from "../talentFlow";
+import { JOIN_TALENT_T } from "../sqlFragments";
 import { deepseekJson } from "../ai";
 import { resolveAiKey } from "../aiKey";
 import { shiftToWorkday } from "../utils/workday";
 
 const talents = new Hono<{ Bindings: Env }>();
+
+/**
+ * 删除一个人才及其全部关联数据（顺序敏感，一个 batch 完成）。
+ *
+ * 为什么单独一个函数：单删（DELETE /:id）和批量删（POST /batch/delete）原本各
+ * 抄了一份这 11 条语句——批删的注释还写着「复用单删的级联清理」，其实并没有复用。
+ * 那意味着以后任何一张表新增 talent_id 外键，必须同时记得改两处，漏一处就是
+ * 外键约束 500。收敛成一个函数后，加新子表只在此处加一行。
+ *
+ * 顺序说明：approval_steps 是 approval_instances 的子表，必须先删子表；
+ *          talents 被多张表引用，必须最后删。不依赖 ON DELETE CASCADE，
+ *          这样即便某些行的 talent_job_id 为空也能安全清理。
+ */
+async function deleteTalentCascade(db: D1Database, talentId: string): Promise<void> {
+  await db.batch([
+    db.prepare("DELETE FROM approval_steps WHERE instance_id IN (SELECT id FROM approval_instances WHERE talent_id = ?)").bind(talentId),
+    db.prepare("DELETE FROM interviews WHERE talent_id = ?").bind(talentId),
+    db.prepare("DELETE FROM approval_instances WHERE talent_id = ?").bind(talentId),
+    db.prepare("DELETE FROM background_checks WHERE talent_id = ?").bind(talentId),
+    db.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(talentId),
+    db.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(talentId),
+    db.prepare("DELETE FROM communications WHERE talent_id = ?").bind(talentId),
+    // 待办属于用户，不静默删除，只解除与人才的关联
+    db.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(talentId),
+    db.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(talentId),
+    db.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(talentId),
+    db.prepare("DELETE FROM talents WHERE id = ?").bind(talentId),
+  ]);
+}
 
 /** 日期字段只接受 YYYY-MM-DD（或带时间的 ISO），其余一律置 NULL，避免脏数据入库。
  *  新增与批量导入共用，别在两处各写一份。 */
@@ -762,20 +793,7 @@ talents.post("/batch/delete", async (c) => {
       // 忽略 KV 清理异常
     }
     try {
-      await c.env.DB.batch([
-        // 审批步骤是审批实例的子表，必须先于 approval_instances 删除
-        c.env.DB.prepare("DELETE FROM approval_steps WHERE instance_id IN (SELECT id FROM approval_instances WHERE talent_id = ?)").bind(id),
-        c.env.DB.prepare("DELETE FROM interviews WHERE talent_id = ?").bind(id),
-        c.env.DB.prepare("DELETE FROM approval_instances WHERE talent_id = ?").bind(id),
-        c.env.DB.prepare("DELETE FROM background_checks WHERE talent_id = ?").bind(id),
-        c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(id),
-        c.env.DB.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(id),
-        c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id),
-        c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),
-        c.env.DB.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(id),
-        c.env.DB.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(id),
-        c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id),
-      ]);
+      await deleteTalentCascade(c.env.DB, id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return c.json({ error: `删除失败：${msg}（${id}）` }, 500);
@@ -802,7 +820,7 @@ talents.post("/batch/stage", async (c) => {
   const scStage = ownerScope(session, "t.owner_id");
   const allowed = (await c.env.DB.prepare(
     `SELECT tj.id, tj.stage as old_stage, tj.talent_id, tj.job_id, t.name as talent_name, t.owner_id
-     FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.talent_id IN (${ph})${scStage.sql}`
+     FROM talent_jobs tj ${JOIN_TALENT_T} WHERE tj.talent_id IN (${ph})${scStage.sql}`
   ).bind(...ids, ...scStage.params).all<any>()).results as any[];
   const talentIdsWithJob = [...new Set(allowed.map((r: any) => r.talent_id))];
   const skipped = ids.length - talentIdsWithJob.length;
@@ -811,31 +829,27 @@ talents.post("/batch/stage", async (c) => {
   const hiredLinks: any[] = [];
   for (const r of allowed) {
     if (r.old_stage === stage) continue; // 已在目标阶段，不重复写日志
-    stmts.push(c.env.DB.prepare("UPDATE talent_jobs SET stage = ?, updated_at = datetime('now') WHERE id = ?").bind(stage, r.id));
-    stmts.push(c.env.DB.prepare(
-      "INSERT INTO job_stage_logs (id, talent_job_id, from_stage, to_stage, user_id, remark) VALUES (?, ?, ?, ?, ?, ?)"
-    ).bind(genId(), r.id, r.old_stage, stage, session.userId, "批量推进"));
+    stmts.push(setLinkStageStmt(c.env.DB, r.id, stage));
+    stmts.push(stageLogStmt(c.env.DB, {
+      linkId: r.id, fromStage: r.old_stage, toStage: stage, userId: session.userId, remark: "批量推进",
+    }));
     if (stage === "hired") hiredLinks.push(r);
   }
   if (stmts.length) await c.env.DB.batch(stmts);
 
   // hired 联动：与单卡流转一致的「试用期跟进」待办（防重）
   for (const h of hiredLinks) {
-    const dup = await c.env.DB.prepare(
-      "SELECT id FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND title LIKE '试用期跟进%'"
-    ).bind(h.talent_id).first();
-    if (!dup) {
-      const due = new Date(Date.now() + 90 * 86400000);
-      const p = (n: number) => String(n).padStart(2, "0");
-      await c.env.DB.prepare(
-        "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
-      ).bind(
-        genId(), h.owner_id, h.talent_id, h.job_id,
-        `试用期跟进：${h.talent_name}`,
-        "候选人已入职，关注试用期表现与融入情况，到期前完成转正评估。",
-        `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`
-      ).run();
-    }
+    if (await hasProbationTask(c.env.DB, h.talent_id)) continue;
+    const due = new Date(Date.now() + 90 * 86400000);
+    const p = (n: number) => String(n).padStart(2, "0");
+    await c.env.DB.prepare(
+      "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
+    ).bind(
+      genId(), h.owner_id, h.talent_id, h.job_id,
+      `试用期跟进：${h.talent_name}`,
+      "候选人已入职，关注试用期表现与融入情况，到期前完成转正评估。",
+      `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`
+    ).run();
   }
 
   for (const tid of talentIdsWithJob) await syncTalentStage(c.env.DB, tid);
@@ -995,21 +1009,7 @@ talents.delete("/:id", async (c) => {
   // approval_instances / background_checks），不依赖 ON DELETE CASCADE，
   // 即使这些行的 talent_job_id 为空也能安全删除。
   try {
-    await c.env.DB.batch([
-      // 审批步骤是审批实例的子表，必须先于 approval_instances 删除
-      c.env.DB.prepare("DELETE FROM approval_steps WHERE instance_id IN (SELECT id FROM approval_instances WHERE talent_id = ?)").bind(id),
-      c.env.DB.prepare("DELETE FROM interviews WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM approval_instances WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM background_checks WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(id),
-      c.env.DB.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id),
-      // 待办属于用户，不静默删除，只解除与人才的关联
-      c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id),
-    ]);
+    await deleteTalentCascade(c.env.DB, id);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return c.json({ error: `删除失败：${msg}` }, 500);

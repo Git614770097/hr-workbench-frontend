@@ -5,6 +5,7 @@ import { getSession } from "./auth";
 import { scopeConds, scopeParams, canTouch } from "../scope";
 import { genId, arrayBufferToBase64, base64ToArrayBuffer } from "../helpers";
 import { moveStageForward } from "../talentFlow";
+import { LEFT_JOIN_JOB_J } from "../sqlFragments";
 import { deepseekJsonWithUsage } from "../ai";
 import { resolveAiKey } from "../aiKey";
 import { checkQuota } from "../aiGuard";
@@ -118,7 +119,7 @@ async function loadBg(env: Env, id: string): Promise<BgRow | null> {
     FROM background_checks bc
     JOIN talents t ON bc.talent_id = t.id
     LEFT JOIN talent_jobs tj ON bc.talent_job_id = tj.id
-    LEFT JOIN jobs j ON tj.job_id = j.id
+    ${LEFT_JOIN_JOB_J}
     LEFT JOIN users u ON bc.owner_id = u.id
     WHERE bc.id = ?
   `).bind(id).first<BgRow>();
@@ -174,7 +175,7 @@ background.get("/", async (c) => {
     FROM background_checks bc
     JOIN talents t ON bc.talent_id = t.id
     LEFT JOIN talent_jobs tj ON bc.talent_job_id = tj.id
-    LEFT JOIN jobs j ON tj.job_id = j.id
+    ${LEFT_JOIN_JOB_J}
     LEFT JOIN users u ON bc.owner_id = u.id
     ${where}
     ORDER BY (bc.status IN ('pending','processing','completed')) DESC, bc.created_at DESC
