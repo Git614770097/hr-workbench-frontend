@@ -943,6 +943,12 @@ export interface AiQuotaInfo {
   default_limit: number;
 }
 
+/** 自有 AI Key（BYOK）状态：/ai/own-key。masked 如 sk-****abcd */
+export interface AiOwnKeyInfo {
+  configured: boolean;
+  masked: string | null;
+}
+
 export interface FunnelSourceItem {
   source: string;
   entered: number;  // 进入流程的投递数

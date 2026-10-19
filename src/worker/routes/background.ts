@@ -5,7 +5,8 @@ import { getSession } from "./auth";
 import { scopeConds, scopeParams, canTouch } from "../scope";
 import { genId, arrayBufferToBase64, base64ToArrayBuffer } from "../helpers";
 import { moveStageForward } from "../talentFlow";
-import { deepseekJson } from "../ai";
+import { deepseekJsonWithUsage } from "../ai";
+import { resolveAiKey } from "../aiKey";
 import { checkQuota } from "../aiGuard";
 
 const background = new Hono<{ Bindings: Env }>();
@@ -473,9 +474,6 @@ const BG_SUMMARY_SYSTEM = `你是一名合规背景调查助理。请基于已�
 只返回 JSON：{"summary": "…", "risks": ["…"]}`;
 
 background.post("/:id/ai-summary", async (c) => {
-  const key = c.env.DEEPSEEK_API_KEY;
-  if (!key) return c.json({ error: "未配置 AI 密钥，无法生成小结" }, 400);
-
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
   const id = c.req.param("id");
@@ -484,17 +482,22 @@ background.post("/:id/ai-summary", async (c) => {
   if (!(await canTouch(c.env, session, row.owner_id))) return c.json({ error: "无权操作该背调记录" }, 403);
   if (row.consent_status !== "granted") return c.json({ error: "请先取得候选人授权后再生成小结" }, 403);
 
+  // 自有 Key 优先（用户配额用完时靠自己的 Key 继续用，不占系统配额）
+  const { key } = await resolveAiKey(c.env, session.userId);
+  if (!key) return c.json({ error: "未配置 AI 密钥，无法生成小结" }, 400);
+
   const items = parseItems(row.items_json);
   const itemText = items.map((x) => `- ${x.label}：${ITEM_STATUS_LABEL[x.status] || x.status}${x.note ? `（${x.note}）` : ""}`).join("\n");
   const user = `候选人：${row.talent_name}\n授权方式：${row.consent_method || "已授权"}\n\n核验分项：\n${itemText}\n${row.summary ? `\n人工补充：${row.summary}` : ""}`;
 
   try {
-    const raw = await deepseekJson(key, BG_SUMMARY_SYSTEM, user, { maxTokens: 400 });
-    if (!raw) return c.json({ error: "AI 未能生成小结，请手动填写" }, 400);
+    const gen = await deepseekJsonWithUsage(key, BG_SUMMARY_SYSTEM, user, { maxTokens: 400 });
+    if (!gen) return c.json({ error: "AI 未能生成小结，请手动填写" }, 400);
+    const raw = gen.data;
     const summary = typeof raw.summary === "string" ? raw.summary : "";
     const risks = Array.isArray(raw.risks) ? raw.risks.filter((x) => typeof x === "string").slice(0, 3) : [];
     if (!summary) return c.json({ error: "AI 未能生成小结，请手动填写" }, 400);
-    return c.json({ summary, risks });
+    return c.json({ summary, risks, _usage: gen.usage ?? null });
   } catch (e) {
     return c.json({ error: "AI 生成失败：" + (e as Error).message }, 500);
   }
@@ -538,17 +541,22 @@ background.post("/:id/ai-resume-check", async (c) => {
   if (!(await canTouch(c.env, session, row.owner_id))) return c.json({ error: "无权操作该背调记录" }, 403);
   if (row.consent_status !== "granted") return c.json({ error: "请先取得候选人授权后再生成核查清单" }, 403);
 
-  // 共享 AI 配额（系统设置→AI 配额）：超了直接挡，与其他 AI 功能口径一致
-  const quota = await checkQuota(c.env.DB, session.userId, session.role);
-  if (!quota.ok) {
-    return c.json(
-      { error: `今日 AI 次数已用完（${quota.used}/${quota.limit}），明天自动重置`, code: "AI_QUOTA" },
-      429
-    );
-  }
-
-  const key = c.env.DEEPSEEK_API_KEY;
+  // 共享 AI 配额（系统设置→AI 配额）：超了直接挡，与其他 AI 功能口径一致。
+  // 自带 Key 的用户花自己的钱，不占系统配额，直接放行。
+  const { key, own } = await resolveAiKey(c.env, session.userId);
   if (!key) return c.json({ error: "未配置 AI 密钥，无法生成核查清单", code: "AI_NO_KEY" }, 400);
+  if (!own) {
+    const quota = await checkQuota(c.env.DB, session.userId, session.role);
+    if (!quota.ok) {
+      return c.json(
+        {
+          error: `今日 AI 次数已用完（${quota.used}/${quota.limit}）——配置自己的 DeepSeek Key 立即可继续使用，不占系统配额`,
+          code: "AI_QUOTA",
+        },
+        429
+      );
+    }
+  }
 
   let body: any = {};
   try { body = await c.req.json(); } catch { /* ignore */ }
@@ -562,8 +570,9 @@ background.post("/:id/ai-resume-check", async (c) => {
 
   const user = `候选人：${row.talent_name}\n\n简历原文：\n${resumeText}`;
   try {
-    const raw = await deepseekJson(key, BG_RESUME_CHECK_SYSTEM, user, { maxTokens: 1400 });
-    if (!raw || !Array.isArray(raw.items)) return c.json({ error: "AI 未能生成核查清单，请手动整理" }, 400);
+    const gen = await deepseekJsonWithUsage(key, BG_RESUME_CHECK_SYSTEM, user, { maxTokens: 1400 });
+    if (!gen || !Array.isArray(gen.data.items)) return c.json({ error: "AI 未能生成核查清单，请手动整理" }, 400);
+    const raw = gen.data;
     const items = (raw.items as any[]).slice(0, 8)
       .map((x) => ({
         category: String(x?.category || "其他").slice(0, 20),
@@ -593,7 +602,7 @@ background.post("/:id/ai-resume-check", async (c) => {
     ).bind(JSON.stringify(merged), newSummary, id).run();
 
     await saveBgArtifact(c.env.DB, session.userId, id, result);
-    return c.json(result);
+    return c.json({ ...result, _usage: gen.usage ?? null });
   } catch (e) {
     return c.json({ error: "AI 生成失败：" + (e as Error).message }, 500);
   }

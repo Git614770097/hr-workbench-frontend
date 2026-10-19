@@ -6,6 +6,7 @@ import { ownerScope, scopeConds, scopeParams } from "../scope";
 import { genId } from "../helpers";
 import { STAGES, syncTalentStage } from "./pipeline";
 import { deepseekJson } from "../ai";
+import { resolveAiKey } from "../aiKey";
 import { shiftToWorkday } from "../utils/workday";
 
 const talents = new Hono<{ Bindings: Env }>();
@@ -450,7 +451,7 @@ talents.post("/contracts/files", async (c) => {
   if (text.length >= 10) {
     try {
       const raw = await deepseekJson(
-        c.env.DEEPSEEK_API_KEY!,
+        (await resolveAiKey(c.env, session.userId)).key ?? "",
         CONTRACT_EXTRACT_SYSTEM,
         `请解析以下劳动合同文本（${talent.name}）：\n\n${text.slice(0, 6000)}`,
         { maxTokens: 200 }

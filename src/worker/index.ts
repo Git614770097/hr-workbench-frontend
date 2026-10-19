@@ -30,6 +30,8 @@ export interface Env {
   ASSETS: Fetcher;
   RESUMES: KVNamespace;
   DEEPSEEK_API_KEY?: string;
+  /** 用户自有 AI Key 的加密主密钥（wrangler secret put AI_KEY_SECRET）；未配置则关闭自定义 Key 功能 */
+  AI_KEY_SECRET?: string;
   PUSHPLUS_TOKEN?: string;
   // 阿里云「短信认证」（号码认证服务 Dypnsapi）——个人实名即可用
   ALIBABA_CLOUD_ACCESS_KEY_ID?: string;

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { Alert, Button, Card, Space, Spin, Tag, Typography } from "antd";
 import { RobotOutlined, ReloadOutlined, CopyOutlined } from "@ant-design/icons";
 import { copyText } from "../utils/clipboard";
+import { openAiKeyModal } from "../utils/aiKeyModal";
 import { message } from "antd";
 import AiUsageFoot from "./AiUsageFoot";
 import type { AiUsage } from "../types";
@@ -33,6 +34,8 @@ export default function AiResultCard({
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
   const [error, setError] = useState("");
+  /** 错误是配额用尽（code=AI_QUOTA）：展示「配置自有 Key」的专门引导，而非普通失败 */
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -61,6 +64,7 @@ export default function AiResultCard({
   const run = async () => {
     setLoading(true);
     setError("");
+    setQuotaExceeded(false);
     try {
       const res = await onGenerate();
       if (res === null) return; // 调用方已处理
@@ -68,6 +72,8 @@ export default function AiResultCard({
       setCopied(false);
     } catch (err) {
       // 配额用尽 / AI 不可用 / 网络异常：都只提示，不阻塞任何原有流程
+      const code = (err as Error & { code?: string }).code;
+      if (code === "AI_QUOTA") setQuotaExceeded(true);
       setError((err as Error).message || "生成失败，请稍后重试");
     } finally {
       setLoading(false);
@@ -125,13 +131,30 @@ export default function AiResultCard({
           </div>
         </div>
       ) : error ? (
-        <Alert
-          type="warning"
-          showIcon
-          message={error}
-          description="AI 服务暂时不可用不影响其他功能，可稍后重试或手动处理。"
-          action={<Button size="small" onClick={run}>重试</Button>}
-        />
+        quotaExceeded ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="今日免费 AI 次数已用完"
+            description="配置自己的 DeepSeek Key，之后的 AI 生成走你自己的额度（按量计费，一次几分钱），不占系统配额；也可以等明天自动重置。"
+            action={
+              <Space size={4}>
+                <Button size="small" type="primary" onClick={openAiKeyModal}>
+                  配置我的 Key
+                </Button>
+                <Button size="small" onClick={run}>重试</Button>
+              </Space>
+            }
+          />
+        ) : (
+          <Alert
+            type="warning"
+            showIcon
+            message={error}
+            description="AI 服务暂时不可用不影响其他功能，可稍后重试或手动处理。"
+            action={<Button size="small" onClick={run}>重试</Button>}
+          />
+        )
       ) : data ? (
         <div>
           {render(data)}

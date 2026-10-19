@@ -4,6 +4,7 @@ import { getSession } from "./auth";
 import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 import { deepseekJson, deepseekJsonSafe, toStringArray } from "../ai";
+import { resolveAiKey } from "../aiKey";
 
 // 智能匹配：候选人（上传简历或从人才库挑人）+ 职位画像 → 排序推荐 + 理由
 // - 画像 = 一个职位（job_title）的整体要求：城市、学历、年限区间、薪资范围、
@@ -264,7 +265,7 @@ match.post("/parse-profile", async (c) => {
   const jd = str(body?.jd);
   if (jd.length < 10) return c.json({ error: "招聘需求内容太短，无法提炼画像" }, 400);
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) return c.json({ error: "未配置 AI 密钥，无法自动生成画像，请手动填写" }, 500);
 
   try {
@@ -299,7 +300,7 @@ match.post("/generate-jd", async (c) => {
   const jobTitle = str(body?.job_title);
   if (!jobTitle) return c.json({ error: "请先填写目标职位" }, 400);
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) return c.json({ error: "未配置 AI 密钥，无法自动生成 JD，请手动填写" }, 500);
 
   const city = str(body?.city);
@@ -448,7 +449,7 @@ match.post("/score", async (c) => {
     招聘需求: profile.jd_raw ? profile.jd_raw.slice(0, 1200) : "未填写",
   };
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     const fb = ruleScore(hard);
     return c.json({

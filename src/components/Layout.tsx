@@ -28,6 +28,7 @@ import {
   LockOutlined,
   CrownOutlined,
   GiftOutlined,
+  KeyOutlined,
   SettingOutlined,
   RocketOutlined,
   AppstoreOutlined,
@@ -45,6 +46,7 @@ import Onboarding from "./Onboarding";
 import { onboardingStepsFor } from "./onboardingSteps";
 import PushplusModal from "./PushplusModal";
 import PasswordModal from "./PasswordModal";
+import AiKeyModal from "./AiKeyModal";
 import MembershipModal from "./MembershipModal";
 import ReferralModal from "./ReferralModal";
 import { isTouchDevice, setDeviceOverride } from "../utils/device";
@@ -272,6 +274,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   const [pushplusOpen, setPushplusOpen] = useState(false);
   // 修改自己的密码弹窗；forced=true 表示管理员重置过密码、本次登录必须先改掉
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [aiKeyOpen, setAiKeyOpen] = useState(false);
   const [forcePassword, setForcePassword] = useState(false);
   // 会员续费（全员）与收款码设置（管理员）
   const [memberOpen, setMemberOpen] = useState(false);
@@ -473,6 +476,13 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
     setPasswordOpen(false);
   };
 
+  // 配额用尽的提示等场景通过 window 事件打开「AI Key 设置」弹窗（openAiKeyModal()）
+  useEffect(() => {
+    const handler = () => setAiKeyOpen(true);
+    window.addEventListener("open-ai-key", handler);
+    return () => window.removeEventListener("open-ai-key", handler);
+  }, []);
+
   const userMenuItems = [
     {
       key: "password",
@@ -482,6 +492,12 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
         setForcePassword(false);
         setPasswordOpen(true);
       },
+    },
+    {
+      key: "ai-key",
+      icon: <KeyOutlined />,
+      label: "AI Key 设置",
+      onClick: () => setAiKeyOpen(true),
     },
     {
       key: "pushplus",
@@ -783,6 +799,8 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
       />
 
       <ReferralModal open={referralOpen} onClose={() => setReferralOpen(false)} />
+
+      <AiKeyModal open={aiKeyOpen} onClose={() => setAiKeyOpen(false)} />
     </div>
   );
 }

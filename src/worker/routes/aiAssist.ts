@@ -4,6 +4,7 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { deepseekJsonWithUsage, toStringArray } from "../ai";
+import { encryptAiKey, loadOwnKeyInfo, looksLikeDeepSeekKey, maskAiKey, resolveAiKey, verifyDeepSeekKey } from "../aiKey";
 import {
   AI_QUOTA_SETTING_KEY, checkQuota, loadDailyLimit, loadLatestArtifact, loadRecentArtifact,
   maskPii, saveArtifact, truncate,
@@ -95,10 +96,16 @@ async function quotaGuard(
   userId: string,
   role?: string
 ): Promise<Response | null> {
+  // 自带 Key 的用户花自己的钱，不占系统配额，直接放行（配额只保护系统 Key 的账单）
+  const { own } = await resolveAiKey(c.env, userId);
+  if (own) return null;
   const quota = await checkQuota(c.env.DB, userId, role);
   if (!quota.ok) {
     return c.json(
-      { error: `今日 AI 次数已用完（${quota.used}/${quota.limit}），明天自动重置`, code: "AI_QUOTA" },
+      {
+        error: `今日 AI 次数已用完（${quota.used}/${quota.limit}）——配置自己的 DeepSeek Key 立即可继续使用，不占系统配额`,
+        code: "AI_QUOTA",
+      },
       429
     );
   }
@@ -150,7 +157,7 @@ aiAssist.post("/resume-insight", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成解读，请手动查看简历", code: "AI_NO_KEY" }, 500);
   }
@@ -224,7 +231,7 @@ aiAssist.post("/outreach", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成文案", code: "AI_NO_KEY" }, 500);
   }
@@ -300,7 +307,7 @@ aiAssist.post("/interview-questions", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成面试题", code: "AI_NO_KEY" }, 500);
   }
@@ -396,7 +403,7 @@ aiAssist.post("/candidate-summary", async (c) => {
     return c.json({ error: "该候选人还没有面试评价，请先在面试管理中填写", code: "AI_NO_INPUT" }, 400);
   }
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成综合评估", code: "AI_NO_KEY" }, 500);
   }
@@ -487,7 +494,7 @@ aiAssist.post("/job-draft", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法起草岗位，请手动填写", code: "AI_NO_KEY" }, 500);
   }
@@ -601,7 +608,7 @@ aiAssist.post("/approval-summary", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成摘要", code: "AI_NO_KEY" }, 500);
   }
@@ -711,7 +718,7 @@ aiAssist.post("/onboard-checklist", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成清单", code: "AI_NO_KEY" }, 500);
   }
@@ -885,7 +892,7 @@ aiAssist.post("/talent-inventory", async (c) => {
   const denied = await quotaGuard(c, session.userId);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成盘点", code: "AI_NO_KEY" }, 500);
   }
@@ -940,7 +947,7 @@ aiAssist.post("/job-diagnosis", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成诊断", code: "AI_NO_KEY" }, 500);
   }
@@ -1001,7 +1008,7 @@ aiAssist.post("/recap-report", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成复盘", code: "AI_NO_KEY" }, 500);
   }
@@ -1104,7 +1111,7 @@ aiAssist.post("/weekly-report", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成周报", code: "AI_NO_KEY" }, 500);
   }
@@ -1384,7 +1391,7 @@ aiAssist.post("/next-step", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成建议", code: "AI_NO_KEY" }, 500);
   }
@@ -1483,7 +1490,7 @@ aiAssist.post("/today-focus", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成建议", code: "AI_NO_KEY" }, 500);
   }
@@ -1557,7 +1564,7 @@ aiAssist.post("/resume-optimize", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法优化简历", code: "AI_NO_KEY" }, 500);
   }
@@ -1631,7 +1638,7 @@ aiAssist.post("/candidate-compare", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成对比", code: "AI_NO_KEY" }, 500);
   }
@@ -1711,7 +1718,7 @@ aiAssist.post("/offer-negotiation", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成话术", code: "AI_NO_KEY" }, 500);
   }
@@ -1791,7 +1798,7 @@ aiAssist.post("/sourcing-copy", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成文案", code: "AI_NO_KEY" }, 500);
   }
@@ -1854,7 +1861,7 @@ aiAssist.post("/channel-advice", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成建议", code: "AI_NO_KEY" }, 500);
   }
@@ -2067,7 +2074,7 @@ aiAssist.post("/contract-review", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法审查", code: "AI_NO_KEY" }, 500);
   }
@@ -2142,7 +2149,7 @@ aiAssist.post("/social-reminder", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成提醒", code: "AI_NO_KEY" }, 500);
   }
@@ -2207,7 +2214,7 @@ aiAssist.post("/tax-plan", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成建议", code: "AI_NO_KEY" }, 500);
   }
@@ -2275,7 +2282,7 @@ aiAssist.post("/probation-compliance", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成提醒", code: "AI_NO_KEY" }, 500);
   }
@@ -2412,6 +2419,52 @@ aiAssist.put("/quota", async (c) => {
     .bind(AI_QUOTA_SETTING_KEY, JSON.stringify({ limit: n }))
     .run();
   return c.json({ ok: true, limit: n });
+});
+
+// ---------------------------------------------------------------- 自有 AI Key（BYOK）
+// 场景：每日 AI 配额用完时，用户填自己的 DeepSeek Key 立即可继续用——花自己的钱，
+// 不占系统配额，也不用等管理员扩额度。
+// 安全：Key 经 AES-GCM 加密后存 users.ai_key（主密钥为 wrangler secret AI_KEY_SECRET），
+// 不明文落库；主密钥未配置时功能整体关闭；保存前先真实调用 DeepSeek 验证有效性。
+aiAssist.get("/own-key", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+  const info = await loadOwnKeyInfo(c.env.DB, session.userId);
+  return c.json(info);
+});
+
+aiAssist.put("/own-key", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+
+  if (!c.env.AI_KEY_SECRET) {
+    return c.json({ error: "服务端未开启自定义 Key 功能，请联系管理员配置", code: "BYOK_DISABLED" }, 400);
+  }
+  const body = await c.req.json<{ key?: unknown }>().catch(() => ({}) as { key?: unknown });
+  const key = typeof body?.key === "string" ? body.key.trim() : "";
+  if (!looksLikeDeepSeekKey(key)) {
+    return c.json({ error: "Key 格式不正确：DeepSeek Key 一般为 sk- 开头的一串字母数字，请直接粘贴" }, 400);
+  }
+  // 保存前真实验证，避免存了个无效 Key、用户还以为在花自己的额度
+  const verified = await verifyDeepSeekKey(key);
+  if (!verified.ok) {
+    return c.json({ error: verified.error || "Key 验证失败" }, 400);
+  }
+  const cipher = await encryptAiKey(key, c.env.AI_KEY_SECRET);
+  const masked = maskAiKey(key);
+  await c.env.DB.prepare("UPDATE users SET ai_key = ?, ai_key_masked = ? WHERE id = ?")
+    .bind(cipher, masked, session.userId)
+    .run();
+  return c.json({ ok: true, masked });
+});
+
+aiAssist.delete("/own-key", async (c) => {
+  const session = await sessionOnly(c);
+  if (session instanceof Response) return session;
+  await c.env.DB.prepare("UPDATE users SET ai_key = NULL, ai_key_masked = NULL WHERE id = ?")
+    .bind(session.userId)
+    .run();
+  return c.json({ ok: true });
 });
 
 export default aiAssist;

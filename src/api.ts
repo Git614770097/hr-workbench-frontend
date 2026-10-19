@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiResumeOptimize, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiResumeOptimize, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult } from "./types";
 
 const BASE = "/api";
 
@@ -50,7 +50,10 @@ async function request<T>(
     if (res.status === 403 && err.code === "FROZEN") {
       message.error("账户已冻结，仅可查看；续费后恢复使用");
     }
-    throw new Error(err.error || "请求失败");
+    // code 透传给上层：配额用尽（AI_QUOTA）等场景需要按 code 展示专门的引导
+    const e = new Error(err.error || "请求失败");
+    (e as Error & { code?: string }).code = err.code;
+    throw e;
   }
 
   return res.json() as Promise<T>;
@@ -896,6 +899,16 @@ export const api = {
   // ---- AI 配额（管理员不限额；普通用户上限可在系统设置里调）----
   // 读当前用户的今日用量与生效上限；limit=-1 / unlimited=true 表示不限。
   getAiQuota: () => request<AiQuotaInfo>("/ai/quota"),
+
+  // 自有 AI Key（BYOK）：配额用完时填自己的 DeepSeek Key 继续用，不占系统配额
+  getOwnAiKey: () => request<AiOwnKeyInfo>("/ai/own-key"),
+  setOwnAiKey: (key: string) =>
+    request<{ ok: boolean; masked: string }>("/ai/own-key", {
+      method: "PUT",
+      body: JSON.stringify({ key }),
+      // 保存时后端会真实调用 DeepSeek 验证 Key，比普通请求慢
+    }, 30000),
+  deleteOwnAiKey: () => request<{ ok: boolean }>("/ai/own-key", { method: "DELETE" }),
   // 仅管理员：保存普通用户每日上限（0 = 不限制）
   setAiQuota: (limit: number) =>
     request<{ ok: boolean; limit: number }>("/ai/quota", { method: "PUT", body: JSON.stringify({ limit }) }),

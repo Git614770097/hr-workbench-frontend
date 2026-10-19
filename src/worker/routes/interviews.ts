@@ -5,6 +5,7 @@ import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 import { moveStageForward } from "../talentFlow";
 import { deepseekJsonWithUsage, toStringArray } from "../ai";
+import { resolveAiKey } from "../aiKey";
 
 const interviews = new Hono<{ Bindings: Env }>();
 
@@ -368,7 +369,7 @@ interviews.post("/:id/ai-summary", async (c) => {
     return c.json({ error: "请先填写面试评价后再生成总结" }, 400);
   }
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 密钥，无法生成总结，请手动填写" }, 500);
   }

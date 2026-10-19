@@ -5,6 +5,7 @@ import { sanitizeField, sanitizeSkills } from "../../utils/fieldSanity";
 import { normalizeEducation, normalizeGender } from "../../utils/resumeParser";
 
 import { deepseekJsonSafe } from "../ai";
+import { resolveAiKey } from "../aiKey";
 
 // AI 简历解析接口
 // 前端把简历文本（或文件 base64）发到这里，后端用 DEEPSEEK_API_KEY 调 DeepSeek，
@@ -126,7 +127,7 @@ aiParse.post("/", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
 
-  const apiKey = c.env.DEEPSEEK_API_KEY;
+  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
   if (!apiKey) {
     return c.json({ error: "未配置 AI 解析密钥" }, 500);
   }
