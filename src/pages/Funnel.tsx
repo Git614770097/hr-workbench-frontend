@@ -25,6 +25,7 @@ import type {
 } from "../types";
 import FunnelChartView from "../components/FunnelChart";
 import OverviewPanel from "../components/OverviewPanel";
+import AiUsageFoot from "../components/AiUsageFoot";
 import WorkbenchTrendChart from "../components/WorkbenchTrendChart";
 import WorkbenchModulesModal from "../components/WorkbenchModulesModal";
 import AnimatedNumber from "../components/AnimatedNumber";
@@ -714,6 +715,7 @@ export default function Funnel() {
               {recap.suggestions.map((sg, i) => (
                 <div key={`s${i}`} style={{ lineHeight: 1.8 }}>· <b>建议</b>：<TypeText text={sg} /></div>
               ))}
+              <AiUsageFoot usage={recap._usage} />
             </div>
           ) : (
             <Alert
@@ -735,15 +737,23 @@ export default function Funnel() {
       ) : !analysisReady ? (
         <Card className="list-card">
           <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={
               filtered
                 ? termFor(profile, "当前筛选条件下没有数据，试试放宽岗位或时间范围")
                 : termFor(profile, "还没有人才进入招聘看板，先去把人挂到岗位上，这里就会有数据了")
             }
           >
-            <Link to="/pipeline" className="btn-as-primary">
-              {termFor(profile, "去招聘看板录入")}
-            </Link>
+            {!filtered && (
+              <>
+                <Link to="/pipeline" className="btn-as-primary">
+                  {termFor(profile, "去招聘看板录入")}
+                </Link>
+                <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
+                  {termFor(profile, "在看板把候选人推进到面试阶段后，这里会自动汇总漏斗、周期与渠道数据")}
+                </div>
+              </>
+            )}
           </Empty>
         </Card>
       ) : (

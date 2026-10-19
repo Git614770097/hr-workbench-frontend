@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { sanitizeField, sanitizeSkills } from "../../utils/fieldSanity";
-import { normalizeEducation } from "../../utils/resumeParser";
+import { normalizeEducation, normalizeGender } from "../../utils/resumeParser";
 
 import { deepseekJsonSafe } from "../ai";
 
@@ -110,7 +110,7 @@ function normalizeAiResult(raw: Record<string, unknown>): ParsedResume {
     phone: /^1[3-9]\d{9}$/.test(phone) ? phone : "",
     email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "",
     age: age != null && age >= 16 && age <= 80 ? age : null,
-    gender: normStr(raw.gender) === "女" ? "女" : normStr(raw.gender) === "男" ? "男" : "",
+    gender: normalizeGender(normStr(raw.gender)),
     education: normalizeEducation(normStr(raw.education)),
     school: sanitizeField("school", normStr(raw.school)),
     major: sanitizeField("major", normStr(raw.major)),

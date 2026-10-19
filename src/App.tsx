@@ -40,6 +40,7 @@ const Pipeline = lazy(() => import("./pages/Pipeline"));
 const Interviews = lazy(() => import("./pages/Interviews"));
 const Approvals = lazy(() => import("./pages/Approvals"));
 const Onboarding = lazy(() => import("./pages/Onboarding"));
+const Background = lazy(() => import("./pages/Background"));
 const Funnel = lazy(() => import("./pages/Funnel"));
 const Jobs = lazy(() => import("./pages/Jobs"));
 const Requisitions = lazy(() => import("./pages/Requisitions"));
@@ -53,6 +54,8 @@ const Roles = lazy(() => import("./pages/Roles"));
 const Settings = lazy(() => import("./pages/Settings"));
 // 日志管理：模块使用热度（管理员专属），含 ECharts，按需加载
 const Logs = lazy(() => import("./pages/Logs"));
+// 团队管理：仅管理员（manager）与超管可见
+const Team = lazy(() => import("./pages/Team"));
 const MTasks = lazy(() => import("./mobile/MTasks"));
 const MPipeline = lazy(() => import("./mobile/MPipeline"));
 const MTalents = lazy(() => import("./mobile/MTalents"));
@@ -276,6 +279,8 @@ export default function App({ theme, onChangeTheme }: AppProps) {
           {/* 审批中心 / 入职办理：权限跟随招聘看板 */}
           <Route path="/approvals" element={<RequirePerm user={user} perm="pipeline"><Approvals /></RequirePerm>} />
           <Route path="/onboarding" element={<RequirePerm user={user} perm="pipeline"><Onboarding /></RequirePerm>} />
+          {/* 背调中心：独立权限（background），挂在 Offer→入职之间 */}
+          <Route path="/background" element={<RequirePerm user={user} perm="background"><Background /></RequirePerm>} />
           <Route path="/funnel" element={<RequirePerm user={user} perm="funnel"><Funnel /></RequirePerm>} />
           <Route path="/jobs" element={<RequirePerm user={user} perm="jobs"><Jobs /></RequirePerm>} />
           <Route path="/requisitions" element={<RequirePerm user={user} perm="jobs"><Requisitions /></RequirePerm>} />
@@ -286,6 +291,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
           <Route path="/ai-assistant" element={<RequirePerm user={user} perm="tools"><AiAssistant /></RequirePerm>} />
           {user.role === "admin" && <Route path="/roles" element={<Roles />} />}
           {user.role === "admin" && <Route path="/users" element={<Users />} />}
+          {(user.role === "admin" || user.role === "manager") && <Route path="/team" element={<Team />} />}
           {/* 系统设置：收款码/数据字典等全局配置，仅管理员；权限走 admin 硬放行，不占菜单权限 key */}
           {user.role === "admin" && <Route path="/settings" element={<Settings />} />}
           {/* 日志管理：模块点击率统计，仅管理员；同上走 admin 硬放行 */}

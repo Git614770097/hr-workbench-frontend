@@ -1,6 +1,26 @@
 // worker 侧通用小工具（此前每个路由文件都各写一份 genId）
 export function genId(): string { return crypto.randomUUID(); }
 
+/** ArrayBuffer → base64 字符串（KV 存二进制文件用，与简历/合同同源） */
+export function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+/** base64 字符串 → ArrayBuffer（从 KV 取回文件用） */
+export function base64ToArrayBuffer(b64: string): ArrayBuffer {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+
 /**
  * Edge Cache：对高频只读接口做 Workers Cache API 缓存，降低 D1 冷启动影响。
  *

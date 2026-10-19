@@ -22,7 +22,6 @@ import {
 } from "../types";
 import JobFormModal from "../components/JobFormModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
-import { DemoSeedButton } from "../components/DemoSeed";
 import { useDict } from "../dict";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
@@ -406,9 +405,8 @@ export default function Jobs() {
             emptyText: (
               <div style={{ padding: "40px 0", textAlign: "center" }}>
                 <Empty description={termFor(profile, "还没有岗位")} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
-                <DemoSeedButton onDone={fetchJobs} />
                 <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-                  {termFor(profile, "也可以点「新增岗位」创建真实岗位")}
+                  {termFor(profile, "点「新增岗位」创建第一个岗位")}
                 </div>
               </div>
             ),

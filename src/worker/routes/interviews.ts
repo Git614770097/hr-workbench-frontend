@@ -1,9 +1,10 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 import { moveStageForward } from "../talentFlow";
-import { deepseekJsonSafe, toStringArray } from "../ai";
+import { deepseekJsonWithUsage, toStringArray } from "../ai";
 
 const interviews = new Hono<{ Bindings: Env }>();
 
@@ -67,12 +68,12 @@ interviews.get("/", async (c) => {
   const params: (string | number)[] = [];
 
   // owner_id 隔离：普通用户只看自己安排的面试，管理员可看全部或按创建人过滤
-  if (session.role !== "admin") {
-    conditions.push("iv.owner_id = ?");
-    params.push(session.userId);
-  } else {
+  if (session.role === "admin") {
     const ownerId = c.req.query("owner_id");
     if (ownerId) { conditions.push("iv.owner_id = ?"); params.push(ownerId); }
+  } else {
+    conditions.push(...scopeConds(session, "iv.owner_id"));
+    params.push(...scopeParams(session));
   }
 
   const talentJobId = c.req.query("talent_job_id");
@@ -101,7 +102,7 @@ interviews.get("/:id", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
   const row = await c.env.DB.prepare(`${SELECT_SQL} WHERE iv.id = ?`).bind(c.req.param("id")).first();
   if (!row) return c.json({ error: "面试记录不存在" }, 404);
-  if (session.role !== "admin" && (row as any).owner_id !== session.userId) {
+  if (!(await canTouch(c.env, session, (row as any).owner_id))) {
     return c.json({ error: "无权限查看该面试记录" }, 403);
   }
   return c.json(decorate(row));
@@ -172,7 +173,7 @@ interviews.post("/", async (c) => {
   const talent = await c.env.DB.prepare("SELECT id, owner_id FROM talents WHERE id = ?")
     .bind(b.talent_id).first<{ id: string; owner_id: string }>();
   if (!talent) return c.json({ error: "候选人不存在" }, 404);
-  if (talent.owner_id !== session.userId) return c.json({ error: "无权操作该候选人" }, 403);
+  if (!(await canTouch(c.env, session, talent.owner_id))) return c.json({ error: "无权操作该候选人" }, 403);
 
   // 线上必须有会议链接，线下必须有地点，否则提醒出去也无法执行
   const mode = b.mode || "online";
@@ -232,7 +233,7 @@ interviews.put("/:id", async (c) => {
   const exist = await c.env.DB.prepare("SELECT * FROM interviews WHERE id = ?").bind(id).first<any>();
   if (!exist) return c.json({ error: "面试记录不存在" }, 404);
   // admin 可操作全部面试（列表/详情同样放开），普通用户只能操作自己安排的
-  if (session.role !== "admin" && exist.owner_id !== session.userId) return c.json({ error: "无权操作该面试记录" }, 403);
+  if (!(await canTouch(c.env, session, exist.owner_id))) return c.json({ error: "无权操作该面试记录" }, 403);
 
   let b: Body;
   try { b = await c.req.json(); } catch { return c.json({ error: "请求参数格式不正确" }, 400); }
@@ -300,7 +301,7 @@ interviews.patch("/:id", async (c) => {
   const exist = await c.env.DB.prepare("SELECT * FROM interviews WHERE id = ?").bind(id).first<any>();
   if (!exist) return c.json({ error: "面试记录不存在" }, 404);
   // admin 可操作全部面试（列表/详情同样放开），普通用户只能操作自己安排的
-  if (session.role !== "admin" && exist.owner_id !== session.userId) return c.json({ error: "无权操作该面试记录" }, 403);
+  if (!(await canTouch(c.env, session, exist.owner_id))) return c.json({ error: "无权操作该面试记录" }, 403);
 
   let b: { status?: string; scheduled_at?: string | null; duration?: number };
   try { b = await c.req.json(); } catch { return c.json({ error: "请求参数格式不正确" }, 400); }
@@ -339,7 +340,7 @@ interviews.delete("/:id", async (c) => {
   const exist = await c.env.DB.prepare("SELECT owner_id FROM interviews WHERE id = ?").bind(id).first<{ owner_id: string }>();
   if (!exist) return c.json({ error: "面试记录不存在" }, 404);
   // admin 可操作全部面试（列表/详情同样放开），普通用户只能操作自己安排的
-  if (session.role !== "admin" && exist.owner_id !== session.userId) return c.json({ error: "无权操作该面试记录" }, 403);
+  if (!(await canTouch(c.env, session, exist.owner_id))) return c.json({ error: "无权操作该面试记录" }, 403);
   await c.env.DB.prepare("DELETE FROM interviews WHERE id = ?").bind(id).run();
   return c.json({ ok: true });
 });
@@ -357,7 +358,7 @@ interviews.post("/:id/ai-summary", async (c) => {
   const id = c.req.param("id");
   const row = await c.env.DB.prepare(`${SELECT_SQL} WHERE iv.id = ?`).bind(id).first<any>();
   if (!row) return c.json({ error: "面试记录不存在" }, 404);
-  if (session.role !== "admin" && row.owner_id !== session.userId) {
+  if (!(await canTouch(c.env, session, row.owner_id))) {
     return c.json({ error: "无权操作该面试记录" }, 403);
   }
 
@@ -408,8 +409,8 @@ interviews.post("/:id/ai-summary", async (c) => {
 
 请生成面试总结。`;
 
-  const raw = await deepseekJsonSafe(apiKey, system, userPrompt, { temperature: 0.3 });
-  if (!raw) {
+  const gen = await deepseekJsonWithUsage(apiKey, system, userPrompt, { temperature: 0.3 });
+  if (!gen) {
     return c.json({
       summary: "",
       strengths: [],
@@ -417,8 +418,10 @@ interviews.post("/:id/ai-summary", async (c) => {
       recommendation: "",
       suggested_result: "",
       _ai_fallback: true,
+      _usage: null,
     });
   }
+  const raw = gen.data;
 
   return c.json({
     summary: (raw.summary as string || "").trim(),
@@ -426,6 +429,7 @@ interviews.post("/:id/ai-summary", async (c) => {
     risks: toStringArray(raw.risks, 3),
     recommendation: (raw.recommendation as string || "").trim(),
     suggested_result: (raw.suggested_result as string || "").trim(),
+    _usage: gen.usage ?? null,
   });
 });
 

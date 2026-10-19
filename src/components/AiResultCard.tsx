@@ -3,6 +3,8 @@ import { Alert, Button, Card, Space, Spin, Tag, Typography } from "antd";
 import { RobotOutlined, ReloadOutlined, CopyOutlined } from "@ant-design/icons";
 import { copyText } from "../utils/clipboard";
 import { message } from "antd";
+import AiUsageFoot from "./AiUsageFoot";
+import type { AiUsage } from "../types";
 
 // AI 结果卡：简历解读 / 沟通文案 / 面试问题 / 综合评估 四处复用。
 // 统一处理四态：未生成（占位说明）/ 生成中 / 失败降级（不阻塞原流程）/ 结果。
@@ -131,7 +133,10 @@ export default function AiResultCard({
           action={<Button size="small" onClick={run}>重试</Button>}
         />
       ) : data ? (
-        <div>{render(data)}</div>
+        <div>
+          {render(data)}
+          <AiUsageFoot usage={data._usage as AiUsage | null | undefined} />
+        </div>
       ) : (
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           {hint || "点击「生成」，AI 会基于当前信息给出草稿，供你参考修改后使用。"}

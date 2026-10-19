@@ -1,4 +1,3 @@
-import mammoth from "mammoth";
 import { api } from "../api";
 import {
   extractName, extractPhone, extractEmail, extractAge, extractGender,
@@ -46,6 +45,8 @@ export async function parseResumeFile(file: File): Promise<string> {
     return text;
   }
   if (name.endsWith(".docx")) {
+    // mammoth 动态加载：约 350KB，只在解析 Word 简历时才下载，不进首屏链
+    const mammoth = await import("mammoth");
     const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
     return result.value;
   }

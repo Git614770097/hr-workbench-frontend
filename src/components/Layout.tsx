@@ -99,6 +99,8 @@ interface NavLeaf {
   perm: string;
   /** 仅管理员可见（角色/用户/系统设置），等价于旧版的 user.role === "admin" 判断 */
   adminOnly?: boolean;
+  /** 仅团队管理员可见（团队管理），等价于 user.role === "manager"；与 adminOnly 互斥使用 */
+  managerOnly?: boolean;
   /** 动态角标（待办数），运行时注入 */
   badge?: number;
 }
@@ -138,6 +140,8 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
       // 审批中心 / 入职办理：权限跟随 pipeline，不新增菜单 key
       { to: "/approvals", label: "审批中心", icon: <AuditOutlined />, color: "#d97706", perm: "pipeline" },
       { to: "/onboarding", label: "入职办理", icon: <SolutionOutlined />, color: "#059669", perm: "pipeline" },
+      // 背调中心：独立权限（background），挂在「Offer → 入职」之间，不占看板列
+      { to: "/background", label: "背调中心", icon: <SafetyOutlined />, color: "#ef4444", perm: "background" },
     ],
   },
 
@@ -192,6 +196,7 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
     children: [
       { to: "/roles", label: "角色管理", icon: <SafetyOutlined />, color: "#f59e0b", perm: "roles", adminOnly: true },
       { to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users", adminOnly: true },
+      { to: "/team", label: "团队管理", icon: <TeamOutlined />, color: "#f59e0b", perm: "team", managerOnly: true },
       { to: "/settings", label: "系统设置", icon: <SettingOutlined />, color: "#64748b", perm: "settings", adminOnly: true },
       // 日志管理：模块使用热度（埋点数据），同为管理员专属，同样不占菜单权限 key
       { to: "/logs", label: "日志管理", icon: <BarChartOutlined />, color: "#64748b", perm: "logs", adminOnly: true },
@@ -361,7 +366,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
     for (const node of NAV_TREE) {
       if ("children" in node) {
         const kids = node.children
-          .filter((c) => (c.adminOnly ? user.role === "admin" : canSee(c.perm)))
+          .filter((c) => (c.managerOnly ? user.role === "manager" : c.adminOnly ? user.role === "admin" : canSee(c.perm)))
           .map(decorate);
         // 组内一项都看不到 → 整组不渲染，避免出现「打开是空的」分组
         if (kids.length === 0) continue;
@@ -374,7 +379,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
           children: kids,
         });
       } else {
-        if (node.adminOnly ? user.role !== "admin" : !canSee(node.perm)) continue;
+        if (node.managerOnly ? user.role !== "manager" : node.adminOnly ? user.role !== "admin" : !canSee(node.perm)) continue;
         out.push(decorate(node));
       }
     }

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Modal, Spin, Alert } from "antd";
-import mammoth from "mammoth";
 import { api } from "../api";
 import type { Talent } from "../types";
 
@@ -57,6 +56,8 @@ export default function ResumePreviewModal({ talent, onClose }: Props) {
           clearTimeout(timer);
           if (!res.ok) throw new Error(`简历文件加载失败（${res.status}）`);
           const buf = await res.arrayBuffer();
+          // mammoth 动态加载：约 350KB，只有预览 Word 简历时才下载
+          const mammoth = await import("mammoth");
           const result = await mammoth.convertToHtml({ arrayBuffer: buf });
           if (!cancelled) setDocHtml(result.value);
         } else {

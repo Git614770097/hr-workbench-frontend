@@ -36,7 +36,7 @@ async function pbkdf2(password: string, salt: Uint8Array, iterations: number): P
 }
 
 /** 生成新密码哈希，格式：pbkdf2$<iter>$<saltHex>$<hashHex> */
-async function hashPassword(password: string): Promise<string> {
+export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const dk = await pbkdf2(password, salt, PBKDF2_ITER);
   return `pbkdf2$${PBKDF2_ITER}$${toHex(salt)}$${toHex(dk)}`;
@@ -449,7 +449,7 @@ auth.post("/login", async (c) => {
 auth.get("/me", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token, paid_until, status, intended_role FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null; must_change_password: number; pushplus_token: string | null; paid_until: string | null; status: string | null; intended_role: string | null }>();
+  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token, paid_until, status, intended_role, team_id FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null; must_change_password: number; pushplus_token: string | null; paid_until: string | null; status: string | null; intended_role: string | null; team_id: string | null }>();
   if (!user) return c.json({ error: "用户不存在" }, 401);
 
   // 管理员拥有全部权限；普通用户取角色 permissions
@@ -472,6 +472,7 @@ auth.get("/me", async (c) => {
     status: user.status,
     permissions,
     intended_role: user.intended_role,
+    team_id: user.team_id,
   });
 });
 
@@ -488,7 +489,7 @@ auth.get("/users", async (c) => {
   const resetFilter = c.req.query("reset") === "1";
 
   let sql =
-    "SELECT u.id, u.phone, u.name, u.role, u.role_id, u.status, u.created_at, " +
+    "SELECT u.id, u.phone, u.name, u.role, u.role_id, u.status, u.created_at, u.team_id, " +
     "u.reset_requested_at, u.must_change_password, u.paid_until, u.intended_role, r.name as role_name " +
     "FROM users u LEFT JOIN roles r ON u.role_id = r.id";
   const params: string[] = [];
@@ -805,6 +806,31 @@ auth.put("/users/:id/role", async (c) => {
 
   await c.env.DB.prepare("UPDATE users SET role_id = ? WHERE id = ?").bind(finalRoleId, id).run();
   return c.json({ ok: true });
+});
+
+// ---- 管理员：任命 / 撤销 团队管理员（manager）----
+// 任命：role='manager' 且 team_id=自己的 id（自建团队，数据共享范围=全队）。
+// 撤销：role 回落 'user'、team_id 清空，并把原团队成员一并移出（团队解散）。
+auth.put("/users/:id/manager", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+
+  const id = c.req.param("id");
+  const { manager } = await c.req.json<{ manager?: boolean }>().catch(() => ({ manager: false }));
+  const target = await c.env.DB.prepare("SELECT id, role FROM users WHERE id = ?").bind(id).first<{ id: string; role: string }>();
+  if (!target) return c.json({ error: "用户不存在" }, 404);
+  if (target.role === "admin") return c.json({ error: "不能操作超管账号" }, 400);
+
+  if (manager) {
+    if (target.role === "manager") return c.json({ ok: true }); // 已是管理员，幂等
+    await c.env.DB.prepare("UPDATE users SET role = 'manager', team_id = ? WHERE id = ?").bind(id, id).run();
+  } else {
+    // 解散团队：成员 team_id 指向该管理员 id，一并清空（数据回到各自私有）
+    await c.env.DB.prepare("UPDATE users SET team_id = NULL WHERE team_id = ?").bind(id).run();
+    await c.env.DB.prepare("UPDATE users SET role = 'user', team_id = NULL WHERE id = ?").bind(id).run();
+  }
+  return c.json({ ok: true, manager: !!manager });
 });
 
 // ---- 管理员：修改用户身份（intended_role）----
@@ -1189,6 +1215,8 @@ export interface SessionInfo {
   userId: string;
   role: string;
   name: string;
+  /** 团队标识：admin/个人用户为 null；manager = 自己的 id；团队成员 = 所属管理员的 id */
+  teamId?: string | null;
 }
 
 export async function getSession(c: any): Promise<SessionInfo | null> {
@@ -1196,5 +1224,10 @@ export async function getSession(c: any): Promise<SessionInfo | null> {
   if (!token) return null;
   const session = await sessionGet(c.env, token);
   if (!session) return null;
-  return JSON.parse(session) as SessionInfo;
+  const info = JSON.parse(session) as SessionInfo;
+  // role / team_id 会被管理员随时调整（任命/撤销/入队/移出），每次现查 DB：
+  // KV 会话里的 role 是登录时的快照，不过期刷新会导致「已撤销的管理员仍然有权访问」的越权窗口。
+  const u = await c.env.DB.prepare("SELECT role, team_id FROM users WHERE id = ?").bind(info.userId).first() as { role: string; team_id: string | null } | null;
+  if (u) { info.role = u.role; info.teamId = u.team_id; } else { info.teamId = null; }
+  return info;
 }

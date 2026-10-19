@@ -122,6 +122,24 @@ const NAME_BLACKLIST = new Set([
 const NAME_RE = /^[\u4e00-\u9fa5]{2,4}$/;
 const NAME_RE_DOT = /^[\u4e00-\u9fa5]{1,3}·[\u4e00-\u9fa5]{1,3}$/;
 
+// 英文姓名相关：简历里英文名（"Name: John Smith" / 邮箱前缀 / 抬头独立行）的解析
+const EN_NAME_STOP = new Set([
+  "resume", "cv", "curriculum", "vitae", "profile", "summary", "objective",
+  "experience", "education", "skills", "skill", "contact", "email", "phone",
+  "address", "information", "personal", "about", "overview", "background",
+  "projects", "project", "languages", "interests", "references", "qualifications",
+  "achievements", "certifications", "certificate", "awards", "publications",
+  "name", "gender", "sex", "male", "female", "birth", "born", "age",
+]);
+
+// 英文名行里常见的「职位/头衔词」——出现则整行不像姓名（"Senior Engineer" 不是人名）
+const EN_TITLE_WORDS = new Set([
+  "engineer", "developer", "designer", "analyst", "manager", "director",
+  "consultant", "specialist", "officer", "president", "founder", "intern",
+  "associate", "lead", "senior", "junior", "architect", "administrator",
+  "teacher", "doctor", "nurse", "writer", "editor", "researcher", "engineer",
+]);
+
 function isNameToken(s: string): boolean {
   if (!s) return false;
   if (NAME_BLACKLIST.has(s)) return false;
@@ -133,6 +151,55 @@ function isNameToken(s: string): boolean {
   return false;
 }
 
+// 拉丁字母姓名是否合理（英文名 / 拼音等）。要求：字母、空格、'、-、. 组成，
+// 拆成「名 姓」至少 2 段，含至少一个大写字母（排除全小写技能词如 "java"），
+// 首段不是章节词，且整体不含职位/头衔词。
+export function plausibleLatinName(s: string): boolean {
+  if (s.length < 2 || s.length > 40) return false;
+  if (/\d/.test(s)) return false;
+  if (!/^[A-Za-z][A-Za-z'.\-]+(?:\s+[A-Za-z][A-Za-z'.\-]+)*$/.test(s)) return false;
+  const parts = s.split(/[\s\-]+/).filter(Boolean);
+  if (parts.length < 2) return false;           // 至少「名 姓」两段
+  if (!/[A-Z]/.test(s)) return false;            // 必须含大写，排除 "react" 之类技能词
+  const lower = parts.map((p) => p.toLowerCase());
+  if (EN_NAME_STOP.has(lower[0])) return false;
+  if (lower.some((p) => EN_TITLE_WORDS.has(p))) return false; // 含 Engineer/Manager 等 → 不像姓名
+  return true;
+}
+
+// 是否像「英文姓名行」：2-4 个首字母大写的词、无数字、无中文、无分隔标点（只许空格、'、-、.）
+function matchEnglishNameLine(line: string): string {
+  const t = line.trim();
+  if (t.length < 2 || t.length > 40) return "";
+  if (/[0-9\u4e00-\u9fa5]/.test(t)) return "";          // 无数字、无中文
+  if (/[\/\\:;,()（）]/.test(t)) return "";             // 不含这些标点（技能行常带 / 或 :）
+  // 用 [ \t] 而非 \s，避免跨行；每个词后加负向预查，防止把邮箱本地名（紧跟 @）当姓名
+  if (!/^[A-Za-z][A-Za-z'.\-]+(?![A-Za-z0-9.\-]*@)(?:[ \t]+[A-Za-z][A-Za-z'.\-]+(?![A-Za-z0-9.\-]*@)){1,3}$/.test(t)) return ""; // 2-4 词
+  const words = t.split(/\s+/);
+  if (words.some((w) => EN_NAME_STOP.has(w.toLowerCase()))) return "";   // 章节词/标签词
+  if (words.some((w) => EN_TITLE_WORDS.has(w.toLowerCase()))) return ""; // 职位/头衔词（"Senior Engineer"）
+  return t;
+}
+
+// 从「标签 / 邮箱前 / 抬头」里抓到的英文姓名片段做清洗：去头衔、去尾随性别词、去引号
+function cleanEnglishName(raw: string): string {
+  let s = raw.trim().replace(/[ \t]+/g, " ");
+  s = s.replace(/^(mr|mrs|ms|miss|dr|prof|professor)\.?\s+/i, "");   // 去头衔 Mr./Dr.
+  s = s.replace(/\s+(male|female|man|woman)\.?$/i, "");             // 去尾随性别词
+  s = s.replace(/^["']|["']$/g, "");                                // 去包裹引号
+  if (s.length < 2 || s.length > 40) return "";
+  if (!/^[A-Za-z][A-Za-z'.\-]+(?![A-Za-z0-9.\-]*@)(?:[ \t]+[A-Za-z][A-Za-z'.\-]+(?![A-Za-z0-9.\-]*@)){0,3}$/.test(s)) return "";
+  return s;
+}
+
+// 由邮箱本地名推断英文名：john.smith@x.com -> "John Smith"（纯字母且够长，排除 js123）
+function nameFromEmailLocal(local: string): string {
+  if (!/^[a-zA-Z.]+$/.test(local) || local.length < 3) return "";
+  const parts = local.split(/[._\-+]/).filter((p) => p.length >= 1);
+  if (parts.length < 2) return "";   // 至少要能拆成「名.姓」
+  return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(" ");
+}
+
 export function extractName(text: string): string {
   const t = normalizeText(text);
 
@@ -141,24 +208,39 @@ export function extractName(text: string): string {
   const dotted = t.match(/([\u4e00-\u9fa5]{1,3}·[\u4e00-\u9fa5]{1,3})/);
   if (dotted && isNameToken(dotted[1])) return dotted[1];
 
-  // 1. 标签式："姓名:张三" / "姓名 张三" / "姓名：张三 男" / "Name: Zhang San"
-  const label = t.match(/(?:姓名|名字)\s*[:：]?\s*([\u4e00-\u9fa5·]{2,4})/);
-  if (label && isNameToken(label[1])) return label[1];
+  // 1. 标签式中文："姓名:张三" / "姓名 张三" / "姓名：张三 男"
+  const labelCn = t.match(/(?:姓名|名字)\s*[:：]?\s*([\u4e00-\u9fa5·]{2,4})/);
+  if (labelCn && isNameToken(labelCn[1])) return labelCn[1];
 
-  // 2. "张三(男)" / "张三 男" 式（姓名紧跟性别，是简历最典型的姓名位置）
-  //    用 [ \t] 而非 \s，避免跨行把"工程师\n男"误连成姓名。
+  // 1b. 标签式英文："Name: John Smith" / "姓名：John Smith"
+  //     （中文标签正则已先尝试，英文名不会被它捕获，这里用拉丁字符类兜底）
+  //     用 [ \t] 而非 \s，避免跨行吃到下一行的邮箱；每个词带负向预查防止吞入邮箱本地名。
+  const labelEn = t.match(/(?:name|姓名|名字)[ \t]*[:：]?[ \t]*([A-Za-z][A-Za-z'.\-]+(?![A-Za-z0-9.\-]*@)(?:[ \t]+[A-Za-z][A-Za-z'.\-]+(?![A-Za-z0-9.\-]*@)){0,3})/i);
+  if (labelEn) {
+    const en = cleanEnglishName(labelEn[1]);
+    if (en && plausibleLatinName(en)) return en;
+  }
+
+  // 2. 中文姓名紧跟性别："张三(男)" / "张三 男"
   const gender = t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]*[（(][ \t]*(?:男|女)[ \t]*[）)]/) ||
     t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]+(?:男|女)(?=[\s,，;；]|$)/m);
   if (gender && isNameToken(gender[1])) return gender[1];
 
-  // 3. 手机号前的中文姓名（"张三 13800138000" / "张三 男 138..."）
-  //    用 [ \t]* 限制在同一行，避免跨行误匹配（如"工程师\n13800004444"）。
+  // 3. 手机号前的中文姓名："张三 13800138000" / "张三 男 138..."
   const beforePhone = t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]*(?:[（(][男女][）)])?[ \t]*1[3-9][\d\s-]{9,12}/);
   if (beforePhone && isNameToken(beforePhone[1])) return beforePhone[1];
 
-  // 4. 邮箱前的姓名（"张三 zhangsan@xx.com"）
-  const beforeEmail = t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]*[\w.+-]+@[\w-]+\.[\w.-]+/);
-  if (beforeEmail && isNameToken(beforeEmail[1])) return beforeEmail[1];
+  // 4. 邮箱前的中文姓名："张三 zhangsan@xx.com"
+  const beforeEmailCn = t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]*[\w.+-]+@[\w-]+\.[\w.-]+/);
+  if (beforeEmailCn && isNameToken(beforeEmailCn[1])) return beforeEmailCn[1];
+
+  // 4b. 邮箱前的英文姓名（与邮箱同行）："John Smith john@x.com"
+  //     同样用 [ \t] 防止跨行、负向预查防止把邮箱本地名并入姓名。
+  const beforeEmailEn = t.match(/([A-Za-z][A-Za-z'.\-]+(?![A-Za-z0-9.\-]*@)(?:[ \t]+[A-Za-z][A-Za-z'.\-]+(?![A-Za-z0-9.\-]*@)){0,2})[ \t]*[\w.+-]+@[\w-]+\.[\w.-]+/);
+  if (beforeEmailEn) {
+    const en = cleanEnglishName(beforeEmailEn[1]);
+    if (en && plausibleLatinName(en)) return en;
+  }
 
   // 5. 简历开头几行的独立姓名行（姓名常独占首行或第二行）
   //    遍历前 10 行（而非 5 行），过滤标题/标签/含数字的行，
@@ -169,20 +251,30 @@ export function extractName(text: string): string {
     if (/(简历|求职|应聘|姓名|名字|电话|手机|邮箱|学历|年龄|性别|学校|院校|公司|职位|岗位|民族|籍贯|住址|地址)/.test(line)) continue;
     // 含数字的行基本不是姓名行（日期/年限/电话），直接放弃
     if (/\d/.test(line)) continue;
-    // 含英文的行通常是技能/项目描述（如"熟悉 React / Vue / TypeScript"），
-    // 切段后会得到"熟悉"这类假姓名，整行放弃
-    if (/[A-Za-z]/.test(line)) continue;
-    // 整行就是姓名
+    // 整行就是中文姓名
     if (isNameToken(line)) return line;
-    // 姓名常和职位/城市写在同一行："刘鹏 - 前端工程师"、"刘鹏 | 广州"、"刘鹏  前端开发"
+    // 整行是英文姓名（"John Smith"）——不再像旧逻辑那样整行放弃含英文的行
+    const enLine = matchEnglishNameLine(line);
+    if (enLine && plausibleLatinName(enLine)) return enLine;
+    // 含英文的行（技能/项目描述，如"熟悉 React / Vue"）放弃下面的中文切段，
+    // 避免把"熟悉"之类误当成姓名（旧逻辑正是靠这层保护）。
+    if (/[A-Za-z]/.test(line)) continue;
+    // 姓名常和职位/城市写在同一行："刘鹏 - 前端工程师"、"刘鹏 | 广州"
     // 整行不匹配时按分隔符切段，取第一段判断。
     const segs = line.split(/[\s\-—–|｜·]+/).map((s) => s.trim()).filter(Boolean);
     if (segs.length > 1 && isNameToken(segs[0])) return segs[0];
   }
 
-  // 6. 最后兜底：全文首个紧跟"男/女"或"年龄/岁"的中文短词（宽松匹配，同行走）
+  // 6. 中文兜底：首个紧跟性别/年龄的中文短词（同行走）
   const fallback = t.match(/([\u4e00-\u9fa5·]{2,4})[ \t]*(?=男|女|\d{1,2}[ \t]*岁)/);
   if (fallback && isNameToken(fallback[1])) return fallback[1];
+
+  // 6b. 邮箱本地名兜底（英文名最弱来源，可能不准，故放最后）
+  const emailMatch = t.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  if (emailMatch) {
+    const en = nameFromEmailLocal(emailMatch[0].split("@")[0]);
+    if (en && plausibleLatinName(en)) return en;
+  }
 
   return "";
 }
@@ -209,57 +301,154 @@ export function extractEmail(text: string): string {
 // 年龄 / 出生日期 / 性别
 // ---------------------------------------------------------------------------
 
-export function extractAge(text: string): number | null {
-  const t = normalizeText(text);
-  // "年龄:28" / "28岁" / "28 周岁"
-  const ageMatch = t.match(/年龄\s*[:：]?\s*(\d{1,2})/) ||
-    t.match(/(\d{1,2})\s*(?:岁|周岁)/) ||
-    t.match(/[（(]\s*(\d{1,2})\s*岁\s*[）)]/);
-  if (ageMatch) {
-    const age = parseInt(ageMatch[1], 10);
-    if (age >= 16 && age <= 80) return age;
+// 英文月份名 → 数字（用于解析英文出生日期写法）
+const MONTH_NAMES: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+  january: 1, february: 2, march: 3, april: 4, june: 6, july: 7,
+  august: 8, september: 9, october: 10, november: 11, december: 12,
+};
+
+function pad2(n: number): string { return n < 10 ? "0" + n : String(n); }
+
+// 把灵活的日期写法解析成 {year, month, day, precise}。
+// precise=false 表示月日存疑（如 05/06/1990 难判月日顺序），此时只保证年份可靠。
+function parseFlexibleDate(token: string): { year: number; month: number; day: number; precise: boolean } | null {
+  const t = token.trim().replace(/,$/, "").replace(/[.]$/, "");
+  if (!t) return null;
+
+  // 1) YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD / YYYY年MM月DD日
+  let m = t.match(/^(\d{4})[\/.\-年](\d{1,2})[\/.\-月](\d{1,2})?/);
+  if (m) {
+    const year = parseInt(m[1], 10);
+    const month = parseInt(m[2], 10);
+    const day = m[3] ? parseInt(m[3], 10) : 1;
+    if (month >= 1 && month <= 12) return { year, month, day, precise: true };
   }
-  // 由出生年份推算
-  const birth = extractBirthDate(text);
-  if (birth) {
-    const year = parseInt(birth.slice(0, 4), 10);
-    const age = new Date().getFullYear() - year;
-    if (age >= 16 && age <= 80) return age;
+
+  // 2) DD Mon YYYY / DD-Mon-YYYY（5 May 1990）
+  m = t.match(/^(\d{1,2})[\s.\-]?([A-Za-z]{3,9})[\s.\-]?(\d{4})$/i);
+  if (m && MONTH_NAMES[m[2].toLowerCase()]) {
+    return { year: parseInt(m[3], 10), month: MONTH_NAMES[m[2].toLowerCase()], day: parseInt(m[1], 10), precise: true };
+  }
+
+  // 3) Mon DD, YYYY（May 5, 1990）
+  m = t.match(/^([A-Za-z]{3,9})[\s.\-]?(\d{1,2}),?[\s.\-]?(\d{4})$/i);
+  if (m && MONTH_NAMES[m[1].toLowerCase()]) {
+    return { year: parseInt(m[3], 10), month: MONTH_NAMES[m[1].toLowerCase()], day: parseInt(m[2], 10), precise: true };
+  }
+
+  // 4) DD/MM/YYYY 或 MM/DD/YYYY（两位年份自动补全）
+  m = t.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
+  if (m) {
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    const yRaw = m[3];
+    const year = yRaw.length === 2 ? (parseInt(yRaw, 10) < 50 ? 2000 + parseInt(yRaw, 10) : 1900 + parseInt(yRaw, 10)) : parseInt(yRaw, 10);
+    let month: number, day: number, precise = false;
+    if (a > 12 && b <= 12) { day = a; month = b; precise = true; }       // 首数>12 → 日/月
+    else if (b > 12 && a <= 12) { month = a; day = b; precise = true; }  // 次數>12 → 月/日
+    else if (a <= 12 && b <= 12) { month = a; day = b; precise = false; } // 都≤12 难判，按 月/日 猜
+    else return null;
+    return { year, month, day, precise };
+  }
+
+  return null;
+}
+
+// 在文本里定位出生日期附近的日期 token（先按标签，再全局兜底）
+function findBirthToken(t: string): { token: string; precise: boolean } | null {
+  const labelRe = /(?:出生日期|出生年月|出生|生日|date\s*of\s*birth|d\.?o\.?b\.?|birth\s*date|born)\s*[:：]?\s*([0-9A-Za-z\/.\- ,]{3,24})/i;
+  const lm = t.match(labelRe);
+  if (lm) {
+    const parsed = parseFlexibleDate(lm[1]);
+    if (parsed) return { token: lm[1], precise: parsed.precise };
+  }
+  // 全局兜底：只接受明显是「完整日期」的写法，避免误抓工作起止年份
+  // （如 "2018.09-2022.06" 这类区间不在此列；出生年一般在 1900-2025）
+  const gm =
+    t.match(/(?:19|20)\d{2}年\d{1,2}月\d{1,2}日?/) ||
+    t.match(/(?:19|20)\d{2}年\d{1,2}月(?!\d)/) ||
+    t.match(/\b\d{1,2}[\/.\-][A-Za-z]{3,9}[.\- ]?\d{4}\b/i) ||
+    t.match(/\b[A-Za-z]{3,9}[.\- ]?\d{1,2},?[.\- ]?\d{4}\b/i);
+  if (gm) {
+    const parsed = parseFlexibleDate(gm[0]);
+    if (parsed && parsed.year >= 1900 && parsed.year <= 2025) return { token: gm[0], precise: parsed.precise };
   }
   return null;
 }
 
-// 出生日期：支持 YYYY-MM-DD / YYYY/MM/DD / YYYY年MM月DD日 / YYYY年MM月
-export function extractBirthDate(text: string): string {
+function calcAge(year: number, month: number, day: number, precise: boolean): number | null {
+  const now = new Date();
+  let age = now.getFullYear() - year;
+  if (precise) {
+    const m = now.getMonth() + 1;
+    const d = now.getDate();
+    const hadBirthday = m > month || (m === month && d >= day);
+    if (!hadBirthday) age -= 1;
+  }
+  return age >= 16 && age <= 80 ? age : null;
+}
+
+export function extractAge(text: string): number | null {
   const t = normalizeText(text);
-  // 标签式优先："出生日期:1990-05-12"
-  const label = t.match(/(?:出生日期|出生年月|出生|生日)\s*[:：]?\s*(\d{4})[年/\-.](\d{1,2})[月/\-.]?(\d{1,2})?/);
-  if (label) {
-    const y = label[1];
-    const mo = label[2].padStart(2, "0");
-    const d = label[3] ? label[3].padStart(2, "0") : "01";
-    if (parseInt(mo, 10) >= 1 && parseInt(mo, 10) <= 12 && parseInt(d, 10) >= 1 && parseInt(d, 10) <= 31) {
-      return `${y}-${mo}-${d}`;
+  // 直接写年龄："年龄:28" / "28岁" / "Age: 28" / "28 years old"
+  const ageMatch = t.match(/年龄\s*[:：]?\s*(\d{1,2})/) ||
+    t.match(/(\d{1,2})\s*(?:岁|周岁)/) ||
+    t.match(/[（(]\s*(\d{1,2})\s*岁\s*[）)]/) ||
+    t.match(/\bage\s*[:：]?\s*(\d{1,2})/i) ||
+    t.match(/\b(\d{1,2})\s*(?:years\s*old|y\.?o\.?)\b/i);
+  if (ageMatch) {
+    const age = parseInt(ageMatch[1], 10);
+    if (age >= 16 && age <= 80) return age;
+  }
+  // 由出生日期推算（尽量精确到月日）
+  const found = findBirthToken(t);
+  if (found) {
+    const parsed = parseFlexibleDate(found.token);
+    if (parsed) {
+      const age = calcAge(parsed.year, parsed.month, parsed.day, found.precise);
+      if (age != null) return age;
     }
   }
-  // 无标签全文兜底："1990年5月12日" 或 "1990-05-12"
-  const raw = t.match(/(?:19|20)\d{2}[年/\-.](\d{1,2})[月/\-.]?(\d{1,2})?/);
-  if (raw) {
-    const y = raw[0].slice(0, 4);
-    const mo = raw[1].padStart(2, "0");
-    const d = raw[2] ? raw[2].padStart(2, "0") : "01";
-    if (parseInt(mo, 10) >= 1 && parseInt(mo, 10) <= 12) return `${y}-${mo}-${d}`;
-  }
-  return "";
+  return null;
+}
+
+// 出生日期：支持 中文 YYYY-MM-DD/YYYY年MM月DD日、英文 Mon DD, YYYY / DD Mon YYYY / 斜杠格式
+export function extractBirthDate(text: string): string {
+  const t = normalizeText(text);
+  const found = findBirthToken(t);
+  if (!found) return "";
+  const parsed = parseFlexibleDate(found.token);
+  if (!parsed) return "";
+  if (parsed.month < 1 || parsed.month > 12 || parsed.day < 1 || parsed.day > 31) return "";
+  return `${parsed.year}-${pad2(parsed.month)}-${pad2(parsed.day)}`;
 }
 
 export function extractGender(text: string): string {
   const t = normalizeText(text);
   const m = t.match(/(?:性别)\s*[:：]?\s*(男|女)/) || t.match(/[（(]\s*(男|女)\s*[）)]/);
   if (m) return m[1];
-  // 姓名后的"男/女"（如"张三 男 28岁"）
+  // 中文姓名后的"男/女"（如"张三 男 28岁"）
   const g = t.match(/[\u4e00-\u9fa5·]{2,4}\s+(男|女)(?=[\s,，;；]|$)/m);
-  return g ? g[1] : "";
+  if (g) return g[1];
+  // 英文：Gender/Sex: Male/Female，或 (Male)
+  const em = t.match(/(?:gender|sex)\s*[:：]?\s*(male|female|m|f)\b/i) ||
+    t.match(/[（(]\s*(male|female)\s*[）)]/i);
+  if (em) {
+    const w = em[1].toLowerCase();
+    if (w === "male" || w === "m") return "男";
+    if (w === "female" || w === "f") return "女";
+  }
+  return "";
+}
+
+// 性别归一化（AI 与本地共用）：英文 Male/Female/M/F 统一成「男/女」
+export function normalizeGender(raw: string): string {
+  const s = (raw || "").trim().toLowerCase();
+  if (s === "male" || s === "m" || s === "男") return "男";
+  if (s === "female" || s === "f" || s === "女") return "女";
+  return "";
 }
 
 // ---------------------------------------------------------------------------

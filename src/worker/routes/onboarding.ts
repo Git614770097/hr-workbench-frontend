@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 import { ensureOnboardingItems } from "../talentFlow";
 
@@ -23,10 +24,8 @@ onboarding.get("/", async (c) => {
 
   const conditions: string[] = [];
   const params: string[] = [];
-  if (session.role !== "admin") {
-    conditions.push("i.owner_id = ?");
-    params.push(session.userId);
-  }
+  conditions.push(...scopeConds(session, "i.owner_id"));
+  params.push(...scopeParams(session));
   const talentId = c.req.query("talent_id");
   if (talentId) { conditions.push("i.talent_id = ?"); params.push(talentId); }
   const talentJobId = c.req.query("talent_job_id");
@@ -95,7 +94,7 @@ onboarding.put("/:id", async (c) => {
   const id = c.req.param("id");
   const row = await c.env.DB.prepare("SELECT owner_id FROM onboarding_items WHERE id = ?").bind(id).first<{ owner_id: string }>();
   if (!row) return c.json({ error: "材料项不存在" }, 404);
-  if (row.owner_id !== session.userId && session.role !== "admin") return c.json({ error: "无权操作" }, 403);
+  if (!(await canTouch(c.env, session, row.owner_id))) return c.json({ error: "无权操作" }, 403);
 
   let b: { status?: string; remark?: string | null; required?: boolean | number };
   try { b = await c.req.json(); } catch { return c.json({ error: "请求参数格式不正确" }, 400); }
@@ -132,7 +131,7 @@ onboarding.delete("/:id", async (c) => {
   const id = c.req.param("id");
   const row = await c.env.DB.prepare("SELECT owner_id FROM onboarding_items WHERE id = ?").bind(id).first<{ owner_id: string }>();
   if (!row) return c.json({ error: "材料项不存在" }, 404);
-  if (row.owner_id !== session.userId && session.role !== "admin") return c.json({ error: "无权操作" }, 403);
+  if (!(await canTouch(c.env, session, row.owner_id))) return c.json({ error: "无权操作" }, 403);
   await c.env.DB.prepare("DELETE FROM onboarding_items WHERE id = ?").bind(id).run();
   return c.json({ ok: true });
 });

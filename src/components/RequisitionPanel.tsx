@@ -14,17 +14,16 @@ import {
   PRIORITY_LABELS, PRIORITY_COLORS,
 } from "../types";
 
-type StatusKey = "" | "pending" | "approved" | "rejected" | "closed";
+type StatusKey = "" | "pending" | "approved" | "closed";
 
 const STATUS_TABS: { key: StatusKey; label: string }[] = [
   { key: "", label: "全部" },
-  { key: "pending", label: "待审批" },
-  { key: "approved", label: "已通过" },
-  { key: "rejected", label: "已驳回" },
-  { key: "closed", label: "已关闭" },
+  { key: "pending", label: "待处理" },
+  { key: "approved", label: "已转岗" },
+  { key: "closed", label: "已作废" },
 ];
 
-/** 招聘需求：用人部门提需求 → 审批 → 一键转正式岗位（并入岗位管理页） */
+/** 招聘需求：用人部门提需求 → 一键转正式岗位（并入岗位管理页），无审批环节 */
 export default function RequisitionPanel({
   isAdmin,
   submitOpen,
@@ -49,11 +48,17 @@ export default function RequisitionPanel({
     onSubmitOpenChange?.(v);
   };
   const [saving, setSaving] = useState(false);
-  const [rejectTarget, setRejectTarget] = useState<Requisition | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
   const [form] = Form.useForm();
   // 编辑模式：editingId 非空表示正在编辑某条需求
   const [editingId, setEditingId] = useState<string | null>(null);
+  // 当前用户 id：用于判断能否编辑/撤回（仅本人或管理员）
+  const currentUserId: string | null = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null")?.id ?? null;
+    } catch {
+      return null;
+    }
+  })();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -121,7 +126,7 @@ export default function RequisitionPanel({
         message.success("需求已更新");
       } else {
         await api.createRequisition(payload);
-        message.success("招聘需求已提交，等待 HR 审批");
+        message.success("招聘需求已提交，可随时转为正式岗位");
       }
       setOpen(false);
       form.resetFields();
@@ -134,23 +139,10 @@ export default function RequisitionPanel({
     }
   };
 
-  const handleApprove = async (row: Requisition) => {
+  const handleConvert = async (row: Requisition) => {
     try {
-      const r = await api.approveRequisition(row.id);
-      message.success(`已通过，已生成正式岗位${r.job_id ? "" : ""}`);
-      load();
-    } catch (e) {
-      message.error((e as Error).message);
-    }
-  };
-
-  const handleReject = async () => {
-    if (!rejectTarget) return;
-    try {
-      await api.rejectRequisition(rejectTarget.id, rejectReason);
-      message.success("已驳回");
-      setRejectTarget(null);
-      setRejectReason("");
+      const r = await api.convertRequisition(row.id);
+      message.success(`已转为正式岗位${r.job_id ? "" : ""}`);
       load();
     } catch (e) {
       message.error((e as Error).message);
@@ -170,7 +162,7 @@ export default function RequisitionPanel({
   const statusColor = (s: string) =>
     s === "approved" ? "green" : s === "rejected" ? "red" : s === "closed" ? "default" : "gold";
 
-  // 期望到岗已过期且仍待审批 → 标红
+  // 期望到岗已过期且仍未处理 → 标红
   const isOverdue = (row: Requisition) =>
     row.status === "pending" && !!row.expect_date && row.expect_date < today;
 
@@ -180,7 +172,7 @@ export default function RequisitionPanel({
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="用人部门在这里提交招聘需求，HR 审批通过后会自动生成正式岗位并进入「在招」状态。"
+        message="用人部门在这里提交招聘需求，随时可以一键转为正式岗位并进入「在招」状态。"
       />
       <div className="toolbar">
         <Space>
@@ -260,19 +252,13 @@ export default function RequisitionPanel({
             align: "center",
             render: (_: unknown, r: Requisition) => {
               if (r.status === "pending") {
+                const canManage = isAdmin || r.owner_id === currentUserId;
                 return (
                   <Space size={8}>
-                    {isAdmin ? (
-                      <>
-                        <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => handleApprove(r)}>
-                          通过
-                        </Button>
-                        <Button type="link" size="small" danger style={{ paddingInline: 0 }}
-                          onClick={() => { setRejectTarget(r); setRejectReason(""); }}>
-                          驳回
-                        </Button>
-                      </>
-                    ) : (
+                    <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => handleConvert(r)}>
+                      转为岗位
+                    </Button>
+                    {canManage && (
                       <>
                         <Button type="link" size="small" icon={<EditOutlined />} style={{ paddingInline: 0 }}
                           onClick={() => openEdit(r)}>
@@ -396,12 +382,6 @@ export default function RequisitionPanel({
             <Input.TextArea rows={3} placeholder="说明业务背景与需求缘由" />
           </Form.Item>
         </Form>
-      </Modal>
-
-      <Modal title="驳回招聘需求" open={!!rejectTarget} onCancel={() => setRejectTarget(null)} onOk={handleReject}
-        okText="确认驳回" cancelText="取消" destroyOnClose>
-        <Input.TextArea rows={3} value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
-          placeholder="驳回原因（会显示给需求提出人）" />
       </Modal>
     </div>
   );

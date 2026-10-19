@@ -5,7 +5,7 @@
 // 用户会以为这条记录已经解析好了。因此这里的策略是：
 // **明显不合理的值一律清成空字符串**，宁可空着让用户看见，也不要静默存错。
 
-import { isPlaceName } from "./resumeParser";
+import { isPlaceName, plausibleLatinName } from "./resumeParser";
 
 /** 纯数字 / 纯时间表达式：2013、2013-2016、2020.03、3年、至今 */
 const NUMERIC_LIKE_RE = /^[\d\s.\-~至—年月日/今现]+$/;
@@ -19,11 +19,15 @@ export function isNumericLike(s: string): boolean {
 }
 
 function plausibleName(s: string): boolean {
-  if (s.length < 2 || s.length > 10) return false; // 英文全名会略长，放宽到 10
+  if (s.length < 2 || s.length > 40) return false; // 放宽上限以容纳英文名（最长 40）
   if (/\d/.test(s)) return false;
   if (isPlaceName(s)) return false;                // "广州"、"广东"
   if (NAME_STOP_RE.test(s)) return false;          // 章节词/标签词
-  return true;
+  // 含拉丁字母的，必须是像人名的拉丁字符串（英文名/拼音）
+  if (/[A-Za-z]/.test(s)) return plausibleLatinName(s);
+  // 纯中文（可带间隔号）：2-5 个汉字/间隔号视为姓名候选
+  // （2-4 字，或「欧阳·娜娜」这类带一个间隔号的 5 字）
+  return /^[\u4e00-\u9fa5·•・]{2,5}$/.test(s);
 }
 
 function plausibleCompany(s: string): boolean {

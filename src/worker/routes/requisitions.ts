@@ -1,15 +1,16 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 
 const requisitions = new Hono<{ Bindings: Env }>();
 
 const REQ_STATUS_LABEL: Record<string, string> = {
-  pending: "待审批",
-  approved: "已通过",
+  pending: "待处理",
+  approved: "已转岗",
   rejected: "已驳回",
-  closed: "已关闭",
+  closed: "已作废",
 };
 const PRIORITY_LABEL: Record<string, string> = { high: "高", normal: "中", low: "低" };
 
@@ -28,10 +29,9 @@ requisitions.get("/", async (c) => {
 
   const conditions: string[] = [];
   const params: string[] = [];
-  if (session.role !== "admin") {
-    conditions.push("owner_id = ?");
-    params.push(session.userId);
-  } else {
+  conditions.push(...scopeConds(session));
+  params.push(...scopeParams(session));
+  if (session.role === "admin") {
     const ownerId = c.req.query("owner_id");
     if (ownerId) { conditions.push("owner_id = ?"); params.push(ownerId); }
   }
@@ -78,23 +78,25 @@ requisitions.post("/", async (c) => {
 });
 
 /**
- * 审批需求：通过则自动生成正式岗位（jobs），并回填 job_id。
- * 只有 admin 能审批 —— 需求由用人部门提，审批权在 HR 负责人。
+ * 需求转正式岗位：自动生成 jobs 记录并回填 job_id。
+ * 无审批流 —— 数据范围内（自己或同团队）的用户均可操作。
  */
-requisitions.post("/:id/approve", async (c) => {
+requisitions.post("/:id/convert", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可审批招聘需求" }, 403);
 
   const id = c.req.param("id");
   const req = await c.env.DB.prepare("SELECT * FROM requisitions WHERE id = ?").bind(id).first<any>();
   if (!req) return c.json({ error: "需求不存在" }, 404);
   if (req.status !== "pending") return c.json({ error: "该需求已处理过" }, 400);
+  if (!(await canTouch(c.env, session, req.owner_id))) {
+    return c.json({ error: "无权限，只能操作自己范围内的需求" }, 403);
+  }
 
   let b: any = {};
   try { b = await c.req.json(); } catch { /* 允许空 body */ }
 
-  // 生成正式岗位（owner 归需求创建人，跟进人还是原 HRBP）
+  // 生成正式岗位（owner 归需求创建人）
   const jobId = genId();
   await c.env.DB.prepare(`
     INSERT INTO jobs (id, owner_id, title, department, city, job_type, headcount, priority,
@@ -115,26 +117,7 @@ requisitions.post("/:id/approve", async (c) => {
   return c.json({ ok: true, job_id: jobId });
 });
 
-/** 驳回需求 */
-requisitions.post("/:id/reject", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
-  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可审批招聘需求" }, 403);
-
-  const id = c.req.param("id");
-  const req = await c.env.DB.prepare("SELECT status FROM requisitions WHERE id = ?").bind(id).first<{ status: string }>();
-  if (!req) return c.json({ error: "需求不存在" }, 404);
-  if (req.status !== "pending") return c.json({ error: "该需求已处理过" }, 400);
-
-  let b: any = {};
-  try { b = await c.req.json(); } catch { /* 允许空 body */ }
-  await c.env.DB.prepare(
-    "UPDATE requisitions SET status='rejected', reject_reason=?, updated_at=datetime('now') WHERE id=?"
-  ).bind(b.reason || null, id).run();
-  return c.json({ ok: true });
-});
-
-/** 编辑需求：仅 pending 状态可改，且只能改自己创建的（admin 可改任意） */
+/** 编辑需求：仅 pending 状态可改，且只能改自己创建的（同团队亦可） */
 requisitions.put("/:id", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
@@ -142,8 +125,8 @@ requisitions.put("/:id", async (c) => {
   const id = c.req.param("id");
   const req = await c.env.DB.prepare("SELECT * FROM requisitions WHERE id = ?").bind(id).first<any>();
   if (!req) return c.json({ error: "需求不存在" }, 404);
-  if (req.status !== "pending") return c.json({ error: "仅待审批状态可编辑" }, 400);
-  if (session.role !== "admin" && req.owner_id !== session.userId) {
+  if (req.status !== "pending") return c.json({ error: "仅待处理状态可编辑" }, 400);
+  if (!(await canTouch(c.env, session, req.owner_id))) {
     return c.json({ error: "无权限，只能编辑自己提交的需求" }, 403);
   }
 
@@ -168,7 +151,7 @@ requisitions.put("/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-/** 撤回需求：仅 pending 状态可撤回，撤回后 status=closed（终态，不再审批） */
+/** 撤回需求：仅 pending 状态可撤回，撤回后 status=closed（终态，不再处理） */
 requisitions.post("/:id/withdraw", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
@@ -176,8 +159,8 @@ requisitions.post("/:id/withdraw", async (c) => {
   const id = c.req.param("id");
   const req = await c.env.DB.prepare("SELECT owner_id, status FROM requisitions WHERE id = ?").bind(id).first<{ owner_id: string; status: string }>();
   if (!req) return c.json({ error: "需求不存在" }, 404);
-  if (req.status !== "pending") return c.json({ error: "仅待审批状态可撤回" }, 400);
-  if (session.role !== "admin" && req.owner_id !== session.userId) {
+  if (req.status !== "pending") return c.json({ error: "仅待处理状态可撤回" }, 400);
+  if (!(await canTouch(c.env, session, req.owner_id))) {
     return c.json({ error: "无权限，只能撤回自己提交的需求" }, 403);
   }
 

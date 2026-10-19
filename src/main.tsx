@@ -13,6 +13,10 @@ import dayjs from "dayjs";
 // DatePicker / Calendar 面板内部的星期、月份名称来自 dayjs 自身 locale，
 // 只传 antd locale 会出现「外壳中文、面板英文」的混合状态。
 import "dayjs/locale/zh-cn";
+// JetBrains Mono 本地打包：不再走 jsdelivr CDN（国内不稳定，且字体 render-blocking）。
+// 与 global.css 的 --font-mono 配合，仅加载用到的 400/700 两个字重。
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/700.css";
 import App from "./App";
 import { getThemeState, applyTheme, getColorDef, saveThemeState, type ThemeState } from "./theme";
 import "./styles/global.css";

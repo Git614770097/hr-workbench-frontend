@@ -15,6 +15,8 @@ export interface User {
   status?: string | null;
   /** 注册时自报身份（hr/headhunter/team/other）—— 只驱动品牌文案，不参与鉴权 */
   intended_role?: string | null;
+  /** 团队标识：NULL=个人；manager=自己的 id；团队成员=所属管理员 id */
+  team_id?: string | null;
 }
 
 /** 用户管理列表行（管理员视角，含审批与重置申请状态） */
@@ -34,6 +36,8 @@ export interface UserRow {
   paid_until: string | null;
   /** 注册时自报身份（hr/headhunter/team/other），仅作审批参考，不参与鉴权 */
   intended_role?: string | null;
+  /** 团队标识（管理员=自己的 id；子用户=管理员 id；NULL=个人） */
+  team_id?: string | null;
 }
 
 /**
@@ -55,7 +59,7 @@ export const INTENDED_ROLE_LABELS: Record<string, string> = Object.fromEntries(
 // 菜单权限 key（与后端 src/worker/permissions.ts 保持一致）
 export type MenuKey =
   | "talents" | "contracts" | "social"
-  | "pipeline" | "interviews" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "tools" | "users";
+  | "pipeline" | "interviews" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "tools" | "users" | "background";
 
 export const MENU_PERMISSIONS: { key: MenuKey; label: string; hint?: string }[] = [
   { key: "tasks", label: "待办日历" },
@@ -70,6 +74,9 @@ export const MENU_PERMISSIONS: { key: MenuKey; label: string; hint?: string }[] 
   // 接口层也需要 talents 权限才能读到人才列表，故需一并勾选。
   { key: "contracts", label: "合同管理", hint: "需同时勾选「人才库管理」" },
   { key: "social", label: "社保公积金", hint: "需同时勾选「人才库管理」" },
+  // 背调中心：独立于招聘看板的敏感合规模块，单独权限便于按角色开关。
+  // 主体数据仍取自 talents 表，故提示一并勾选「人才库管理」。
+  { key: "background", label: "背调中心", hint: "需同时勾选「人才库管理」" },
   { key: "profiles", label: "人才画像" },
   { key: "templates", label: "模板库管理" },
   { key: "tools", label: "工具中心", hint: "AI 助手；页内各功能按其领域权限展示" },
@@ -81,6 +88,8 @@ export interface Role {
   name: string;
   permissions: string[];
   created_at?: string;
+  /** 角色创建者：NULL=全局角色；manager 创建的角色记自己的 id */
+  owner_id?: string | null;
 }
 
 export interface Talent {
@@ -116,7 +125,6 @@ export interface Talent {
   resignation_date: string | null;
   hire_date: string | null;   // 入职日期（社保增员待办基准日）
   next_follow_at: string | null; // 下次跟进/提醒时间，到期自动生成待办并推送
-  is_demo?: number;           // 示例数据标记：1=一键载入的演示数据
   created_at: string;
   updated_at: string;
 }
@@ -266,7 +274,8 @@ export const ENTRY_TYPE_OPTIONS = [
 ];
 
 export const ROLE_LABELS: Record<string, string> = {
-  admin: "管理员",
+  admin: "超管",
+  manager: "管理员",
   user: "普通用户",
 };
 
@@ -353,7 +362,6 @@ export interface Job {
   requirements: string | null;
   opened_at: string | null;
   closed_at: string | null;
-  is_demo?: number;           // 示例数据标记：1=一键载入的演示数据
   created_at: string;
   updated_at: string;
   // 聚合统计（列表接口返回）
@@ -451,10 +459,10 @@ export interface Requisition {
 }
 
 export const REQUISITION_STATUS_LABELS: Record<string, string> = {
-  pending: "待审批",
-  approved: "已通过",
+  pending: "待处理",
+  approved: "已转岗",
   rejected: "已驳回",
-  closed: "已关闭",
+  closed: "已作废",
 };
 
 // ---- 审批流 ----
@@ -635,11 +643,32 @@ export interface TalentStageLog {
   user_name: string | null;
 }
 
+/** 沟通记录（communications 表；详情页时间线渲染） */
+export interface TalentCommunication {
+  id: string;
+  type: string | null;        // call / wechat / interview / email / other
+  content: string | null;
+  rating: number | null;      // 1-5 评分
+  follow_up_date: string | null;
+  created_at: string;
+  user_name: string | null;   // 记录人
+}
+
+/** 沟通方式中文标签 */
+export const COMM_TYPE_LABELS: Record<string, string> = {
+  call: "电话",
+  wechat: "微信",
+  interview: "面试",
+  email: "邮件",
+  other: "其他",
+};
+
 /** 人才详情聚合返回 */
 export interface TalentDetailData extends Talent {
   tasks: Task[];
   pipeline: TalentPipelineItem[];
   stage_logs: TalentStageLog[];
+  communications: TalentCommunication[];
 }
 
 // ---- 招聘漏斗 ----
@@ -717,6 +746,15 @@ export interface AiRecapReport {
   bottlenecks: string[];
   /** 3 条可执行建议 */
   suggestions: string[];
+  /** 本次生成的 token 用量（后端透传 DeepSeek usage，历史缓存带回的是上次生成的用量） */
+  _usage?: AiUsage | null;
+}
+
+/** AI 调用的 token 用量（DeepSeek usage 字段，后端原样透传） */
+export interface AiUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
 }
 
 // AI 看板下一步建议（/ai/next-step）：单卡决策建议 + 跟进话术草稿
@@ -772,6 +810,127 @@ export interface AiTalentInventory {
   gaps: string[];
   /** 2-3 条储备运营建议 */
   actions: string[];
+}
+
+// AI 招聘周报（/ai/weekly-report）：把一周的真实数据讲成一份可直接发出去的完整周报。
+// 与 recap-report 的分工：复盘讲趋势结论（几句话），周报讲这一周发生了什么（完整文档）。
+export interface AiWeeklyReport {
+  /** 统计周期（this_week / last_week） */
+  range: string;
+  /** 语气（report 正式汇报 / brief 极简清单） */
+  tone: string;
+  /** 焦点（all / progress / risk） */
+  focus: string;
+  /** 展示用区间文案，如「10/12 ~ 10/16（本周至今）」 */
+  period: string;
+  /** 周报标题（一句话判断） */
+  headline: string;
+  /** 3-5 条本周亮点与进展（引用具体数字） */
+  highlights: string[];
+  /** 叙述性正文；仅 report 语气产出，brief 为空串 */
+  narrative: string;
+  /** 0-3 条风险或卡点 */
+  concerns: string[];
+  /** 3-5 条下周动作建议 */
+  next_actions: string[];
+  _usage?: AiUsage | null;
+}
+
+// AI 候选人对比（/ai/candidate-compare）：选 2-3 人并排对比 + 推荐
+export interface AiCandidateCompare {
+  /** 对比的候选人姓名，与输入顺序一致（用于渲染表头） */
+  names: string[];
+  /** 一句话综合推荐（谁更适合、为什么） */
+  verdict: string;
+  /** 3-5 个对比维度，每个维度的要点数组与候选人顺序一一对应 */
+  aspects: { aspect: string; notes: string[] }[];
+  /** 0-3 条需警惕的点 */
+  watchouts: string[];
+  _usage?: AiUsage | null;
+}
+
+// AI Offer 谈判话术（/ai/offer-negotiation）：基于双方薪资预期生成谈判方案
+export interface AiOfferNegotiation {
+  /** 一句话谈判基调 */
+  strategy: string;
+  /** 2-3 个核心筹码/说服点 */
+  points: string[];
+  /** 2-3 个场景话术 { 场景, 可直接说的话术 } */
+  scripts: { situation: string; script: string }[];
+  /** 1-3 条谈判注意 */
+  tips: string[];
+  _usage?: AiUsage | null;
+}
+
+// AI 被动人才触达文案（/ai/sourcing-copy）：面向在职/观望候选人的挖角文案
+export interface AiSourcingCopy {
+  title: string;
+  content: string;
+  tips: string[];
+  _usage?: AiUsage | null;
+}
+
+// AI 招聘渠道建议（/ai/channel-advice）：针对单岗位推荐投放渠道与优先级
+export interface AiChannelAdvice {
+  /** 一句话结论（主力渠道 + 原因） */
+  verdict: string;
+  /** 3-5 个推荐渠道 { 渠道名, 优先级, 理由 } */
+  channels: { channel: string; priority: "高" | "中" | "低"; reason: string }[];
+  /** 1-3 条渠道运营建议 */
+  tips: string[];
+  _usage?: AiUsage | null;
+}
+
+// AI 合同风险审查（/ai/contract-review）：粘贴合同文本，AI 标风险点/缺失条款/健康度
+export interface AiContractReview {
+  /** 一句话整体判断 */
+  summary: string;
+  /** 合规健康度评分 0-100 */
+  score: number;
+  /** 2-6 个风险点 { 涉及条款, 风险说明, 修改建议 } */
+  risks: { clause: string; risk: string; suggestion: string }[];
+  /** 0-5 条缺失的必备条款 */
+  missing: string[];
+  _usage?: AiUsage | null;
+}
+
+// AI 社保增减员提醒（/ai/social-reminder）：基于事件/日期/城市生成操作提醒
+export interface AiSocialReminder {
+  /** 事件标签（增员/减员） */
+  event: string;
+  /** 一句话关键时间节点 */
+  deadline: string;
+  /** 3-6 步操作清单 */
+  steps: string[];
+  /** 1-4 条合规注意 */
+  notes: string[];
+  /** 1-3 条实操建议 */
+  tips: string[];
+  _usage?: AiUsage | null;
+}
+
+// AI 个税筹划建议（/ai/tax-plan）：基于税前薪资构成给出到手估算与合规节税建议
+export interface AiTaxPlan {
+  /** 一句话到手结论（估算） */
+  take_home_note: string;
+  /** 2-5 条节税/优化点 { 项目, 说明 } */
+  optimizations: { item: string; detail: string }[];
+  /** 1-3 条合规提醒 */
+  tips: string[];
+  _usage?: AiUsage | null;
+}
+
+// AI 试用期合规提醒（/ai/probation-compliance）：基于合同起始日与试用期月数推算节点与话术
+export interface AiProbationCompliance {
+  /** 2-4 个关键节点 { 节点名, HR 应做的事 } */
+  timeline: { node: string; action: string }[];
+  /** 2-5 条合规要点 */
+  points: string[];
+  /** 0-3 个沟通话术 { 场景, 话术 } */
+  scripts: { situation: string; script: string }[];
+  /** 1-3 条注意 */
+  tips: string[];
+  _usage?: AiUsage | null;
 }
 
 // AI 配额（/ai/quota）：管理员不限额（unlimited=true, limit=-1）；
@@ -857,6 +1016,90 @@ export interface ContractUploadResult {
   file: ContractFile;
   extracted: { contract_end: string | null; probation_end: string | null } | null;
   warning: string | null;
+}
+
+// ---- 候选人背调中心（独立模块，逻辑挂在 Offer→入职之间）----
+export type BgStatus = "pending" | "processing" | "completed" | "passed" | "failed" | "cancelled";
+export type BgConsent = "none" | "requested" | "granted" | "declined";
+export type BgItemStatus = "pending" | "pass" | "fail";
+
+export const BG_STATUS_LABELS: Record<string, string> = {
+  pending: "待发起",
+  processing: "核验中",
+  completed: "已出报告",
+  passed: "已通过",
+  failed: "未通过",
+  cancelled: "已取消",
+};
+
+export const BG_CONSENT_LABELS: Record<string, string> = {
+  none: "未授权",
+  requested: "已发授权请求",
+  granted: "已授权",
+  declined: "候选人拒绝",
+};
+
+export const BG_ITEM_STATUS_LABELS: Record<string, string> = {
+  pending: "待核验",
+  pass: "一致",
+  fail: "异常",
+};
+
+export interface BgItem {
+  type: string;
+  label: string;
+  status: BgItemStatus;
+  note: string;
+}
+
+export interface BackgroundCheck {
+  id: string;
+  owner_id: string;
+  talent_id: string;
+  talent_job_id: string | null;
+  status: BgStatus;
+  consent_status: BgConsent;
+  consent_at: string | null;
+  consent_method: string | null;
+  provider: string;
+  high_risk: boolean;
+  items: BgItem[];
+  item_count?: number;
+  has_report: boolean;
+  report_name: string | null;
+  summary: string | null;
+  result: "pass" | "fail" | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  // 联表带出
+  talent_name: string;
+  talent_phone: string | null;
+  job_title: string | null;
+  owner_name: string;
+  status_label: string;
+  consent_label: string;
+}
+
+/** AI 背调小结（/background/:id/ai-summary） */
+export interface BgSummary {
+  summary: string;
+  risks: string[];
+}
+
+/** AI 简历核查清单（/background/:id/ai-resume-check）：基于简历文本生成待核查建议 */
+export interface BgResumeCheckItem {
+  category: string;     // 学历 / 工作履历 / 竞业限制 / 身份 / 其他
+  item: string;         // 具体核查事项
+  channel: string;      // 建议核查渠道（学信网 / 前雇主 HR / 社保系统…）
+  material: string;     // 需收集的证明材料
+  priority: "high" | "medium" | "low";
+}
+export interface BgResumeCheckResult {
+  items: BgResumeCheckItem[];
+  gaps: string[];       // 简历缺失/含糊、需候选人补充确认的点
+  notes: string;        // 整体建议
 }
 
 // ---- 待办日历 ----

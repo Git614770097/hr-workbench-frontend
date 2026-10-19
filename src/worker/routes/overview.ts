@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { ownerScope } from "../scope";
 import { cachedJson } from "../helpers";
 
 const overview = new Hono<{ Bindings: Env }>();
@@ -75,16 +76,22 @@ overview.get("/", async (c) => {
 
   const isAdmin = session.role === "admin";
   const uid = session.userId;
-  // 缓存 key 按用户隔离：admin 看全部、普通用户只看自己的，不能共用缓存
-  const cacheKey = `https://edge-cache.internal/api/overview?role=${isAdmin ? "admin" : "user"}&uid=${uid}`;
+  // 缓存 key 按数据范围隔离：admin 看全部；同队成员看同一份团队数据，共用缓存
+  const scopeKey = isAdmin ? "admin" : session.teamId ? `team:${session.teamId}` : `user:${uid}`;
+  const cacheKey = `https://edge-cache.internal/api/overview?scope=${scopeKey}`;
 
   return cachedJson(c.executionCtx, cacheKey, 30, async () => {
     const db = c.env.DB;
     // 注意：owner 条件统一以「 AND owner_id = ?」形式拼在已有 WHERE 之后。
     // 不能用 `FROM jobs${ownerWhere} AND ...` 的写法 —— admin 时 ownerWhere 为空，
     // 会拼出 `FROM jobs AND status='open'` 这种缺 WHERE 的非法 SQL 直接 500。
-    const ownerAnd = isAdmin ? "" : " AND owner_id = ?";
-    const ownerBind: string[] = isAdmin ? [] : [uid];
+    const sc = ownerScope(session);
+    const ownerAnd = sc.sql;
+    const ownerBind: string[] = sc.params;
+    // 带表别名的同范围条件（JOIN 到 jobs/interviews/tasks 时列名不同，范围语义一致）
+    const scJ = ownerScope(session, "j.owner_id");
+    const scIv = ownerScope(session, "iv.owner_id");
+    const scTk = ownerScope(session, "tk.owner_id");
 
     const weekStart = chinaWeekStartUtc();
     const today = todayCn();
@@ -122,14 +129,14 @@ overview.get("/", async (c) => {
 
     // 本周新增人才
     const weekNewRow = await db
-      .prepare(`SELECT COUNT(*) c FROM talents WHERE created_at >= ?${isAdmin ? "" : " AND owner_id = ?"}`)
+      .prepare(`SELECT COUNT(*) c FROM talents WHERE created_at >= ?${sc.sql}`)
       .bind(weekStart, ...ownerBind)
       .first<{ c: number }>();
     const weeklyNewTalents = weekNewRow?.c ?? 0;
 
     // 上周新增人才（环比用）
     const prevWeekNewRow = await db
-      .prepare(`SELECT COUNT(*) c FROM talents WHERE created_at >= ? AND created_at < ?${isAdmin ? "" : " AND owner_id = ?"}`)
+      .prepare(`SELECT COUNT(*) c FROM talents WHERE created_at >= ? AND created_at < ?${sc.sql}`)
       .bind(prevWeekStart, weekStart, ...ownerBind)
       .first<{ c: number }>();
     const prevWeekNewTalents = prevWeekNewRow?.c ?? 0;
@@ -140,7 +147,7 @@ overview.get("/", async (c) => {
         `SELECT l.to_stage AS stage, COUNT(*) c
          FROM job_stage_logs l
          JOIN talent_jobs j ON j.id = l.talent_job_id
-         WHERE l.created_at >= ?${isAdmin ? "" : " AND j.owner_id = ?"}
+         WHERE l.created_at >= ?${scJ.sql}
          GROUP BY l.to_stage`
       )
       .bind(weekStart, ...ownerBind)
@@ -154,13 +161,13 @@ overview.get("/", async (c) => {
         `SELECT COUNT(*) total,
                 SUM(CASE WHEN due_date < ? THEN 1 ELSE 0 END) overdue,
                 SUM(CASE WHEN due_date = ? THEN 1 ELSE 0 END) today
-         FROM talent_tasks WHERE status = 'pending'${isAdmin ? "" : " AND owner_id = ?"}`
+         FROM talent_tasks WHERE status = 'pending'${sc.sql}`
       )
       .bind(today, today, ...ownerBind)
       .first<{ total: number | null; overdue: number | null; today: number | null }>();
 
     // ---- 行动层：今日面试（status=scheduled 且面试日期 = 今天）----
-    const ivOwnerAnd = isAdmin ? "" : " AND iv.owner_id = ?";
+    const ivOwnerAnd = scIv.sql;
     const ivCountRow = await db
       .prepare(
         `SELECT COUNT(*) c FROM interviews iv
@@ -199,7 +206,7 @@ overview.get("/", async (c) => {
       }>();
 
     // ---- 行动层：近 3 天到期待办（含今日）----
-    const taskOwnerAnd = isAdmin ? "" : " AND tk.owner_id = ?";
+    const taskOwnerAnd = scTk.sql;
     const dueRows = await db
       .prepare(
         `SELECT tk.id, tk.title, tk.due_date, tk.source, tk.talent_id, tk.job_id,
@@ -258,11 +265,14 @@ overview.get("/trend", async (c) => {
   const COUNT_MAP: Record<string, number> = { "4w": 4, "12w": 12, "24w": 24 };
   const count = COUNT_MAP[range] ?? 12;
 
-  const cacheKey = `https://edge-cache.internal/api/overview/trend?range=${range}&role=${isAdmin ? "admin" : "user"}&uid=${uid}`;
+  const scopeKey = isAdmin ? "admin" : session.teamId ? `team:${session.teamId}` : `user:${uid}`;
+  const cacheKey = `https://edge-cache.internal/api/overview/trend?range=${range}&scope=${scopeKey}`;
 
   return cachedJson(c.executionCtx, cacheKey, 60, async () => {
     const db = c.env.DB;
-    const ownerBind: string[] = isAdmin ? [] : [uid];
+    const sc = ownerScope(session);
+    const scJ = ownerScope(session, "j.owner_id");
+    const ownerBind: string[] = sc.params;
 
     const step = 7; // 统一周粒度
     const todayDi = cnDayIndex(Date.now());
@@ -282,7 +292,7 @@ overview.get("/trend", async (c) => {
     const hired = new Array(count).fill(0);
 
     const newRows = await db
-      .prepare(`SELECT created_at AS t FROM talents WHERE created_at >= ?${isAdmin ? "" : " AND owner_id = ?"}`)
+      .prepare(`SELECT created_at AS t FROM talents WHERE created_at >= ?${sc.sql}`)
       .bind(from, ...ownerBind)
       .all<{ t: string }>();
     for (const r of newRows.results || []) {
@@ -297,7 +307,7 @@ overview.get("/trend", async (c) => {
         `SELECT l.to_stage AS st, l.created_at AS t
          FROM job_stage_logs l
          JOIN talent_jobs j ON j.id = l.talent_job_id
-         WHERE l.to_stage IN ('interview1', 'hired') AND l.created_at >= ?${isAdmin ? "" : " AND j.owner_id = ?"}`
+         WHERE l.to_stage IN ('interview1', 'hired') AND l.created_at >= ?${scJ.sql}`
       )
       .bind(from, ...ownerBind)
       .all<{ st: string; t: string }>();

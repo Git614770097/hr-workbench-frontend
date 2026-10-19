@@ -24,7 +24,6 @@ import ImportModal from "../components/ImportModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
 import TalentFormModal from "../components/TalentFormModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
-import { DemoSeedButton, DemoBanner } from "../components/DemoSeed";
 import { useDict } from "../dict";
 import { registerOnbFill } from "../components/onboardingAutoFill";
 
@@ -130,6 +129,10 @@ export default function TalentList() {
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  // 每页条数 + 列表排序（受控，配合后端 sort/order 白名单）
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
+  const [sortField, setSortField] = useState<string>("");
+  const [sortOrder, setSortOrder] = useState<"ascend" | "descend" | "">("");
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS);
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
@@ -245,7 +248,15 @@ export default function TalentList() {
   const fetchTalents = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, string | number> = { page, limit: PAGE_SIZE, ...buildFilterParams(applied) };
+      const params: Record<string, string | number> = {
+        page,
+        limit: pageSize,
+        ...buildFilterParams(applied),
+      };
+      if (sortField) {
+        params.sort = sortField;
+        params.order = sortOrder === "ascend" ? "asc" : "desc";
+      }
       const res = await api.getTalents(params);
       setTalents(res.items);
       setTotal(res.total);
@@ -253,7 +264,7 @@ export default function TalentList() {
       console.error(err);
     }
     setLoading(false);
-  }, [page, applied]);
+  }, [page, pageSize, sortField, sortOrder, applied]);
 
   useEffect(() => {
     fetchTalents();
@@ -368,41 +379,73 @@ export default function TalentList() {
     }
   };
 
-  // 拉取当前筛选条件下的全量数据（用于导出）
+  // 拉取当前筛选条件下的全量数据（用于导出）。后端 limit 上限 100，这里分页拉取直到取完。
   const fetchAllForExport = async (): Promise<Talent[]> => {
-    const params = { ...buildFilterParams(applied), page: 1, limit: 10000 };
-    const res = await api.getTalents(params);
-    return res.items;
+    const base = buildFilterParams(applied);
+    if (sortField) {
+      base.sort = sortField;
+      base.order = sortOrder === "ascend" ? "asc" : "desc";
+    }
+    const all: Talent[] = [];
+    let pageNum = 1;
+    const ps = 100;
+    while (true) {
+      const res = await api.getTalents({ ...base, page: pageNum, limit: ps });
+      all.push(...res.items);
+      if (res.items.length === 0 || all.length >= res.total) break;
+      pageNum++;
+    }
+    return all;
   };
 
-  // 导出字段顺序与列表一致
-  const exportColumns: { key: string; title: string; get: (t: Talent) => string }[] = [
-    { key: "name", title: "姓名", get: (t) => t.name || "" },
-    { key: "current_title", title: "职位", get: (t) => t.current_title || "" },
-    { key: "years_experience", title: "年限", get: (t) => (t.years_experience != null ? `${t.years_experience}年` : "") },
-    { key: "age", title: "年龄", get: (t) => (t.age != null ? String(t.age) : "") },
-    { key: "education", title: "学历", get: (t) => t.education || "" },
-    { key: "school", title: "院校", get: (t) => t.school || "" },
-    { key: "major", title: "专业", get: (t) => t.major || "" },
-    { key: "city", title: "城市", get: (t) => t.city || "" },
-    { key: "phone", title: "手机号", get: (t) => t.phone || "" },
-    { key: "email", title: "邮箱", get: (t) => t.email || "" },
-    { key: "current_company", title: "当前公司", get: (t) => t.current_company || "" },
-    { key: "industry", title: "行业", get: (t) => t.industry || "" },
-    { key: "expected_salary", title: "期望薪资", get: (t) => t.expected_salary || "" },
-    { key: "skills", title: "技能", get: (t) => (t.skills || []).join("、") },
-    { key: "status", title: "状态", get: (t) => STATUS_LABELS[t.status] || t.status || "" },
-    { key: "owner_name", title: "创建人", get: (t) => t.owner_name || "" },
-    { key: "entry_type", title: "录入方式", get: (t) => ENTRY_TYPE_LABELS[t.entry_type || "manual"] || "手动录入" },
-    { key: "source", title: "来源渠道", get: (t) => t.source || "" },
-    { key: "created_at", title: "创建时间", get: (t) => t.created_at || "" },
-  ];
+  // 导出字段定义：跟随「列设置」visibleCols 动态生成（姓名始终包含）。
+  // 这样导出的列与列表看到的一致，不会写死一堆用户没勾选的字段。
+  const exportColDefs: Record<string, { title: string; get: (t: Talent) => string }> = {
+    name: { title: "姓名", get: (t) => t.name || "" },
+    current_title: { title: "职位", get: (t) => t.current_title || "" },
+    years_experience: { title: "年限", get: (t) => (t.years_experience != null ? `${t.years_experience}年` : "") },
+    age: { title: "年龄", get: (t) => (t.age != null ? String(t.age) : "") },
+    education: { title: "学历", get: (t) => t.education || "" },
+    school: { title: "院校", get: (t) => t.school || "" },
+    major: { title: "专业", get: (t) => t.major || "" },
+    city: { title: "城市", get: (t) => t.city || "" },
+    phone: { title: "手机号", get: (t) => t.phone || "" },
+    email: { title: "邮箱", get: (t) => t.email || "" },
+    current_company: { title: "当前公司", get: (t) => t.current_company || "" },
+    industry: { title: "行业", get: (t) => t.industry || "" },
+    expected_salary: { title: "期望薪资", get: (t) => t.expected_salary || "" },
+    skills: { title: "技能", get: (t) => (t.skills || []).join("、") },
+    status: { title: "状态", get: (t) => STATUS_LABELS[t.status] || t.status || "" },
+    owner_name: { title: "创建人", get: (t) => t.owner_name || "" },
+    entry_type: { title: "录入方式", get: (t) => ENTRY_TYPE_LABELS[t.entry_type || "manual"] || "手动录入" },
+    source: { title: "来源渠道", get: (t) => t.source || "" },
+    created_at: { title: "创建时间", get: (t) => t.created_at || "" },
+    tags: { title: "标签", get: (t) => (t.tags || []).join("、") },
+  };
+  const buildExportColumns = (): { key: string; title: string; get: (t: Talent) => string }[] => {
+    const keys = ["name", ...visibleCols.filter((k) => k !== "name")];
+    return keys.filter((k) => exportColDefs[k]).map((k) => ({ key: k, ...exportColDefs[k] }));
+  };
+
+  // 导出数据：全量（按当前筛选 + 排序）→ 若勾选了行则只取选中行
+  const getExportData = async (): Promise<{
+    rows: Talent[];
+    columns: { key: string; title: string; get: (t: Talent) => string }[];
+  }> => {
+    const columns = buildExportColumns();
+    const all = await fetchAllForExport();
+    if (selectedKeys.length > 0) {
+      const sel = new Set(selectedKeys.map(String));
+      return { rows: all.filter((t) => sel.has(t.id)), columns };
+    }
+    return { rows: all, columns };
+  };
 
   // 生成导出表格 HTML（Word 与 PDF 打印共用）
-  const buildExportHtml = (rows: Talent[]): string => {
-    const thead = exportColumns.map((c) => `<th>${c.title}</th>`).join("");
+  const buildExportHtml = (rows: Talent[], cols: { key: string; title: string; get: (t: Talent) => string }[]): string => {
+    const thead = cols.map((c) => `<th>${c.title}</th>`).join("");
     const tbody = rows.map((t) => {
-      const tds = exportColumns.map((c) => `<td>${escapeHtml(c.get(t))}</td>`).join("");
+      const tds = cols.map((c) => `<td>${escapeHtml(c.get(t))}</td>`).join("");
       return `<tr>${tds}</tr>`;
     }).join("");
     return `<!DOCTYPE html>
@@ -426,12 +469,13 @@ export default function TalentList() {
   const handleExportWord = async () => {
     try {
       setExporting(true);
-      const rows = await fetchAllForExport();
-      if (rows.length === 0) { message.warning("暂无数据可导出"); return; }
-      const html = buildExportHtml(rows);
+      const { rows, columns } = await getExportData();
+      if (rows.length === 0) { message.warning(selectedKeys.length > 0 ? "未选中可导出的数据" : "暂无数据可导出"); return; }
+      const html = buildExportHtml(rows, columns);
       const blob = new Blob(["\ufeff" + html], { type: "application/msword;charset=utf-8" });
       downloadBlob(blob, `${termFor(profile, "人才库导出")}_${dateStamp()}.doc`);
-      message.success(termFor(profile, `已导出 ${rows.length} 条人才（Word）`));
+      const label = selectedKeys.length > 0 ? `已导出选中的 ${rows.length} 条` : `已导出 ${rows.length} 条人才`;
+      message.success(termFor(profile, `${label}（Word）`));
     } catch (err) {
       message.error((err as Error).message || "导出失败");
     } finally {
@@ -443,8 +487,8 @@ export default function TalentList() {
   const handleExportPdf = async () => {
     try {
       setExporting(true);
-      const rows = await fetchAllForExport();
-      if (rows.length === 0) { message.warning("暂无数据可导出"); return; }
+      const { rows } = await getExportData();
+      if (rows.length === 0) { message.warning(selectedKeys.length > 0 ? "未选中可导出的数据" : "暂无数据可导出"); return; }
       setPrintData(rows);
       // 等待打印容器渲染后触发打印
       setTimeout(() => {
@@ -474,20 +518,21 @@ export default function TalentList() {
   const handleExportExcel = async () => {
     try {
       setExporting(true);
-      const rows = await fetchAllForExport();
-      if (rows.length === 0) { message.warning("暂无数据可导出"); return; }
+      const { rows, columns } = await getExportData();
+      if (rows.length === 0) { message.warning(selectedKeys.length > 0 ? "未选中可导出的数据" : "暂无数据可导出"); return; }
       await exportXlsx(`${termFor(profile, "人才库导出")}_${dateStamp()}.xlsx`, [
         {
           name: termFor(profile, "人才库"),
-          columns: exportColumns.map((c) => ({
+          columns: columns.map((c) => ({
             header: c.title,
             key: c.key,
-            width: c.key === "email" || c.key === "skills" ? 24 : 14,
+            width: c.key === "email" || c.key === "skills" || c.key === "tags" ? 24 : 14,
           })),
-          rows: rows.map((t) => Object.fromEntries(exportColumns.map((c) => [c.key, c.get(t)]))),
+          rows: rows.map((t) => Object.fromEntries(columns.map((c) => [c.key, c.get(t)]))),
         },
       ]);
-      message.success(termFor(profile, `已导出 ${rows.length} 条人才（Excel）`));
+      const label = selectedKeys.length > 0 ? `已导出选中的 ${rows.length} 条` : `已导出 ${rows.length} 条人才`;
+      message.success(termFor(profile, `${label}（Excel）`));
     } catch (err) {
       message.error((err as Error).message || "导出失败");
     } finally {
@@ -571,6 +616,8 @@ export default function TalentList() {
       key: "name",
       width: 120,
       fixed: "left" as const,
+      sorter: true,
+      sortOrder: sortField === "name" ? sortOrder || undefined : null,
       render: (text: string, record: Talent) => (
         <Link to={`/talents/${record.id}`} style={{ fontWeight: 600 }}>{text}</Link>
       ),
@@ -578,9 +625,11 @@ export default function TalentList() {
     current_title: { title: "职位", dataIndex: "current_title", key: "current_title", width: 150, render: (v: string) => v || "—" },
     years_experience: {
       title: "年限", dataIndex: "years_experience", key: "years_experience", width: 90,
+      sorter: true,
+      sortOrder: sortField === "years_experience" ? sortOrder || undefined : null,
       render: (v: number | null) => (v != null ? `${v}年` : "—"),
     },
-    age: { title: "年龄", dataIndex: "age", key: "age", width: 80, render: (v: number | null) => (v != null ? v : "—") },
+    age: { title: "年龄", dataIndex: "age", key: "age", width: 80, sorter: true, sortOrder: sortField === "age" ? sortOrder || undefined : null, render: (v: number | null) => (v != null ? v : "—") },
     education: { title: "学历", dataIndex: "education", key: "education", width: 110, render: (v: string) => v || "—" },
     school: { title: "院校", dataIndex: "school", key: "school", width: 160, render: (v: string) => v || "—" },
     major: { title: "专业", dataIndex: "major", key: "major", width: 140, render: (v: string) => v || "—" },
@@ -672,6 +721,22 @@ export default function TalentList() {
   // 列设置弹层选项（创建人仅 admin 展示）
   const colSettingOptions = optionalKeys.map((k) => ({ label: OPTIONAL_COL_LABELS[k], value: k }));
 
+  // 表格受控分页 + 排序：排序变化时回到第 1 页，避免停留在不存在的页
+  const handleTableChange = (
+    pg: { current?: number; pageSize?: number },
+    _filters: unknown,
+    sorter: unknown,
+  ) => {
+    const s = Array.isArray(sorter) ? null : (sorter as { field?: string; order?: "ascend" | "descend" } | null);
+    const newField = (s?.field as string) || "";
+    const newOrder = (s?.order as "ascend" | "descend" | undefined) || "";
+    const sortChanged = newField !== sortField || newOrder !== sortOrder;
+    setSortField(newField);
+    setSortOrder(newOrder);
+    if (pg.pageSize && pg.pageSize !== pageSize) setPageSize(pg.pageSize);
+    setPage(sortChanged ? 1 : pg.current || 1);
+  };
+
   // AI 人才储备盘点：按当前筛选口径聚合人才结构后讲结论（库里有没有货、缺口在哪、怎么运营）。
   // AI 失败降级提示本身，不阻塞列表任何功能。
   const [inventory, setInventory] = useState<{ open: boolean; loading: boolean; err: string; data: AiTalentInventory | null }>({
@@ -715,8 +780,6 @@ export default function TalentList() {
       </Card>
 
       <Card className="list-card">
-        {/* 示例数据提示条：列表含 is_demo 数据时显示，一键清除 */}
-        <DemoBanner items={talents} onChanged={fetchTalents} />
         {/* 快捷分组：列表顶部区域，点击即筛选，复用列表查询 group 参数；
             与「状态」下拉互斥——点分组会清空 status，避免两个条件叠加。 */}
         <div className="talent-groups" role="tablist" aria-label="人才分组">
@@ -838,24 +901,25 @@ export default function TalentList() {
           rowKey="id"
           loading={loading}
           rowSelection={rowSelection}
+          onChange={handleTableChange}
           scroll={{ x: scrollX }}
           locale={{
-            // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」
-            emptyText: (
-              <div style={{ padding: "40px 0", textAlign: "center" }}>
-                <Empty description={termFor(profile, "人才库还是空的")} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
-                <DemoSeedButton onDone={fetchTalents} />
-                <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-                  {termFor(profile, "也可以点左上角「新增人才」或「导入」录入真实数据")}
-                </div>
+          // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」
+          emptyText: (
+            <div style={{ padding: "40px 0", textAlign: "center" }}>
+              <Empty description={termFor(profile, "人才库还是空的")} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
+              <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
+                {termFor(profile, "点左上角「新增人才」或「导入」开始录入真实数据")}
               </div>
-            ),
+            </div>
+          ),
           }}
           pagination={{
             current: page,
             total,
-            pageSize: PAGE_SIZE,
-            onChange: (p) => setPage(p),
+            pageSize,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
             showTotal: (t) => termFor(profile, `共 ${t} 位人才`),
           }}
         />
@@ -863,7 +927,7 @@ export default function TalentList() {
 
       {/* 打印导出容器：仅在打印时显示 */}
       {printData && (
-        <div className="export-print-area" dangerouslySetInnerHTML={{ __html: buildExportHtml(printData) }} />
+        <div className="export-print-area" dangerouslySetInnerHTML={{ __html: buildExportHtml(printData, buildExportColumns()) }} />
       )}
 
       {/* 导入弹窗（上传 → 逐份核对 → 保存即写入人才库） */}

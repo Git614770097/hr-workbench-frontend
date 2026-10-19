@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Modal, Upload, Button, Alert, message, Typography, Select,
+  Modal, Upload, Button, Alert, message, Typography, Select, Switch,
 } from "antd";
 import { InboxOutlined } from "@ant-design/icons";
 import { api } from "../api";
@@ -30,6 +30,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   // 本批来源渠道：整批统一选一次（用户拍定），保存每条时注入 source。
   // 不选也不阻断——漏斗页「渠道效果」会提示未记录占比过高。
   const [batchSource, setBatchSource] = useState<string | undefined>(undefined);
+  // 自动去重开关：默认开。开启后录入时按「手机号 / 姓名+现居城市」判重，命中的跳过不重复入库
+  const [dedup, setDedup] = useState(true);
   const parsingRef = useRef(false);
   // 多文件选择的缓冲：beforeUpload 对每个文件同步调用一次，先用队列收齐，再统一解析
   const pendingFilesRef = useRef<File[]>([]);
@@ -60,6 +62,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     pendingFilesRef.current = [];
     // 来源渠道每次打开都重置：宁可多选一次，也不能把上一批的渠道错标到新一批
     setBatchSource(undefined);
+    // 自动去重默认开：避免用户误点「全部确认」把已入库的人重复写入
+    setDedup(true);
   }, [open]);
 
   const handleFiles = async (files: File[]) => {
@@ -80,13 +84,15 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         setReviewKey((cur) => cur ?? parsed[0].key);
       }
       // 兜底提示：关键字段（姓名/手机号）未识别出来时提醒用户手动确认
-      const missingName = parsed.filter((r) => !r.name).length;
+      const missingNameRecs = parsed.filter((r) => !r.name);
+      const missingName = missingNameRecs.length;
+      const missingNameFiles = missingNameRecs.map((r) => r.fileName);
       const missingPhone = parsed.filter((r) => !r.phone).length;
       const aiCount = parsed.filter((r) => r._ai).length;
       const localCount = parsed.length - aiCount;
       const missing: string[] = [];
-      if (missingName > 0) missing.push(`${missingName} 条缺少姓名`);
-      if (missingPhone > 0) missing.push(`${missingPhone} 条缺少手机号`);
+      if (missingName > 0) missing.push(`${missingName} 份缺少姓名（${missingNameFiles.join("、")}）`);
+      if (missingPhone > 0) missing.push(`${missingPhone} 份缺少手机号`);
       const srcNote = `AI ${aiCount} 份 / 本地规则 ${localCount} 份`;
       if (missing.length > 0) {
         message.warning(`已解析 ${parsed.length} 份简历（${srcNote}），其中 ${missing.join("、")}（已置空并标黄），请逐份核对补充后再录入`, 6);
@@ -125,7 +131,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   const saveRecord = async (rec: ParsedTalent) => {
     // 注入本批统一选择的来源渠道（未选则 undefined，落库为 null）
     const data = { ...recordToData(rec), source: batchSource || undefined };
-    const res = await api.importTalents([data]);
+    // dedup=true 时后端判重，命中则跳过不插入（created 为空、skipped 有值）
+    const res = await api.importTalents([data], { dedup });
     const created = res.items?.[0];
     if (created && rec.file) {
       try {
@@ -135,6 +142,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         message.warning("简历文件保存失败，可稍后在人才详情页重新上传");
       }
     }
+    return { created, skipped: res.skipped?.[0] };
   };
 
   // 处理完当前记录后自动切到下一份；全部处理完则刷新列表并关闭导入弹窗
@@ -164,7 +172,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       return;
     }
     // 手机号查重：命中已有记录时先让用户确认，避免同一个人重复入库
-    if (rec.phone.trim()) {
+    // 开启「自动去重」时交给后端判重并直接跳过，这里不再弹确认框
+    if (!dedup && rec.phone.trim()) {
       try {
         const dup = await api.getTalents({ phone: rec.phone.trim(), page: 1, limit: 5 });
         const hit = dup.items.find((t) => (t.phone || "") === rec.phone.trim());
@@ -192,11 +201,16 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setSavingOne(true);
     setError("");
     try {
-      await saveRecord(rec);
-      savedCount.current += 1;
-      // 每录一份就刷新一次人才库列表，而不是等全部处理完
-      onSuccess();
-      message.success(termFor(profile, `已录入「${rec.name || rec.fileName || "未命名"}」（第 ${reviewIndex + 1}/${records.length} 份），人才库列表已更新`));
+      const { created, skipped } = await saveRecord(rec);
+      if (!created && skipped) {
+        // 后端判重后跳过，未写入人才库
+        message.info(termFor(profile, `「${rec.name || rec.fileName || "未命名"}」已存在，已跳过`));
+      } else {
+        savedCount.current += 1;
+        // 每录一份就刷新一次人才库列表，而不是等全部处理完
+        onSuccess();
+        message.success(termFor(profile, `已录入「${rec.name || rec.fileName || "未命名"}」（第 ${reviewIndex + 1}/${records.length} 份），人才库列表已更新`));
+      }
       advanceReview(rec.key);
     } catch (err) {
       // 错误 Alert 在上传弹窗里，核对弹窗盖住时用户根本看不到；
@@ -216,11 +230,14 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   };
 
   // 全部确认：把当前队列里剩下的记录一次性录入，不再逐份点「保存并录入」。
-  // 解析结果可信时（批量同渠道导入）用这个最省事；注意跳过逐条手机号查重，
-  // 否则每份都弹一次确认框，批量就失去意义了。
+  // 解析结果可信时（批量同渠道导入）用这个最省事。
+  // 去重交给后端：开关打开时后端按「手机号 / 姓名+现居城市」判重并跳过，
+  // 这样即使误点这里，也不会把已入库的人重复写入。
   const handleConfirmAll = async () => {
     const list = records.filter((r) => r.name.trim());
-    const skipNoName = records.length - list.length;
+    const noName = records.filter((r) => !r.name.trim());
+    const skipNoName = noName.length;
+    const skipFiles = noName.map((r) => r.fileName);
     if (list.length === 0) {
       message.error("没有可录入的记录：解析结果缺少姓名，请先补填");
       return;
@@ -229,13 +246,18 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setError("");
     let ok = 0;
     const failed: string[] = [];
+    const dupNames: string[] = [];
     setBatchProgress({ current: 0, total: list.length });
     for (let i = 0; i < list.length; i++) {
       setBatchProgress({ current: i + 1, total: list.length });
       try {
-        await saveRecord(list[i]);
-        savedCount.current += 1;
-        ok += 1;
+        const { created, skipped } = await saveRecord(list[i]);
+        if (!created && skipped) {
+          dupNames.push(list[i].name || list[i].fileName || "未命名");
+        } else {
+          savedCount.current += 1;
+          ok += 1;
+        }
       } catch (err) {
         failed.push(list[i].name || list[i].fileName || "未命名");
       }
@@ -243,10 +265,14 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setBatchProgress(null);
     setSavingOne(false);
     onSuccess();
-    if (failed.length === 0) {
-      message.success(`已批量录入 ${ok} 份${skipNoName > 0 ? `，${skipNoName} 份因缺少姓名已跳过` : ""}`);
+    const notes = [`已录入 ${ok} 份`];
+    if (dupNames.length > 0) notes.push(`已跳过重复 ${dupNames.length} 份`);
+    if (skipNoName > 0) notes.push(`${skipNoName} 份因缺少姓名已跳过（${skipFiles.join("、")}）`);
+    const summary = notes.join("，");
+    if (failed.length > 0) {
+      message.warning(`${summary}，${failed.length} 份失败：${failed.slice(0, 3).join("、")}${failed.length > 3 ? " 等" : ""}`);
     } else {
-      message.warning(`已录入 ${ok} 份，${failed.length} 份失败：${failed.slice(0, 3).join("、")}${failed.length > 3 ? " 等" : ""}`);
+      message.success(summary);
     }
     setRecords([]);
     setReviewKey(null);
@@ -299,6 +325,14 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
           onChange={setBatchSource}
           options={sources.map((s) => ({ label: s, value: s }))}
         />
+      </div>
+
+      {/* 自动去重：默认开。开启后录入时按「手机号 / 姓名+现居城市」判重，命中的跳过，避免重复入库 */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <Switch checked={dedup} onChange={setDedup} size="small" />
+        <Typography.Text type="secondary">
+          自动跳过已存在的人才（按手机号 / 姓名+现居城市判重）
+        </Typography.Text>
       </div>
 
       <Dragger accept=".pdf,.docx" multiple showUploadList={false} disabled={parsing} beforeUpload={handleBeforeUpload}>

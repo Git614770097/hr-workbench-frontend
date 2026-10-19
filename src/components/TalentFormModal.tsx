@@ -66,6 +66,18 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
   const handleSubmit = async (values: any) => {
     setSaving(true);
     try {
+      // 手机号去重：按手机号查是否已存在（编辑时排除自己），撞到则拦截提交
+      const phone = (values.phone || "").trim();
+      if (phone) {
+        const dup = await api.getTalents({ phone, limit: 50 });
+        const hit = (dup.items || []).find((t) => t.id !== (talentId || ""));
+        if (hit) {
+          message.error(`手机号 ${phone} 已存在于「${hit.name}」档案中，请勿重复录入`);
+          setSaving(false);
+          return;
+        }
+      }
+
       const data = {
         ...values,
         years_experience: values.years_experience ?? undefined,
@@ -120,10 +132,10 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
             <Form.Item name="name" label="姓名" rules={[{ required: true, message: "请输入姓名" }]}>
               <Input placeholder="请输入姓名" />
             </Form.Item>
-            <Form.Item name="phone" label="电话">
-              <Input placeholder="请输入手机号" />
+            <Form.Item name="phone" label="电话" rules={[{ pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" }]}>
+              <Input placeholder="请输入手机号" maxLength={11} />
             </Form.Item>
-            <Form.Item name="email" label="邮箱">
+            <Form.Item name="email" label="邮箱" rules={[{ type: "email", message: "邮箱格式不正确" }]}>
               <Input placeholder="请输入邮箱" />
             </Form.Item>
             <Form.Item name="age" label="年龄">

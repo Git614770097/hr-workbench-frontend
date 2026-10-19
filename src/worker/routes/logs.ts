@@ -20,7 +20,7 @@ import { genId } from "../helpers";
 // 不在表内的上报一律丢弃，避免有人往库里灌垃圾 key。
 const USAGE_MENUS = [
   "tasks", "jobs", "pipeline", "interviews", "funnel", "talents", "profiles",
-  "contracts", "social", "templates", "roles", "users", "settings", "logs", "help",
+  "contracts", "social", "background", "templates", "roles", "users", "settings", "logs", "help", "team",
 ] as const;
 
 const MAX_EVENTS_PER_REPORT = 50;

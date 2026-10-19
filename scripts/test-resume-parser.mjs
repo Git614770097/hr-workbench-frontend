@@ -154,6 +154,76 @@ eq("城市=2013", S.sanitizeField("city", "2013"), "");
 eq("技能清洗", S.sanitizeSkills(["Java", "2013", "熟悉", "", "MySQL"]), ["Java", "MySQL"]);
 
 // ---------------------------------------------------------------------------
+console.log("\n[5] 英文简历解析（姓名 / 性别 / 出生日期 / 年龄）");
+// ---------------------------------------------------------------------------
+const EN_RESUME = `John Smith
+john.smith@example.com
++1 555 123 4567
+
+Gender: Male
+Date of Birth: May 5, 1990
+
+Experience
+2020 - Present  Acme Corp  Senior Engineer
+`;
+eq("英文名（抬头独立行）", P.extractName(EN_RESUME), "John Smith");
+eq("英文性别 → 男", P.extractGender(EN_RESUME), "男");
+eq("英文出生日期 → 1990-05-05", P.extractBirthDate(EN_RESUME), "1990-05-05");
+{
+  const age = P.extractAge(EN_RESUME);
+  eq("英文出生日期能算出年龄(33~37)", age >= 33 && age <= 37, true);
+}
+
+const EN_RESUME2 = `Name: Jane Doe
+jane.doe@company.com
+Sex: Female
+Date of Birth: 5 May 1988
+`;
+eq("英文名（Name: 标签）", P.extractName(EN_RESUME2), "Jane Doe");
+eq("英文性别 Sex:Female → 女", P.extractGender(EN_RESUME2), "女");
+eq("英文出生日期 DD Mon YYYY → 1988-05-05", P.extractBirthDate(EN_RESUME2), "1988-05-05");
+
+// 邮箱本地名兜底（无 Name 标签、无抬头姓名行时）
+const EN_EMAIL_ONLY = `jane.doe@company.com
+Senior Engineer`;
+eq("邮箱本地名推断姓名", P.extractName(EN_EMAIL_ONLY), "Jane Doe");
+
+// 章节标题行不能是姓名（Contact Information 在 EN_NAME_STOP 里）
+const EN_SECTION = `Contact Information
+John Smith
+john@example.com`;
+eq("章节标题行不算姓名", P.extractName(EN_SECTION), "John Smith");
+
+// 性别归一化（AI 与本地共用）
+eq("normalizeGender Male", P.normalizeGender("Male"), "男");
+eq("normalizeGender female", P.normalizeGender("female"), "女");
+eq("normalizeGender M", P.normalizeGender("M"), "男");
+eq("normalizeGender F", P.normalizeGender("F"), "女");
+eq("normalizeGender 男", P.normalizeGender("男"), "男");
+
+// 英文姓名校验（sanitizeField 必须放行英文名，且仍是中文名的放行）
+eq("姓名=英文名", S.sanitizeField("name", "John Smith"), "John Smith");
+eq("姓名=中文名仍放行", S.sanitizeField("name", "张伟"), "张伟");
+eq("姓名=单段英文(技能词) 应清空", S.sanitizeField("name", "Java"), "");
+
+// ---------------------------------------------------------------------------
+console.log("\n[6] 出生日期多种写法（含中文无日 / 斜杠）");
+// ---------------------------------------------------------------------------
+eq("中文出生年月 无日 → 1990-05-01", P.extractBirthDate("出生年月：1990年5月"), "1990-05-01");
+eq("中文 1990年05月12日", P.extractBirthDate("出生：1990年05月12日"), "1990-05-12");
+eq("ISO 1990-05-12", P.extractBirthDate("Date of Birth: 1990-05-12"), "1990-05-12");
+eq("斜杠 20/12/1990（首数>12 → 日/月）", P.extractBirthDate("DOB: 20/12/1990"), "1990-12-20");
+{
+  const age = P.extractAge("生日 1985-03-08");
+  eq("中文出生日期能算出年龄(38~42)", age >= 38 && age <= 42, true);
+}
+
+// 回归：只有工作起止年份、无生日 → 不能误算出年龄（避免抓到工作年份）
+const WORK_ONLY = `工作经历
+2018.09-2022.06  XX科技有限公司  工程师`;
+eq("仅工作年份不算年龄", P.extractAge(WORK_ONLY), null);
+
+// ---------------------------------------------------------------------------
 rmSync(outDir, { recursive: true, force: true });
 
 console.log(`\n通过 ${pass}，失败 ${failures.length}`);

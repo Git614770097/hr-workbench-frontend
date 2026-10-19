@@ -15,7 +15,7 @@ export default function Requisitions() {
   return (
     <div className="page-fill profiles-page">
       <Card className="list-card">
-        {/* 招聘需求独立成页：用人部门提需求 → HR 审批 → 一键转正式岗位。
+        {/* 招聘需求独立成页：用人部门提需求 → 一键转正式岗位（无审批）。
             岗位管理页的「提交招聘需求」按钮会跳转到这里（两个模块通过导航互链）。 */}
         <RequisitionPanel isAdmin={isAdmin} />
       </Card>

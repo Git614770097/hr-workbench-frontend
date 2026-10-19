@@ -16,9 +16,10 @@ import { taskRoutes } from "./routes/tasks";
 import aiParseRoutes from "./routes/aiParse";
 import matchRoutes from "./routes/match";
 import aiAssistRoutes from "./routes/aiAssist";
-import demoRoutes from "./routes/demo";
+import teamRoutes from "./routes/team";
 import { overview } from "./routes/overview";
 import logsRoutes, { purgeOldUsage } from "./routes/logs";
+import { backgroundRoutes } from "./routes/background";
 import { parsePermissions } from "./permissions";
 import { runReminders, freezeExpiredAccounts } from "./reminders";
 import { sessionGet } from "./kv";
@@ -179,6 +180,20 @@ for (const p of ["/api/requisitions", "/api/approvals", "/api/onboarding"]) {
     return next();
   });
 }
+
+// 候选人背调中心：独立菜单权限（background）
+for (const p of ["/api/background"]) {
+  app.use(`${p}/*`, async (c, next) => {
+    const blocked = await menuGuard(c, "background");
+    if (blocked) return blocked;
+    return next();
+  });
+  app.use(p, async (c, next) => {
+    const blocked = await menuGuard(c, "background");
+    if (blocked) return blocked;
+    return next();
+  });
+}
 // 招聘漏斗：与「招聘看板」同源数据，但页面是独立菜单。
 // 只统计、不修改数据，因此不额外要求 funnel 权限 ——
 // 有 pipeline 权限即可查看（避免存量角色看不到数据）。
@@ -222,6 +237,17 @@ app.use("/api/match", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
+// 团队管理：admin / manager 可用（manager 在路由内部再限定本团队）。
+// 注意："/api/team/*" 同时匹配裸 /api/team，无需再注册一份（会叠加执行）。
+app.use("/api/team/*", async (c, next) => {
+  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  const sessionRaw = token ? await sessionGet(c.env, token) : null;
+  if (!sessionRaw) return c.json({ error: "未登录" }, 401);
+  let session: { role: string };
+  try { session = JSON.parse(sessionRaw); } catch { return c.json({ error: "未登录" }, 401); }
+  if (session.role !== "admin" && session.role !== "manager") return c.json({ error: "无权限，仅管理员可操作" }, 403);
+  return next();
+});
 // 角色管理仅 admin（roles 路由内部已校验 admin，这里也拦一层双保险）
 app.use("/api/roles/*", async (c, next) => {
   const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
@@ -247,11 +273,19 @@ app.use("/api/ai/*", async (c, next) => {
         ? "jobs" // JD 起草/优化与岗位诊断：岗位管理语义，跟随 jobs 权限
       : p.startsWith("/api/ai/talent-inventory")
         ? "talents" // AI 人才储备盘点：人才库语义，跟随 talents 权限
-        : p.startsWith("/api/ai/recap-report") || p.startsWith("/api/ai/next-step") || p.startsWith("/api/ai/approval-summary") || p.startsWith("/api/ai/onboard-checklist")
-          ? "pipeline" // AI 招聘复盘 / 看板建议 / 审批摘要 / 入职清单：招聘链路语义，跟随 pipeline 权限
-          : p.startsWith("/api/ai/today-focus")
-            ? "tasks" // AI 今日重点：待办日历语义，跟随 tasks 权限
-            : "interviews";
+        : p.startsWith("/api/ai/recap-report") || p.startsWith("/api/ai/next-step") || p.startsWith("/api/ai/approval-summary") || p.startsWith("/api/ai/onboard-checklist") || p.startsWith("/api/ai/weekly-report")
+          ? "pipeline" // AI 招聘复盘 / 看板建议 / 审批摘要 / 入职清单 / 招聘周报：招聘链路语义，跟随 pipeline 权限
+      : p.startsWith("/api/ai/today-focus")
+        ? "tasks" // AI 今日重点：待办日历语义，跟随 tasks 权限
+        : p.startsWith("/api/ai/candidate-compare") || p.startsWith("/api/ai/offer-negotiation") || p.startsWith("/api/ai/sourcing-copy")
+          ? "talents" // 候选人对比 / Offer 谈判话术 / 被动人才触达：人才库语义，跟随 talents 权限
+          : p.startsWith("/api/ai/channel-advice")
+            ? "jobs" // 招聘渠道建议：岗位管理语义，跟随 jobs 权限
+            : p.startsWith("/api/ai/contract-review") || p.startsWith("/api/ai/probation-compliance")
+              ? "contracts" // 合同风险审查 / 试用期合规：合同管理语义，跟随 contracts 权限
+              : p.startsWith("/api/ai/social-reminder") || p.startsWith("/api/ai/tax-plan")
+                ? "social" // 社保增减员提醒 / 个税筹划：社保公积金语义，跟随 social 权限
+                : "interviews";
   const blocked = await menuGuard(c, menuKey);
   if (blocked) return blocked;
   return next();
@@ -273,12 +307,13 @@ app.route("/api/tasks", taskRoutes);
 app.route("/api/parse-resume", aiParseRoutes);
 app.route("/api/match", matchRoutes);
 app.route("/api/ai", aiAssistRoutes);
-app.route("/api/demo", demoRoutes);
+app.route("/api/team", teamRoutes);
 app.route("/api/overview", overview);
 // 使用日志（模块点击率）：鉴权在 logs.ts 内部按方法分流——
 // POST /report 任何登录用户可上报（否则统计只覆盖管理员），GET 查询仅 admin。
 // 因此这里**不能**挂 menuGuard：那会把普通用户的上报一并拦掉。
 app.route("/api/logs", logsRoutes);
+app.route("/api/background", backgroundRoutes);
 
 // ---- Health check ----
 app.get("/api/health", (c) =>

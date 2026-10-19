@@ -28,6 +28,71 @@ export function extractJson(text: string): Record<string, unknown> | null {
   return null;
 }
 
+/** AI 调用的 token 用量（DeepSeek usage 字段） */
+export interface AiUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+/**
+ * 调 DeepSeek chat/completions 并取回 JSON 对象 + token 用量。
+ * 约定用 response_format=json_object，但仍走 extractJson 兜底（模型偶尔会带围栏）。
+ * 60s 超时：AI 接口耗时较长，但超时后必须中断，避免前端永久挂起。
+ * 失败/无内容/解析不出 JSON 时返回 null（调用方降级），不抛错。
+ */
+export async function deepseekJsonWithUsage(
+  apiKey: string,
+  system: string,
+  user: string,
+  opts: { temperature?: number; maxTokens?: number } = {}
+): Promise<{ data: Record<string, unknown>; usage: AiUsage | null } | null> {
+  try {
+    const resp = await fetch("https://api.deepseek.com/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        temperature: opts.temperature ?? 0,
+        ...(opts.maxTokens ? { max_tokens: opts.maxTokens } : {}),
+        response_format: { type: "json_object" },
+      }),
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    if (!resp.ok) return null;
+
+    const data = (await resp.json()) as {
+      choices?: { message?: { content?: string } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    };
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) return null;
+    const parsed = extractJson(content);
+    if (!parsed) return null;
+
+    const u = data.usage;
+    const usage: AiUsage | null =
+      u && typeof u.total_tokens === "number"
+        ? {
+            prompt_tokens: Number(u.prompt_tokens) || 0,
+            completion_tokens: Number(u.completion_tokens) || 0,
+            total_tokens: Number(u.total_tokens) || 0,
+          }
+        : null;
+    return { data: parsed, usage };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 调 DeepSeek chat/completions 并取回 JSON 对象。
  * 约定用 response_format=json_object，但仍走 extractJson 兜底（模型偶尔会带围栏）。

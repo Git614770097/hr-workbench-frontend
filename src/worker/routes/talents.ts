@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { ownerScope, scopeConds, scopeParams } from "../scope";
 import { genId } from "../helpers";
 import { STAGES, syncTalentStage } from "./pipeline";
 import { deepseekJson } from "../ai";
@@ -203,8 +204,8 @@ talents.get("/", async (c) => {
   if (session.role === "admin") {
     if (ownerId) { conditions.push("t.owner_id = ?"); params.push(ownerId); }
   } else {
-    conditions.push("t.owner_id = ?");
-    params.push(session.userId);
+    conditions.push(...scopeConds(session, "t.owner_id"));
+    params.push(...scopeParams(session));
   }
 
   if (q) {
@@ -261,8 +262,21 @@ talents.get("/", async (c) => {
 
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
+  // 列表排序：白名单字段，避免 SQL 注入；order 仅接受 asc/desc
+  const sortWhitelist: Record<string, string> = {
+    name: "t.name",
+    age: "t.age",
+    years_experience: "t.years_experience",
+    created_at: "t.created_at",
+    updated_at: "t.updated_at",
+  };
+  const sortParam = c.req.query("sort");
+  const orderParam = (c.req.query("order") || "desc").toLowerCase();
+  const orderSql = orderParam === "asc" ? "ASC" : "DESC";
+  const orderBy = sortWhitelist[sortParam || ""] ? `${sortWhitelist[sortParam || ""]} ${orderSql}` : "t.updated_at DESC";
+
   const countResult = await c.env.DB.prepare(`SELECT COUNT(*) as total FROM talents t ${where}`).bind(...params).first<{ total: number }>();
-  const rows = await c.env.DB.prepare(`SELECT t.*, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id ${where} ORDER BY t.updated_at DESC LIMIT ? OFFSET ?`).bind(...params, limit, offset).all();
+  const rows = await c.env.DB.prepare(`SELECT t.*, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`).bind(...params, limit, offset).all();
 
   const items = rows.results.map((r: any) => ({
     ...r, skills: r.skills ? JSON.parse(r.skills) : [], tags: r.tags ? JSON.parse(r.tags) : [],
@@ -277,9 +291,10 @@ talents.get("/compliance", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
 
-  // 两个 SELECT 各自做 owner 隔离（UNION ALL 前后各绑定一次）
-  const ownerCond = session.role !== "admin" ? " AND t.owner_id = ?" : "";
-  const params: string[] = session.role !== "admin" ? [session.userId, session.userId] : [];
+  // 两个 SELECT 各自做数据范围隔离（UNION ALL 前后各绑定一次）
+  const sc = ownerScope(session, "t.owner_id");
+  const ownerCond = sc.sql;
+  const params: string[] = [...sc.params, ...sc.params];
 
   const sql = `
     SELECT t.id AS talent_id, t.name, t.contract_end AS due_date,
@@ -312,7 +327,9 @@ talents.get("/contracts", async (c) => {
   const q = (c.req.query("q") || "").trim();
   let sql = `SELECT id, name, phone, email, status, contract_end, probation_end FROM talents WHERE (contract_end IS NOT NULL OR probation_end IS NOT NULL)`;
   const params: string[] = [];
-  if (session.role !== "admin") { sql += ` AND owner_id = ?`; params.push(session.userId); }
+  const sc0 = ownerScope(session);
+  sql += sc0.sql;
+  params.push(...sc0.params);
   if (q) { sql += ` AND name LIKE ?`; params.push(`%${q}%`); }
   sql += ` ORDER BY COALESCE(contract_end, probation_end) IS NULL, COALESCE(contract_end, probation_end) ASC LIMIT 500`;
 
@@ -326,11 +343,10 @@ talents.post("/contracts/sync-tasks", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
 
-  const ownerCond = session.role !== "admin" ? " AND owner_id = ?" : "";
-  const ownerParams: string[] = session.role !== "admin" ? [session.userId] : [];
+  const scSync = ownerScope(session);
   const talentsRows = (await c.env.DB.prepare(
-    `SELECT id, owner_id, name, contract_end, probation_end FROM talents WHERE (contract_end IS NOT NULL OR probation_end IS NOT NULL)${ownerCond} LIMIT 500`
-  ).bind(...ownerParams).all<TalentContractRow>()).results;
+    `SELECT id, owner_id, name, contract_end, probation_end FROM talents WHERE (contract_end IS NOT NULL OR probation_end IS NOT NULL)${scSync.sql} LIMIT 500`
+  ).bind(...scSync.params).all<TalentContractRow>()).results;
   if (!talentsRows.length) return c.json({ checked: 0, created: 0, updated: 0, cancelled: 0 });
 
   const ids = talentsRows.map((t) => t.id);
@@ -403,7 +419,7 @@ talents.post("/contracts/files", async (c) => {
   // 权限检查 + 取人才姓名
   let checkSql = "SELECT id, owner_id, name FROM talents WHERE id = ?";
   const checkParams: string[] = [talentId];
-  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
   const talent = await c.env.DB.prepare(checkSql).bind(...checkParams).first<{ id: string; owner_id: string; name: string }>();
   if (!talent) return c.json({ error: "人才不存在" }, 404);
 
@@ -468,7 +484,7 @@ talents.get("/contracts/files", async (c) => {
 
   let sql = `SELECT id, talent_id, filename, mime, size, extracted_contract_end, extracted_probation_end, applied, created_at FROM contract_files WHERE talent_id = ?`;
   const params: string[] = [talentId];
-  if (session.role !== "admin") { sql += ` AND owner_id = ?`; params.push(session.userId); }
+  { const sc = ownerScope(session); sql += sc.sql; params.push(...sc.params); }
   sql += ` ORDER BY created_at DESC LIMIT 50`;
 
   const rows = (await c.env.DB.prepare(sql).bind(...params).all<ContractFileRow>()).results;
@@ -486,7 +502,7 @@ talents.get("/contracts/files/:id/file", async (c) => {
   const id = c.req.param("id");
   let sql = "SELECT id, filename, mime, kv_key, owner_id FROM contract_files WHERE id = ?";
   const params: string[] = [id];
-  if (session.role !== "admin") { sql += " AND owner_id = ?"; params.push(session.userId); }
+  { const sc = ownerScope(session); sql += sc.sql; params.push(...sc.params); }
   const row = await c.env.DB.prepare(sql).bind(...params).first<{ filename: string; mime: string; kv_key: string }>();
   if (!row) return c.json({ error: "合同文件不存在" }, 404);
 
@@ -511,7 +527,7 @@ talents.delete("/contracts/files/:id", async (c) => {
   const id = c.req.param("id");
   let sql = "SELECT id, kv_key FROM contract_files WHERE id = ?";
   const params: string[] = [id];
-  if (session.role !== "admin") { sql += " AND owner_id = ?"; params.push(session.userId); }
+  { const sc = ownerScope(session); sql += sc.sql; params.push(...sc.params); }
   const row = await c.env.DB.prepare(sql).bind(...params).first<{ id: string; kv_key: string }>();
   if (!row) return c.json({ error: "合同文件不存在" }, 404);
 
@@ -535,7 +551,7 @@ talents.get("/social", async (c) => {
       FROM talents t LEFT JOIN talent_social s ON s.talent_id = t.id
      WHERE (t.status = 'placed' OR t.hire_date IS NOT NULL OR t.resignation_date IS NOT NULL OR s.id IS NOT NULL)`;
   const params: string[] = [];
-  if (session.role !== "admin") { sql += ` AND t.owner_id = ?`; params.push(session.userId); }
+  { const sc = ownerScope(session, "t.owner_id"); sql += sc.sql; params.push(...sc.params); }
   if (q) { sql += ` AND t.name LIKE ?`; params.push(`%${q}%`); }
   sql += ` LIMIT 500`;
 
@@ -551,7 +567,7 @@ talents.put("/social/:talentId", async (c) => {
   const talentId = c.req.param("talentId");
   let checkSql = "SELECT id FROM talents WHERE id = ?";
   const checkParams: string[] = [talentId];
-  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
   const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first();
   if (!existing) return c.json({ error: "人才不存在" }, 404);
 
@@ -585,14 +601,13 @@ talents.post("/social/sync-tasks", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
 
-  const ownerCond = session.role !== "admin" ? " AND t.owner_id = ?" : "";
-  const ownerParams: string[] = session.role !== "admin" ? [session.userId] : [];
+  const scSoc = ownerScope(session, "t.owner_id");
   const talentsRows = (await c.env.DB.prepare(
     `SELECT t.id, t.owner_id, t.name, t.status, t.hire_date, t.resignation_date, s.si_status
        FROM talents t LEFT JOIN talent_social s ON s.talent_id = t.id
-      WHERE (t.status = 'placed' OR t.hire_date IS NOT NULL OR t.resignation_date IS NOT NULL OR s.id IS NOT NULL)${ownerCond}
+      WHERE (t.status = 'placed' OR t.hire_date IS NOT NULL OR t.resignation_date IS NOT NULL OR s.id IS NOT NULL)${scSoc.sql}
       LIMIT 500`
-  ).bind(...ownerParams).all<SocialTalentRow>()).results;
+  ).bind(...scSoc.params).all<SocialTalentRow>()).results;
   if (!talentsRows.length) return c.json({ checked: 0, created: 0, updated: 0, cancelled: 0 });
 
   const ids = talentsRows.map((t) => t.id);
@@ -622,12 +637,16 @@ talents.get("/social/rates", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
 
+  // 系统参考值全员可读；自己的/同队成员的覆盖值也可见（OR 连接，注意括号防 AND 优先级吞掉 system 行）
+  const scRates = ownerScope(session);
+  const scopePart = session.role === "admin" ? " OR owner_id = ?" : scRates.sql.replace(/^ AND /, " OR ");
+  const scopeBind = session.role === "admin" ? [session.userId] : scRates.params;
   const rows = (await c.env.DB.prepare(
     `SELECT id, owner_id, city, si_rate_personal, si_rate_company, hf_rate_personal, hf_rate_company
        FROM social_rate_templates
-      WHERE owner_id = 'system' OR owner_id = ?
+      WHERE (owner_id = 'system'${scopePart})
       ORDER BY city, CASE WHEN owner_id = 'system' THEN 1 ELSE 0 END`
-  ).bind(session.userId).all<any>()).results || [];
+  ).bind(...scopeBind).all<any>()).results || [];
 
   // 同城去重：自己的排在系统参考值前面（上面的 ORDER BY 已保证），保留第一条
   const seen = new Set<string>();
@@ -698,8 +717,9 @@ talents.post("/batch/tags", async (c) => {
   const mode = body.mode === "add" ? "add" : "replace";
 
   const ph = ids.map(() => "?").join(",");
-  const rows = await c.env.DB.prepare(`SELECT id, owner_id, tags FROM talents WHERE id IN (${ph})`).bind(...ids).all<any>();
-  const targets = (rows.results as any[]).filter((r) => session.role === "admin" || r.owner_id === session.userId);
+  const scTags = ownerScope(session);
+  const rows = await c.env.DB.prepare(`SELECT id, owner_id, tags FROM talents WHERE id IN (${ph})${scTags.sql}`).bind(...ids, ...scTags.params).all<any>();
+  const targets = rows.results as any[];
   const stmts = targets.map((r) => {
     const cur = r.tags ? JSON.parse(r.tags) : [];
     const next = mode === "add" ? [...new Set([...cur, ...tags])] : tags;
@@ -723,21 +743,36 @@ talents.post("/batch/delete", async (c) => {
   for (const id of ids) {
     let checkSql = "SELECT id, resume_url FROM talents WHERE id = ?";
     const checkParams: string[] = [id];
-    if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+    { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
     const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first<{ id: string; resume_url: string | null }>();
     if (!existing) continue;
-    if (existing.resume_url) await c.env.RESUMES.delete(existing.resume_url);
-    const contractFileKeys = (await c.env.DB.prepare("SELECT kv_key FROM contract_files WHERE talent_id = ?").bind(id).all<{ kv_key: string }>()).results;
-    for (const f of contractFileKeys) await c.env.RESUMES.delete(f.kv_key);
-    await c.env.DB.batch([
-      c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(id),
-      c.env.DB.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(id),
-      c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id),
-    ]);
+    // KV 清理失败不应阻断数据库删除
+    try {
+      if (existing.resume_url) await c.env.RESUMES.delete(existing.resume_url);
+      const contractFileKeys = (await c.env.DB.prepare("SELECT kv_key FROM contract_files WHERE talent_id = ?").bind(id).all<{ kv_key: string }>()).results;
+      for (const f of contractFileKeys) await c.env.RESUMES.delete(f.kv_key);
+    } catch {
+      // 忽略 KV 清理异常
+    }
+    try {
+      await c.env.DB.batch([
+        // 审批步骤是审批实例的子表，必须先于 approval_instances 删除
+        c.env.DB.prepare("DELETE FROM approval_steps WHERE instance_id IN (SELECT id FROM approval_instances WHERE talent_id = ?)").bind(id),
+        c.env.DB.prepare("DELETE FROM interviews WHERE talent_id = ?").bind(id),
+        c.env.DB.prepare("DELETE FROM approval_instances WHERE talent_id = ?").bind(id),
+        c.env.DB.prepare("DELETE FROM background_checks WHERE talent_id = ?").bind(id),
+        c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(id),
+        c.env.DB.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(id),
+        c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id),
+        c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),
+        c.env.DB.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(id),
+        c.env.DB.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(id),
+        c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id),
+      ]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return c.json({ error: `删除失败：${msg}（${id}）` }, 500);
+    }
     deleted++;
   }
   return c.json({ deleted });
@@ -757,11 +792,11 @@ talents.post("/batch/stage", async (c) => {
   if (ids.length > 200) return c.json({ error: "一次最多批量操作 200 人" }, 400);
 
   const ph = ids.map(() => "?").join(",");
-  const links = (await c.env.DB.prepare(
+  const scStage = ownerScope(session, "t.owner_id");
+  const allowed = (await c.env.DB.prepare(
     `SELECT tj.id, tj.stage as old_stage, tj.talent_id, tj.job_id, t.name as talent_name, t.owner_id
-     FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.talent_id IN (${ph})`
-  ).bind(...ids).all<any>()).results as any[];
-  const allowed = links.filter((r: any) => session.role === "admin" || r.owner_id === session.userId);
+     FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.talent_id IN (${ph})${scStage.sql}`
+  ).bind(...ids, ...scStage.params).all<any>()).results as any[];
   const talentIdsWithJob = [...new Set(allowed.map((r: any) => r.talent_id))];
   const skipped = ids.length - talentIdsWithJob.length;
 
@@ -818,7 +853,7 @@ talents.get("/:id", async (c) => {
   let taskSql =
     "SELECT k.*, k2.name as owner_name FROM talent_tasks k JOIN users k2 ON k.owner_id = k2.id WHERE k.talent_id = ? AND k.status != 'cancelled'";
   const taskParams: string[] = [id];
-  if (session.role !== "admin") { taskSql += " AND k.owner_id = ?"; taskParams.push(session.userId); }
+  { const sc = ownerScope(session, "k.owner_id"); taskSql += sc.sql; taskParams.push(...sc.params); }
   taskSql += " ORDER BY k.status = 'done' ASC, k.due_date IS NULL, k.due_date ASC LIMIT 50";
   const tasks = (await c.env.DB.prepare(taskSql).bind(...taskParams).all()).results;
 
@@ -843,6 +878,16 @@ talents.get("/:id", async (c) => {
     ).bind(id).all()
   ).results;
 
+  // 沟通记录：该人才的全部沟通（电话/微信/面试/邮件等），按时间倒序（最新在上）
+  const communications = (
+    await c.env.DB.prepare(
+      `SELECT c.id, c.type, c.content, c.rating, c.follow_up_date, c.created_at,
+              u.name as user_name
+         FROM communications c LEFT JOIN users u ON c.user_id = u.id
+        WHERE c.talent_id = ? ORDER BY c.created_at DESC`
+    ).bind(id).all()
+  ).results;
+
   return c.json({
     ...(row as any),
     skills: (row as any).skills ? JSON.parse((row as any).skills) : [],
@@ -850,6 +895,7 @@ talents.get("/:id", async (c) => {
     tasks,
     pipeline,
     stage_logs: stageLogs,
+    communications,
   });
 });
 
@@ -876,7 +922,7 @@ talents.put("/:id", async (c) => {
   const id = c.req.param("id");
   let checkSql = "SELECT id FROM talents WHERE id = ?";
   const checkParams: string[] = [id];
-  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
   const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first();
   if (!existing) return c.json({ error: "人才不存在" }, 404);
 
@@ -929,32 +975,47 @@ talents.delete("/:id", async (c) => {
   const id = c.req.param("id");
   let checkSql = "SELECT id, resume_url FROM talents WHERE id = ?";
   const checkParams: string[] = [id];
-  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
   const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first<{ id: string; resume_url: string | null }>();
   if (!existing) return c.json({ error: "人才不存在" }, 404);
 
-  // 顺带清理 KV 中的简历文件
-  if (existing.resume_url) await c.env.RESUMES.delete(existing.resume_url);
-
-  // 顺带清理 KV 中的合同文件本体（元数据在下面 batch 里删）
-  const contractFileKeys = (await c.env.DB.prepare(
-    "SELECT kv_key FROM contract_files WHERE talent_id = ?"
-  ).bind(id).all<{ kv_key: string }>()).results;
-  for (const f of contractFileKeys) await c.env.RESUMES.delete(f.kv_key);
+  // 顺带清理 KV 中的简历文件（KV 异常不应阻断数据库删除）
+  try {
+    if (existing.resume_url) await c.env.RESUMES.delete(existing.resume_url);
+    // 顺带清理 KV 中的合同文件本体（元数据在下面 batch 里删）
+    const contractFileKeys = (await c.env.DB.prepare(
+      "SELECT kv_key FROM contract_files WHERE talent_id = ?"
+    ).bind(id).all<{ kv_key: string }>()).results;
+    for (const f of contractFileKeys) await c.env.RESUMES.delete(f.kv_key);
+  } catch {
+    // KV 清理失败（如文件已不存在）忽略，继续删除数据库记录
+  }
 
   // 先清所有关联数据，再删人才本体。
-  // talents 被 talent_jobs / talent_tasks / communications 三张表外键引用，
-  // 顺序反了（或漏清某张表）会触发外键约束直接 500。
-  await c.env.DB.batch([
-    c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(id),
-    c.env.DB.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(id),
-    c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id),
-    // 待办属于用户，不静默删除，只解除与人才的关联
-    c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),
-    c.env.DB.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(id),
-    c.env.DB.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(id),
-    c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id),
-  ]);
+  // talents 被多张表外键引用，顺序反了（或漏清某张表）会触发外键约束直接 500。
+  // 这里显式清理所有可能引用 talents 的子表（含 approval_steps / interviews /
+  // approval_instances / background_checks），不依赖 ON DELETE CASCADE，
+  // 即使这些行的 talent_job_id 为空也能安全删除。
+  try {
+    await c.env.DB.batch([
+      // 审批步骤是审批实例的子表，必须先于 approval_instances 删除
+      c.env.DB.prepare("DELETE FROM approval_steps WHERE instance_id IN (SELECT id FROM approval_instances WHERE talent_id = ?)").bind(id),
+      c.env.DB.prepare("DELETE FROM interviews WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM approval_instances WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM background_checks WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(id),
+      c.env.DB.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM communications WHERE talent_id = ?").bind(id),
+      // 待办属于用户，不静默删除，只解除与人才的关联
+      c.env.DB.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(id),
+      c.env.DB.prepare("DELETE FROM talents WHERE id = ?").bind(id),
+    ]);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return c.json({ error: `删除失败：${msg}` }, 500);
+  }
   return c.json({ ok: true });
 });
 
@@ -966,7 +1027,7 @@ talents.delete("/:id/resume", async (c) => {
   const id = c.req.param("id");
   let checkSql = "SELECT id, resume_url FROM talents WHERE id = ?";
   const checkParams: string[] = [id];
-  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
   const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first<{ id: string; resume_url: string | null }>();
   if (!existing) return c.json({ error: "人才不存在" }, 404);
   if (!existing.resume_url) return c.json({ error: "无简历文件" }, 404);
@@ -990,7 +1051,7 @@ talents.post("/resume", async (c) => {
   // 权限检查
   let checkSql = "SELECT id FROM talents WHERE id = ?";
   const checkParams: string[] = [talentId];
-  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
   const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first();
   if (!existing) return c.json({ error: "人才不存在" }, 404);
 
@@ -1028,7 +1089,7 @@ talents.get("/:id/resume", async (c) => {
   const id = c.req.param("id");
   let sql = "SELECT resume_url, owner_id FROM talents WHERE id = ?";
   const params: string[] = [id];
-  if (session.role !== "admin") { sql += " AND owner_id = ?"; params.push(session.userId); }
+  { const sc = ownerScope(session); sql += sc.sql; params.push(...sc.params); }
   const row = await c.env.DB.prepare(sql).bind(...params).first<{ resume_url: string | null; owner_id: string }>();
   if (!row) return c.json({ error: "人才不存在" }, 404);
   if (!row.resume_url) return c.json({ error: "无简历文件" }, 404);
@@ -1053,17 +1114,50 @@ talents.post("/import", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const items = await c.req.json<any[]>();
+
+  // 自动去重开关：?dedup=1 时按「手机号」或「姓名+现居城市」判重，命中的跳过不插入。
+  // 判重范围与列表可见范围一致（admin 全量 / 同队 / 仅本人），避免误判他人数据。
+  const dedup = c.req.query("dedup") === "1";
+  const sc = ownerScope(session, "owner_id");
+
   let count = 0;
   const created: { id: string; name: string }[] = [];
+  const skipped: { name: string; existed_id: string }[] = [];
+  const seen = new Set<string>(); // 同一批内重复也跳过
+
   for (const item of items) {
+    const name = String(item.name || "").trim();
+    const phone = String(item.phone || "").replace(/\D/g, "");
+    const validPhone = /^1[3-9]\d{9}$/.test(phone);
+    const city = String(item.city || "").trim();
+
+    if (dedup && name) {
+      const key = validPhone ? `p:${phone}` : `n:${name}|${city}`;
+      let dup: { id: string } | null = null;
+      if (seen.has(key)) {
+        dup = { id: "" };
+      } else if (validPhone) {
+        dup = await c.env.DB.prepare(`SELECT id FROM talents WHERE phone = ?${sc.sql} LIMIT 1`)
+          .bind(phone, ...sc.params).first<{ id: string }>();
+      } else {
+        dup = await c.env.DB.prepare(`SELECT id FROM talents WHERE name = ? AND COALESCE(city,'') = ?${sc.sql} LIMIT 1`)
+          .bind(name, city, ...sc.params).first<{ id: string }>();
+      }
+      if (dup) {
+        skipped.push({ name, existed_id: dup.id });
+        continue;
+      }
+      seen.add(key);
+    }
+
     const id = genId();
     const skills = item.skills ? JSON.stringify(item.skills) : null;
     await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, major, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, entry_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, session.userId, item.name || "", item.phone || null, item.email || null, item.age ?? null, item.gender || null, item.education || null, item.school || null, item.major || null, item.current_company || null, item.current_title || null, item.years_experience || null, item.city || null, skills, item.industry || null, item.expected_salary || null, item.expected_city || null, item.status || "active", item.source || null, item.resume_url || null, item.notes || null, dateOrNull(item.birth_date), dateOrNull(item.contract_end), dateOrNull(item.probation_end), dateOrNull(item.resignation_date), normalizeEntryType(item.entry_type, "import")).run();
+      .bind(id, session.userId, name, item.phone || null, item.email || null, item.age ?? null, item.gender || null, item.education || null, item.school || null, item.major || null, item.current_company || null, item.current_title || null, item.years_experience || null, item.city || null, skills, item.industry || null, item.expected_salary || null, item.expected_city || null, item.status || "active", item.source || null, item.resume_url || null, item.notes || null, dateOrNull(item.birth_date), dateOrNull(item.contract_end), dateOrNull(item.probation_end), dateOrNull(item.resignation_date), normalizeEntryType(item.entry_type, "import")).run();
     count++;
-    created.push({ id, name: item.name || "" });
+    created.push({ id, name });
   }
-  return c.json({ imported: count, items: created });
+  return c.json({ imported: count, items: created, skipped });
 });
 
 export { talents as talentRoutes };

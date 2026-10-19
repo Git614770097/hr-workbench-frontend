@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card, Input, Select, Button, Tag, Typography, Modal, Form,
   message, Popconfirm, Tooltip, Table, Tabs, Alert, Progress,
 } from "antd";
 import {
   PlusOutlined, SearchOutlined, FileTextOutlined, ReloadOutlined, ThunderboltOutlined,
+  UploadOutlined, DownloadOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { DocTemplate, User } from "../types";
@@ -145,6 +146,86 @@ ${body}
     setTidyPreview(null);
   };
 
+  // ---- 批量导出：把当前筛选条件下的全部模板导出为 JSON 备份文件（可再导入恢复） ----
+  const [exportingAll, setExportingAll] = useState(false);
+  const handleExportAll = async () => {
+    setExportingAll(true);
+    try {
+      const all: DocTemplate[] = [];
+      let p = 1, pages = 1;
+      do {
+        const res = await api.getTemplates({ category: category || undefined, q: appliedKeyword || undefined, page: p, limit: 100 });
+        all.push(...res.items);
+        pages = res.pages || 1;
+        p += 1;
+      } while (p <= pages);
+      if (!all.length) {
+        message.warning("当前筛选条件下没有可导出的模板");
+        setExportingAll(false);
+        return;
+      }
+      const backup = {
+        app: "hr-talent-pool",
+        type: "doc-templates",
+        version: 1,
+        exported_at: new Date().toISOString(),
+        items: all.map(t => ({ name: t.name, category: t.category, content: t.content, scope: t.scope || "shared" })),
+      };
+      downloadBlob(
+        new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" }),
+        `模板库备份_${dateStamp()}.json`,
+      );
+      message.success(`已导出 ${all.length} 个模板（JSON 备份）`);
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+    setExportingAll(false);
+  };
+
+  // ---- 批量导入：从 JSON 备份文件恢复模板（重名跳过，失败列出原因） ----
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ open: boolean; created: number; skipped: number; failed: string[] }>({ open: false, created: 0, skipped: 0, failed: [] });
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleImportPick = () => fileInputRef.current?.click();
+  const handleImportFile = async (file: File) => {
+    setImporting(true);
+    const failed: string[] = [];
+    let created = 0, skipped = 0;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const items: any[] = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : null;
+      if (!items) throw new Error("文件格式不正确：应为模板库导出的 JSON 备份");
+
+      for (const it of items) {
+        const name = String(it?.name || "").trim();
+        const content = String(it?.content || "");
+        if (!name || !content.trim()) { failed.push(name || "（无名模板）"); continue; }
+        // 官方模板仅管理员可建，普通用户导入时降级为共享模板
+        const scope = it?.scope === "official" && !isAdmin ? "shared" : (it?.scope || "shared");
+        // 同名模板已存在则跳过，避免重复堆积
+        const dup = await api.getTemplates({ q: name, page: 1, limit: 1 }).catch(() => null);
+        if (dup && dup.items?.some((t: DocTemplate) => t.name === name)) { skipped += 1; continue; }
+        try {
+          await api.createTemplate({
+            name,
+            category: String(it?.category || "证明文档"),
+            content,
+            scope: ["official", "shared", "private"].includes(scope) ? scope : "shared",
+          });
+          created += 1;
+        } catch {
+          failed.push(name);
+        }
+      }
+      setImportResult({ open: true, created, skipped, failed });
+      fetchTemplates();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+    setImporting(false);
+  };
+
   // ---- 全库一键整理（仅管理员）：遍历所有模板，逐个按公文规范自动排版并保存 ----
   const [tidyAll, setTidyAll] = useState<{
     open: boolean; done: number; total: number; failed: string[]; skipped: number; finished: boolean;
@@ -275,6 +356,23 @@ ${body}
           <Button type="primary" icon={<SearchOutlined />} onClick={() => { setPage(1); setAppliedKeyword(keyword); }}>搜索</Button>
           <Button icon={<ReloadOutlined />} onClick={() => { setKeyword(""); setAppliedKeyword(""); setCategory(""); setPage(1); }}>重置</Button>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <Tooltip title="把当前筛选条件下的全部模板导出为 JSON 备份文件">
+              <Button icon={<DownloadOutlined />} loading={exportingAll} onClick={handleExportAll}>批量导出</Button>
+            </Tooltip>
+            <Tooltip title="从 JSON 备份文件批量导入模板，同名模板自动跳过">
+              <Button icon={<UploadOutlined />} loading={importing} onClick={handleImportPick}>批量导入</Button>
+            </Tooltip>
+            <input
+              ref={(el) => { fileInputRef.current = el; }}
+              type="file"
+              accept="application/json,.json"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleImportFile(f);
+                e.target.value = "";
+              }}
+            />
             {isAdmin && (
               <Popconfirm
                 title="一键整理全部模板"
@@ -436,6 +534,22 @@ ${body}
             dangerouslySetInnerHTML={{ __html: tidyPreview }}
           />
         )}
+      </Modal>
+
+      {/* 批量导入结果 */}
+      <Modal
+        title="批量导入完成"
+        open={importResult.open}
+        width={440}
+        onCancel={() => setImportResult(s => ({ ...s, open: false }))}
+        footer={<Button type="primary" onClick={() => setImportResult(s => ({ ...s, open: false }))}>完成</Button>}
+      >
+        <Alert
+          type={importResult.failed.length ? "warning" : "success"}
+          showIcon
+          message={`成功导入 ${importResult.created} 个模板`}
+          description={`同名跳过 ${importResult.skipped} 个${importResult.failed.length ? `，失败 ${importResult.failed.length} 个：${importResult.failed.join("、")}` : ""}`}
+        />
       </Modal>
 
       {/* 全库一键整理：进度与结果弹窗（长耗时操作，常驻状态展示） */}

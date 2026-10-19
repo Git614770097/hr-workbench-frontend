@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiResumeOptimize } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiResumeOptimize, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult } from "./types";
 
 const BASE = "/api";
 
@@ -216,21 +216,15 @@ export const api = {
   deleteTalent: (id: string) =>
     request(`/talents/${id}`, { method: "DELETE" }),
 
-  importTalents: (data: Partial<Talent>[]) =>
-    request<{ imported: number; items: { id: string; name: string }[] }>("/talents/import", {
+  // opts.dedup=true 时后端按「手机号 / 姓名+现居城市」判重，命中的跳过不插入
+  importTalents: (data: Partial<Talent>[], opts?: { dedup?: boolean }) =>
+    request<{
+      imported: number;
+      items: { id: string; name: string }[];
+      skipped?: { name: string; existed_id: string }[];
+    }>(`/talents/import${opts?.dedup ? "?dedup=1" : ""}`, {
       method: "POST",
       body: JSON.stringify(data),
-    }),
-
-  // 示例数据（演示模式）：一键载入 / 一键清除
-  seedDemo: () =>
-    request<{ ok: boolean; seeded: { jobs: number; talents: number; tasks: number } }>("/demo/seed", {
-      method: "POST",
-    }),
-
-  clearDemo: () =>
-    request<{ ok: boolean; removed: { talents: number; jobs: number } }>("/demo/seed", {
-      method: "DELETE",
     }),
 
   // AI 简历解析（后端代理，调用 DeepSeek）
@@ -368,6 +362,106 @@ export const api = {
   deleteContractFile: (fileId: string) =>
     request(`/talents/contracts/files/${fileId}`, { method: "DELETE" }),
 
+  // ---- 候选人背调中心 ----
+  // 列表：status / consent / talent_id / q 均为可选过滤条件
+  getBackgroundChecks: (q?: { status?: string; consent?: string; talent_id?: string; q?: string }) => {
+    const params = new URLSearchParams();
+    if (q?.status) params.set("status", q.status);
+    if (q?.consent) params.set("consent", q.consent);
+    if (q?.talent_id) params.set("talent_id", q.talent_id);
+    if (q?.q) params.set("q", q.q);
+    const qs = params.toString();
+    return request<{ items: BackgroundCheck[] }>(`/background${qs ? `?${qs}` : ""}`);
+  },
+
+  getBackgroundCheck: (id: string) =>
+    request<{ bg: BackgroundCheck }>(`/background/${id}`),
+
+  // 发起背调（新建草稿）：高敏项由 high_risk 触发后端加入
+  createBackgroundCheck: (data: { talent_id: string; talent_job_id?: string; provider?: string; high_risk?: boolean }) =>
+    request<{ bg: BackgroundCheck }>("/background", { method: "POST", body: JSON.stringify(data) }),
+
+  // 更新基础字段 / 结论 / 状态（敏感字段需已授权，后端强制校验）
+  updateBackgroundCheck: (id: string, data: Partial<{ provider: string; high_risk: boolean; summary: string; result: string; status: string }>) =>
+    request<{ ok: boolean; bg: BackgroundCheck | null }>(`/background/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+
+  // 授权闸门：request 发请求 / grant 标记已授权（高敏需 confirm_high_risk）/ decline 候选人拒绝
+  bgConsent: (id: string, data: { action: "request" | "grant" | "decline"; method?: string; confirm_high_risk?: boolean }) =>
+    request<{ ok: boolean; consent_status?: string }>(`/background/${id}/consent`, { method: "POST", body: JSON.stringify(data) }),
+
+  // 分项核验更新（需授权；仅更新已有项的状态与备注）
+  bgUpdateItems: (id: string, items: BgItem[]) =>
+    request<{ ok: boolean; items: BgItem[] }>(`/background/${id}/items`, { method: "POST", body: JSON.stringify({ items }) }),
+
+  // 上传报告原件（multipart，需授权，存 KV bgcheck: 前缀）
+  bgUploadReport: (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+    return fetch(`${BASE}/background/${id}/report`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${getToken()}` },
+      body: formData,
+      signal: ctrl.signal,
+    }).then(async (res) => {
+      clearTimeout(timer);
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({ error: "上传失败" }))) as { error?: string };
+        throw new Error(err.error || "上传失败");
+      }
+      return res.json() as Promise<{ ok: boolean; bg: BackgroundCheck | null }>;
+    }, (e) => {
+      clearTimeout(timer);
+      throw e;
+    });
+  },
+
+  // 报告原件读取：必须走 fetch 带 Authorization 头。
+  // ⚠️ 不能用 `?token=` 拼 URL 给 <a href> / iframe：菜单守卫与路由都只认 cookie / Bearer，
+  //    浏览器直开链接既不带 cookie 也不带头，必然 401。这里统一取 blob，再交给本地 URL 预览/下载。
+  bgFetchReport: async (id: string): Promise<{ blob: Blob; name: string }> => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000);
+    try {
+      const res = await fetch(`${BASE}/background/${id}/report`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+        signal: ctrl.signal,
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({ error: "报告读取失败" }))) as { error?: string };
+        throw new Error(err.error || "报告读取失败");
+      }
+      const m = (res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
+      return { blob: await res.blob(), name: m ? decodeURIComponent(m[1]) : "" };
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  deleteBackgroundReport: (id: string) =>
+    request(`/background/${id}/report`, { method: "DELETE" }),
+
+  // AI 背调小结（需授权）：基于已核验分项生成 summary + risks
+  bgAiSummary: (id: string) =>
+    request<BgSummary>(`/background/${id}/ai-summary`, { method: "POST" }, 60000),
+
+  // AI 简历核查清单（需授权）：喂简历文本，生成待核查建议（HR 线下/第三方核验）
+  bgAiResumeCheck: (id: string, resumeText: string) =>
+    request<BgResumeCheckResult>(
+      `/background/${id}/ai-resume-check`,
+      { method: "POST", body: JSON.stringify({ resume_text: resumeText }) },
+      60000
+    ),
+
+  // 通过并推进入职（需授权 + 结论为通过）：流转到 hired + 生成入职清单
+  bgPass: (id: string) =>
+    request<{ ok: boolean; status: string; downstream: string[] }>(`/background/${id}/pass`, { method: "POST" }),
+
+  // 取消背调
+  bgCancel: (id: string) =>
+    request<{ ok: boolean }>(`/background/${id}/cancel`, { method: "POST" }),
+
   // ---- 社保公积金台账 ----
   getSocialList: (q?: string) =>
     request<SocialItem[]>(`/talents/social${q ? `?q=${encodeURIComponent(q)}` : ""}`),
@@ -460,6 +554,27 @@ export const api = {
 
   duplicateTemplate: (id: string) =>
     request(`/templates/${id}/duplicate`, { method: "POST" }),
+
+  // ---- 团队管理（管理员/manager）----
+  getTeamMembers: () => request("/team/members"),
+  createTeamMember: (data: { name: string; phone: string; password: string; role_id?: string | null }) =>
+    request("/team/members", { method: "POST", body: JSON.stringify(data) }),
+  updateTeamMember: (id: string, data: { role_id?: string | null; status?: string; name?: string }) =>
+    request(`/team/members/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  resetTeamMemberPassword: (id: string, password: string) =>
+    request(`/team/members/${id}/reset-password`, { method: "POST", body: JSON.stringify({ password }) }),
+  removeTeamMember: (id: string) =>
+    request(`/team/members/${id}/remove`, { method: "POST" }),
+  getTeamRoles: () => request("/team/roles"),
+  createTeamRole: (data: { name: string; permissions: string[] }) =>
+    request("/team/roles", { method: "POST", body: JSON.stringify(data) }),
+  updateTeamRole: (id: string, data: { name?: string; permissions?: string[] }) =>
+    request(`/team/roles/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteTeamRole: (id: string) =>
+    request(`/team/roles/${id}`, { method: "DELETE" }),
+  // 超管：任命/撤销 团队管理员
+  setUserManager: (id: string, manager: boolean) =>
+    request(`/auth/users/${id}/manager`, { method: "PUT", body: JSON.stringify({ manager }) }),
 
   // ---- 岗位管理 ----
   getJobs: (params: Record<string, string | number> = {}) => {
@@ -598,6 +713,7 @@ export const api = {
       recommendation: string;
       suggested_result: string;
       _ai_fallback?: boolean;
+      _usage?: AiUsage | null;
     }>(`/interviews/${id}/ai-summary`, { method: "POST" }, 60000),
 
   // AI 提效：简历深度解读（详情页传 talent_id，导入核对弹窗传 fields）
@@ -707,6 +823,76 @@ export const api = {
   aiTalentInventory: (params: Record<string, string | number>) =>
     request<AiTalentInventory>("/ai/talent-inventory", { method: "POST", body: JSON.stringify(params) }, 60000),
 
+  // AI 招聘周报：后端按 owner 隔离自查一周真实数据（入库/流转/面试/产出/岗位/待办），
+  // 讲成一份可直接发出去的完整周报。三个旋钮组合决定缓存键：range / tone / focus。
+  aiWeeklyReport: (params: { range: "this_week" | "last_week"; tone: "report" | "brief"; focus: "all" | "progress" | "risk" }) =>
+    request<AiWeeklyReport>("/ai/weekly-report", { method: "POST", body: JSON.stringify(params) }, 60000),
+  // 读同参数组合下上次生成的周报（不扣配额），用于重进页面时恢复展示
+  getAiWeeklyReport: (params: { range: "this_week" | "last_week"; tone: "report" | "brief"; focus: "all" | "progress" | "risk" }) => {
+    const qs = new URLSearchParams(params).toString();
+    return request<{ data: AiWeeklyReport | null }>(`/ai/weekly-report?${qs}`);
+  },
+
+  // AI 候选人对比：选 2-3 个候选人并排对比，给出推荐。
+  // scope = 排序后 id 串，10 分钟缓存复用；每名候选人单独校验归属（后端 menuGuard 已按 talents 分流）。
+  aiCandidateCompare: (data: { talent_ids: string[]; job_id?: string | null }) =>
+    request<AiCandidateCompare>("/ai/candidate-compare", { method: "POST", body: JSON.stringify(data) }, 60000),
+  aiCandidateCompareGet: (talentIds: string[]) =>
+    request<{ data: AiCandidateCompare | null }>(`/ai/candidate-compare?talent_ids=${encodeURIComponent(talentIds.join(","))}`),
+
+  // AI Offer 谈判话术：基于候选人、岗位与双方薪资预期生成谈判方案。
+  // scene = job_id（换岗位即换缓存）；可选填我方 Offer 薪资 / 候选人期望 / 顾虑。
+  aiOfferNegotiation: (data: { talent_id: string; job_id?: string | null; offered_salary?: string; expected_salary?: string; concerns?: string }) =>
+    request<AiOfferNegotiation>("/ai/offer-negotiation", { method: "POST", body: JSON.stringify(data) }, 60000),
+  aiOfferNegotiationGet: (talentId: string, jobId?: string | null) =>
+    request<{ data: AiOfferNegotiation | null }>(
+      `/ai/offer-negotiation?talent_id=${encodeURIComponent(talentId)}${jobId ? `&job_id=${encodeURIComponent(jobId)}` : ""}`
+    ),
+
+  // AI 被动人才触达文案：面向在职/观望候选人的挖角文案（区别于通用跟进话术）。
+  aiSourcingCopy: (data: { talent_id: string; job_id?: string | null }) =>
+    request<AiSourcingCopy>("/ai/sourcing-copy", { method: "POST", body: JSON.stringify(data) }, 60000),
+  aiSourcingCopyGet: (talentId: string, jobId?: string | null) =>
+    request<{ data: AiSourcingCopy | null }>(
+      `/ai/sourcing-copy?talent_id=${encodeURIComponent(talentId)}${jobId ? `&job_id=${encodeURIComponent(jobId)}` : ""}`
+    ),
+
+  // AI 招聘渠道建议：针对单个岗位推荐投放渠道与优先级。后端自查岗位并校验归属。
+  aiChannelAdvice: (data: { job_id: string }) =>
+    request<AiChannelAdvice>("/ai/channel-advice", { method: "POST", body: JSON.stringify(data) }, 60000),
+  aiChannelAdviceGet: (jobId: string) =>
+    request<{ data: AiChannelAdvice | null }>(`/ai/channel-advice?job_id=${encodeURIComponent(jobId)}`),
+
+  // AI 合同风险审查：粘贴合同文本，AI 标风险点/缺失条款/健康度评分。需关联候选人（合同主体）。
+  aiContractReview: (data: { talent_id: string; text: string }) =>
+    request<AiContractReview>("/ai/contract-review", { method: "POST", body: JSON.stringify(data) }, 60000),
+  aiContractReviewGet: (talentId: string) =>
+    request<{ data: AiContractReview | null }>(`/ai/contract-review?talent_id=${encodeURIComponent(talentId)}`),
+
+  // AI 社保增减员提醒：基于事件（增员/减员）、日期与城市生成操作提醒。需关联候选人。
+  aiSocialReminder: (data: { talent_id: string; event: "add" | "remove"; date: string; city: string }) =>
+    request<AiSocialReminder>("/ai/social-reminder", { method: "POST", body: JSON.stringify(data) }, 60000),
+  aiSocialReminderGet: (talentId: string, event: "add" | "remove", city: string) =>
+    request<{ data: AiSocialReminder | null }>(
+      `/ai/social-reminder?talent_id=${encodeURIComponent(talentId)}&event=${encodeURIComponent(event)}&city=${encodeURIComponent(city)}`
+    ),
+
+  // AI 个税筹划建议：基于税前薪资构成与城市给出到手估算与合规节税建议。需关联候选人。
+  aiTaxPlan: (data: { talent_id: string; base: string; bonus: string; city: string }) =>
+    request<AiTaxPlan>("/ai/tax-plan", { method: "POST", body: JSON.stringify(data) }, 60000),
+  aiTaxPlanGet: (talentId: string, city: string) =>
+    request<{ data: AiTaxPlan | null }>(
+      `/ai/tax-plan?talent_id=${encodeURIComponent(talentId)}&city=${encodeURIComponent(city)}`
+    ),
+
+  // AI 试用期合规提醒：基于合同起始日与试用期月数推算节点与话术。需关联候选人。
+  aiProbationCompliance: (data: { talent_id: string; start: string; months: string }) =>
+    request<AiProbationCompliance>("/ai/probation-compliance", { method: "POST", body: JSON.stringify(data) }, 60000),
+  aiProbationComplianceGet: (talentId: string, start: string, months: string) =>
+    request<{ data: AiProbationCompliance | null }>(
+      `/ai/probation-compliance?talent_id=${encodeURIComponent(talentId)}&start=${encodeURIComponent(start)}&months=${encodeURIComponent(months)}`
+    ),
+
   // ---- AI 配额（管理员不限额；普通用户上限可在系统设置里调）----
   // 读当前用户的今日用量与生效上限；limit=-1 / unlimited=true 表示不限。
   getAiQuota: () => request<AiQuotaInfo>("/ai/quota"),
@@ -714,7 +900,7 @@ export const api = {
   setAiQuota: (limit: number) =>
     request<{ ok: boolean; limit: number }>("/ai/quota", { method: "PUT", body: JSON.stringify({ limit }) }),
 
-  // 招聘需求（用人部门提需求 → 审批 → 一键转岗位）
+  // 招聘需求（用人部门提需求 → 一键转正式岗位，无审批）
   getRequisitions: (params: { status?: string; owner_id?: string } = {}) => {
     const qs = Object.entries(params)
       .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -724,10 +910,9 @@ export const api = {
   },
   createRequisition: (data: Partial<Requisition>) =>
     request<{ ok: boolean; id: string }>("/requisitions", { method: "POST", body: JSON.stringify(data) }),
-  approveRequisition: (id: string) =>
-    request<{ ok: boolean; job_id: string }>(`/requisitions/${id}/approve`, { method: "POST", body: "{}" }),
-  rejectRequisition: (id: string, reason?: string) =>
-    request<{ ok: boolean }>(`/requisitions/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  // 把需求一键转为正式岗位（生成 jobs 记录并回填 job_id）
+  convertRequisition: (id: string) =>
+    request<{ ok: boolean; job_id: string }>(`/requisitions/${id}/convert`, { method: "POST", body: "{}" }),
   // 编辑需求（仅 pending 状态，只能改自己的）
   updateRequisition: (id: string, data: Partial<Requisition>) =>
     request<{ ok: boolean }>(`/requisitions/${id}`, { method: "PUT", body: JSON.stringify(data) }),

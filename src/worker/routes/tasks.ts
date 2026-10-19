@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 
 const tasks = new Hono<{ Bindings: Env }>();
@@ -50,8 +51,8 @@ tasks.get("/", async (c) => {
     const ownerId = c.req.query("owner_id");
     if (ownerId) { conditions.push("k.owner_id = ?"); params.push(ownerId); }
   } else {
-    conditions.push("k.owner_id = ?");
-    params.push(session.userId);
+    conditions.push(...scopeConds(session, "k.owner_id"));
+    params.push(...scopeParams(session));
   }
 
   if (scope === "todo") conditions.push("k.status = 'pending'");
@@ -90,7 +91,7 @@ tasks.get("/summary", async (c) => {
 
   let sql = "SELECT due_date FROM talent_tasks WHERE status = 'pending'";
   const params: string[] = [];
-  if (session.role !== "admin") { sql += " AND owner_id = ?"; params.push(session.userId); }
+  { const sc = ownerScope(session); sql += sc.sql; params.push(...sc.params); }
 
   const rows = await c.env.DB.prepare(sql).bind(...params).all<{ due_date: string | null }>();
 
@@ -139,7 +140,7 @@ tasks.put("/:id", async (c) => {
   const id = c.req.param("id");
   let checkSql = "SELECT id FROM talent_tasks WHERE id = ?";
   const checkParams: string[] = [id];
-  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
   const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first();
   if (!existing) return c.json({ error: "待办不存在" }, 404);
 
@@ -179,7 +180,7 @@ tasks.put("/:id/status", async (c) => {
   sql += status === "done" ? ", done_at = datetime('now')" : ", done_at = NULL";
   sql += " WHERE id = ?";
   params.push(id);
-  if (session.role !== "admin") { sql += " AND owner_id = ?"; params.push(session.userId); }
+  { const sc = ownerScope(session); sql += sc.sql; params.push(...sc.params); }
 
   await c.env.DB.prepare(sql).bind(...params).run();
   return c.json({ ok: true, status });
@@ -193,7 +194,7 @@ tasks.delete("/:id", async (c) => {
   const id = c.req.param("id");
   let sql = "DELETE FROM talent_tasks WHERE id = ?";
   const params: string[] = [id];
-  if (session.role !== "admin") { sql += " AND owner_id = ?"; params.push(session.userId); }
+  { const sc = ownerScope(session); sql += sc.sql; params.push(...sc.params); }
 
   await c.env.DB.prepare(sql).bind(...params).run();
   return c.json({ ok: true });

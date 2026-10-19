@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import {
   Modal, Button, Input, InputNumber, Select, Typography, Spin, Alert, Tag, Tooltip,
 } from "antd";
-import mammoth from "mammoth";
 import { STATUS_LABELS } from "../types";
 import { useDict } from "../dict";
 import type { ParsedTalent } from "../utils/resumeImport";
@@ -62,6 +61,8 @@ export default function ImportPreviewModal({
       setDocLoading(true);
       (async () => {
         try {
+          // mammoth 动态加载：约 350KB，只有导入 Word 简历时才下载
+          const mammoth = await import("mammoth");
           const result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
           if (!cancelled) setDocHtml(result.value);
         } catch (e) {

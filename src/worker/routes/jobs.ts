@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 
 const jobs = new Hono<{ Bindings: Env }>();
@@ -32,8 +33,8 @@ jobs.get("/", async (c) => {
     const ownerId = c.req.query("owner_id");
     if (ownerId) { conditions.push("j.owner_id = ?"); params.push(ownerId); }
   } else {
-    conditions.push("j.owner_id = ?");
-    params.push(session.userId);
+    conditions.push(...scopeConds(session, "j.owner_id"));
+    params.push(...scopeParams(session));
   }
 
   if (q) {
@@ -78,7 +79,7 @@ jobs.get("/options", async (c) => {
   const params: string[] = [];
   const onlyOpen = c.req.query("open") === "1";
   const cond: string[] = [];
-  if (session.role !== "admin") { cond.push("owner_id = ?"); params.push(session.userId); }
+  { const sc = ownerScope(session); cond.push(sc.sql.replace(/^ AND /, "")); params.push(...sc.params); }
   if (onlyOpen) cond.push("status = 'open'");
   if (cond.length) sql += " WHERE " + cond.join(" AND ");
   sql += " ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END, updated_at DESC";
@@ -94,7 +95,7 @@ jobs.get("/departments", async (c) => {
 
   let sql = "SELECT DISTINCT department FROM jobs WHERE department IS NOT NULL AND department != ''";
   const params: string[] = [];
-  if (session.role !== "admin") { sql += " AND owner_id = ?"; params.push(session.userId); }
+  { const sc = ownerScope(session); sql += sc.sql; params.push(...sc.params); }
   sql += " ORDER BY department";
 
   const rows = await c.env.DB.prepare(sql).bind(...params).all<{ department: string }>();
@@ -109,7 +110,7 @@ jobs.get("/:id", async (c) => {
   const id = c.req.param("id");
   let sql = "SELECT j.*, u.name as owner_name FROM jobs j JOIN users u ON j.owner_id = u.id WHERE j.id = ?";
   const params: string[] = [id];
-  if (session.role !== "admin") { sql += " AND j.owner_id = ?"; params.push(session.userId); }
+  { const sc = ownerScope(session, "j.owner_id"); sql += sc.sql; params.push(...sc.params); }
 
   const job = await c.env.DB.prepare(sql).bind(...params).first<any>();
   if (!job) return c.json({ error: "岗位不存在" }, 404);
@@ -163,7 +164,7 @@ jobs.put("/:id", async (c) => {
   const id = c.req.param("id");
   let checkSql = "SELECT id, status FROM jobs WHERE id = ?";
   const checkParams: string[] = [id];
-  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
   const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first<{ id: string; status: string }>();
   if (!existing) return c.json({ error: "岗位不存在" }, 404);
 
@@ -202,7 +203,7 @@ jobs.delete("/:id", async (c) => {
   const id = c.req.param("id");
   let checkSql = "SELECT id FROM jobs WHERE id = ?";
   const checkParams: string[] = [id];
-  if (session.role !== "admin") { checkSql += " AND owner_id = ?"; checkParams.push(session.userId); }
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
   const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first();
   if (!existing) return c.json({ error: "岗位不存在" }, 404);
 

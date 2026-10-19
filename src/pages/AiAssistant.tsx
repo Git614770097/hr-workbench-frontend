@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert, Button, Card, Col, Empty, Input, Row, Select, Space, Tabs, Tag, Typography, message,
+  Alert, Button, Card, Col, Empty, Input, Row, Select, Space, Table, Tabs, Tag, Typography, message,
 } from "antd";
 import {
-  ArrowLeftOutlined, FileTextOutlined, RobotOutlined,
+  ArrowLeftOutlined, FileTextOutlined, RobotOutlined, SolutionOutlined,
   SearchOutlined, TeamOutlined, WarningOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
@@ -75,6 +75,34 @@ function JobSelect({
   );
 }
 
+/** 候选人多选器（最多 3 个）：用于「候选人对比」。同样走后端 owner 隔离搜索。 */
+function TalentMultiSelect({ value, onChange }: { value?: string[]; onChange: (v?: string[]) => void }) {
+  const [opts, setOpts] = useState<{ label: string; value: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const search = async (kw: string) => {
+    setLoading(true);
+    try {
+      const res = await api.getTalents({ q: kw, page: 1, limit: 20 });
+      setOpts(res.items.map((t) => ({
+        value: t.id,
+        label: `${t.name}${t.current_title ? ` · ${t.current_title}` : ""}${t.city ? ` · ${t.city}` : ""}`,
+      })));
+    } catch {
+      setOpts([]);
+    }
+    setLoading(false);
+  };
+  useEffect(() => { search(""); }, []);
+  return (
+    <Select
+      mode="multiple" maxCount={3} showSearch allowClear value={value} onChange={onChange} onSearch={search}
+      filterOption={false} loading={loading}
+      placeholder="选择 2-3 个候选人进行对比"
+      options={opts} style={{ width: "100%" }}
+    />
+  );
+}
+
 const SCENES = Object.keys(AI_OUTREACH_SCENE_LABELS) as AiOutreachScene[];
 
 const pre: React.CSSProperties = {
@@ -90,7 +118,8 @@ interface GroupDef {
   desc: string;
   icon: React.ReactNode;
   color: string;
-  perm: string;
+  /** 该组对哪些权限可见：任一满足即显示整组（组内功能再逐个按细粒度权限过滤） */
+  perm: string[];
 }
 
 export default function AiAssistant() {
@@ -121,14 +150,53 @@ export default function AiAssistant() {
   // ---- 诊断：岗位诊断需选岗位 ----
   const [diagJob, setDiagJob] = useState<string | undefined>();
 
+  // ---- 诊断：招聘周报的三个旋钮（周期 / 语气 / 焦点），组合不同则缓存与产出都不同 ----
+  const [wrRange, setWrRange] = useState<"this_week" | "last_week">("this_week");
+  const [wrTone, setWrTone] = useState<"report" | "brief">("report");
+  const [wrFocus, setWrFocus] = useState<"all" | "progress" | "risk">("all");
+
+  // ---- 看人：候选人对比（多选 2-3 个 + 可选岗位） ----
+  const [compareTalents, setCompareTalents] = useState<string[] | undefined>();
+  const [compareJob, setCompareJob] = useState<string | undefined>();
+
+  // ---- 推进：Offer 谈判话术（候选人 + 岗位 + 薪资/顾虑） ----
+  const [negTalent, setNegTalent] = useState<string | undefined>();
+  const [negJob, setNegJob] = useState<string | undefined>();
+  const [negOffered, setNegOffered] = useState("");
+  const [negExpected, setNegExpected] = useState("");
+  const [negConcerns, setNegConcerns] = useState("");
+
+  // ---- 推进：被动人才触达文案（候选人 + 岗位） ----
+  const [sourcingTalent, setSourcingTalent] = useState<string | undefined>();
+  const [sourcingJob, setSourcingJob] = useState<string | undefined>();
+
+  // ---- 诊断：招聘渠道建议（岗位） ----
+  const [channelJob, setChannelJob] = useState<string | undefined>();
+
+  // ---- 人事：合同风险审查 / 社保增减员 / 个税筹划 / 试用期合规 ----
+  const [contractTalent, setContractTalent] = useState<string | undefined>();
+  const [contractText, setContractText] = useState<string>("");
+  const [socialTalent, setSocialTalent] = useState<string | undefined>();
+  const [socialEvent, setSocialEvent] = useState<string>("add");
+  const [socialDate, setSocialDate] = useState<string>("");
+  const [socialCity, setSocialCity] = useState<string>("");
+  const [taxTalent, setTaxTalent] = useState<string | undefined>();
+  const [taxBase, setTaxBase] = useState<string>("");
+  const [taxBonus, setTaxBonus] = useState<string>("");
+  const [taxCity, setTaxCity] = useState<string>("");
+  const [probTalent, setProbTalent] = useState<string | undefined>();
+  const [probStart, setProbStart] = useState<string>("");
+  const [probMonths, setProbMonths] = useState<string>("6");
+
   const GROUPS: GroupDef[] = [
-    { key: "write", label: "写材料", desc: "要产出一份文档给外部时用", icon: <FileTextOutlined />, color: "#4f46e5", perm: "jobs" },
-    { key: "read", label: "看人", desc: "想搞懂一个候选人时用", icon: <SearchOutlined />, color: "#0ea5e9", perm: "talents" },
-    { key: "push", label: "推进", desc: "正在推候选人时用", icon: <TeamOutlined />, color: "#10b981", perm: "talents" },
-    { key: "diag", label: "诊断", desc: "想知道哪里卡住了时用", icon: <WarningOutlined />, color: "#d97706", perm: "talents" },
+    { key: "write", label: "写材料", desc: "要产出一份文档给外部时用", icon: <FileTextOutlined />, color: "#4f46e5", perm: ["jobs"] },
+    { key: "read", label: "看人", desc: "想搞懂一个候选人时用", icon: <SearchOutlined />, color: "#0ea5e9", perm: ["talents", "interviews"] },
+    { key: "push", label: "推进", desc: "正在推候选人时用", icon: <TeamOutlined />, color: "#10b981", perm: ["talents", "pipeline"] },
+    { key: "diag", label: "诊断", desc: "想知道哪里卡住了时用", icon: <WarningOutlined />, color: "#d97706", perm: ["talents", "jobs", "pipeline"] },
+    { key: "hr", label: "人事", desc: "合同 / 社保 / 薪酬合规时用", icon: <SolutionOutlined />, color: "#db2777", perm: ["contracts", "social"] },
   ];
-  // 分组 perm 只决定「组」是否出现；组内每个功能另有细粒度 perm（见下方 items 构造）
-  const visibleGroups = GROUPS.filter((g) => can(g.perm));
+  // 分组 perm 是「任一满足即可见」：组内功能另有细粒度 perm（见下方 items 构造）
+  const visibleGroups = GROUPS.filter((g) => g.perm.some(can));
 
   // ================= 一级：分组卡片总览 =================
   if (!group) {
@@ -180,9 +248,10 @@ export default function AiAssistant() {
   /** 该分组下当前账号有权使用的功能条数（用于卡片上的角标） */
   function capabilityCount(key: string): number {
     if (key === "write") return can("jobs") ? 1 : 0;
-    if (key === "read") return (can("talents") ? 2 : 0) + (can("interviews") ? 2 : 0);
-    if (key === "push") return (can("talents") ? 1 : 0) + (can("pipeline") ? 1 : 0);
-    if (key === "diag") return (can("jobs") ? 1 : 0) + (can("talents") ? 1 : 0);
+    if (key === "read") return (can("talents") ? 3 : 0) + (can("interviews") ? 2 : 0);
+    if (key === "push") return (can("talents") ? 3 : 0) + (can("pipeline") ? 1 : 0);
+    if (key === "diag") return (can("jobs") ? 2 : 0) + (can("talents") ? 1 : 0) + (can("pipeline") ? 1 : 0);
+    if (key === "hr") return (can("contracts") ? 2 : 0) + (can("social") ? 2 : 0);
     return 0;
   }
 
@@ -554,6 +623,554 @@ export default function AiAssistant() {
     </Space>
   );
 
+  const weeklyPanel = (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+        由系统自查这一周的真实数据（人才入库 / 阶段流转 / 面试与结果 / Offer 与入职 / 岗位进展 / 逾期待办），
+        讲成一份可直接发出去的周报。改下面任一旋钮即换一种写法，三个组合各自独立缓存。
+      </Typography.Paragraph>
+      <Space.Compact style={{ width: "100%" }}>
+        <Select
+          value={wrRange} onChange={setWrRange} style={{ width: "34%" }}
+          options={[{ value: "this_week", label: "本周至今" }, { value: "last_week", label: "上周" }]}
+        />
+        <Select
+          value={wrTone} onChange={setWrTone} style={{ width: "33%" }}
+          options={[{ value: "report", label: "正式汇报稿" }, { value: "brief", label: "极简清单" }]}
+        />
+        <Select
+          value={wrFocus} onChange={setWrFocus} style={{ width: "33%" }}
+          options={[
+            { value: "all", label: "进展+问题" },
+            { value: "progress", label: "只看进展" },
+            { value: "risk", label: "只看卡点" },
+          ]}
+        />
+      </Space.Compact>
+      <AiResultCard
+        key={`weekly-${wrRange}-${wrTone}-${wrFocus}`}
+        title="招聘周报"
+        fetchOnMount={async () => {
+          const r = await api.getAiWeeklyReport({ range: wrRange, tone: wrTone, focus: wrFocus });
+          return r.data ? { ...r.data } : null;
+        }}
+        onGenerate={async () => ({ ...(await api.aiWeeklyReport({ range: wrRange, tone: wrTone, focus: wrFocus })) })}
+        hint="点「生成」，AI 会把本周数据汇总成一份带标题、正文、亮点、卡点与下周计划的完整周报。"
+        loadingTip="正在统计本周招聘数据并撰写周报…"
+        toText={(d) => [
+          d.headline ? `${d.headline}\n${d.period || ""}` : "",
+          d.narrative ? `\n${d.narrative}` : "",
+          d.highlights?.length ? `\n【本周亮点】\n${d.highlights.map((x: string) => `· ${x}`).join("\n")}` : "",
+          d.concerns?.length ? `\n【风险与卡点】\n${d.concerns.map((x: string) => `· ${x}`).join("\n")}` : "",
+          d.next_actions?.length ? `\n【下周计划】\n${d.next_actions.map((x: string, i: number) => `${i + 1}. ${x}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n")}
+        render={(d) => (
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Space direction="vertical" size={2}>
+              <Typography.Text strong style={{ fontSize: 15 }}>{d.headline || "本周招聘周报"}</Typography.Text>
+              {d.period ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{d.period}</Typography.Text> : null}
+            </Space>
+            {d.narrative ? (
+              <Typography.Paragraph style={{ ...pre, margin: 0 }}>{d.narrative}</Typography.Paragraph>
+            ) : null}
+            {d.highlights?.length ? (
+              <div>
+                <Typography.Text strong>本周亮点</Typography.Text>
+                {d.highlights.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+            {d.concerns?.length ? (
+              <div>
+                <Typography.Text strong type="warning">风险与卡点</Typography.Text>
+                {d.concerns.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+            {d.next_actions?.length ? (
+              <div>
+                <Typography.Text strong>下周计划</Typography.Text>
+                {d.next_actions.map((x: string, i: number) => <div key={i} style={line}>{i + 1}. {x}</div>)}
+              </div>
+            ) : null}
+          </Space>
+        )}
+      />
+    </Space>
+  );
+
+  // ================= 看人：候选人对比 =================
+  const comparePanel = (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+        选 2-3 个候选人并排对比，AI 按维度给出谁更适合的判断。可选目标岗位做「谁更贴合岗位」的对比。
+      </Typography.Paragraph>
+      <TalentMultiSelect value={compareTalents} onChange={setCompareTalents} />
+      <JobSelect value={compareJob} onChange={setCompareJob} />
+      <AiResultCard
+        key={`compare-${compareTalents?.join(",") || ""}-${compareJob || ""}`}
+        title="候选人对比"
+        fetchOnMount={async () => {
+          if (!compareTalents || compareTalents.length < 2) return null;
+          const r = await api.aiCandidateCompareGet(compareTalents);
+          return r.data ? { ...r.data } : null;
+        }}
+        onGenerate={async () => {
+          if (!compareTalents || compareTalents.length < 2) { message.warning("请至少选择 2 个候选人"); return null; }
+          return { ...(await api.aiCandidateCompare({ talent_ids: compareTalents, job_id: compareJob ?? null })) };
+        }}
+        hint="点「生成」，AI 会按维度并排对比并给出推荐。"
+        loadingTip="正在比对候选人信息…"
+        toText={(d) => [
+          `【推荐】${d.verdict}`,
+          ...(d.aspects || []).map((a: { aspect: string; notes: string[] }) =>
+            `【${a.aspect}】\n${(d.names || []).map((n: string, i: number) => `${n}：${a.notes[i] || "—"}`).join("\n")}`
+          ),
+          d.watchouts?.length ? `【警惕】\n${d.watchouts.map((x: string) => `· ${x}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n\n")}
+        render={(d) => {
+          const names: string[] = d.names || [];
+          const columns = [
+            { title: "维度", dataIndex: "aspect", key: "aspect", width: 120 },
+            ...names.map((n, i) => ({ title: n, dataIndex: `v${i}`, key: `v${i}` })),
+          ];
+          const dataSource = (d.aspects || []).map((a: { aspect: string; notes: string[] }, idx: number) => ({
+            key: idx,
+            aspect: a.aspect,
+            ...names.reduce((acc: Record<string, string>, _n, i) => { acc[`v${i}`] = a.notes[i] || "—"; return acc; }, {}),
+          }));
+          return (
+            <Space direction="vertical" size={10} style={{ width: "100%" }}>
+              {d.verdict ? <div style={line}><Typography.Text strong>推荐</Typography.Text> {d.verdict}</div> : null}
+              <Table
+                size="small" bordered pagination={false}
+                columns={columns as any} dataSource={dataSource as any}
+                scroll={{ x: "max-content" }}
+              />
+              {d.watchouts?.length ? (
+                <div>
+                  <Typography.Text strong type="warning">需警惕</Typography.Text>
+                  {d.watchouts.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+                </div>
+              ) : null}
+            </Space>
+          );
+        }}
+      />
+    </Space>
+  );
+
+  // ================= 推进：Offer 谈判话术 =================
+  const negPanel = (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+        基于候选人、岗位与双方薪资预期，生成谈判基调、筹码话术与注意事项。填写薪资与顾虑能让话术更贴合。
+      </Typography.Paragraph>
+      <TalentSelect value={negTalent} onChange={setNegTalent} />
+      <JobSelect value={negJob} onChange={setNegJob} />
+      <Space.Compact style={{ width: "100%" }}>
+        <Input placeholder="我方 Offer 薪资（可选）" value={negOffered} onChange={(e) => setNegOffered(e.target.value)} allowClear />
+        <Input placeholder="候选人期望薪资（可选）" value={negExpected} onChange={(e) => setNegExpected(e.target.value)} allowClear />
+      </Space.Compact>
+      <Input.TextArea
+        placeholder="候选人的顾虑或背景（可选，如「有竞品 Offer 在比」「对加班有顾虑」）"
+        value={negConcerns} onChange={(e) => setNegConcerns(e.target.value)} autoSize={{ minRows: 2, maxRows: 4 }} allowClear
+      />
+      <AiResultCard
+        key={`neg-${negTalent || ""}-${negJob || ""}`}
+        title="Offer 谈判话术"
+        fetchOnMount={async () => {
+          if (!negTalent) return null;
+          const r = await api.aiOfferNegotiationGet(negTalent, negJob ?? null);
+          return r.data ? { ...r.data } : null;
+        }}
+        onGenerate={async () => {
+          if (!negTalent) { message.warning("请先选择候选人"); return null; }
+          return { ...(await api.aiOfferNegotiation({
+            talent_id: negTalent, job_id: negJob ?? null,
+            offered_salary: negOffered.trim() || undefined,
+            expected_salary: negExpected.trim() || undefined,
+            concerns: negConcerns.trim() || undefined,
+          })) };
+        }}
+        hint="点「生成」，AI 给出谈判基调、核心筹码与分场景话术。"
+        loadingTip="正在生成谈判话术…"
+        toText={(d) => [
+          d.strategy ? `【基调】${d.strategy}` : "",
+          d.points?.length ? `【核心筹码】\n${d.points.map((x: string) => `· ${x}`).join("\n")}` : "",
+          d.scripts?.length ? `【场景话术】\n${d.scripts.map((s: { situation: string; script: string }) => `· ${s.situation}：${s.script}`).join("\n")}` : "",
+          d.tips?.length ? `【注意】\n${d.tips.map((x: string) => `· ${x}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n\n")}
+        render={(d) => (
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            {d.strategy ? <div style={line}><Typography.Text strong>基调</Typography.Text> {d.strategy}</div> : null}
+            {d.points?.length ? (
+              <div>
+                <Typography.Text strong>核心筹码</Typography.Text>
+                {d.points.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+            {d.scripts?.length ? (
+              <div>
+                <Typography.Text strong>场景话术</Typography.Text>
+                {d.scripts.map((s: { situation: string; script: string }, i: number) => (
+                  <div key={i} style={{ marginBottom: 4 }}>
+                    <Tag color="blue">{s.situation}</Tag>
+                    <div style={pre}>{s.script}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {d.tips?.length ? (
+              <div>
+                <Typography.Text strong>注意</Typography.Text>
+                {d.tips.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+          </Space>
+        )}
+      />
+    </Space>
+  );
+
+  // ================= 推进：被动人才触达文案 =================
+  const sourcingPanel = (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+        面向在职/观望的被动候选人生成「一对一挖角」文案——引用其履历具体亮点、不群发、不甩 JD。文案需手动复制后发送。
+      </Typography.Paragraph>
+      <TalentSelect value={sourcingTalent} onChange={setSourcingTalent} />
+      <JobSelect value={sourcingJob} onChange={setSourcingJob} />
+      <AiResultCard
+        key={`sourcing-${sourcingTalent || ""}-${sourcingJob || ""}`}
+        title="被动人才触达"
+        fetchOnMount={async () => {
+          if (!sourcingTalent) return null;
+          const r = await api.aiSourcingCopyGet(sourcingTalent, sourcingJob ?? null);
+          return r.data ? { ...r.data } : null;
+        }}
+        onGenerate={async () => {
+          if (!sourcingTalent) { message.warning("请先选择候选人"); return null; }
+          return { ...(await api.aiSourcingCopy({ talent_id: sourcingTalent, job_id: sourcingJob ?? null })) };
+        }}
+        hint="点「生成」，AI 输出一段可发给被动候选人的触达文案。"
+        loadingTip="正在结合候选人与岗位起草文案…"
+        toText={(d) => `${d.title ? `${d.title}\n\n` : ""}${d.content}${d.tips?.length ? `\n\n【触达建议】\n${d.tips.map((t: string) => `· ${t}`).join("\n")}` : ""}`}
+        render={(d) => (
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            <pre style={pre}>{d.content || "—"}</pre>
+            {d.tips?.length ? (
+              <div>
+                <Typography.Text strong>触达建议</Typography.Text>
+                {d.tips.map((t: string, i: number) => <div key={i} style={line}>· {t}</div>)}
+              </div>
+            ) : null}
+          </Space>
+        )}
+      />
+    </Space>
+  );
+
+  // ================= 诊断：招聘渠道建议 =================
+  const channelPanel = (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+        选一个岗位，AI 基于其职能、层级、城市与薪资推荐投放渠道与优先级，并给出渠道运营建议。
+      </Typography.Paragraph>
+      <JobSelect value={channelJob} onChange={setChannelJob} placeholder="选择岗位（必填）" />
+      <AiResultCard
+        key={`channel-${channelJob || ""}`}
+        title="招聘渠道建议"
+        fetchOnMount={async () => {
+          if (!channelJob) return null;
+          const r = await api.aiChannelAdviceGet(channelJob);
+          return r.data ? { ...r.data } : null;
+        }}
+        onGenerate={async () => {
+          if (!channelJob) { message.warning("请先选择岗位"); return null; }
+          return { ...(await api.aiChannelAdvice({ job_id: channelJob })) };
+        }}
+        hint="点「生成」，AI 告诉你这个岗位该去哪招人、优先级怎么排。"
+        loadingTip="正在分析岗位特征与渠道匹配…"
+        toText={(d) => [
+          d.verdict ? `【结论】${d.verdict}` : "",
+          d.channels?.length ? `【渠道】\n${d.channels.map((c: { channel: string; priority: string; reason: string }) => `· ${c.channel}（${c.priority}）：${c.reason}`).join("\n")}` : "",
+          d.tips?.length ? `【运营建议】\n${d.tips.map((x: string) => `· ${x}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n\n")}
+        render={(d) => (
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            {d.verdict ? <div style={{ fontWeight: 600 }}>{d.verdict}</div> : null}
+            {d.channels?.length ? (
+              <div>
+                <Typography.Text strong>推荐渠道</Typography.Text>
+                {d.channels.map((c: { channel: string; priority: string; reason: string }, i: number) => (
+                  <div key={i} style={line}>
+                    <Tag color={c.priority === "高" ? "green" : c.priority === "中" ? "gold" : "default"}>{c.priority}</Tag>
+                    <b>{c.channel}</b> — {c.reason}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {d.tips?.length ? (
+              <div>
+                <Typography.Text strong>运营建议</Typography.Text>
+                {d.tips.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+          </Space>
+        )}
+      />
+    </Space>
+  );
+
+  // ================= 人事：合同风险审查 =================
+  const contractPanel = (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+        粘贴劳动合同 / 聘用协议文本，AI 标出风险点、缺失的必备条款，并给出合规健康度评分。需关联候选人作为合同主体。
+      </Typography.Paragraph>
+      <TalentSelect value={contractTalent} onChange={setContractTalent} />
+      <Input.TextArea
+        placeholder="在此粘贴合同内容（至少 20 字）"
+        value={contractText} onChange={(e) => setContractText(e.target.value)} autoSize={{ minRows: 4, maxRows: 10 }} allowClear
+      />
+      <AiResultCard
+        key={`contract-${contractTalent || ""}`}
+        title="合同风险审查"
+        fetchOnMount={async () => {
+          if (!contractTalent) return null;
+          const r = await api.aiContractReviewGet(contractTalent);
+          return r.data ? { ...r.data } : null;
+        }}
+        onGenerate={async () => {
+          if (!contractTalent) { message.warning("请先选择候选人"); return null; }
+          if (contractText.trim().length < 20) { message.warning("请粘贴至少 20 字的合同内容"); return null; }
+          return { ...(await api.aiContractReview({ talent_id: contractTalent, text: contractText.trim() })) };
+        }}
+        hint="点「生成」，AI 会标出风险点与缺失条款并打分。"
+        loadingTip="正在审查合同条款…"
+        toText={(d) => [
+          d.summary ? `【整体判断】${d.summary}` : "",
+          d.score != null ? `【合规健康度】${d.score}/100` : "",
+          d.risks?.length ? `【风险点】\n${d.risks.map((r: { clause: string; risk: string; suggestion: string }) => `· ${r.clause}：${r.risk}（建议：${r.suggestion}）`).join("\n")}` : "",
+          d.missing?.length ? `【缺失条款】\n${d.missing.map((x: string) => `· ${x}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n\n")}
+        render={(d) => (
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            {d.summary ? <div style={line}><Typography.Text strong>整体判断</Typography.Text> {d.summary}</div> : null}
+            {d.score != null ? (
+              <div style={line}><Typography.Text strong>合规健康度</Typography.Text>{" "}
+                <Tag color={d.score >= 80 ? "green" : d.score >= 60 ? "gold" : "red"}>{d.score}/100</Tag></div>
+            ) : null}
+            {d.risks?.length ? (
+              <div>
+                <Typography.Text strong>风险点</Typography.Text>
+                {d.risks.map((r: { clause: string; risk: string; suggestion: string }, i: number) => (
+                  <div key={i} style={{ marginBottom: 4 }}>
+                    <Tag color="volcano">{r.clause}</Tag>
+                    <div style={pre}><b>风险：</b>{r.risk}</div>
+                    <div style={pre}><b>建议：</b>{r.suggestion}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {d.missing?.length ? (
+              <div>
+                <Typography.Text strong>缺失条款</Typography.Text>
+                {d.missing.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+          </Space>
+        )}
+      />
+    </Space>
+  );
+
+  // ================= 人事：社保增减员提醒 =================
+  const socialPanel = (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+        选择增员或减员事件、关键日期与参保城市，AI 生成截止节点、操作清单与合规注意。需关联候选人。
+      </Typography.Paragraph>
+      <TalentSelect value={socialTalent} onChange={setSocialTalent} />
+      <Space.Compact style={{ width: "100%" }}>
+        <Select value={socialEvent} onChange={setSocialEvent} style={{ width: "40%" }}
+          options={[{ value: "add", label: "增员（入职）" }, { value: "remove", label: "减员（离职）" }]} />
+        <Input placeholder="关键日期 YYYY-MM-DD（可选）" value={socialDate} onChange={(e) => setSocialDate(e.target.value)} allowClear />
+      </Space.Compact>
+      <Input placeholder="参保城市（可选，如 上海）" value={socialCity} onChange={(e) => setSocialCity(e.target.value)} allowClear />
+      <AiResultCard
+        key={`social-${socialTalent || ""}-${socialEvent}-${socialCity}`}
+        title="社保增减员提醒"
+        fetchOnMount={async () => {
+          if (!socialTalent) return null;
+          const r = await api.aiSocialReminderGet(socialTalent, socialEvent as "add" | "remove", socialCity.trim());
+          return r.data ? { ...r.data } : null;
+        }}
+        onGenerate={async () => {
+          if (!socialTalent) { message.warning("请先选择候选人"); return null; }
+          return { ...(await api.aiSocialReminder({
+            talent_id: socialTalent, event: socialEvent as "add" | "remove",
+            date: socialDate.trim(), city: socialCity.trim(),
+          })) };
+        }}
+        hint="点「生成」，AI 给出增减员时间节点与操作清单。"
+        loadingTip="正在生成社保增减员提醒…"
+        toText={(d) => [
+          d.deadline ? `【关键节点】${d.deadline}` : "",
+          d.steps?.length ? `【操作清单】\n${d.steps.map((x: string) => `· ${x}`).join("\n")}` : "",
+          d.notes?.length ? `【合规注意】\n${d.notes.map((x: string) => `· ${x}`).join("\n")}` : "",
+          d.tips?.length ? `【实操建议】\n${d.tips.map((x: string) => `· ${x}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n\n")}
+        render={(d) => (
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            {d.deadline ? <div style={line}><Typography.Text strong>关键节点</Typography.Text> {d.deadline}</div> : null}
+            {d.steps?.length ? (
+              <div>
+                <Typography.Text strong>操作清单</Typography.Text>
+                {d.steps.map((x: string, i: number) => <div key={i} style={line}>{i + 1}. {x}</div>)}
+              </div>
+            ) : null}
+            {d.notes?.length ? (
+              <div>
+                <Typography.Text strong>合规注意</Typography.Text>
+                {d.notes.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+            {d.tips?.length ? (
+              <div>
+                <Typography.Text strong>实操建议</Typography.Text>
+                {d.tips.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+          </Space>
+        )}
+      />
+    </Space>
+  );
+
+  // ================= 人事：个税筹划建议 =================
+  const taxPanel = (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+        填写税前月薪、年终奖与城市，AI 估算到手并给出专项附加扣除与合规节税建议。需关联候选人。
+      </Typography.Paragraph>
+      <TalentSelect value={taxTalent} onChange={setTaxTalent} />
+      <Space.Compact style={{ width: "100%" }}>
+        <Input placeholder="税前月薪（元，可选）" value={taxBase} onChange={(e) => setTaxBase(e.target.value)} allowClear />
+        <Input placeholder="年终奖/绩效（元，可选）" value={taxBonus} onChange={(e) => setTaxBonus(e.target.value)} allowClear />
+      </Space.Compact>
+      <Input placeholder="城市（可选，如 北京）" value={taxCity} onChange={(e) => setTaxCity(e.target.value)} allowClear />
+      <AiResultCard
+        key={`tax-${taxTalent || ""}-${taxCity}`}
+        title="个税筹划建议"
+        fetchOnMount={async () => {
+          if (!taxTalent) return null;
+          const r = await api.aiTaxPlanGet(taxTalent, taxCity.trim());
+          return r.data ? { ...r.data } : null;
+        }}
+        onGenerate={async () => {
+          if (!taxTalent) { message.warning("请先选择候选人"); return null; }
+          return { ...(await api.aiTaxPlan({ talent_id: taxTalent, base: taxBase.trim(), bonus: taxBonus.trim(), city: taxCity.trim() })) };
+        }}
+        hint="点「生成」，AI 估算到手并给节税建议。"
+        loadingTip="正在计算个税与筹划建议…"
+        toText={(d) => [
+          d.take_home_note ? `【到手估算】${d.take_home_note}` : "",
+          d.optimizations?.length ? `【优化点】\n${d.optimizations.map((o: { item: string; detail: string }) => `· ${o.item}：${o.detail}`).join("\n")}` : "",
+          d.tips?.length ? `【合规提醒】\n${d.tips.map((x: string) => `· ${x}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n\n")}
+        render={(d) => (
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            {d.take_home_note ? <div style={line}><Typography.Text strong>到手估算</Typography.Text> {d.take_home_note}</div> : null}
+            {d.optimizations?.length ? (
+              <div>
+                <Typography.Text strong>优化点</Typography.Text>
+                {d.optimizations.map((o: { item: string; detail: string }, i: number) => (
+                  <div key={i} style={line}>· <b>{o.item}</b>：{o.detail}</div>
+                ))}
+              </div>
+            ) : null}
+            {d.tips?.length ? (
+              <div>
+                <Typography.Text strong>合规提醒</Typography.Text>
+                {d.tips.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+          </Space>
+        )}
+      />
+    </Space>
+  );
+
+  // ================= 人事：试用期合规提醒 =================
+  const probPanel = (
+    <Space direction="vertical" size={10} style={{ width: "100%" }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+        填写合同起始日与试用期月数，AI 推算转正 / 解除节点、合规要点与沟通话术。需关联候选人。
+      </Typography.Paragraph>
+      <TalentSelect value={probTalent} onChange={setProbTalent} />
+      <Space.Compact style={{ width: "100%" }}>
+        <Input placeholder="合同起始日 YYYY-MM-DD（可选）" value={probStart} onChange={(e) => setProbStart(e.target.value)} allowClear />
+        <Input placeholder="试用期月数（如 6）" value={probMonths} onChange={(e) => setProbMonths(e.target.value)} allowClear />
+      </Space.Compact>
+      <AiResultCard
+        key={`prob-${probTalent || ""}-${probStart}-${probMonths}`}
+        title="试用期合规提醒"
+        fetchOnMount={async () => {
+          if (!probTalent) return null;
+          const r = await api.aiProbationComplianceGet(probTalent, probStart.trim(), probMonths.trim());
+          return r.data ? { ...r.data } : null;
+        }}
+        onGenerate={async () => {
+          if (!probTalent) { message.warning("请先选择候选人"); return null; }
+          return { ...(await api.aiProbationCompliance({ talent_id: probTalent, start: probStart.trim(), months: probMonths.trim() })) };
+        }}
+        hint="点「生成」，AI 梳理试用期节点与话术。"
+        loadingTip="正在梳理试用期合规节点…"
+        toText={(d) => [
+          d.timeline?.length ? `【节点】\n${d.timeline.map((t: { node: string; action: string }) => `· ${t.node}：${t.action}`).join("\n")}` : "",
+          d.points?.length ? `【合规要点】\n${d.points.map((x: string) => `· ${x}`).join("\n")}` : "",
+          d.scripts?.length ? `【沟通话术】\n${d.scripts.map((s: { situation: string; script: string }) => `· ${s.situation}：${s.script}`).join("\n")}` : "",
+          d.tips?.length ? `【注意】\n${d.tips.map((x: string) => `· ${x}`).join("\n")}` : "",
+        ].filter(Boolean).join("\n\n")}
+        render={(d) => (
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            {d.timeline?.length ? (
+              <div>
+                <Typography.Text strong>关键节点</Typography.Text>
+                {d.timeline.map((t: { node: string; action: string }, i: number) => (
+                  <div key={i} style={line}>· <b>{t.node}</b>：{t.action}</div>
+                ))}
+              </div>
+            ) : null}
+            {d.points?.length ? (
+              <div>
+                <Typography.Text strong>合规要点</Typography.Text>
+                {d.points.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+            {d.scripts?.length ? (
+              <div>
+                <Typography.Text strong>沟通话术</Typography.Text>
+                {d.scripts.map((s: { situation: string; script: string }, i: number) => (
+                  <div key={i} style={{ marginBottom: 4 }}>
+                    <Tag color="blue">{s.situation}</Tag>
+                    <div style={pre}>{s.script}</div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {d.tips?.length ? (
+              <div>
+                <Typography.Text strong>注意</Typography.Text>
+                {d.tips.map((x: string, i: number) => <div key={i} style={line}>· {x}</div>)}
+              </div>
+            ) : null}
+          </Space>
+        )}
+      />
+    </Space>
+  );
+
   // ---- 组内功能列表：逐项按后端 /api/ai/* 的权限分流过滤 ----
   const items = group === "write"
     ? (can("jobs") ? [{ key: "jd", label: "写 JD", children: jdPanel }] : [])
@@ -561,18 +1178,30 @@ export default function AiAssistant() {
       ? [
         ...(can("talents") ? [{ key: "insight", label: "简历解读", children: insightPanel }] : []),
         ...(can("talents") ? [{ key: "optimize", label: "优化简历", children: optimizePanel }] : []),
+        ...(can("talents") ? [{ key: "compare", label: "候选人对比", children: comparePanel }] : []),
         ...(can("interviews") ? [{ key: "summary", label: "综合评估", children: summaryPanel }] : []),
         ...(can("interviews") ? [{ key: "questions", label: "面试问题", children: questionsPanel }] : []),
       ]
       : group === "push"
         ? [
           ...(can("talents") ? [{ key: "outreach", label: "跟进话术", children: outreachPanel }] : []),
+          ...(can("talents") ? [{ key: "offer", label: "Offer 谈判", children: negPanel }] : []),
+          ...(can("talents") ? [{ key: "sourcing", label: "被动触达", children: sourcingPanel }] : []),
           ...(can("pipeline") ? [{ key: "checklist", label: "入职清单", children: checklistPanel }] : []),
         ]
-        : [
-          ...(can("jobs") ? [{ key: "jobdiag", label: "岗位诊断", children: jobDiagPanel }] : []),
-          ...(can("talents") ? [{ key: "inventory", label: "人才盘点", children: inventoryPanel }] : []),
-        ];
+        : group === "hr"
+          ? [
+            ...(can("contracts") ? [{ key: "contract", label: "合同审查", children: contractPanel }] : []),
+            ...(can("contracts") ? [{ key: "probation", label: "试用期合规", children: probPanel }] : []),
+            ...(can("social") ? [{ key: "social", label: "社保增减员", children: socialPanel }] : []),
+            ...(can("social") ? [{ key: "tax", label: "个税筹划", children: taxPanel }] : []),
+          ]
+          : [
+            ...(can("jobs") ? [{ key: "jobdiag", label: "岗位诊断", children: jobDiagPanel }] : []),
+            ...(can("jobs") ? [{ key: "channel", label: "渠道建议", children: channelPanel }] : []),
+            ...(can("talents") ? [{ key: "inventory", label: "人才盘点", children: inventoryPanel }] : []),
+            ...(can("pipeline") ? [{ key: "weekly", label: "招聘周报", children: weeklyPanel }] : []),
+          ];
 
   // ================= 二级：分组内功能页 =================
   return (

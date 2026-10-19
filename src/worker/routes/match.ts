@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 import { deepseekJson, deepseekJsonSafe, toStringArray } from "../ai";
 
@@ -324,10 +325,9 @@ match.get("/profiles", async (c) => {
 
   let sql = "SELECT id, owner_id, name, job_title, city, education, min_years, max_years, salary_range, industry, must_skills, nice_skills, requirements, jd_raw, created_at, updated_at FROM match_profiles";
   const params: string[] = [];
-  if (session.role !== "admin") {
-    sql += " WHERE owner_id = ?";
-    params.push(session.userId);
-  }
+  // sc.sql 以「 AND ...」开头，这里必须补一个恒真条件再接，
+  // 直接拼 " WHERE" + sc.sql 会得到「WHERE AND ...」非法 SQL（非 admin 必 500）
+  { const sc = ownerScope(session); sql += " WHERE 1=1" + sc.sql; params.push(...sc.params); }
   sql += " ORDER BY updated_at DESC";
   const rows = await c.env.DB.prepare(sql).bind(...params).all();
 
@@ -377,10 +377,7 @@ match.put("/profiles/:id", async (c) => {
   const id = c.req.param("id");
   let sql = "SELECT id FROM match_profiles WHERE id = ?";
   const params: string[] = [id];
-  if (session.role !== "admin") {
-    sql += " AND owner_id = ?";
-    params.push(session.userId);
-  }
+  { const sc = ownerScope(session); sql += sc.sql; params.push(...sc.params); }
   const existing = await c.env.DB.prepare(sql).bind(...params).first();
   if (!existing) return c.json({ error: "画像不存在" }, 404);
 
@@ -416,10 +413,7 @@ match.delete("/profiles/:id", async (c) => {
   const id = c.req.param("id");
   let sql = "DELETE FROM match_profiles WHERE id = ?";
   const params: string[] = [id];
-  if (session.role !== "admin") {
-    sql = "DELETE FROM match_profiles WHERE id = ? AND owner_id = ?";
-    params.push(session.userId);
-  }
+  { const sc = ownerScope(session); sql = "DELETE FROM match_profiles WHERE id = ?" + sc.sql; params.push(...sc.params); }
   await c.env.DB.prepare(sql).bind(...params).run();
   return c.json({ ok: true });
 });

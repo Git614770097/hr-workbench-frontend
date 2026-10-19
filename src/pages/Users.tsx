@@ -110,7 +110,7 @@ export default function Users() {
     const kw = query.keyword.trim().toLowerCase();
     return users.filter((u) => {
       if (kw && !`${u.name} ${u.phone}`.toLowerCase().includes(kw)) return false;
-      if (query.role === ROLE_ADMIN && u.role !== "admin") return false;
+      if (query.role === ROLE_ADMIN && u.role === "user") return false;
       if (query.role === ROLE_NONE && (u.role === "admin" || u.role_id)) return false;
       if (query.role && query.role !== ROLE_ADMIN && query.role !== ROLE_NONE && u.role_id !== query.role) {
         return false;
@@ -200,6 +200,17 @@ export default function Users() {
     try {
       await api.resolveReset(record.id, "dismiss");
       message.success(`已忽略「${record.name}」的重置申请`);
+      fetchUsers();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
+  /** 任命 / 撤销 团队管理员（manager） */
+  const handleSetManager = async (record: UserRow) => {
+    try {
+      await api.setUserManager(record.id, record.role !== "manager");
+      message.success(record.role === "manager" ? `已撤销「${record.name}」的管理员` : `已任命「${record.name}」为管理员`);
       fetchUsers();
     } catch (err) {
       message.error((err as Error).message);
@@ -419,8 +430,8 @@ export default function Users() {
       key: "role",
       width: 180,
       render: (role: string, record: UserRow) => (
-        <Tag color={role === "admin" ? "gold" : record.role_id ? "blue" : "default"}>
-          {role === "admin" ? ROLE_LABELS.admin : (record.role_name || "未分配角色")}
+        <Tag color={role === "admin" ? "gold" : role === "manager" ? "geekblue" : record.role_id ? "blue" : "default"}>
+          {role === "admin" || role === "manager" ? ROLE_LABELS[role] : (record.role_name || "未分配角色")}
         </Tag>
       ),
     },
@@ -483,6 +494,15 @@ export default function Users() {
           <Button type="link" size="small" onClick={() => { setShowReset(record.id); resetForm.resetFields(); }}>重置密码</Button>
           {record.role !== "admin" && (
             <>
+              <Popconfirm
+                title={record.role === "manager" ? `撤销「${record.name}」的管理员？` : `任命「${record.name}」为管理员？`}
+                description={record.role === "manager"
+                  ? "其团队将解散，成员数据恢复为各自私有"
+                  : "他将可以创建子用户、分配角色，团队内数据共享"}
+                onConfirm={() => handleSetManager(record)}
+              >
+                <Button type="link" size="small">{record.role === "manager" ? "撤销管理员" : "设为管理员"}</Button>
+              </Popconfirm>
               <Button type="link" size="small" onClick={() => { setAssigning(record); assignForm.setFieldsValue({ role_id: record.role_id }); }}>分配角色</Button>
               <Button type="link" size="small" onClick={() => { setIntending(record); intendForm.setFieldsValue({ intended_role: record.intended_role || "other" }); }}>身份</Button>
               <Popconfirm title="确认删除？该用户的所有数据将被清除。" onConfirm={() => handleDelete(record.id, record.name)}>

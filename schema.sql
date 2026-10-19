@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS roles (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   permissions TEXT NOT NULL DEFAULT '[]',  -- JSON 数组，如 ["talents","risks"]
+  owner_id TEXT,               -- 角色创建者：NULL=全局角色（超管建）；管理员建的角色记自己的 id
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -24,8 +25,10 @@ CREATE TABLE IF NOT EXISTS users (
   pushplus_token TEXT,                   -- 个人 PushPlus 推送 token（用于到期提醒推送到本人）
   paid_until TEXT,                       -- 会员有效期（NULL=未开通；过期时间串=已过期/有效），手动开通制
   intended_role TEXT,                    -- 注册时自报身份（hr/headhunter/team/other），仅作意向参考，不参与鉴权
+  team_id TEXT,                          -- 团队标识：NULL=个人；管理员=自己的id；子用户=管理员id。同 team_id 共享业务数据
   created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE INDEX IF NOT EXISTS idx_users_team ON users(team_id);
 
 -- 站点简单配置（KV 风格键值表）：当前仅存支付收款配置（收款码 + 说明）
 CREATE TABLE IF NOT EXISTS site_settings (
@@ -73,7 +76,6 @@ CREATE TABLE IF NOT EXISTS talents (
   resignation_date TEXT,    -- 预计离职日期（离职倒计时）
   hire_date TEXT,           -- 入职日期（社保增员待办基准日）
   next_follow_at TEXT,      -- 下次跟进/提醒时间（录入表单可填，到期自动生成待办）
-  is_demo INTEGER DEFAULT 0, -- 示例数据标记：1=一键载入的演示数据，可整批清除
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -96,7 +98,6 @@ CREATE TABLE IF NOT EXISTS jobs (
   requirements TEXT,
   opened_at TEXT,
   closed_at TEXT,
-  is_demo INTEGER DEFAULT 0, -- 示例数据标记：1=一键载入的演示数据，可整批清除
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -257,9 +258,9 @@ CREATE TABLE IF NOT EXISTS requisitions (
   reason TEXT,                                   -- 需求原因 / 背景
   expect_date TEXT,                              -- 期望到岗时间
   priority TEXT DEFAULT 'normal',                -- high/normal/low
-  status TEXT NOT NULL DEFAULT 'pending',        -- pending 待审批 / approved 已通过转岗位 / rejected 已驳回 / closed 已关闭
-  job_id TEXT,                                   -- 审批通过后生成的岗位 id
-  reject_reason TEXT,                            -- 驳回原因
+  status TEXT NOT NULL DEFAULT 'pending',        -- pending 待处理 / approved 已转岗 / rejected 已驳回(历史) / closed 已作废
+  job_id TEXT,                                   -- 转为岗位后生成的岗位 id
+  reject_reason TEXT,                            -- 驳回原因（历史数据保留）
   approved_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
@@ -335,6 +336,49 @@ CREATE TABLE IF NOT EXISTS ai_artifacts (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- ---- 老带新推广（邀请奖励）：归属注册时写入一次，管理员点开通时发奖 ----
+CREATE TABLE IF NOT EXISTS referrals (
+  id                    TEXT PRIMARY KEY,
+  referrer_id           TEXT NOT NULL,
+  invitee_id            TEXT NOT NULL,
+  status                TEXT NOT NULL DEFAULT 'pending',  -- pending 待奖励 / rewarded 已发奖
+  created_at            TEXT DEFAULT (datetime('now')),
+  rewarded_at           TEXT,
+  reward_months_referrer INTEGER,
+  reward_months_invitee  INTEGER,
+  note                  TEXT
+);
+
+-- ---- 背景调查（候选人背调）：独立于招聘看板的轻量模块，逻辑挂在「Offer → 入职」之间 ----
+-- 合规硬性前置：必须候选人单独明示授权（consent_status='granted'）才能发起核验 /
+-- 查看敏感结论 / 上传报告 / 推进入职（后端强制闸门）。
+-- 核验仅采集「最小必要」信息：身份 / 学历 / 工作履历 / 竞业限制；
+-- 犯罪记录 / 征信属高敏数据（high_risk=1），授权时需二次明示确认。
+-- 报告原件存 KV（bgcheck: 前缀），元数据存此处。
+CREATE TABLE IF NOT EXISTS background_checks (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES users(id),
+  talent_id TEXT NOT NULL REFERENCES talents(id),
+  talent_job_id TEXT REFERENCES talent_jobs(id) ON DELETE CASCADE,
+  -- pending 待发起 / processing 核验中 / completed 已出报告待判定 / passed 已通过并入职 / failed 未通过 / cancelled 已取消
+  status TEXT NOT NULL DEFAULT 'pending',
+  -- none 未授权 / requested 已发授权请求 / granted 已授权 / declined 候选人拒绝
+  consent_status TEXT NOT NULL DEFAULT 'none',
+  consent_at TEXT,
+  consent_method TEXT,
+  provider TEXT NOT NULL DEFAULT 'manual',  -- manual 内部人工 / 第三方机构名
+  high_risk INTEGER NOT NULL DEFAULT 0,     -- 是否涉及犯罪/征信等高敏项（需二次确认）
+  items_json TEXT,                         -- 分项核验结果 JSON：[{type,label,status,note}]
+  report_kv_key TEXT,                      -- 报告原件 KV key（bgcheck: 前缀）
+  report_name TEXT,
+  summary TEXT,
+  result TEXT,                             -- pass 建议通过 / fail 建议不通过
+  started_at TEXT,
+  completed_at TEXT,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_talents_owner ON talents(owner_id);
 CREATE INDEX IF NOT EXISTS idx_talent_social_talent ON talent_social(talent_id);
@@ -357,3 +401,7 @@ CREATE INDEX IF NOT EXISTS idx_interviews_owner ON interviews(owner_id);
 CREATE INDEX IF NOT EXISTS idx_interviews_scheduled ON interviews(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_ai_artifacts_lookup ON ai_artifacts(owner_id, biz_type, biz_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_artifacts_quota ON ai_artifacts(owner_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_bgcheck_owner ON background_checks(owner_id);
+CREATE INDEX IF NOT EXISTS idx_bgcheck_talent ON background_checks(talent_id);
+CREATE INDEX IF NOT EXISTS idx_bgcheck_job ON background_checks(talent_job_id);
+CREATE INDEX IF NOT EXISTS idx_bgcheck_status ON background_checks(status);

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 import { syncTalentStage, ensureOnboardingItems } from "../talentFlow";
 import { shiftToWorkday } from "../utils/workday";
@@ -44,12 +45,11 @@ pipeline.get("/", async (c) => {
   const params: (string | number)[] = [];
 
   // 普通用户只看自己创建的人才；管理员可看全部或按创建人过滤
-  if (session.role !== "admin") {
-    conditions.push("t.owner_id = ?");
-    params.push(session.userId);
-  } else if (ownerId) {
-    conditions.push("t.owner_id = ?");
-    params.push(ownerId);
+  if (session.role === "admin") {
+    if (ownerId) { conditions.push("t.owner_id = ?"); params.push(ownerId); }
+  } else {
+    conditions.push(...scopeConds(session, "t.owner_id"));
+    params.push(...scopeParams(session));
   }
 
   if (jobId) { conditions.push("tj.job_id = ?"); params.push(jobId); }
@@ -118,10 +118,8 @@ pipeline.post("/sync-stale-tasks", async (c) => {
 
   const conditions: string[] = ["tj.stage NOT IN ('hired','rejected','withdrawn')"];
   const params: (string | number)[] = [];
-  if (session.role !== "admin") {
-    conditions.push("t.owner_id = ?");
-    params.push(session.userId);
-  }
+  conditions.push(...scopeConds(session, "t.owner_id"));
+  params.push(...scopeParams(session));
 
   const rows = await c.env.DB.prepare(`
     SELECT tj.stage, tj.updated_at as stage_updated_at,
@@ -152,7 +150,7 @@ pipeline.post("/sync-stale-tasks", async (c) => {
   // 现存「阶段停滞」待办：普通用户只看自己的，避免误取消他人提醒
   let tSql = "SELECT id, talent_id, content FROM talent_tasks WHERE title LIKE '阶段停滞%' AND status = 'pending'";
   const tParams: string[] = [];
-  if (session.role !== "admin") { tSql += " AND owner_id = ?"; tParams.push(session.userId); }
+  { const sc = ownerScope(session); tSql += sc.sql; tParams.push(...sc.params); }
   const existing = new Map<string, any>();
   for (const t of (await c.env.DB.prepare(tSql).bind(...tParams).all<any>()).results) {
     existing.set(t.talent_id, t);
@@ -226,12 +224,11 @@ pipeline.get("/funnel", async (c) => {
   // 权限：非 admin 只看自己的人才
   const conds: string[] = [];
   const params: (string | number)[] = [];
-  if (session.role !== "admin") {
-    conds.push("t.owner_id = ?");
-    params.push(session.userId);
-  } else if (ownerId) {
-    conds.push("t.owner_id = ?");
-    params.push(ownerId);
+  if (session.role === "admin") {
+    if (ownerId) { conds.push("t.owner_id = ?"); params.push(ownerId); }
+  } else {
+    conds.push(...scopeConds(session, "t.owner_id"));
+    params.push(...scopeParams(session));
   }
   if (jobId) { conds.push("tj.job_id = ?"); params.push(jobId); }
   if (days > 0) {
@@ -495,13 +492,13 @@ pipeline.post("/", async (c) => {
   // 权限校验：普通用户只能操作自己的人才；岗位也须可见
   let tSql = "SELECT id, name FROM talents WHERE id = ?";
   const tParams: string[] = [body.talent_id];
-  if (session.role !== "admin") { tSql += " AND owner_id = ?"; tParams.push(session.userId); }
+  { const sc = ownerScope(session); tSql += sc.sql; tParams.push(...sc.params); }
   const talent = await c.env.DB.prepare(tSql).bind(...tParams).first<{ id: string; name: string }>();
   if (!talent) return c.json({ error: "人才不存在或无权限" }, 404);
 
   let jSql = "SELECT id, title FROM jobs WHERE id = ?";
   const jParams: string[] = [body.job_id];
-  if (session.role !== "admin") { jSql += " AND owner_id = ?"; jParams.push(session.userId); }
+  { const sc = ownerScope(session); jSql += sc.sql; jParams.push(...sc.params); }
   const job = await c.env.DB.prepare(jSql).bind(...jParams).first<{ id: string; title: string }>();
   if (!job) return c.json({ error: "岗位不存在或无权限" }, 404);
 
@@ -536,7 +533,7 @@ pipeline.post("/batch", async (c) => {
   // 岗位权限：普通用户只能操作自己的岗位
   let jSql = "SELECT id, title FROM jobs WHERE id = ?";
   const jParams: string[] = [body.job_id];
-  if (session.role !== "admin") { jSql += " AND owner_id = ?"; jParams.push(session.userId); }
+  { const sc = ownerScope(session); jSql += sc.sql; jParams.push(...sc.params); }
   const job = await c.env.DB.prepare(jSql).bind(...jParams).first<{ id: string; title: string }>();
   if (!job) return c.json({ error: "岗位不存在或无权限" }, 404);
 
@@ -546,7 +543,7 @@ pipeline.post("/batch", async (c) => {
   const ph = ids.map(() => "?").join(",");
   let tSql = `SELECT id, name FROM talents WHERE id IN (${ph})`;
   const tParams: string[] = [...ids];
-  if (session.role !== "admin") { tSql += " AND owner_id = ?"; tParams.push(session.userId); }
+  { const sc = ownerScope(session); tSql += sc.sql; tParams.push(...sc.params); }
   const talents = (await c.env.DB.prepare(tSql).bind(...tParams).all<{ id: string; name: string }>()).results;
   if (talents.length === 0) return c.json({ error: "所选人才不存在或无权限" }, 404);
 
@@ -607,10 +604,12 @@ pipeline.post("/batch-stage", async (c) => {
   `).bind(...ids).all<any>();
 
   // 无权限的跳过；已处于目标阶段的跳过（不重复写日志）
-  const targets = (rows.results as any[]).filter((r) => {
-    if (session.role !== "admin" && r.owner_id !== session.userId) return false;
-    return r.old_stage !== stage;
-  });
+  // 无权限的跳过（团队成员互可操作）；已处于目标阶段的跳过（不重复写日志）
+  const targets: any[] = [];
+  for (const r of rows.results as any[]) {
+    if (r.old_stage === stage) continue;
+    if (await canTouch(c.env, session, r.owner_id)) targets.push(r);
+  }
   const skipped = rows.results.length - targets.length;
   if (targets.length === 0) return c.json({ updated: 0, skipped, names: [] });
 
@@ -695,7 +694,7 @@ pipeline.put("/:linkId/stage", async (c) => {
     FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
   `).bind(linkId).first<any>();
   if (!link) return c.json({ error: "候选人记录不存在" }, 404);
-  if (session.role !== "admin" && link.owner_id !== session.userId) {
+  if (!(await canTouch(c.env, session, link.owner_id))) {
     return c.json({ error: "无权限" }, 403);
   }
   if (link.old_stage === body.stage) return c.json({ ok: true, stage: body.stage });
@@ -756,7 +755,7 @@ pipeline.get("/:linkId/logs", async (c) => {
     SELECT tj.id, t.owner_id FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
   `).bind(linkId).first<any>();
   if (!link) return c.json({ error: "候选人记录不存在" }, 404);
-  if (session.role !== "admin" && link.owner_id !== session.userId) return c.json({ error: "无权限" }, 403);
+  if (!(await canTouch(c.env, session, link.owner_id))) return c.json({ error: "无权限" }, 403);
 
   const rows = await c.env.DB.prepare(`
     SELECT l.*, u.name as user_name FROM job_stage_logs l
@@ -786,7 +785,7 @@ pipeline.patch("/:linkId", async (c) => {
     SELECT tj.id, t.owner_id FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
   `).bind(linkId).first<any>();
   if (!link) return c.json({ error: "候选人记录不存在" }, 404);
-  if (session.role !== "admin" && link.owner_id !== session.userId) return c.json({ error: "无权限" }, 403);
+  if (!(await canTouch(c.env, session, link.owner_id))) return c.json({ error: "无权限" }, 403);
 
   // 动态拼 SET：占位符与绑定值同序同量，避免参数错位导致 500
   const sets: string[] = [];
@@ -810,7 +809,7 @@ pipeline.delete("/:linkId", async (c) => {
     SELECT tj.id, t.owner_id FROM talent_jobs tj JOIN talents t ON tj.talent_id = t.id WHERE tj.id = ?
   `).bind(linkId).first<any>();
   if (!link) return c.json({ error: "候选人记录不存在" }, 404);
-  if (session.role !== "admin" && link.owner_id !== session.userId) return c.json({ error: "无权限" }, 403);
+  if (!(await canTouch(c.env, session, link.owner_id))) return c.json({ error: "无权限" }, 403);
 
   await c.env.DB.prepare("DELETE FROM job_stage_logs WHERE talent_job_id = ?").bind(linkId).run();
   await c.env.DB.prepare("DELETE FROM talent_jobs WHERE id = ?").bind(linkId).run();

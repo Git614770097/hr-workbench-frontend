@@ -25,7 +25,6 @@ import { useDict } from "../dict";
 import { fmtDate } from "../utils/time";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import AnimatedNumber from "../components/AnimatedNumber";
-import { DemoSeedButton } from "../components/DemoSeed";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
 import { dateStamp, exportXlsx } from "../utils/file";
@@ -554,16 +553,7 @@ export default function Pipeline() {
                 ? "当前筛选条件下没有候选人"
                 : termFor(profile, "招聘看板还是空的，点右上角把人才挂到岗位上")
             }
-          >
-            {!filtered && import.meta.env.DEV && (
-              <div style={{ marginTop: 8 }}>
-                <DemoSeedButton onDone={fetchPipeline} />
-                <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-                  {termFor(profile, "载入后即可体验拖拽流转与招聘漏斗，数据可一键清除")}
-                </div>
-              </div>
-            )}
-          </Empty>
+          />
         </Card>
       ) : (
         <div className="pipe-board">

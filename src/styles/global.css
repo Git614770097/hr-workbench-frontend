@@ -1382,14 +1382,17 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 
 /* B. 直接渲染 Empty 的卡（Pipeline/Funnel 空态卡、待办日卡、入职办理）：
    仅让 Empty 在「工具行以下的剩余高度」内垂直居中，工具行(按钮)仍贴顶，
-   避免未选候选人时按钮上方出现大段空白（原 justify-content:center 会把整块推到中间）。 */
+   避免未选候选人时按钮上方出现大段空白（原 justify-content:center 会把整块推到中间）。
+   ⚠️ flex-direction:column 必须显式写：antd 的 .ant-empty 默认块级竖排，
+   这里 display:flex 后不指定方向会退化成 row，把 图/描述/按钮 横排成一行，
+   与表格类页面（规则 A，竖排）的缺省页布局不一致。 */
 .list-card:has(> .ant-card-body > .ant-empty) > .ant-card-body,
 .task-day-card:has(> .ant-card-body > .ant-empty) > .ant-card-body {
   display: flex; flex-direction: column;
 }
 .list-card:has(> .ant-card-body > .ant-empty) > .ant-card-body > .ant-empty,
 .task-day-card:has(> .ant-card-body > .ant-empty) > .ant-card-body > .ant-empty {
-  flex: 1; display: flex; align-items: center; justify-content: center;
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
 }
 /* 待办日卡参与 grid 等高拉伸后，body 要撑满卡片，Empty 才有居中空间 */
 .tasks-page .task-day-card { display: flex; flex-direction: column; }
@@ -1421,6 +1424,25 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 .appr-pane:has(.ant-table-placeholder) .ant-table-container { flex: 1; display: flex; flex-direction: column; }
 .appr-pane:has(.ant-table-placeholder) .ant-table-content { flex: 1; display: flex; flex-direction: column; }
 .appr-pane:has(.ant-table-placeholder) .ant-table-content > table { flex: 1; }
+
+/* 背调中心：列表撑满卡片剩余高度 + 空态居中。
+   ⚠️ 此前 .bg-table-host 完全没有样式定义：该 div 高度由表格内容决定，而 useTableFill 又拿它的
+      高度反算 scroll.y，形成「自己算自己」，结果是表格既不撑满、行数变化时高度还会漂移。
+      另：本页主卡没有 list-card 类，故不能依赖 .list-card:has(...) 那套规则，必须独立拉一条 flex 链。 */
+.background-page > .ant-card:last-child > .ant-card-body { display: flex; flex-direction: column; }
+.background-page .toolbar { flex: none; }
+.background-page .bg-table-host { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.background-page .bg-table-host .ant-table-wrapper { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.background-page .bg-table-host .ant-spin-nested-loading,
+.background-page .bg-table-host .ant-spin-container,
+.background-page .bg-table-host .ant-table,
+.background-page .bg-table-host .ant-table-container,
+.background-page .bg-table-host .ant-table-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.background-page .bg-table-host .ant-table-content > table { flex: 1; min-height: 280px; }
+/* 空态：占位单元格撑开并居中缺省图（有数据时 scroll.y 生效，不需要这条） */
+.background-page .bg-table-host:has(.ant-table-placeholder) .ant-table-placeholder {
+  display: flex; align-items: center; justify-content: center; min-height: 240px;
+}
 
 /* 审批进度 Steps：窄列内隐藏步骤间的横向连接线，避免待办列表每行「进度」格出现一条多余横线
    （步骤圆点 + 当前步高亮 + 文本保留，仅去连线；antd v5 用 :where() 降特异性，普通类选择器即可覆盖） */

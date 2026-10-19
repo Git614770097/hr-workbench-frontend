@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 import { moveStageForward, ensureOnboardingItems } from "../talentFlow";
 
@@ -127,7 +128,7 @@ approvals.delete("/flows/:id", async (c) => {
   const row = await c.env.DB.prepare("SELECT owner_id FROM approval_flows WHERE id = ?").bind(id).first<{ owner_id: string }>();
   if (!row) return c.json({ error: "流程不存在" }, 404);
   // admin 可管理全部流程模板，普通用户仅能删自己创建的
-  if (session.role !== "admin" && row.owner_id !== session.userId) return c.json({ error: "无权删除该流程" }, 403);
+  if (!(await canTouch(c.env, session, row.owner_id))) return c.json({ error: "无权删除该流程" }, 403);
   await c.env.DB.prepare("DELETE FROM approval_flows WHERE id = ?").bind(id).run();
   return c.json({ ok: true });
 });
@@ -152,7 +153,7 @@ approvals.post("/instances", async (c) => {
   `).bind(b.talent_job_id).first<any>();
   if (!link) return c.json({ error: "投递不存在" }, 404);
   // admin 可为任意候选人发起审批，普通用户仅限自己的候选人
-  if (session.role !== "admin" && link.owner_id !== session.userId) return c.json({ error: "无权对该候选人发起审批" }, 403);
+  if (!(await canTouch(c.env, session, link.owner_id))) return c.json({ error: "无权对该候选人发起审批" }, 403);
 
   // 同一投递同一场景进行中只允许一个实例，避免重复发起
   const dup = await c.env.DB.prepare(
@@ -197,10 +198,8 @@ approvals.get("/instances", async (c) => {
 
   const conditions: string[] = [];
   const params: string[] = [];
-  if (session.role !== "admin") {
-    conditions.push("i.owner_id = ?");
-    params.push(session.userId);
-  }
+  conditions.push(...scopeConds(session, "i.owner_id"));
+  params.push(...scopeParams(session));
   if (c.req.query("status")) { conditions.push("i.status = ?"); params.push(c.req.query("status")!); }
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
@@ -240,7 +239,7 @@ approvals.post("/instances/:id/decide", async (c) => {
   const inst = await c.env.DB.prepare("SELECT * FROM approval_instances WHERE id = ?").bind(id).first<any>();
   if (!inst) return c.json({ error: "审批不存在" }, 404);
   // admin 可处理任何人的；普通用户仅能处理自己发起的
-  if (session.role !== "admin" && inst.owner_id !== session.userId) {
+  if (!(await canTouch(c.env, session, inst.owner_id))) {
     return c.json({ error: "无权处理该审批" }, 403);
   }
   if (inst.status !== "pending") return c.json({ error: "该审批已结束" }, 400);
@@ -303,7 +302,7 @@ approvals.post("/instances/:id/cancel", async (c) => {
   const inst = await c.env.DB.prepare("SELECT owner_id, status FROM approval_instances WHERE id = ?").bind(id).first<any>();
   if (!inst) return c.json({ error: "审批不存在" }, 404);
   // admin 可取消任意审批，普通用户仅限自己发起的
-  if (session.role !== "admin" && inst.owner_id !== session.userId) return c.json({ error: "无权取消该审批" }, 403);
+  if (!(await canTouch(c.env, session, inst.owner_id))) return c.json({ error: "无权取消该审批" }, 403);
   if (inst.status !== "pending") return c.json({ error: "该审批已结束" }, 400);
   await c.env.DB.prepare(
     "UPDATE approval_instances SET status='cancelled', updated_at=datetime('now') WHERE id=?"
