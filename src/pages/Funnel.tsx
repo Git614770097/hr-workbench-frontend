@@ -522,6 +522,10 @@ export default function Funnel() {
   };
 
   const analysisReady = !loading && !!s && s.total > 0;
+  // 行动层分栏开关：数据（今日重点 + KPI）与早报同时在場 → 桌面左右分栏；
+  // 任一被「调整模块」关掉 → 另一个自动通栏，不留半空容器
+  const showStats = !isHidden("today_focus") || !isHidden("kpi_band");
+  const showBrief = !isHidden("daily_brief");
 
   return (
     <div className="funnel-page workbench-page">
@@ -531,80 +535,83 @@ export default function Funnel() {
         <Button icon={<AppstoreOutlined />} onClick={() => setCfgOpen(true)}>调整模块</Button>
       </div>
 
-      {/* ===== 行动层：今日早报（先看人，再看数）===== */}
-      {!isHidden("daily_brief") && <DailyBrief />}
-
-      {/* ===== 行动层：通栏指标条（今日重点 + 关键指标 合并，去重） ===== */}
-      {(!isHidden("today_focus") || !isHidden("kpi_band")) && (
-        <div className="wb-hero">
-          {overview ? (
-            <div className="page-stats wb-strip">
-              {/* 关键指标 */}
-              {!isHidden("kpi_band") && (
-                <>
-                  <div className="stat">
-                    <span className="stat-icon is-neutral"><AimOutlined /></span>
-                    <span className="stat-body">
-                      <span className="stat-num is-neutral"><AnimatedNumber value={overview.openJobs ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                      <span className="stat-label">{termFor(profile, "在招岗位")}</span>
-                    </span>
-                  </div>
-                  <div className="stat">
-                    <span className="stat-icon is-neutral"><TeamOutlined /></span>
-                    <span className="stat-body">
-                      <span className="stat-num"><AnimatedNumber value={overview.activeCandidates ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                      <span className="stat-label">{termFor(profile, "待推进")}</span>
-                    </span>
-                  </div>
-                  <div className="stat">
-                    <span className="stat-icon is-good"><RiseOutlined /></span>
-                    <span className="stat-body">
-                      <span className="stat-num is-good"><AnimatedNumber value={overview.weeklyNewTalents ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                      <span className="stat-label">
-                        本周新增
-                        {(() => {
-                          const w = wowText(overview.weeklyNewTalents ?? 0, overview.prevWeekNewTalents ?? 0);
-                          const color = w.tone === "up" ? "#16a34a" : w.tone === "down" ? "#ea580c" : "#94a3b8";
-                          return <span className="wb-wow" style={{ color }}>较上周 {w.text}</span>;
-                        })()}
-                      </span>
-                    </span>
-                  </div>
-                </>
-              )}
-              {/* 今日重点：今日面试 / 近 3 天到期（带逾期红徽标，点击进对应页） */}
-              {!isHidden("today_focus") && (
-                <>
-                  <Link to="/interviews" className="stat is-link">
-                    <span className="stat-icon is-warn"><CalendarOutlined /></span>
-                    <span className="stat-body">
-                      <span className="stat-num is-warn"><AnimatedNumber value={overview.todayInterviewCount ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                      <span className="stat-label">
-                        今日面试
-                        {(() => {
-                          const w = wowText(overview.todayInterviewCount ?? 0, overview.prevWeekdayInterviewCount ?? 0);
-                          const color = w.tone === "up" ? "#16a34a" : w.tone === "down" ? "#ea580c" : "#94a3b8";
-                          return <span className="wb-wow" style={{ color }}>较上周 {w.text}</span>;
-                        })()}
-                      </span>
-                    </span>
-                  </Link>
-                  <Link to="/tasks" className="stat is-link">
-                    <span className="stat-icon is-warn"><AlertOutlined /></span>
-                    <span className="stat-body">
-                      <span className="stat-num is-warn">{dueSoon.length}</span>
-                      <span className="stat-label">
-                        近 3 天到期
-                        {overdue > 0 && <span className="wb-focus-overdue">{overdue} 逾期</span>}
-                      </span>
-                    </span>
-                  </Link>
-                </>
-              )}
+      {/* ===== 行动层：左「数据」右「早报」分栏（桌面 grid，左略宽）；
+           单模块被「调整模块」关掉时另一个自动通栏；移动端同序堆叠 ===== */}
+      {(showStats || showBrief) && (
+        <div className={showStats && showBrief ? "wb-action-split" : undefined}>
+          {showStats && (
+            <div className="wb-hero">
+              {overview ? (
+                <div className="page-stats wb-strip">
+                  {/* 关键指标 */}
+                  {!isHidden("kpi_band") && (
+                    <>
+                      <div className="stat">
+                        <span className="stat-icon is-neutral"><AimOutlined /></span>
+                        <span className="stat-body">
+                          <span className="stat-num is-neutral"><AnimatedNumber value={overview.openJobs ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                          <span className="stat-label">{termFor(profile, "在招岗位")}</span>
+                        </span>
+                      </div>
+                      <div className="stat">
+                        <span className="stat-icon is-neutral"><TeamOutlined /></span>
+                        <span className="stat-body">
+                          <span className="stat-num"><AnimatedNumber value={overview.activeCandidates ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                          <span className="stat-label">{termFor(profile, "待推进")}</span>
+                        </span>
+                      </div>
+                      <div className="stat">
+                        <span className="stat-icon is-good"><RiseOutlined /></span>
+                        <span className="stat-body">
+                          <span className="stat-num is-good"><AnimatedNumber value={overview.weeklyNewTalents ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                          <span className="stat-label">
+                            本周新增
+                            {(() => {
+                              const w = wowText(overview.weeklyNewTalents ?? 0, overview.prevWeekNewTalents ?? 0);
+                              const color = w.tone === "up" ? "#16a34a" : w.tone === "down" ? "#ea580c" : "#94a3b8";
+                              return <span className="wb-wow" style={{ color }}>较上周 {w.text}</span>;
+                            })()}
+                          </span>
+                        </span>
+                      </div>
+                    </>
+                  )}
+                  {/* 今日重点：今日面试 / 近 3 天到期（带逾期红徽标，点击进对应页） */}
+                  {!isHidden("today_focus") && (
+                    <>
+                      <Link to="/interviews" className="stat is-link">
+                        <span className="stat-icon is-warn"><CalendarOutlined /></span>
+                        <span className="stat-body">
+                          <span className="stat-num is-warn"><AnimatedNumber value={overview.todayInterviewCount ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                          <span className="stat-label">
+                            今日面试
+                            {(() => {
+                              const w = wowText(overview.todayInterviewCount ?? 0, overview.prevWeekdayInterviewCount ?? 0);
+                              const color = w.tone === "up" ? "#16a34a" : w.tone === "down" ? "#ea580c" : "#94a3b8";
+                              return <span className="wb-wow" style={{ color }}>较上周 {w.text}</span>;
+                            })()}
+                          </span>
+                        </span>
+                      </Link>
+                      <Link to="/tasks" className="stat is-link">
+                        <span className="stat-icon is-warn"><AlertOutlined /></span>
+                        <span className="stat-body">
+                          <span className="stat-num is-warn">{dueSoon.length}</span>
+                          <span className="stat-label">
+                            近 3 天到期
+                            {overdue > 0 && <span className="wb-focus-overdue">{overdue} 逾期</span>}
+                          </span>
+                        </span>
+                      </Link>
+                    </>
+                  )}
+                </div>
+              ) : ovLoading ? (
+                <Card><Skeleton active paragraph={{ rows: 1 }} /></Card>
+              ) : null}
             </div>
-          ) : ovLoading ? (
-            <Card><Skeleton active paragraph={{ rows: 1 }} /></Card>
-          ) : null}
+          )}
+          {showBrief && <DailyBrief />}
         </div>
       )}
 

@@ -357,16 +357,17 @@ overview.get("/trend", async (c) => {
 // 工作台行动层第一张卡（先看人，再看数）。登录即可用，不占菜单权限（与 / 同口径）。
 //
 // 两条数据来源，刻意分离：
-//  ① 名单 = 纯规则聚合（不花 AI 配额、不调 AI）：五类「等人」信号，全部来自现有表；
+//  ① 名单 = 纯规则聚合（不花 AI 配额、不调 AI）：四类「等人」信号，全部来自现有表；
 //  ② ai_note = 可选的一句话开场白（打「AI 小结」标）：配额内才生成，落 ai_artifacts
 //     缓存 10 分钟；配额用完 / 无 Key / AI 超时一律静默降级——名单永远可见。
 //
-// 五类信号与配色（红=候选人在流失/结论卡人，琥珀=排期风险，蓝=你的决定）：
-//   红  简历压 ≥2 天没筛          → 看完给个结论
+// 四类信号与配色（红=结论卡人，琥珀=排期风险，蓝=你的决定）：
 //   红  终面已过、结论待定         → 定通过与否
 //   琥珀 面试后 ≥2 天没推进       → 约下一轮或说明
 //   琥珀 面试在即（今/明/后天，含昨天未更新的）→ 确认时间并备面 / 补录结果
 //   蓝  Offer ≥1 天没跟进         → 跟进确认意向
+// 注：「简历压了 N 天没筛」一类已于 2026-10-19 按用户反馈下线——
+//     简历积压是常态而非异常，每日提示只会稀释真正卡人的信号。
 overview.get("/daily-brief", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
@@ -378,21 +379,7 @@ overview.get("/daily-brief", async (c) => {
   const now = Date.now();
   const today = todayCn();
 
-  // ① 简历压了 ≥2 天没筛选（红）
-  const screenRows = await db
-    .prepare(
-      `SELECT j.talent_id, j.job_id, j.updated_at, t.name AS talent_name, jb.title AS job_title
-       FROM talent_jobs j
-       JOIN talents t ON t.id = j.talent_id
-       LEFT JOIN jobs jb ON jb.id = j.job_id
-       WHERE j.stage = 'screening'
-         AND julianday('now') - julianday(j.updated_at) >= 2${scT.sql}
-       ORDER BY j.updated_at ASC LIMIT 8`
-    )
-    .bind(...scT.params)
-    .all<{ talent_id: string; job_id: string; updated_at: string; talent_name: string; job_title: string | null }>();
-
-  // ② 终面已过、结论待定（红）——面试完没写 pass/fail，候选人卡在最后一关
+  // ① 终面已过、结论待定（红）——面试完没写 pass/fail，候选人卡在最后一关
   const finalRows = await db
     .prepare(
       `SELECT iv.talent_id, iv.job_id, iv.scheduled_at, t.name AS talent_name, jb.title AS job_title
@@ -406,7 +393,7 @@ overview.get("/daily-brief", async (c) => {
     .bind(...scIv.params)
     .all<{ talent_id: string; job_id: string | null; scheduled_at: string | null; talent_name: string; job_title: string | null }>();
 
-  // ③ 面试后 ≥2 天没推进（琥珀）——有排期面试的不算停滞
+  // ② 面试后 ≥2 天没推进（琥珀）——有排期面试的不算停滞
   const staleIvRows = await db
     .prepare(
       `SELECT j.talent_id, j.job_id, j.updated_at, t.name AS talent_name, jb.title AS job_title
@@ -424,7 +411,7 @@ overview.get("/daily-brief", async (c) => {
     .bind(...scT.params)
     .all<{ talent_id: string; job_id: string; updated_at: string; talent_name: string; job_title: string | null }>();
 
-  // ④ 面试在即/待更新（琥珀）：中国时区日期 ∈ [昨天, 后天]
+  // ③ 面试在即/待更新（琥珀）：中国时区日期 ∈ [昨天, 后天]
   //    scheduled_at 是用户本地时间串，与 overview 的「今日面试」同口径按日期前缀比较
   const ivFrom = addDays(today, -1);
   const ivTo = addDays(today, 2);
@@ -441,7 +428,7 @@ overview.get("/daily-brief", async (c) => {
     .bind(ivFrom, ivTo, ...scIv.params)
     .all<{ talent_id: string; job_id: string | null; scheduled_at: string | null; talent_name: string; job_title: string | null }>();
 
-  // ⑤ Offer ≥1 天没跟进（蓝）
+  // ④ Offer ≥1 天没跟进（蓝）
   const offerRows = await db
     .prepare(
       `SELECT j.talent_id, j.job_id, j.updated_at, t.name AS talent_name, jb.title AS job_title
@@ -490,9 +477,6 @@ overview.get("/daily-brief", async (c) => {
     });
   };
 
-  for (const r of screenRows.results || []) {
-    push(r, "red", `简历已压 ${dayDiff(r.updated_at)} 天`, "看完给个结论", dayDiff(r.updated_at));
-  }
   for (const r of finalRows.results || []) {
     push(r, "red", "终面已过，结论待定", "定通过与否", 99);
   }
