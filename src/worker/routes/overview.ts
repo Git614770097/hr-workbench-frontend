@@ -516,8 +516,22 @@ overview.get("/daily-brief", async (c) => {
   }
 
   const levelRank = { red: 0, amber: 1, blue: 2 } as const;
-  items.sort((a, b) => levelRank[a.level] - levelRank[b.level] || b.sort_days - a.sort_days);
-  const top = items.slice(0, 8);
+  // 同一「人才-岗位」可能命中多条规则（如终面待定 + 面试后停滞）——
+  // 按 link_key 去重只留级别最高的一条，避免前端列表 key 重复
+  const best = new Map<string, BriefItem>();
+  for (const it of items) {
+    const prev = best.get(it.link_key);
+    if (
+      !prev ||
+      levelRank[it.level] < levelRank[prev.level] ||
+      (levelRank[it.level] === levelRank[prev.level] && it.sort_days > prev.sort_days)
+    ) {
+      best.set(it.link_key, it);
+    }
+  }
+  const deduped = [...best.values()];
+  deduped.sort((a, b) => levelRank[a.level] - levelRank[b.level] || b.sort_days - a.sort_days);
+  const top = deduped.slice(0, 8);
 
   // ---- 可选 AI 一句话开场白（配额内；失败静默，不影响名单）----
   let aiNote: string | null = null;
