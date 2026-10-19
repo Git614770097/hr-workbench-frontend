@@ -1690,10 +1690,10 @@ html[data-theme-mode="dark"] .logs-page .logs-sec-tip { color: #8b95a5; }
   background: #ffffff;
   border: 1px solid #eef0f3;
   border-radius: 10px;
-  padding: 0.85rem 1.1rem;
+  padding: 0.7rem 1rem;
   margin-bottom: 16px;
 }
-.wb-brief-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 0.5rem; }
+.wb-brief-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 0.35rem; }
 .wb-brief-title { font-size: 0.95rem; font-weight: 600; color: #1f2937; }
 .wb-brief-count {
   flex: 0 0 auto;
@@ -1705,7 +1705,7 @@ html[data-theme-mode="dark"] .logs-page .logs-sec-tip { color: #8b95a5; }
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   font-size: 0.82rem; color: #4b5563;
   background: #f8fafc; border: 1px solid #eef0f3; border-radius: 8px;
-  padding: 0.35rem 0.6rem; margin-bottom: 0.5rem;
+  padding: 0.3rem 0.55rem; margin-bottom: 0.35rem;
 }
 .wb-brief-ai-tag {
   flex: 0 0 auto;
@@ -1713,15 +1713,16 @@ html[data-theme-mode="dark"] .logs-page .logs-sec-tip { color: #8b95a5; }
   background: rgba(124, 58, 237, 0.10); border-radius: 4px; padding: 1px 6px;
 }
 /* 名单限高 3 条：超出卡内滚动（滚动条走全局极细自动隐藏名单），
-   行动层高度因此受控、与左栏数据栏齐平；头部「N 人在等」计数提示有更多 */
+   行动层高度因此受控、与左栏数据栏齐平；头部「N 人在等」计数提示有更多。
+   单条行距已收紧（padding 0.18rem）：3 条约 5.1rem，限高 5.4rem 略有换行余量 */
 .wb-brief-list {
   list-style: none; margin: 0; padding: 0;
-  max-height: 6.6rem; overflow-y: auto;
+  max-height: 5.4rem; overflow-y: auto;
   scrollbar-width: thin; scrollbar-color: transparent transparent;
 }
 .wb-brief-item {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 0.32rem 0; font-size: 0.85rem; color: #1f2937;
+  padding: 0.18rem 0; font-size: 0.85rem; color: #1f2937;
 }
 .wb-brief-item + .wb-brief-item { border-top: 1px dashed #eef0f3; }
 .wb-brief-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
@@ -1737,7 +1738,7 @@ html[data-theme-mode="dark"] .logs-page .logs-sec-tip { color: #8b95a5; }
   font-size: 0.74rem; color: #3b82f6;
   background: rgba(59, 130, 246, 0.08); border-radius: 4px; padding: 1px 8px;
 }
-.wb-brief-empty { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0.3rem 0; }
+.wb-brief-empty { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0.2rem 0; }
 .wb-brief-empty-main { font-size: 0.85rem; font-weight: 600; color: #1f2937; }
 .wb-brief-empty-link { font-size: 0.78rem; color: #3b82f6; }
 html[data-theme-mode="dark"] .wb-brief { background: #1f1f1f; border-color: #303030; }
@@ -1951,12 +1952,12 @@ html[data-theme-mode="dark"] .wb-mod-item-desc { color: #6b7280; }
   /* 早报动作pill：窄屏不再右推，跟在理由后面自然换行 */
   .wb-brief-action { margin-left: 0; }
   /* 窄屏条目换行后每条约两行高——3 条的限高按换行高度放大，仍只露 3 条 */
-  .wb-brief-list { max-height: 9.8rem; }
+  .wb-brief-list { max-height: 9.4rem; }
 }
 @media (max-width: 420px) {
   .wb-strip { grid-template-columns: minmax(0, 1fr); }
-  /* 更窄：要素竖排每条约三行，再放大一档 */
-  .wb-brief-list { max-height: 12.5rem; }
+  /* 更窄：要素竖排每条约三行，三行条目有物理下限，再放大一档 */
+  .wb-brief-list { max-height: 12.2rem; }
 }
 
 /* ===== 岗位列表可点击元素（岗位名称 / 流程中人数）=====
