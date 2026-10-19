@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Modal, Select, Input, Button, Space, message, Alert, Typography, Divider } from "antd";
 import { SendOutlined, DownloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import type { PipelineCard, DocTemplate } from "../types";
+import type { BackgroundCheck, PipelineCard, DocTemplate } from "../types";
 import { downloadBlob, dateStamp, escapeHtml } from "../utils/file";
 
 /**
@@ -27,6 +27,8 @@ export default function OfferModal({
   const [entryDate, setEntryDate] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [loadingTpl, setLoadingTpl] = useState(false);
+  const [bg, setBg] = useState<BackgroundCheck | null>(null);
+  const [bgLoading, setBgLoading] = useState(false);
 
   // 拉「招聘入职」类模板
   useEffect(() => {
@@ -50,6 +52,37 @@ export default function OfferModal({
       setEntryDate("");
     }
   }, [open, card]);
+
+  // 背调结论随行：打开时按候选人拉最近一条背调，让「发不发 Offer」的决策现场能看到结论。
+  // 失败静默——背调接口异常不该阻断 Offer 生成主流程。
+  useEffect(() => {
+    if (!open || !card?.talent_id) { setBg(null); return; }
+    let alive = true;
+    setBgLoading(true);
+    (async () => {
+      try {
+        const r = await api.getBackgroundChecks({ talent_id: card.talent_id });
+        if (!alive) return;
+        // 列表已按「进行中优先 + 创建倒排」；优先取第一条未取消的
+        setBg(r.items.find((x) => x.status !== "cancelled") || r.items[0] || null);
+      } catch { if (alive) setBg(null); }
+      finally { if (alive) setBgLoading(false); }
+    })();
+    return () => { alive = false; };
+  }, [open, card]);
+
+  /** 背调状态 → Offer 决策提示：fail 必须呛脸，pass 给绿灯，其余只报状态 */
+  const bgHint = (): { type: "success" | "info" | "warning" | "error"; message: string; description?: string } | null => {
+    if (!bg) return null;
+    const sum = bg.summary?.trim();
+    const snippet = sum ? (sum.length > 120 ? sum.slice(0, 120) + "…" : sum) : undefined;
+    if (bg.status === "passed") return { type: "success", message: "背调已通过并入职", description: snippet };
+    if (bg.result === "fail") return { type: "error", message: "背调结论：不建议通过", description: snippet || "请确认是否仍要继续发出 Offer。" };
+    if (bg.result === "pass") return { type: "success", message: "背调结论：建议通过", description: snippet };
+    if (bg.consent_status === "granted") return { type: "info", message: `背调进行中（${bg.status_label}）`, description: "结论出具后将显示在这里。" };
+    return { type: "warning", message: `背调未获授权（${bg.consent_label}）`, description: "依据个人信息保护法，背调须取得候选人单独明示授权后方可开展。" };
+  };
+  const hint = !bgLoading && bg ? bgHint() : null;
 
   const tpl = templates.find((t) => t.id === tplId);
 
@@ -140,6 +173,17 @@ ${body}
               </span>
             }
           />
+
+          {bgLoading ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 16 }}>背调状态加载中…</Typography.Text>
+          ) : hint ? (
+            <Alert type={hint.type} showIcon style={{ marginBottom: 16 }}
+              message={hint.message} description={hint.description} />
+          ) : (
+            <Alert type="info" showIcon style={{ marginBottom: 16 }}
+              message="该候选人尚未发起背调"
+              description="如该岗位需要背景调查，可到「背调中心」发起；取得授权并出具结论后将显示在这里。" />
+          )}
 
           <Space direction="vertical" style={{ width: "100%" }} size={12}>
             <div>

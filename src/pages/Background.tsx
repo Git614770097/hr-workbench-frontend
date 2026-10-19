@@ -4,13 +4,12 @@ import {
   message, Popconfirm, Empty, Alert, Divider, Typography, Spin, List, Tooltip,
 } from "antd";
 import {
-  PlusOutlined, ReloadOutlined, SafetyOutlined, RobotOutlined, UploadOutlined,
-  CheckCircleOutlined, StopOutlined, FileSearchOutlined,
+  PlusOutlined, ReloadOutlined, SafetyOutlined, UploadOutlined,
+  CheckCircleOutlined, StopOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
-import { extractContractText } from "../utils/contractFile";
-import type { BackgroundCheck, BgItem, BgItemStatus, BgResumeCheckResult } from "../types";
-import { BG_STATUS_LABELS, BG_CONSENT_LABELS, BG_ITEM_STATUS_LABELS } from "../types";
+import type { BackgroundCheck } from "../types";
+import { BG_STATUS_LABELS, BG_CONSENT_LABELS } from "../types";
 
 // 让列表撑满剩余高度：表头固定、表体内部滚动（与审批/合同页一致）
 function useTableFill() {
@@ -279,7 +278,7 @@ function CreateModal({ open, onClose, onCreated }: { open: boolean; onClose: () 
     <Modal title="新建背调" open={open} onCancel={onClose} onOk={handleCreate} confirmLoading={saving} okText="发起" cancelText="取消" destroyOnClose>
       <Alert
         type="warning" showIcon style={{ marginBottom: 16 }}
-        message="合规提示：发起背调前必须取得候选人的单独明示授权。本步骤先建草稿，随后请在详情页完成「授权」闸门，未授权前无法填写核验项与结论。"
+        message="合规提示：发起背调前必须取得候选人的单独明示授权。本步骤先建草稿，随后请在详情页完成「授权」闸门，未授权前无法上传报告与填写结论。"
       />
       <Form form={form} layout="vertical" initialValues={{ provider: "内部人工" }}>
         <Form.Item name="talent_id" label="候选人" rules={[{ required: true, message: "请选择候选人" }]}>
@@ -308,19 +307,16 @@ function CreateModal({ open, onClose, onCreated }: { open: boolean; onClose: () 
 // ============ 详情面板（核心交互）============
 function DetailPane({ bg, onChange, onReload, onDeleted }: { bg: BackgroundCheck; onChange: (b: BackgroundCheck) => void; onReload: () => void; onDeleted: () => void }) {
   const granted = bg.consent_status === "granted";
-  const [editItems, setEditItems] = useState<BgItem[]>(bg.items);
   const [summary, setSummary] = useState(bg.summary || "");
   const [result, setResult] = useState<"pass" | "fail" | undefined>(bg.result || undefined);
-  const [aiRisks, setAiRisks] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [resumeCheck, setResumeCheck] = useState<BgResumeCheckResult | null>(null);
 
   // 授权表单
   const [grantOpen, setGrantOpen] = useState(false);
   const [grantMethod, setGrantMethod] = useState("书面授权书");
   const [grantHighRisk, setGrantHighRisk] = useState(false);
 
-  useEffect(() => { setEditItems(bg.items); setSummary(bg.summary || ""); setResult(bg.result || undefined); setAiRisks([]); setResumeCheck(null); }, [bg.id]);
+  useEffect(() => { setSummary(bg.summary || ""); setResult(bg.result || undefined); }, [bg.id]);
 
   const patch = async (data: Partial<{ provider: string; high_risk: boolean; summary: string; result: string; status: string }>, reload = true) => {
     try {
@@ -339,13 +335,6 @@ function DetailPane({ bg, onChange, onReload, onDeleted }: { bg: BackgroundCheck
       setGrantOpen(false);
       onReload();
     } catch (e) { message.error((e as Error).message); }
-    finally { setBusy(false); }
-  };
-
-  const saveItems = async () => {
-    setBusy(true);
-    try { await api.bgUpdateItems(bg.id, editItems); message.success("核验项已保存"); onReload(); }
-    catch (e) { message.error((e as Error).message); }
     finally { setBusy(false); }
   };
 
@@ -380,49 +369,6 @@ function DetailPane({ bg, onChange, onReload, onDeleted }: { bg: BackgroundCheck
         // 预览需要时间加载，延后释放，避免打开瞬间失效
         setTimeout(() => URL.revokeObjectURL(url), 60000);
       }
-    } catch (e) { message.error((e as Error).message); }
-    finally { setBusy(false); }
-  };
-
-  const genAi = async () => {
-    setBusy(true);
-    try {
-      const r = await api.bgAiSummary(bg.id);
-      setSummary(r.summary);
-      setAiRisks(r.risks);
-      // 直接落库：此前只在文本框里改 state，用户不触发 blur/失焦就关闭抽屉会丢结果
-      await patch({ summary: r.summary });
-      message.success("已生成 AI 小结并保存");
-    } catch (e) { message.error((e as Error).message); }
-    finally { setBusy(false); }
-  };
-
-  const genResumeCheck = async () => {
-    setBusy(true);
-    try {
-      const f = await api.fetchResumeFile(bg.talent_id);
-      if (!f) { message.warning("该候选人暂无简历文件，无法生成核查清单"); return; }
-      let text = "";
-      try { text = await extractContractText(new File([f.blob], f.name)); }
-      catch (err) { message.error("简历解析失败：" + (err as Error).message); return; }
-      if (!text.trim()) { message.warning("简历内容为空，无法分析"); return; }
-      const r = await api.bgAiResumeCheck(bg.id, text);
-      setResumeCheck(r);
-      const addItems: BgItem[] = r.items.map((it, i) => ({
-        type: `ai:${it.category}:${i}`,
-        label: `${it.item}（核查渠道：${it.channel}｜材料：${it.material}）`,
-        status: "pending",
-        note: `AI 建议优先级：${it.priority}`,
-      }));
-      // 按 type 合并而非无脑追加：重复点「生成」时后端会命中缓存返回同样结果，
-      // 若直接拼接会产生同 type 重复项，导致表格 rowKey 冲突与核验项翻倍
-      setEditItems((prev) => {
-        const map = new Map(prev.map((x) => [x.type, x]));
-        addItems.forEach((it) => map.set(it.type, it));
-        return [...map.values()];
-      });
-      message.success("已生成 AI 核查清单，并并入核验项");
-      onReload();
     } catch (e) { message.error((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -469,7 +415,7 @@ function DetailPane({ bg, onChange, onReload, onDeleted }: { bg: BackgroundCheck
         <Alert
           type="warning" showIcon style={{ marginBottom: 16 }}
           message="尚未取得候选人授权"
-          description="依据个人信息保护法，背调须在候选人单独明示授权后方可开展。当前为草稿态，以下核验项、报告、结论均不可填写或查看。"
+          description="依据个人信息保护法，背调须在候选人单独明示授权后方可开展。当前为草稿态，授权前无法上传报告与填写结论。"
         />
       )}
 
@@ -511,39 +457,6 @@ function DetailPane({ bg, onChange, onReload, onDeleted }: { bg: BackgroundCheck
         </Form>
       </Modal>
 
-      {/* 分项核验 */}
-      <Card size="small" title="分项核验（最小必要原则）" style={{ marginBottom: 16 }}>
-        <Table<BgItem>
-          className="profiles-table" rowKey="type" size="small" pagination={false}
-          dataSource={editItems}
-          columns={[
-            { title: "核验项", dataIndex: "label", key: "label" },
-            {
-              title: "结论", key: "status", width: 120,
-              render: (_: unknown, r: BgItem) => (
-                <Select
-                  disabled={!granted} value={r.status}
-                  onChange={(v: BgItemStatus) => setEditItems((prev) => prev.map((x) => (x.type === r.type ? { ...x, status: v } : x)))}
-                  options={Object.entries(BG_ITEM_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))}
-                  style={{ width: 100 }}
-                />
-              ),
-            },
-            {
-              title: "备注", key: "note",
-              render: (_: unknown, r: BgItem) => (
-                <Input
-                  disabled={!granted} value={r.note}
-                  onChange={(e) => setEditItems((prev) => prev.map((x) => (x.type === r.type ? { ...x, note: e.target.value } : x)))}
-                  placeholder="异常说明 / 来源"
-                />
-              ),
-            },
-          ]}
-        />
-        <Button size="small" style={{ marginTop: 8 }} disabled={!granted || busy} onClick={saveItems}>保存核验项</Button>
-      </Card>
-
       {/* 报告原件 */}
       <Card size="small" title="报告原件" style={{ marginBottom: 16 }}>
         {bg.has_report ? (
@@ -564,60 +477,14 @@ function DetailPane({ bg, onChange, onReload, onDeleted }: { bg: BackgroundCheck
         )}
       </Card>
 
-      {/* AI 简历核查清单（本次生成结果；外部事实须人工/第三方核验） */}
-      {resumeCheck && (
-        <Card size="small" title={<Space><FileSearchOutlined />AI 简历核查清单</Space>} style={{ marginBottom: 16 }}>
-          <Alert type="info" showIcon style={{ marginBottom: 12 }}
-            message="以下为 AI 基于简历生成的待核查建议，外部事实须人工或第三方核验，系统不代发、不联网。" />
-          <List
-            size="small" dataSource={resumeCheck.items} split
-            renderItem={(it) => (
-              <List.Item>
-                <div>
-                  <Space size={4} wrap>
-                    <Tag color={it.priority === "high" ? "red" : it.priority === "medium" ? "orange" : "default"}>{it.priority}</Tag>
-                    <Tag>{it.category}</Tag>
-                  </Space>
-                  <div style={{ marginTop: 2 }}>{it.item}</div>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    核查渠道：{it.channel}｜需收集材料：{it.material}
-                  </Typography.Text>
-                </div>
-              </List.Item>
-            )}
-          />
-          {resumeCheck.gaps.length > 0 && (
-            <>
-              <Divider style={{ margin: "10px 0" }}>简历缺失 / 待候选人确认</Divider>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {resumeCheck.gaps.map((g, i) => <li key={i}>{g}</li>)}
-              </ul>
-            </>
-          )}
-          {resumeCheck.notes && (
-            <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-              {resumeCheck.notes}
-            </Typography.Paragraph>
-          )}
-        </Card>
-      )}
-
-      {/* 小结 + 结论 */}
-      <Card size="small" title="背调小结与结论" style={{ marginBottom: 16 }}>
-        <Space style={{ marginBottom: 8 }}>
-          <Button size="small" icon={<RobotOutlined />} disabled={!granted || busy} onClick={genAi}>AI 生成小结</Button>
-          <Button size="small" icon={<FileSearchOutlined />} disabled={!granted || busy} onClick={genResumeCheck}>AI 生成核查清单</Button>
-        </Space>
+      {/* 结论 */}
+      <Card size="small" title="背调结论" style={{ marginBottom: 16 }}>
         <Input.TextArea
           rows={4} value={summary} disabled={!granted}
           onChange={(e) => setSummary(e.target.value)}
-          placeholder={granted ? "填写背调小结，或点「AI 生成小结」后微调" : "需先取得授权"}
+          placeholder={granted ? "填写背调小结（可选）" : "需先取得授权"}
           onBlur={() => { if (granted && summary !== (bg.summary || "")) patch({ summary }); }}
         />
-        {aiRisks.length > 0 && (
-          <Alert type="warning" showIcon style={{ marginTop: 8 }}
-            message="AI 提示风险点" description={<ul style={{ margin: 0, paddingLeft: 18 }}>{aiRisks.map((x, i) => <li key={i}>{x}</li>)}</ul>} />
-        )}
         <Divider style={{ margin: "12px 0" }} />
         <Space wrap align="center">
           <Typography.Text strong>背调结论：</Typography.Text>
