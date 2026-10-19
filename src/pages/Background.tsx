@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card, Table, Button, Space, Tag, Modal, Drawer, Form, Input, Select, Switch, Radio,
-  message, Popconfirm, Empty, Alert, Divider, Typography, Spin, List,
+  message, Popconfirm, Empty, Alert, Divider, Typography, Spin, List, Tooltip,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, SafetyOutlined, RobotOutlined, UploadOutlined,
@@ -179,6 +179,23 @@ export default function Background() {
                         <Button type="link" size="small" danger style={{ paddingInline: 0 }}>取消</Button>
                       </Popconfirm>
                     )}
+                    {r.status === "passed" ? (
+                      <Tooltip title="已通过并入职的背调不可删除（合规留痕）">
+                        <span>
+                          <Button type="link" size="small" danger disabled style={{ paddingInline: 0 }}>删除</Button>
+                        </span>
+                      </Tooltip>
+                    ) : (
+                      <Popconfirm
+                        title="删除该背调？" description="背调记录、核验项与报告原件将被永久删除，操作不可恢复。"
+                        onConfirm={async () => {
+                          try { await api.deleteBackgroundCheck(r.id); message.success("已删除"); await load(); }
+                          catch (e) { message.error((e as Error).message); }
+                        }} okText="删除" cancelText="返回"
+                      >
+                        <Button type="link" size="small" danger style={{ paddingInline: 0 }}>删除</Button>
+                      </Popconfirm>
+                    )}
                   </Space>
                 ),
               },
@@ -204,6 +221,7 @@ export default function Background() {
             bg={detail}
             onChange={(next) => { setDetail(next); syncListRow(next); }}
             onReload={() => openDetail(detail.id)}
+            onDeleted={() => { setDetail(null); load(); }}
           />
         )}
       </Drawer>
@@ -288,7 +306,7 @@ function CreateModal({ open, onClose, onCreated }: { open: boolean; onClose: () 
 }
 
 // ============ 详情面板（核心交互）============
-function DetailPane({ bg, onChange, onReload }: { bg: BackgroundCheck; onChange: (b: BackgroundCheck) => void; onReload: () => void }) {
+function DetailPane({ bg, onChange, onReload, onDeleted }: { bg: BackgroundCheck; onChange: (b: BackgroundCheck) => void; onReload: () => void; onDeleted: () => void }) {
   const granted = bg.consent_status === "granted";
   const [editItems, setEditItems] = useState<BgItem[]>(bg.items);
   const [summary, setSummary] = useState(bg.summary || "");
@@ -420,6 +438,17 @@ function DetailPane({ bg, onChange, onReload }: { bg: BackgroundCheck; onChange:
       const r = await api.bgPass(bg.id);
       message.success(r.downstream.length ? `已通过并入职；${r.downstream.join("；")}` : "已通过并入职");
       onReload();
+    } catch (e) { message.error((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  // 硬删除：整条记录 + KV 报告原件一起没；后端对「已通过」直接 400
+  const onDelete = async () => {
+    setBusy(true);
+    try {
+      await api.deleteBackgroundCheck(bg.id);
+      message.success("已删除");
+      onDeleted();
     } catch (e) { message.error((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -608,6 +637,19 @@ function DetailPane({ bg, onChange, onReload }: { bg: BackgroundCheck; onChange:
         <Popconfirm title="取消该背调？" description="报告原件会被一并删除。" onConfirm={async () => { try { await api.bgCancel(bg.id); message.success("已取消"); onReload(); } catch (e) { message.error((e as Error).message); } }} okText="取消背调" cancelText="返回">
           <Button danger disabled={bg.status === "passed"}>取消背调</Button>
         </Popconfirm>
+        {bg.status === "passed" ? (
+          <Tooltip title="已通过并入职的背调不可删除（合规留痕）">
+            <span><Button danger disabled>删除背调</Button></span>
+          </Tooltip>
+        ) : (
+          <Popconfirm
+            title="删除该背调？"
+            description="背调记录、核验项与报告原件将被永久删除，操作不可恢复。"
+            onConfirm={onDelete} okText="删除" cancelText="返回"
+          >
+            <Button danger loading={busy}>删除背调</Button>
+          </Popconfirm>
+        )}
       </Space>
     </div>
   );

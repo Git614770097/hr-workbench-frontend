@@ -465,6 +465,10 @@ export const api = {
   bgCancel: (id: string) =>
     request<{ ok: boolean }>(`/background/${id}/cancel`, { method: "POST" }),
 
+  // 删除背调（硬删除，含报告原件；已通过并入职的记录不可删）
+  deleteBackgroundCheck: (id: string) =>
+    request<{ ok: boolean }>(`/background/${id}`, { method: "DELETE" }),
+
   // ---- 社保公积金台账 ----
   getSocialList: (q?: string) =>
     request<SocialItem[]>(`/talents/social${q ? `?q=${encodeURIComponent(q)}` : ""}`),

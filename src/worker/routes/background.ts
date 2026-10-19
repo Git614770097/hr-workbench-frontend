@@ -656,6 +656,28 @@ background.post("/:id/pass", async (c) => {
   return c.json({ ok: true, status: "passed", downstream });
 });
 
+// ============ 删除背调（硬删除）============
+// 与「取消」的区别：取消是软终止（保留记录与留痕），删除是整条抹掉。
+// 已通过并入职的背调属于合规留痕（证明录用前尽调过），与取消口径一致，不允许删除。
+background.delete("/:id", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const id = c.req.param("id");
+  const row = await loadBg(c.env, id);
+  if (!row) return c.json({ error: "背调记录不存在" }, 404);
+  if (!(await canTouch(c.env, session, row.owner_id))) return c.json({ error: "无权删除该背调记录" }, 403);
+  if (row.status === "passed") return c.json({ error: "背调已通过并入职，无法删除（合规留痕）" }, 400);
+
+  // KV 报告原件一并清理（KV 异常不阻断数据库删除，与人才删除口径一致）
+  if (row.report_kv_key) { try { await c.env.RESUMES.delete(row.report_kv_key); } catch { /* 忽略 */ } }
+  // AI 简历核查清单的 10 分钟缓存一并清掉，避免删后重开详情又冒出旧结果
+  await c.env.DB.prepare(
+    "DELETE FROM ai_artifacts WHERE biz_type = 'resume_bgcheck' AND biz_id = ?"
+  ).bind(id).run();
+  await c.env.DB.prepare("DELETE FROM background_checks WHERE id = ?").bind(id).run();
+  return c.json({ ok: true });
+});
+
 // ============ 取消背调 ============
 background.post("/:id/cancel", async (c) => {
   const session = await getSession(c);
