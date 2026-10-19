@@ -48,7 +48,8 @@ body {
 .ant-table-body,
 .ant-modal-body,
 .ant-drawer-body,
-.ant-select-dropdown {
+.ant-select-dropdown,
+.wb-brief-list {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
@@ -59,7 +60,8 @@ body {
 .ant-table-body::-webkit-scrollbar,
 .ant-modal-body::-webkit-scrollbar,
 .ant-drawer-body::-webkit-scrollbar,
-.ant-select-dropdown::-webkit-scrollbar {
+.ant-select-dropdown::-webkit-scrollbar,
+.wb-brief-list::-webkit-scrollbar {
   width: 6px; height: 6px;
 }
 .main-content::-webkit-scrollbar-track,
@@ -69,7 +71,8 @@ body {
 .ant-table-body::-webkit-scrollbar-track,
 .ant-modal-body::-webkit-scrollbar-track,
 .ant-drawer-body::-webkit-scrollbar-track,
-.ant-select-dropdown::-webkit-scrollbar-track {
+.ant-select-dropdown::-webkit-scrollbar-track,
+.wb-brief-list::-webkit-scrollbar-track {
   background: transparent;
 }
 .main-content::-webkit-scrollbar-thumb,
@@ -79,7 +82,8 @@ body {
 .ant-table-body::-webkit-scrollbar-thumb,
 .ant-modal-body::-webkit-scrollbar-thumb,
 .ant-drawer-body::-webkit-scrollbar-thumb,
-.ant-select-dropdown::-webkit-scrollbar-thumb {
+.ant-select-dropdown::-webkit-scrollbar-thumb,
+.wb-brief-list::-webkit-scrollbar-thumb {
   background: transparent; border-radius: 3px; transition: background 0.2s;
 }
 .main-content:hover,
@@ -89,7 +93,8 @@ body {
 .ant-table-body:hover,
 .ant-modal-body:hover,
 .ant-drawer-body:hover,
-.ant-select-dropdown:hover {
+.ant-select-dropdown:hover,
+.wb-brief-list:hover {
   scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
 .main-content:hover::-webkit-scrollbar-thumb,
@@ -99,7 +104,8 @@ body {
 .ant-table-body:hover::-webkit-scrollbar-thumb,
 .ant-modal-body:hover::-webkit-scrollbar-thumb,
 .ant-drawer-body:hover::-webkit-scrollbar-thumb,
-.ant-select-dropdown:hover::-webkit-scrollbar-thumb {
+.ant-select-dropdown:hover::-webkit-scrollbar-thumb,
+.wb-brief-list:hover::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.2);
 }
 html[data-theme-mode="dark"] .main-content:hover,
@@ -109,7 +115,8 @@ html[data-theme-mode="dark"] .resume-doc-preview:hover,
 html[data-theme-mode="dark"] .ant-table-body:hover,
 html[data-theme-mode="dark"] .ant-modal-body:hover,
 html[data-theme-mode="dark"] .ant-drawer-body:hover,
-html[data-theme-mode="dark"] .ant-select-dropdown:hover {
+html[data-theme-mode="dark"] .ant-select-dropdown:hover,
+html[data-theme-mode="dark"] .wb-brief-list:hover {
   scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 }
 html[data-theme-mode="dark"] .main-content:hover::-webkit-scrollbar-thumb,
@@ -119,7 +126,8 @@ html[data-theme-mode="dark"] .resume-doc-preview:hover::-webkit-scrollbar-thumb,
 html[data-theme-mode="dark"] .ant-table-body:hover::-webkit-scrollbar-thumb,
 html[data-theme-mode="dark"] .ant-modal-body:hover::-webkit-scrollbar-thumb,
 html[data-theme-mode="dark"] .ant-drawer-body:hover::-webkit-scrollbar-thumb,
-html[data-theme-mode="dark"] .ant-select-dropdown:hover::-webkit-scrollbar-thumb {
+html[data-theme-mode="dark"] .ant-select-dropdown:hover::-webkit-scrollbar-thumb,
+html[data-theme-mode="dark"] .wb-brief-list:hover::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.22);
 }
 
@@ -1687,6 +1695,11 @@ html[data-theme-mode="dark"] .logs-page .logs-sec-tip { color: #8b95a5; }
 }
 .wb-brief-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 0.5rem; }
 .wb-brief-title { font-size: 0.95rem; font-weight: 600; color: #1f2937; }
+.wb-brief-count {
+  flex: 0 0 auto;
+  font-size: 0.7rem; font-weight: 600; color: #b45309;
+  background: rgba(245, 158, 11, 0.12); border-radius: 999px; padding: 1px 8px;
+}
 .wb-brief-date { font-size: 0.74rem; color: #8c8c8c; }
 .wb-brief-note {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
@@ -1699,7 +1712,13 @@ html[data-theme-mode="dark"] .logs-page .logs-sec-tip { color: #8b95a5; }
   font-size: 0.68rem; font-weight: 600; color: #7c3aed;
   background: rgba(124, 58, 237, 0.10); border-radius: 4px; padding: 1px 6px;
 }
-.wb-brief-list { list-style: none; margin: 0; padding: 0; }
+/* 名单限高 3 条：超出卡内滚动（滚动条走全局极细自动隐藏名单），
+   行动层高度因此受控、与左栏数据栏齐平；头部「N 人在等」计数提示有更多 */
+.wb-brief-list {
+  list-style: none; margin: 0; padding: 0;
+  max-height: 6.6rem; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: transparent transparent;
+}
 .wb-brief-item {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 0.32rem 0; font-size: 0.85rem; color: #1f2937;
@@ -1734,6 +1753,7 @@ html[data-theme-mode="dark"] .wb-brief-name:hover,
 html[data-theme-mode="dark"] .wb-brief-action,
 html[data-theme-mode="dark"] .wb-brief-empty-link { color: #60a5fa; }
 html[data-theme-mode="dark"] .wb-brief-ai-tag { color: #a78bfa; background: rgba(167, 139, 250, 0.14); }
+html[data-theme-mode="dark"] .wb-brief-count { color: #fbbf24; background: rgba(245, 158, 11, 0.18); }
 
 /* ---- 行动层分栏：桌面左「数据」右「早报」（左略宽，等高齐平）；
        单模块在场时不套此容器（自动通栏）；移动端同序堆叠 = 数据在上、早报在下 ---- */
@@ -1930,9 +1950,13 @@ html[data-theme-mode="dark"] .wb-mod-item-desc { color: #6b7280; }
   .wb-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* 早报动作pill：窄屏不再右推，跟在理由后面自然换行 */
   .wb-brief-action { margin-left: 0; }
+  /* 窄屏条目换行后每条约两行高——3 条的限高按换行高度放大，仍只露 3 条 */
+  .wb-brief-list { max-height: 9.8rem; }
 }
 @media (max-width: 420px) {
   .wb-strip { grid-template-columns: minmax(0, 1fr); }
+  /* 更窄：要素竖排每条约三行，再放大一档 */
+  .wb-brief-list { max-height: 12.5rem; }
 }
 
 /* ===== 岗位列表可点击元素（岗位名称 / 流程中人数）=====

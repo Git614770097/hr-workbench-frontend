@@ -28,6 +28,7 @@ export default function DailyBrief() {
     <div className="wb-brief">
       <div className="wb-brief-head">
         <span className="wb-brief-title">今日早报</span>
+        {data.items.length > 0 && <span className="wb-brief-count">{data.items.length} 人在等</span>}
         <span className="wb-brief-date">{dateText}</span>
       </div>
 
