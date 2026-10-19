@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Modal, Select, Input, Button, Space, message, Alert, Typography, Divider } from "antd";
 import { SendOutlined, DownloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
@@ -29,6 +30,7 @@ export default function OfferModal({
   const [loadingTpl, setLoadingTpl] = useState(false);
   const [bg, setBg] = useState<BackgroundCheck | null>(null);
   const [bgLoading, setBgLoading] = useState(false);
+  const navigate = useNavigate();
 
   // 单人/团队顶端判定：没有上一级审批人时，确认即通过并自动推进（后端同规则自动落库）。
   // 团队子用户（team_id 指向管理员）走真审批：提交后 pending，由管理员在审批中心处理。
@@ -152,7 +154,18 @@ ${body}
         const notes = r.downstream || [];
         message.success(notes.length > 0 ? `已确认通过；${notes.join("；")}` : "已确认通过，已自动留档");
       } else {
-        message.success("已发起 Offer 审批，等待团队管理员处理");
+        // 团队子用户：审批已提交，给个直达链接（此前只有纯文字，还得自己去侧栏找入口）
+        message.success(
+          <span>
+            已发起 Offer 审批，等待团队管理员处理；
+            <a
+              onClick={() => { onClose(); navigate("/approvals"); }}
+              style={{ marginInlineStart: 4 }}
+            >
+              去审批中心查看
+            </a>
+          </span>
+        );
       }
       onApproved?.();
       onClose();

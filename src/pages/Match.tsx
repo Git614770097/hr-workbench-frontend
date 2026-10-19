@@ -229,6 +229,25 @@ export default function Match() {
     setParsing(false);
   };
 
+  // 从人才详情「智能匹配」跳过来：路由 state 带 talentId，直接把该人才加进候选人
+  // （否则用户到了本页还要手动点「从人才库添加」再找一遍，入口等于白加）
+  const consumedTalentRef = useRef(false);
+  useEffect(() => {
+    const st = location.state as { talentId?: string } | null;
+    if (!st?.talentId || consumedTalentRef.current) return;
+    consumedTalentRef.current = true; // StrictMode 双跑 effect 时防重复加入
+    (async () => {
+      try {
+        const t = await api.getTalent(st.talentId!);
+        await addFromLibrary([t]);
+      } catch {
+        message.error("读取该候选人信息失败，请手动点「从人才库添加」");
+      }
+    })();
+    // 只在进入页面那一刻消费一次 state；addFromLibrary 只用 setState，闭包捕获首帧即可
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const removeCandidate = (key: string) => {
     setCandidates((prev) => prev.filter((c) => c.key !== key));
     setResults((prev) => {

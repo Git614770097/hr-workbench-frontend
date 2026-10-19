@@ -449,6 +449,8 @@ export default function Social() {
   const [q, setQ] = useState("");
   const [appliedQ, setAppliedQ] = useState("");
   const [actionFilter, setActionFilter] = useState("all");
+  // 页内入口带人参跳转（?talent_id=）：精确筛选某位候选人，可一键清除
+  const [talentFilter, setTalentFilter] = useState<{ id: string; name: string } | null>(null);
   const [editing, setEditing] = useState<SocialItem | null>(null);
   const [taxOpen, setTaxOpen] = useState(false);
   const [rates, setRates] = useState<SocialRateTemplate[]>([]);
@@ -461,16 +463,25 @@ export default function Social() {
     } catch { /* 模板拉不到不影响主流程，只是不自动带出 */ }
   }, []);
 
-  const fetchList = useCallback(async (keyword: string) => {
+  const fetchList = useCallback(async (keyword: string, tid?: string) => {
     setLoading(true);
     try {
-      setItems(await api.getSocialList(keyword || undefined));
+      setItems(await api.getSocialList(keyword || undefined, tid || undefined));
     } catch (e: any) {
       message.error(e?.message || "加载失败");
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // 清除「仅看某人」筛选：回到全量清单，同时把 URL 里的 talent_id 去掉（刷新不复发）
+  const clearTalentFilter = () => {
+    setTalentFilter(null);
+    const p = new URLSearchParams(window.location.search);
+    p.delete("talent_id");
+    window.history.replaceState(null, "", `${window.location.pathname}${p.toString() ? `?${p}` : ""}`);
+    fetchList(appliedQ);
+  };
 
   // 页面打开：先自动同步一次增减员待办（幂等），再拉清单
   useEffect(() => {
@@ -481,6 +492,17 @@ export default function Social() {
           message.info(`已同步社保增减员提醒：新建 ${r.created} 条、更新 ${r.updated} 条，请在「待办日历」查看`);
         }
       } catch { /* 同步失败不阻塞页面 */ }
+      // 入职办理「社保」入口带 talent_id 跳转：先取姓名做筛选条展示，再按 id 精确拉取
+      const tid = new URLSearchParams(window.location.search).get("talent_id");
+      if (tid) {
+        try {
+          const t = await api.getTalent(tid);
+          setTalentFilter({ id: tid, name: t.name || "该候选人" });
+          fetchList("", tid);
+          loadRates();
+          return;
+        } catch { /* 人才读取失败退化为全量 */ }
+      }
       fetchList("");
       loadRates();
     })();
@@ -675,6 +697,16 @@ export default function Social() {
               />
             </div>
           </div>
+          <div className="search-field">
+            <span className="search-label" />
+            <div className="search-control">
+              {talentFilter && (
+                <Tag color="blue" closable onClose={clearTalentFilter}>
+                  仅看：{talentFilter.name}
+                </Tag>
+              )}
+            </div>
+          </div>
         </div>
       </Card>
 
@@ -690,8 +722,8 @@ export default function Social() {
           <Button icon={<DownloadOutlined />} onClick={handleExport}>导出 Excel</Button>
         </Space>
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setActionFilter("all"); fetchList(""); }}>重置</Button>
-          <Button type="primary" icon={<SearchOutlined />} onClick={() => { setAppliedQ(q); fetchList(q); }}>查询</Button>
+          <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setActionFilter("all"); setTalentFilter(null); fetchList(""); }}>重置</Button>
+          <Button type="primary" icon={<SearchOutlined />} onClick={() => { setAppliedQ(q); fetchList(q, talentFilter?.id); }}>查询</Button>
         </Space>
       </div>
 
@@ -703,6 +735,11 @@ export default function Social() {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
+          locale={{
+            emptyText: talentFilter
+              ? `${talentFilter.name} 没有参保记录（未入职/未填入职日期的人才不会出现在此）`
+              : "暂无参保记录",
+          }}
           summary={() => (
             <Table.Summary fixed>
               <Table.Summary.Row>

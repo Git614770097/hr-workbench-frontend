@@ -47,17 +47,46 @@ export default function Background() {
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [consentFilter, setConsentFilter] = useState<string | undefined>(undefined);
   const [q, setQ] = useState("");
+  // 人才详情「背调中心」入口带 talent_id 跳转：预选该候选人（后端本就支持该参数，此前无人消费）。
+  // state 初始化时同步读 URL——首帧 load() 就带上筛选，避免先闪一下全量再过滤。
+  // id 与姓名分存：姓名异步补显示值，不会因改名反复触发 load 重拉
+  const [talentFilterId, setTalentFilterId] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get("talent_id")
+  );
+  const [talentFilterName, setTalentFilterName] = useState("");
   const [hostRef, scrollY] = useTableFill();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [detail, setDetail] = useState<BackgroundCheck | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // 预选候选人的姓名（筛选条展示用）；读取失败不影响筛选本身
+  useEffect(() => {
+    if (!talentFilterId || talentFilterName) return;
+    (async () => {
+      try {
+        const t = await api.getTalent(talentFilterId);
+        setTalentFilterName(t.name || "该候选人");
+      } catch { /* 姓名取不到就显示「该候选人」 */ }
+    })();
+  }, [talentFilterId, talentFilterName]);
+
+  // 清除「仅看某人」：回到全量，并把 URL 里的 talent_id 去掉（刷新不复发）
+  const clearTalentFilter = () => {
+    setTalentFilterId(null);
+    setTalentFilterName("");
+    const p = new URLSearchParams(window.location.search);
+    p.delete("talent_id");
+    window.history.replaceState(null, "", `${window.location.pathname}${p.toString() ? `?${p}` : ""}`);
+    load();
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const r = await api.getBackgroundChecks({
         status: statusFilter, consent: consentFilter, q: q.trim() || undefined,
+        talent_id: talentFilterId || undefined,
       });
       setItems(r.items);
     } catch (e) {
@@ -65,7 +94,7 @@ export default function Background() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, consentFilter, q]);
+  }, [statusFilter, consentFilter, q, talentFilterId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -108,6 +137,11 @@ export default function Background() {
               value={q} onChange={(e) => setQ(e.target.value)}
               onSearch={load} style={{ width: 220 }}
             />
+            {talentFilterId && (
+              <Tag color="blue" closable onClose={clearTalentFilter}>
+                仅看：{talentFilterName || "该候选人"}
+              </Tag>
+            )}
           </Space>
           <Space>
             <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>

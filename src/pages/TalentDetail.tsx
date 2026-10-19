@@ -6,7 +6,7 @@ import {
 } from "antd";
 import {
   EditOutlined, DeleteOutlined, ArrowLeftOutlined, FilePdfOutlined, UploadOutlined,
-  CopyOutlined, CalendarOutlined, RobotOutlined,
+  CopyOutlined, CalendarOutlined, RobotOutlined, ThunderboltOutlined, SolutionOutlined, SafetyOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { Task, TalentDetailData, TalentStageLog, User, AiResumeInsight } from "../types";
@@ -83,6 +83,8 @@ export default function TalentDetail() {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
   })();
   const isAdmin = currentUser?.role === "admin";
+  // 页内入口按菜单权限显示（与侧栏一致）：没有的权限不摆按钮，点了也是被 RequirePerm 拦
+  const canP = (p: string) => isAdmin || (currentUser?.permissions || []).includes(p);
 
   const fetchData = async () => {
     if (!id) return;
@@ -166,11 +168,30 @@ export default function TalentDetail() {
           <Typography.Title level={4} style={{ margin: 0 }}>{talent.name}</Typography.Title>
           <Tag color={STATUS_COLORS[talent.status] || "default"}>{STATUS_LABELS[talent.status] || talent.status}</Tag>
         </Space>
-        <Space>
+        <Space wrap>
           <Button icon={<EditOutlined />} onClick={() => setEditModalOpen(true)}>编辑</Button>
           <Tooltip title="按场景生成邀约 / 婉拒 / 跟进话术，复制后由你自行发送">
             <Button className="ai-btn" icon={<RobotOutlined />} onClick={() => setOutreachOpen(true)}>AI 沟通文案</Button>
           </Tooltip>
+          {/* 智能匹配：带本人才跳到匹配页，AI 按画像评分（/match 原本全站无入口） */}
+          {canP("profiles") && (
+            <Tooltip title="选一个职位画像，AI 按匹配度给该候选人评分并给出理由">
+              <Button icon={<ThunderboltOutlined />} onClick={() => navigate("/match", { state: { talentId: talent.id } })}>
+                智能匹配
+              </Button>
+            </Tooltip>
+          )}
+          {/* 入职办理 / 背调中心：带本人才预选跳转，不用到目标页再找一遍人 */}
+          {canP("pipeline") && (
+            <Link to={`/onboarding?talent_id=${talent.id}`}>
+              <Button icon={<SolutionOutlined />}>入职办理</Button>
+            </Link>
+          )}
+          {canP("background") && (
+            <Link to={`/background?talent_id=${talent.id}`}>
+              <Button icon={<SafetyOutlined />}>背调中心</Button>
+            </Link>
+          )}
           <Popconfirm title="确认删除？所有关联数据将被清除。" onConfirm={handleDeleteTalent}>
             <Button danger icon={<DeleteOutlined />}>删除</Button>
           </Popconfirm>

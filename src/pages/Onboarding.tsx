@@ -48,6 +48,22 @@ export default function Onboarding() {
 
   useEffect(() => { searchTalents(""); }, [searchTalents]);
 
+  // 人才详情「入职办理」入口带 talent_id 跳转：预选该候选人
+  // （searchTalents 只带前 20 人，deep-link 的人可能不在选项里，单独取姓名补进去）
+  useEffect(() => {
+    const tid = new URLSearchParams(window.location.search).get("talent_id");
+    if (!tid) return;
+    (async () => {
+      try {
+        const t = await api.getTalent(tid);
+        setTalentOptions((prev) =>
+          prev.some((o) => o.value === tid) ? prev : [...prev, { label: t.phone ? `${t.name}（${t.phone}）` : t.name, value: tid }]
+        );
+        setTalentId(tid);
+      } catch { /* 读取失败不预选，用户可手动在下拉里选 */ }
+    })();
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -277,6 +293,13 @@ export default function Onboarding() {
             </Button>
           </Space>
           <Space>
+            {/* 单人视图：直接跳这位候选人的合同 / 社保（数据层本已联动，补上界面跳转） */}
+            {talentId && (
+              <Space size={4}>
+                <Link to={`/contracts?talent_id=${talentId}`}>查看合同</Link>
+                <Link to={`/social?talent_id=${talentId}`}>查看社保</Link>
+              </Space>
+            )}
             {!talentId && (
               <Checkbox
                 checked={hideDone}
@@ -312,6 +335,13 @@ export default function Onboarding() {
                   <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400, marginInlineStart: 8 }}>
                     {g.sub}
                   </Typography.Text>
+                )}
+                {/* 全部视图：每位候选人一行直达合同 / 社保（g.key 即 talent_id） */}
+                {!talentId && (
+                  <Space size={4} style={{ marginInlineStart: 12 }}>
+                    <Link to={`/contracts?talent_id=${g.key}`}>合同</Link>
+                    <Link to={`/social?talent_id=${g.key}`}>社保</Link>
+                  </Space>
                 )}
               </Divider>
               <Table<OnboardingItem>

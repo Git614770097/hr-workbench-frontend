@@ -326,12 +326,15 @@ talents.get("/contracts", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const q = (c.req.query("q") || "").trim();
+  // talent_id：入职办理等页内入口带人参跳转时精确筛选（姓名 q 会撞同名）
+  const talentId = (c.req.query("talent_id") || "").trim();
   let sql = `SELECT id, name, phone, email, status, contract_end, probation_end FROM talents WHERE (contract_end IS NOT NULL OR probation_end IS NOT NULL)`;
   const params: string[] = [];
   const sc0 = ownerScope(session);
   sql += sc0.sql;
   params.push(...sc0.params);
   if (q) { sql += ` AND name LIKE ?`; params.push(`%${q}%`); }
+  if (talentId) { sql += ` AND id = ?`; params.push(talentId); }
   sql += ` ORDER BY COALESCE(contract_end, probation_end) IS NULL, COALESCE(contract_end, probation_end) ASC LIMIT 500`;
 
   const rows = (await c.env.DB.prepare(sql).bind(...params).all<any>()).results;
@@ -545,6 +548,8 @@ talents.get("/social", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const q = (c.req.query("q") || "").trim();
+  // talent_id：入职办理等页内入口带人参跳转时精确筛选（姓名 q 会撞同名）
+  const talentId = (c.req.query("talent_id") || "").trim();
   let sql = `
     SELECT t.id, t.name, t.phone, t.status, t.hire_date, t.resignation_date,
            s.si_status, s.si_city, s.si_base, s.hf_base,
@@ -554,6 +559,7 @@ talents.get("/social", async (c) => {
   const params: string[] = [];
   { const sc = ownerScope(session, "t.owner_id"); sql += sc.sql; params.push(...sc.params); }
   if (q) { sql += ` AND t.name LIKE ?`; params.push(`%${q}%`); }
+  if (talentId) { sql += ` AND t.id = ?`; params.push(talentId); }
   sql += ` LIMIT 500`;
 
   const rows = (await c.env.DB.prepare(sql).bind(...params).all<any>()).results;

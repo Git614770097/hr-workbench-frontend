@@ -319,9 +319,14 @@ export const api = {
   getTalentCompliance: () =>
     request<ComplianceResponse>("/talents/compliance"),
 
-  // 合同管理：有合同/试用期日期的人才清单
-  getContracts: (q?: string) =>
-    request<ContractItem[]>(`/talents/contracts${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  // 合同管理：有合同/试用期日期的人才清单（talent_id 精确筛选，供页内入口带人参跳转）
+  getContracts: (q?: string, talentId?: string) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (talentId) params.set("talent_id", talentId);
+    const s = params.toString();
+    return request<ContractItem[]>(`/talents/contracts${s ? `?${s}` : ""}`);
+  },
 
   // 合同到期提醒批量同步（幂等：新建/更新/取消待办）
   syncContractTasks: () =>
@@ -470,8 +475,14 @@ export const api = {
     request<{ ok: boolean }>(`/background/${id}`, { method: "DELETE" }),
 
   // ---- 社保公积金台账 ----
-  getSocialList: (q?: string) =>
-    request<SocialItem[]>(`/talents/social${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  // talent_id：入职办理等页内入口带人参跳转时精确筛选
+  getSocialList: (q?: string, talentId?: string) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (talentId) params.set("talent_id", talentId);
+    const s = params.toString();
+    return request<SocialItem[]>(`/talents/social${s ? `?${s}` : ""}`);
+  },
 
   // 编辑参保信息（upsert），后端保存后即同步增减员待办
   updateSocial: (talentId: string, data: Partial<SocialItem>) =>

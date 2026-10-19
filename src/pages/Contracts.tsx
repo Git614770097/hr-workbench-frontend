@@ -524,6 +524,8 @@ export default function Contracts() {
   const [q, setQ] = useState("");
   const [appliedQ, setAppliedQ] = useState("");
   const [rangeFilter, setRangeFilter] = useState("all");
+  // 页内入口带人参跳转（?talent_id=）：精确筛选某位候选人，可一键清除
+  const [talentFilter, setTalentFilter] = useState<{ id: string; name: string } | null>(null);
   const [editing, setEditing] = useState<ContractItem | null>(null);
   const [saving, setSaving] = useState(false);
   const [fileTalent, setFileTalent] = useState<ContractItem | null>(null);
@@ -531,16 +533,25 @@ export default function Contracts() {
   const [form] = Form.useForm();
   const intro = useDismissible("contracts.intro");
 
-  const fetchList = useCallback(async (keyword: string) => {
+  const fetchList = useCallback(async (keyword: string, tid?: string) => {
     setLoading(true);
     try {
-      setItems(await api.getContracts(keyword || undefined));
+      setItems(await api.getContracts(keyword || undefined, tid || undefined));
     } catch (e: any) {
       message.error(e?.message || "加载失败");
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // 清除「仅看某人」筛选：回到全量清单，同时把 URL 里的 talent_id 去掉（刷新不复发）
+  const clearTalentFilter = () => {
+    setTalentFilter(null);
+    const p = new URLSearchParams(window.location.search);
+    p.delete("talent_id");
+    window.history.replaceState(null, "", `${window.location.pathname}${p.toString() ? `?${p}` : ""}`);
+    fetchList(appliedQ);
+  };
 
   // 页面打开：先自动同步一次到期提醒待办（幂等），再拉清单
   useEffect(() => {
@@ -551,6 +562,16 @@ export default function Contracts() {
           message.info(`已同步合同到期提醒：新建 ${r.created} 条、更新 ${r.updated} 条，请在「待办日历」查看`);
         }
       } catch { /* 同步失败不阻塞页面 */ }
+      // 入职办理「合同」入口带 talent_id 跳转：先取姓名做筛选条展示，再按 id 精确拉取
+      const tid = new URLSearchParams(window.location.search).get("talent_id");
+      if (tid) {
+        try {
+          const t = await api.getTalent(tid);
+          setTalentFilter({ id: tid, name: t.name || "该候选人" });
+          fetchList("", tid);
+          return;
+        } catch { /* 人才读取失败退化为全量 */ }
+      }
       fetchList("");
     })();
   }, [fetchList]);
@@ -773,7 +794,13 @@ export default function Contracts() {
           </div>
           <div className="search-field">
             <span className="search-label" />
-            <div className="search-control" />
+            <div className="search-control">
+              {talentFilter && (
+                <Tag color="blue" closable onClose={clearTalentFilter} style={{ marginInlineEnd: 8 }}>
+                  仅看：{talentFilter.name}
+                </Tag>
+              )}
+            </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
             {intro.dismissed && (
@@ -784,8 +811,8 @@ export default function Contracts() {
             </Dropdown>
             <Button icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>新增合同</Button>
             <Button icon={<BellOutlined />} onClick={manualSync}>同步提醒</Button>
-            <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setRangeFilter("all"); fetchList(""); }}>重置</Button>
-            <Button type="primary" icon={<SearchOutlined />} onClick={() => { setAppliedQ(q); fetchList(q); }}>查询</Button>
+            <Button icon={<ReloadOutlined />} onClick={() => { setQ(""); setAppliedQ(""); setRangeFilter("all"); setTalentFilter(null); fetchList(""); }}>重置</Button>
+            <Button type="primary" icon={<SearchOutlined />} onClick={() => { setAppliedQ(q); fetchList(q, talentFilter?.id); }}>查询</Button>
           </div>
         </div>
       </Card>
@@ -798,6 +825,11 @@ export default function Contracts() {
           rowKey="id"
           loading={loading}
           pagination={{ pageSize: 20, showTotal: (t) => `共 ${t} 条` }}
+          locale={{
+            emptyText: talentFilter
+              ? `${talentFilter.name} 还没有合同记录，点右上角「新增合同」录入`
+              : "暂无合同记录，点右上角「新增合同」录入",
+          }}
         />
       </Card>
 
