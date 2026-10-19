@@ -3,6 +3,9 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { ownerScope } from "../scope";
 import { cachedJson } from "../helpers";
+import { deepseekJsonWithUsage } from "../ai";
+import { resolveAiKey } from "../aiKey";
+import { checkQuota, loadRecentArtifact, saveArtifact } from "../aiGuard";
 
 const overview = new Hono<{ Bindings: Env }>();
 
@@ -116,9 +119,17 @@ overview.get("/", async (c) => {
     const totalTalents = totalTalentsRow?.c ?? 0;
 
     // 当前各阶段人数（talent_jobs 当前停留阶段）
+    // ⚠️ talent_jobs 没有 owner_id 列——范围必须经 JOIN talents 用 t.owner_id 判定。
+    // 曾经直接拼 `AND owner_id = ?` 到这张表上，非 admin 用户一打开工作台就 500
+    // （admin 的条件恒为空所以从未暴露），2026-10-19 修复。
+    const scTJ = ownerScope(session, "t.owner_id");
     const stageRows = await db
-      .prepare(`SELECT stage, COUNT(*) c FROM talent_jobs WHERE 1=1${ownerAnd} GROUP BY stage`)
-      .bind(...ownerBind)
+      .prepare(
+        `SELECT j.stage AS stage, COUNT(*) c
+         FROM talent_jobs j JOIN talents t ON t.id = j.talent_id
+         WHERE 1=1${scTJ.sql} GROUP BY j.stage`
+      )
+      .bind(...scTJ.params)
       .all<{ stage: string; c: number }>();
     const stageCounts: Record<string, number> = {};
     let activeCandidates = 0;
@@ -340,6 +351,208 @@ overview.get("/trend", async (c) => {
       from_date: new Date(startDi * DAY_MS).toISOString().slice(0, 10),
     };
   });
+});
+
+// GET /api/overview/daily-brief —— 「今日早报」：今天在等你回复与决定的人
+// 工作台行动层第一张卡（先看人，再看数）。登录即可用，不占菜单权限（与 / 同口径）。
+//
+// 两条数据来源，刻意分离：
+//  ① 名单 = 纯规则聚合（不花 AI 配额、不调 AI）：五类「等人」信号，全部来自现有表；
+//  ② ai_note = 可选的一句话开场白（打「AI 小结」标）：配额内才生成，落 ai_artifacts
+//     缓存 10 分钟；配额用完 / 无 Key / AI 超时一律静默降级——名单永远可见。
+//
+// 五类信号与配色（红=候选人在流失/结论卡人，琥珀=排期风险，蓝=你的决定）：
+//   红  简历压 ≥2 天没筛          → 看完给个结论
+//   红  终面已过、结论待定         → 定通过与否
+//   琥珀 面试后 ≥2 天没推进       → 约下一轮或说明
+//   琥珀 面试在即（今/明/后天，含昨天未更新的）→ 确认时间并备面 / 补录结果
+//   蓝  Offer ≥1 天没跟进         → 跟进确认意向
+overview.get("/daily-brief", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const db = c.env.DB;
+  // talent_jobs 无 owner_id，一律经 JOIN talents 用 t.owner_id 判定范围
+  const scT = ownerScope(session, "t.owner_id");
+  const scIv = ownerScope(session, "iv.owner_id");
+  const now = Date.now();
+  const today = todayCn();
+
+  // ① 简历压了 ≥2 天没筛选（红）
+  const screenRows = await db
+    .prepare(
+      `SELECT j.talent_id, j.job_id, j.updated_at, t.name AS talent_name, jb.title AS job_title
+       FROM talent_jobs j
+       JOIN talents t ON t.id = j.talent_id
+       LEFT JOIN jobs jb ON jb.id = j.job_id
+       WHERE j.stage = 'screening'
+         AND julianday('now') - julianday(j.updated_at) >= 2${scT.sql}
+       ORDER BY j.updated_at ASC LIMIT 8`
+    )
+    .bind(...scT.params)
+    .all<{ talent_id: string; job_id: string; updated_at: string; talent_name: string; job_title: string | null }>();
+
+  // ② 终面已过、结论待定（红）——面试完没写 pass/fail，候选人卡在最后一关
+  const finalRows = await db
+    .prepare(
+      `SELECT iv.talent_id, iv.job_id, iv.scheduled_at, t.name AS talent_name, jb.title AS job_title
+       FROM interviews iv
+       JOIN talents t ON t.id = iv.talent_id
+       LEFT JOIN jobs jb ON jb.id = iv.job_id
+       WHERE iv.round = 'final' AND iv.status = 'done'
+         AND (iv.result IS NULL OR iv.result NOT IN ('pass', 'fail'))${scIv.sql}
+       ORDER BY iv.scheduled_at ASC LIMIT 5`
+    )
+    .bind(...scIv.params)
+    .all<{ talent_id: string; job_id: string | null; scheduled_at: string | null; talent_name: string; job_title: string | null }>();
+
+  // ③ 面试后 ≥2 天没推进（琥珀）——有排期面试的不算停滞
+  const staleIvRows = await db
+    .prepare(
+      `SELECT j.talent_id, j.job_id, j.updated_at, t.name AS talent_name, jb.title AS job_title
+       FROM talent_jobs j
+       JOIN talents t ON t.id = j.talent_id
+       LEFT JOIN jobs jb ON jb.id = j.job_id
+       WHERE j.stage IN ('interview1', 'interview2')
+         AND julianday('now') - julianday(j.updated_at) >= 2
+         AND NOT EXISTS (
+           SELECT 1 FROM interviews iv2
+           WHERE iv2.talent_job_id = j.id AND iv2.status = 'scheduled'
+         )${scT.sql}
+       ORDER BY j.updated_at ASC LIMIT 5`
+    )
+    .bind(...scT.params)
+    .all<{ talent_id: string; job_id: string; updated_at: string; talent_name: string; job_title: string | null }>();
+
+  // ④ 面试在即/待更新（琥珀）：中国时区日期 ∈ [昨天, 后天]
+  //    scheduled_at 是用户本地时间串，与 overview 的「今日面试」同口径按日期前缀比较
+  const ivFrom = addDays(today, -1);
+  const ivTo = addDays(today, 2);
+  const upcomingRows = await db
+    .prepare(
+      `SELECT iv.talent_id, iv.job_id, iv.scheduled_at, t.name AS talent_name, jb.title AS job_title
+       FROM interviews iv
+       JOIN talents t ON t.id = iv.talent_id
+       LEFT JOIN jobs jb ON jb.id = iv.job_id
+       WHERE iv.status = 'scheduled'
+         AND substr(iv.scheduled_at, 1, 10) >= ? AND substr(iv.scheduled_at, 1, 10) <= ?${scIv.sql}
+       ORDER BY iv.scheduled_at ASC LIMIT 6`
+    )
+    .bind(ivFrom, ivTo, ...scIv.params)
+    .all<{ talent_id: string; job_id: string | null; scheduled_at: string | null; talent_name: string; job_title: string | null }>();
+
+  // ⑤ Offer ≥1 天没跟进（蓝）
+  const offerRows = await db
+    .prepare(
+      `SELECT j.talent_id, j.job_id, j.updated_at, t.name AS talent_name, jb.title AS job_title
+       FROM talent_jobs j
+       JOIN talents t ON t.id = j.talent_id
+       LEFT JOIN jobs jb ON jb.id = j.job_id
+       WHERE j.stage = 'offer'
+         AND julianday('now') - julianday(j.updated_at) >= 1${scT.sql}
+       ORDER BY j.updated_at ASC LIMIT 5`
+    )
+    .bind(...scT.params)
+    .all<{ talent_id: string; job_id: string; updated_at: string; talent_name: string; job_title: string | null }>();
+
+  // ---- 汇总：按 级别 → 等待天数 排序，最多 8 条 ----
+  interface BriefItem {
+    link_key: string;
+    talent_id: string;
+    talent_name: string;
+    job_title: string;
+    level: "red" | "amber" | "blue";
+    reason: string;
+    action: string;
+    sort_days: number;
+  }
+  const dayDiff = (t: string | null | undefined): number => {
+    const ms = parseSqlTime(t);
+    return ms == null ? 0 : Math.max(0, cnDayIndex(now) - cnDayIndex(ms));
+  };
+  const items: BriefItem[] = [];
+  const push = (
+    r: { talent_id: string; job_id: string | null; talent_name: string; job_title: string | null },
+    level: BriefItem["level"],
+    reason: string,
+    action: string,
+    sortDays: number
+  ) => {
+    items.push({
+      link_key: `${r.talent_id}:${r.job_id ?? "none"}`,
+      talent_id: r.talent_id,
+      talent_name: r.talent_name,
+      job_title: r.job_title || "未知岗位",
+      level,
+      reason,
+      action,
+      sort_days: sortDays,
+    });
+  };
+
+  for (const r of screenRows.results || []) {
+    push(r, "red", `简历已压 ${dayDiff(r.updated_at)} 天`, "看完给个结论", dayDiff(r.updated_at));
+  }
+  for (const r of finalRows.results || []) {
+    push(r, "red", "终面已过，结论待定", "定通过与否", 99);
+  }
+  for (const r of staleIvRows.results || []) {
+    push(r, "amber", `面试后 ${dayDiff(r.updated_at)} 天没推进`, "约下一轮或说明", dayDiff(r.updated_at));
+  }
+  for (const r of upcomingRows.results || []) {
+    const day = (r.scheduled_at || "").slice(0, 10);
+    const time = (r.scheduled_at || "").slice(11, 16);
+    if (day < today) {
+      push(r, "amber", "面试已过未更新", "补录面试结果", 99);
+    } else if (day === today) {
+      push(r, "amber", time ? `今天 ${time} 有面试` : "今天有面试", "确认时间并备面", 50);
+    } else {
+      const dd = Math.round((new Date(day + "T00:00:00Z").getTime() - new Date(today + "T00:00:00Z").getTime()) / DAY_MS);
+      push(r, "amber", `${dd} 天后有面试`, "确认时间并备面", 10 - dd);
+    }
+  }
+  for (const r of offerRows.results || []) {
+    push(r, "blue", `Offer 已发 ${dayDiff(r.updated_at)} 天`, "跟进确认意向", dayDiff(r.updated_at));
+  }
+
+  const levelRank = { red: 0, amber: 1, blue: 2 } as const;
+  items.sort((a, b) => levelRank[a.level] - levelRank[b.level] || b.sort_days - a.sort_days);
+  const top = items.slice(0, 8);
+
+  // ---- 可选 AI 一句话开场白（配额内；失败静默，不影响名单）----
+  let aiNote: string | null = null;
+  if (top.length > 0) {
+    const cached = await loadRecentArtifact(db, session.userId, "daily_brief", today, "");
+    const cachedNote = cached && typeof cached.note === "string" ? cached.note : "";
+    if (cachedNote) {
+      aiNote = cachedNote;
+    } else {
+      try {
+        // 自带 Key 花自己的钱，不占系统配额（与各 AI 接口同口径）
+        const { key: apiKey, own } = await resolveAiKey(c.env, session.userId);
+        const quotaOk = own || (await checkQuota(db, session.userId, session.role)).ok;
+        if (apiKey && quotaOk) {
+          const system = `你是一名高效的 HR 助理，为招聘者的「今日早报」写一句开场白。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
+字段说明：
+- note: 一句开场白（不超过 50 字），须点名等待最久的一位候选人及其等待天数，语气像贴心的同事；只依据给定名单，不编造任何信息。`;
+          const userPrompt = `【今日等待名单】\n${top
+            .map((x, i) => `${i + 1}. ${x.talent_name}（${x.job_title}）：${x.reason}`)
+            .join("\n")}\n\n请写早报开场白。`;
+          const gen = await deepseekJsonWithUsage(apiKey, system, userPrompt, { temperature: 0.4 });
+          const rawNote = gen ? (gen.data as { note?: unknown } | null)?.note : null;
+          const note = typeof rawNote === "string" ? rawNote.trim().slice(0, 80) : "";
+          if (note) {
+            aiNote = note;
+            await saveArtifact(db, session.userId, "daily_brief", today, "", { note, _usage: gen?.usage ?? null });
+          }
+        }
+      } catch {
+        // AI 点缀失败（超时/网络）→ 静默，名单照常返回
+      }
+    }
+  }
+
+  return c.json({ items: top, ai_note: aiNote, generated_at: new Date(now).toISOString() });
 });
 
 export { overview };

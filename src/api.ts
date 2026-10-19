@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiResumeOptimize, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiResumeOptimize, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult, DailyBrief } from "./types";
 
 const BASE = "/api";
 
@@ -674,6 +674,8 @@ export const api = {
   getTaskSummary: () => request<TaskSummary>("/tasks/summary"),
   // 招聘概览首页聚合（全员可看，按 owner 隔离）
   getOverview: () => request<OverviewResponse>("/overview"),
+  // 今日早报：今天在等你回复与决定的人（规则名单 + 可选 AI 一句话）
+  getDailyBrief: () => request<DailyBrief>("/overview/daily-brief"),
   // 工作台趋势折线：新增人才 / 进入面试 / 入职（周粒度，4w/12w/24w 三档窗口）
   getTrend: (range: "4w" | "12w" | "24w" = "12w") =>
     request<TrendResponse>(`/overview/trend?range=${range}`),

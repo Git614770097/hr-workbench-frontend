@@ -1666,15 +1666,74 @@ html[data-theme-mode="dark"] .logs-page .logs-sec-tip { color: #8b95a5; }
 
 /* ============================================================
    工作台（招聘概览页 /funnel）：行动层 + 分析层
-   —— 行动层：快捷入口 / 今日重点 / KPI 快照
+   —— 行动层：今日早报 / 今日重点 / KPI 快照
    —— 分析层：趋势折线 / 转化漏斗 / 渠道 / 周期 / 停留 / 淘汰
    配色仍走「显式色值 + 暗色覆盖」，不要用未定义的 CSS 变量。
    ============================================================ */
+/* 快捷入口（wb-quick）已于 2026-10-19 下线：四个按钮均与侧栏菜单重复，
+   首屏让位给「今日早报」。顶栏现只剩「调整模块」，右对齐即可。 */
 .wb-topbar {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: flex-end;
   gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
 }
-.wb-quick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* ---- 今日早报（行动层第一张卡：先看人，再看数）---- */
+.wb-brief {
+  background: #ffffff;
+  border: 1px solid #eef0f3;
+  border-radius: 10px;
+  padding: 0.85rem 1.1rem;
+  margin-bottom: 16px;
+}
+.wb-brief-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 0.5rem; }
+.wb-brief-title { font-size: 0.95rem; font-weight: 600; color: #1f2937; }
+.wb-brief-date { font-size: 0.74rem; color: #8c8c8c; }
+.wb-brief-note {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 0.82rem; color: #4b5563;
+  background: #f8fafc; border: 1px solid #eef0f3; border-radius: 8px;
+  padding: 0.35rem 0.6rem; margin-bottom: 0.5rem;
+}
+.wb-brief-ai-tag {
+  flex: 0 0 auto;
+  font-size: 0.68rem; font-weight: 600; color: #7c3aed;
+  background: rgba(124, 58, 237, 0.10); border-radius: 4px; padding: 1px 6px;
+}
+.wb-brief-list { list-style: none; margin: 0; padding: 0; }
+.wb-brief-item {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 0.32rem 0; font-size: 0.85rem; color: #1f2937;
+}
+.wb-brief-item + .wb-brief-item { border-top: 1px dashed #eef0f3; }
+.wb-brief-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
+.wb-brief-dot.is-red { background: #ef4444; }
+.wb-brief-dot.is-amber { background: #f59e0b; }
+.wb-brief-dot.is-blue { background: #3b82f6; }
+.wb-brief-name { font-weight: 600; color: #1f2937; text-decoration: none; }
+.wb-brief-name:hover { color: #3b82f6; }
+.wb-brief-job { font-size: 0.78rem; color: #8c8c8c; }
+.wb-brief-reason { color: #4b5563; }
+.wb-brief-action {
+  margin-left: auto; flex: 0 0 auto;
+  font-size: 0.74rem; color: #3b82f6;
+  background: rgba(59, 130, 246, 0.08); border-radius: 4px; padding: 1px 8px;
+}
+.wb-brief-empty { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0.3rem 0; }
+.wb-brief-empty-main { font-size: 0.85rem; font-weight: 600; color: #1f2937; }
+.wb-brief-empty-link { font-size: 0.78rem; color: #3b82f6; }
+html[data-theme-mode="dark"] .wb-brief { background: #1f1f1f; border-color: #303030; }
+html[data-theme-mode="dark"] .wb-brief-title,
+html[data-theme-mode="dark"] .wb-brief-name,
+html[data-theme-mode="dark"] .wb-brief-empty-main { color: #e5e7eb; }
+html[data-theme-mode="dark"] .wb-brief-date,
+html[data-theme-mode="dark"] .wb-brief-job { color: #8b95a5; }
+html[data-theme-mode="dark"] .wb-brief-note { background: #262626; border-color: #303030; color: #d1d5db; }
+html[data-theme-mode="dark"] .wb-brief-item + .wb-brief-item { border-top-color: #303030; }
+html[data-theme-mode="dark"] .wb-brief-reason { color: #d1d5db; }
+html[data-theme-mode="dark"] .wb-brief-name:hover,
+html[data-theme-mode="dark"] .wb-brief-action,
+html[data-theme-mode="dark"] .wb-brief-empty-link { color: #60a5fa; }
+html[data-theme-mode="dark"] .wb-brief-ai-tag { color: #a78bfa; background: rgba(167, 139, 250, 0.14); }
 
 /* ---- 行动层：左「今日重点」+ 右 KPI（2×2）----
    分栏复用 antd Row/Col xl 14/10（与分析层同源，保证左右栏严格等宽）。
@@ -1855,6 +1914,8 @@ html[data-theme-mode="dark"] .wb-mod-item-desc { color: #6b7280; }
   .wb-mod-list { grid-template-columns: minmax(0, 1fr); }
   .wb-topbar { align-items: flex-start; }
   .wb-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 早报动作pill：窄屏不再右推，跟在理由后面自然换行 */
+  .wb-brief-action { margin-left: 0; }
 }
 @media (max-width: 420px) {
   .wb-strip { grid-template-columns: minmax(0, 1fr); }

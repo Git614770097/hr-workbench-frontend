@@ -15,7 +15,7 @@ export interface WorkbenchModuleDef {
 }
 
 export const WORKBENCH_MODULES: WorkbenchModuleDef[] = [
-  { key: "quick_actions", label: "快捷入口", zone: "action", desc: "搜人才 / 加候选人 / 发 JD" },
+  { key: "daily_brief", label: "今日早报", zone: "action", desc: "今天在等你回复与决定的人" },
   { key: "today_focus", label: "今日重点", zone: "action", desc: "今日面试 · 到期待办 · 超期跟进" },
   { key: "kpi_band", label: "关键指标", zone: "action", desc: "在招 / 待推进 / 本周新增 / 今日面试" },
   { key: "trend", label: "趋势折线", zone: "analysis", desc: "新增人才 · 进入面试 · 入职" },

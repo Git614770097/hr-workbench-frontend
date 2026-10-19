@@ -9,7 +9,7 @@ import {
   ReloadOutlined, SearchOutlined, FunnelPlotOutlined, DownloadOutlined,
   RiseOutlined, TeamOutlined,
   InfoCircleOutlined, AppstoreOutlined, CalendarOutlined, AimOutlined,
-  UserAddOutlined, FileTextOutlined, LineChartOutlined, PictureOutlined,
+  LineChartOutlined, PictureOutlined,
   FileExcelOutlined, AlertOutlined, BgColorsOutlined,
   RobotOutlined, CopyOutlined, CloseOutlined,
 } from "@ant-design/icons";
@@ -28,6 +28,7 @@ import OverviewPanel from "../components/OverviewPanel";
 import AiUsageFoot from "../components/AiUsageFoot";
 import WorkbenchTrendChart from "../components/WorkbenchTrendChart";
 import WorkbenchModulesModal from "../components/WorkbenchModulesModal";
+import DailyBrief from "../components/DailyBrief";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
@@ -524,20 +525,14 @@ export default function Funnel() {
 
   return (
     <div className="funnel-page workbench-page">
-      {/* ===== 顶部操作行：快捷入口 + 调整模块 ===== */}
+      {/* ===== 顶部操作行：调整模块（快捷入口已下线——搜人才/加候选人/发 JD/面试安排
+           均与侧栏菜单重复，首屏让位给今日早报；入口在「人才资产/招聘推进」分组）===== */}
       <div className="wb-topbar">
-        <div className="wb-quick">
-          {!isHidden("quick_actions") && (
-            <>
-              <Link to="/talents" className="btn-as-link"><SearchOutlined />{termFor(profile, "搜人才")}</Link>
-              <Link to="/pipeline" className="btn-as-link"><UserAddOutlined />{termFor(profile, "加候选人")}</Link>
-              <Link to="/jobs" className="btn-as-link"><FileTextOutlined />发 JD</Link>
-              <Link to="/interviews" className="btn-as-link"><CalendarOutlined />面试安排</Link>
-            </>
-          )}
-        </div>
         <Button icon={<AppstoreOutlined />} onClick={() => setCfgOpen(true)}>调整模块</Button>
       </div>
+
+      {/* ===== 行动层：今日早报（先看人，再看数）===== */}
+      {!isHidden("daily_brief") && <DailyBrief />}
 
       {/* ===== 行动层：通栏指标条（今日重点 + 关键指标 合并，去重） ===== */}
       {(!isHidden("today_focus") || !isHidden("kpi_band")) && (

@@ -1214,7 +1214,7 @@ export interface TrendResponse {
 
 // ---- 工作台「调整模块」配置（存 user_settings.workbench_modules）----
 export type WorkbenchModuleKey =
-  | "quick_actions"
+  | "daily_brief"
   | "today_focus"
   | "kpi_band"
   | "trend"
@@ -1227,6 +1227,26 @@ export type WorkbenchModuleKey =
 export interface WorkbenchModuleConfig {
   /** 被隐藏的模块 key 列表（缺省 = 全部显示） */
   hidden: WorkbenchModuleKey[];
+}
+
+// ---- 今日早报（工作台行动层，GET /overview/daily-brief）----
+export type DailyBriefLevel = "red" | "amber" | "blue";
+export interface DailyBriefItem {
+  /** 人才-岗位对（talent_id:job_id），前端列表 key */
+  link_key: string;
+  talent_id: string;
+  talent_name: string;
+  job_title: string;
+  /** red=候选人在流失/结论卡人；amber=排期风险；blue=等你做决定 */
+  level: DailyBriefLevel;
+  reason: string;
+  action: string;
+}
+export interface DailyBrief {
+  items: DailyBriefItem[];
+  /** AI 一句话开场白（null=配额用完/无 Key/失败，静默降级，名单不受影响） */
+  ai_note: string | null;
+  generated_at: string;
 }
 
 export const TASK_SOURCE_LABELS: Record<string, string> = {
