@@ -9,8 +9,8 @@ import {
   CopyOutlined, CalendarOutlined, RobotOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
-import type { Task, TalentDetailData, TalentStageLog, TalentCommunication, User, AiResumeInsight } from "../types";
-import { STATUS_LABELS, STATUS_COLORS, STAGE_META, PRIORITY_LABELS, PRIORITY_COLORS, COMM_TYPE_LABELS } from "../types";
+import type { Task, TalentDetailData, TalentStageLog, User, AiResumeInsight } from "../types";
+import { STATUS_LABELS, STATUS_COLORS, STAGE_META, PRIORITY_LABELS, PRIORITY_COLORS } from "../types";
 import TalentFormModal from "../components/TalentFormModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
 import AiResultCard from "../components/AiResultCard";
@@ -157,7 +157,6 @@ export default function TalentDetail() {
 
   const tasks = talent.tasks || [];
   const pipeline = talent.pipeline || [];
-  const communications = talent.communications || [];
 
   return (
     <div>
@@ -328,53 +327,6 @@ export default function TalentDetail() {
                   );
                 })}
               </div>
-            )}
-          </Card>
-
-          {/* 沟通记录：该人才的全部沟通（电话/微信/面试/邮件等），时间倒序 */}
-          <Card
-            title={`沟通记录${communications.length > 0 ? `（${communications.length}）` : ""}`}
-            style={{ marginBottom: 16 }}
-          >
-            {communications.length === 0 ? (
-              <Empty description="暂无沟通记录" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <Timeline
-                style={{ marginTop: 4, marginBottom: 0 }}
-                items={communications.map((c) => {
-                  const d = fmtUtc(c.created_at);
-                  const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-                  return {
-                    color: "#1677ff",
-                    children: (
-                      <div style={{ fontSize: 13 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                          <Tag color="blue" style={{ marginInlineEnd: 0 }}>
-                            {c.type ? (COMM_TYPE_LABELS[c.type] || c.type) : "其他"}
-                          </Tag>
-                          {c.rating != null && c.rating > 0 && (
-                            <span style={{ color: "#faad14" }} title={`评分 ${c.rating}`}>{"★".repeat(c.rating)}</span>
-                          )}
-                          <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: "auto" }}>
-                            {dateStr}
-                          </Typography.Text>
-                        </div>
-                        {c.content && (
-                          <div style={{ color: "#4b5563", marginTop: 4, whiteSpace: "pre-wrap" }}>{c.content}</div>
-                        )}
-                        {c.follow_up_date && (
-                          <div style={{ color: "#d4380d", marginTop: 4, fontSize: 12 }}>
-                            下次跟进：{c.follow_up_date}
-                          </div>
-                        )}
-                        {c.user_name && (
-                          <div style={{ color: "#9ca3af", marginTop: 2, fontSize: 12 }}>记录人：{c.user_name}</div>
-                        )}
-                      </div>
-                    ),
-                  };
-                })}
-              />
             )}
           </Card>
 

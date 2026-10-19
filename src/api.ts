@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiNextStep, AiTodayFocus, AiJobDiagnosis, AiApprovalSummary, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiResumeOptimize, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult, DailyBrief } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult, DailyBrief } from "./types";
 
 const BASE = "/api";
 
@@ -745,18 +745,6 @@ export const api = {
   }) =>
     request<AiOutreach>("/ai/outreach", { method: "POST", body: JSON.stringify(data) }, 60000),
 
-  // AI 提效：HR 侧改简历——把候选人简历精简、结构化并突出与岗位的匹配点。
-  // 传 text（简历原文）优先，不传则后端按已录入字段 + 岗位信息生成；产出为草稿不写回。
-  aiResumeOptimize: (data: {
-    talent_id: string;
-    job_id?: string | null;
-    text?: string | null;
-  }) =>
-    request<AiResumeOptimize>("/ai/resume-optimize", { method: "POST", body: JSON.stringify(data) }, 60000),
-
-  aiResumeOptimizeGet: (talentId: string) =>
-    request<{ data: AiResumeOptimize | null }>(`/ai/resume-optimize?talent_id=${encodeURIComponent(talentId)}`),
-
   // AI 提效：针对该候选人与岗位生成面试问题清单
   aiInterviewQuestions: (talentId: string, jobId?: string | null) =>
     request<AiInterviewQuestions>(
@@ -805,24 +793,10 @@ export const api = {
   aiRecapReport: (data: { scope: string; report: Record<string, unknown> }) =>
     request<AiRecapReport>("/ai/recap-report", { method: "POST", body: JSON.stringify(data) }, 60000),
 
-  // AI 看板下一步建议：按看板链路 link_id 生成单卡决策建议 + 跟进话术草稿。
-  // 后端自查归属与数据；10 分钟缓存复用，配额共用。
-  aiNextStep: (linkId: string) =>
-    request<AiNextStep>("/ai/next-step", { method: "POST", body: JSON.stringify({ link_id: linkId }) }, 60000),
-
-  // AI 今日重点：逾期/今日/未来 7 天待办让 AI 排先后顺序。
-  // scope = 日期+待办集合指纹作 10 分钟缓存键；AI 只做排序建议，不改待办数据。
-  aiTodayFocus: (data: { scope: string; items: Record<string, unknown>[] }) =>
-    request<AiTodayFocus>("/ai/today-focus", { method: "POST", body: JSON.stringify(data) }, 60000),
-
   // AI 岗位诊断：岗位详情聚合数据（漏斗/停留/画像）→「为什么招人慢」的判断与建议。
   // scope = job_id 作 10 分钟缓存键。
   aiJobDiagnosis: (data: { scope: string; report: Record<string, unknown> }) =>
     request<AiJobDiagnosis>("/ai/job-diagnosis", { method: "POST", body: JSON.stringify(data) }, 60000),
-
-  // AI 审批摘要：审批弹窗「10 秒读卡」。后端按 instance_id 自查上下文，10 分钟缓存。
-  aiApprovalSummary: (instanceId: string) =>
-    request<AiApprovalSummary>("/ai/approval-summary", { method: "POST", body: JSON.stringify({ instance_id: instanceId }) }, 60000),
 
   // AI 入职清单：按候选人入职上下文生成材料初稿；后端自查归属，10 分钟缓存。前端预览勾选后入库。
   aiOnboardChecklist: (talentId: string) =>

@@ -1039,7 +1039,7 @@ export default function Funnel() {
 
           // 各阶段当前停留
           if (!isHidden("stay")) {
-            modules.push({ key: "stay", h: 340, node: <OverviewPanel /> });
+            modules.push({ key: "stay", h: 340, node: <OverviewPanel data={overview} loading={ovLoading} /> });
           }
 
           // 淘汰原因分布

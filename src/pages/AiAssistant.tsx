@@ -16,8 +16,8 @@ import { buildJobDiagnosisReport } from "../utils/jobReport";
 //
 // 为什么按「分组卡片 → 二级功能」两层，而不是一排平铺 Tab：
 // 早期版本只有 3 个 Tab，看起来正好；把散在各业务页的 AI 能力聚合进来后会变成 9 个，
-// 平铺 9 个 Tab 要横向滚动才能找全，越加越难用。改成四个语义分组后，
-// 用户先想「我要干什么」（写材料/看人/推进/诊断），再选具体功能，认知负担恒定。
+// 平铺 9 个 Tab 要横向滚动才能找全，越加越难用。改成五个语义分组后，
+// 用户先想「我要干什么」（写材料/看人/推进/诊断/人事），再选具体功能，认知负担恒定。
 //
 // 三条约定：
 //   1) 页面本身受「工具中心」权限（tools）控制；页内每个功能再按其领域权限条件展示
@@ -344,50 +344,6 @@ export default function AiAssistant() {
               </div>
             ) : null}
             {d.suggestion ? <div style={line}><Typography.Text strong>建议</Typography.Text> {d.suggestion}</div> : null}
-          </Space>
-        )}
-      />
-    </Space>
-  );
-
-  const optimizePanel = (
-    <Space direction="vertical" size={10} style={{ width: "100%" }}>
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
-        把简历精简并结构化，突出与目标岗位的匹配点。产出为草稿，不会写回候选人记录。
-      </Typography.Paragraph>
-      <TalentSelect value={pTalent} onChange={setPTalent} />
-      <JobSelect value={pJob} onChange={setPJob} />
-      <AiResultCard
-        key={`optimize-${pTalent || ""}-${pJob || ""}`}
-        title="AI 优化简历"
-        onGenerate={async () => {
-          if (!pTalent) { message.warning("请先选择候选人"); return null; }
-          return { ...(await api.aiResumeOptimize({ talent_id: pTalent, job_id: pJob ?? null })) };
-        }}
-        hint="点「生成」，AI 会输出一句亮点定位、优化后的简历正文与改动说明。"
-        loadingTip="正在读取候选人信息与岗位要求…"
-        toText={(d) => [
-          d.headline ? `【亮点】${d.headline}` : "",
-          `【优化稿】\n${d.optimized}`,
-          d.changes?.length ? `【改动说明】\n${d.changes.map((c: string) => `· ${c}`).join("\n")}` : "",
-          d.tips?.length ? `【进一步建议】\n${d.tips.map((c: string) => `· ${c}`).join("\n")}` : "",
-        ].filter(Boolean).join("\n\n")}
-        render={(d) => (
-          <Space direction="vertical" size={8} style={{ width: "100%" }}>
-            {d.headline ? <div style={{ fontWeight: 600 }}>{d.headline}</div> : null}
-            <pre style={pre}>{d.optimized || "—"}</pre>
-            {d.changes?.length ? (
-              <div>
-                <Typography.Text strong>改动说明</Typography.Text>
-                {d.changes.map((c: string, i: number) => <div key={i} style={line}>· {c}</div>)}
-              </div>
-            ) : null}
-            {d.tips?.length ? (
-              <div>
-                <Typography.Text strong>进一步建议</Typography.Text>
-                {d.tips.map((c: string, i: number) => <div key={i} style={line}>· {c}</div>)}
-              </div>
-            ) : null}
           </Space>
         )}
       />
@@ -1177,7 +1133,6 @@ export default function AiAssistant() {
     : group === "read"
       ? [
         ...(can("talents") ? [{ key: "insight", label: "简历解读", children: insightPanel }] : []),
-        ...(can("talents") ? [{ key: "optimize", label: "优化简历", children: optimizePanel }] : []),
         ...(can("talents") ? [{ key: "compare", label: "候选人对比", children: comparePanel }] : []),
         ...(can("interviews") ? [{ key: "summary", label: "综合评估", children: summaryPanel }] : []),
         ...(can("interviews") ? [{ key: "questions", label: "面试问题", children: questionsPanel }] : []),

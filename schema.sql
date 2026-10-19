@@ -24,8 +24,15 @@ CREATE TABLE IF NOT EXISTS users (
   must_change_password INTEGER NOT NULL DEFAULT 0, -- 管理员设临时密码后置 1，下次登录需自行修改
   pushplus_token TEXT,                   -- 个人 PushPlus 推送 token（用于到期提醒推送到本人）
   paid_until TEXT,                       -- 会员有效期（NULL=未开通；过期时间串=已过期/有效），手动开通制
+  referral_code TEXT UNIQUE,             -- 老带新邀请码（注册/建号时生成，唯一）
+  referred_by TEXT,                      -- 邀请人 user id（谁带来的）
   intended_role TEXT,                    -- 注册时自报身份（hr/headhunter/team/other），仅作意向参考，不参与鉴权
   team_id TEXT,                          -- 团队标识：NULL=个人；管理员=自己的id；子用户=管理员id。同 team_id 共享业务数据
+  notify_channel TEXT DEFAULT 'pushplus', -- 到期提醒推送渠道：pushplus / feishu / wecom
+  feishu_open_id TEXT,                    -- 飞书 open_id（notify_channel=feishu 时使用）
+  wecom_userid TEXT,                      -- 企业微信 userid（notify_channel=wecom 时使用）
+  ai_key TEXT,                            -- 自有 DeepSeek API Key（BYOK）
+  ai_key_masked TEXT,                     -- AI Key 掩码（展示用，如 sk-****abc）
   created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_users_team ON users(team_id);
@@ -75,6 +82,8 @@ CREATE TABLE IF NOT EXISTS talents (
   probation_end TEXT,       -- 试用期结束日
   resignation_date TEXT,    -- 预计离职日期（离职倒计时）
   hire_date TEXT,           -- 入职日期（社保增员待办基准日）
+  entry_type TEXT DEFAULT 'manual', -- 录入方式: manual 手工 / ai_parse AI 解析 / import 导入
+  tags TEXT DEFAULT '[]',    -- 标签 JSON 数组（人才库筛选用）
   next_follow_at TEXT,      -- 下次跟进/提醒时间（录入表单可填，到期自动生成待办）
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
@@ -135,6 +144,8 @@ CREATE TABLE IF NOT EXISTS talent_tasks (
   title TEXT NOT NULL,
   content TEXT,
   due_date TEXT,
+  original_due TEXT,                   -- 顺延前的原始到期日（节假日顺延时留底）
+  shifted INTEGER DEFAULT 0,           -- 是否被节假日顺延过（1=是）
   priority TEXT DEFAULT 'normal',    -- high / normal / low
   status TEXT DEFAULT 'pending',     -- pending / done / cancelled
   source TEXT DEFAULT 'manual',      -- manual / follow_up / system
@@ -239,6 +250,9 @@ CREATE TABLE IF NOT EXISTS interviews (
   result TEXT,                            -- pass 通过 / fail 不通过 / pending 待定
   score INTEGER,                          -- 综合评分 1-5
   evaluation TEXT,                        -- 评价内容
+  dept_result TEXT,                       -- 用人部门结论：pass / fail / pending
+  dept_score INTEGER,                     -- 用人部门评分 1-5
+  dept_evaluation TEXT,                   -- 用人部门评价内容
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -291,6 +305,8 @@ CREATE TABLE IF NOT EXISTS approval_instances (
   current_step INTEGER NOT NULL DEFAULT 0,       -- 当前处在第几步（0 起）
   status TEXT NOT NULL DEFAULT 'pending',        -- pending 进行中 / approved 已通过 / rejected 已驳回 / cancelled 已取消
   payload TEXT,                                  -- 快照 JSON（Offer 金额等）
+  ext_provider TEXT,                             -- 外部审批渠道（预留，如企业微信审批）
+  ext_msg_id TEXT,                               -- 外部审批消息 ID（回调用）
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -405,3 +421,42 @@ CREATE INDEX IF NOT EXISTS idx_bgcheck_owner ON background_checks(owner_id);
 CREATE INDEX IF NOT EXISTS idx_bgcheck_talent ON background_checks(talent_id);
 CREATE INDEX IF NOT EXISTS idx_bgcheck_job ON background_checks(talent_job_id);
 CREATE INDEX IF NOT EXISTS idx_bgcheck_status ON background_checks(status);
+
+-- ---- 社保费率模板（按城市保存五险一金比例，社保计算器一键套用）----
+CREATE TABLE IF NOT EXISTS social_rate_templates (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL,
+  city TEXT NOT NULL,
+  si_rate_personal REAL,               -- 社保个人缴纳比例
+  si_rate_company REAL,                -- 社保单位缴纳比例
+  hf_rate_personal REAL,               -- 公积金个人缴纳比例
+  hf_rate_company REAL,                -- 公积金单位缴纳比例
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_social_rate_templates_owner ON social_rate_templates(owner_id, city);
+
+-- ---- 模块点击率日志（usage_events 明细留 30 天；usage_daily 日聚合长期保留）----
+CREATE TABLE IF NOT EXISTS usage_events (
+  id TEXT PRIMARY KEY,
+  ts TEXT NOT NULL,                    -- 事件时间（UTC）
+  day TEXT NOT NULL,                   -- 归属日期 YYYY-MM-DD（UTC+8）
+  user_id TEXT NOT NULL,
+  role TEXT,
+  menu TEXT NOT NULL,                  -- 菜单 key（见 src/usageMeta.ts）
+  action TEXT NOT NULL DEFAULT 'view', -- view / click
+  detail TEXT,
+  platform TEXT                        -- web / mobile
+);
+CREATE INDEX IF NOT EXISTS idx_usage_events_day ON usage_events(day, menu);
+CREATE INDEX IF NOT EXISTS idx_usage_events_user ON usage_events(user_id, ts);
+
+CREATE TABLE IF NOT EXISTS usage_daily (
+  day TEXT NOT NULL,
+  menu TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  views INTEGER NOT NULL DEFAULT 0,
+  actions INTEGER NOT NULL DEFAULT 0,
+  dwell_ms INTEGER NOT NULL DEFAULT 0,
+  last_at TEXT,
+  PRIMARY KEY (day, menu, user_id)
+);

@@ -1,48 +1,28 @@
-import { useEffect, useState } from "react";
 import { Card, Empty, Spin, Tooltip } from "antd";
 import { ArrowRightOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import type { OverviewResponse } from "../types";
 import { PIPELINE_STAGES } from "../types";
-import { api } from "../api";
 
 /**
  * 各阶段当前停留（快照口径）——原「招聘概览」并入漏斗页后保留的唯一模块。
  * 位置：漏斗页右栏「招聘周期」卡片下方（不再是页面顶部）。
  * 数据源：/api/overview 的 stageCounts = talent_jobs.stage 分组。
+ * 纯展示组件：数据由漏斗页统一拉取后传入（漏斗页自己也要用这份数据，
+ * 早期两边各拉一次同一接口，属于重复请求，已合并）。
  *
  * ⚠️ 与上方漏斗阶段图口径不同，别混读：
  *   - 本模块 = 此刻卡在哪一步（快照，数字小）
  *   - 漏斗图  = 曾经到过该阶段（job_stage_logs 去重，累计，数字大）
  */
-export default function OverviewPanel() {
+export default function OverviewPanel({
+  data,
+  loading,
+}: {
+  data: OverviewResponse | null;
+  loading: boolean;
+}) {
   const navigate = useNavigate();
-  const [data, setData] = useState<OverviewResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    setLoading(true);
-    api
-      .getOverview()
-      .then((r) => {
-        if (alive) {
-          setData(r);
-          setErr(null);
-        }
-      })
-      .catch((e) => {
-        // 概览是增强信息，拉取失败不该让整个漏斗页不可用
-        if (alive) setErr(e instanceof Error ? e.message : "加载失败");
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   if (loading) {
     return (
@@ -54,7 +34,7 @@ export default function OverviewPanel() {
     );
   }
 
-  if (err || !data) {
+  if (!data) {
     // 失败时静默降级：不展示卡片，其余漏斗内容照常
     return null;
   }

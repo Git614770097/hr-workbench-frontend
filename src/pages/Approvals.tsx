@@ -2,13 +2,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Tabs, Table, Button, Space, Tag, Modal, Form, Input, message,
-  Popconfirm, Empty, Typography, Alert, Steps, Select, Tooltip,
+  Popconfirm, Empty, Typography, Alert, Steps, Select,
 } from "antd";
-import { PlusOutlined, ReloadOutlined, RobotOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import AiThinking from "../components/AiThinking";
-import { TypeText } from "../utils/useTypewriter";
-import type { ApprovalFlow, ApprovalInstance, AiApprovalSummary, User } from "../types";
+import type { ApprovalFlow, ApprovalInstance, User } from "../types";
 
 // 让列表（表格）撑满 Tab 内容区剩余高度：表头固定、表体内部滚动，避免一屏只露几行留大片空白。
 // 取容器高度减去 antd size="middle" 表头（约 47px）作为 scroll.y；低于下限则退回自然高度。
@@ -195,22 +193,6 @@ function InstanceList() {
 
   useEffect(() => { load(); }, [load]);
 
-  // AI 审批摘要：后端按实例自查上下文（候选人/岗位/快照/前级意见），生成「10 秒读卡」。
-  // AI 只摆事实不给倾向性结论，批准/驳回由审批人独立决策；失败降级为基础信息提示。
-  const [aiSum, setAiSum] = useState<{ loading: boolean; data: AiApprovalSummary | null; err: string }>({
-    loading: false, data: null, err: "",
-  });
-  const genSummary = async () => {
-    if (!decideTarget) return;
-    setAiSum({ loading: true, data: null, err: "" });
-    try {
-      const r = await api.aiApprovalSummary(decideTarget.id);
-      setAiSum({ loading: false, data: r, err: "" });
-    } catch (e) {
-      setAiSum({ loading: false, data: null, err: (e as Error).message || "生成失败，请稍后重试" });
-    }
-  };
-
   const handleDecide = async () => {
     if (!decideTarget) return;
     try {
@@ -324,7 +306,7 @@ function InstanceList() {
                   {/* 团队子用户不能审自己的单（后端同规则 403），这里直接不展示入口 */}
                   {!(isTeamMember && r.owner_id === currentUser?.id) && (
                     <Button type="link" size="small" style={{ paddingInline: 0 }}
-                      onClick={() => { setDecideTarget(r); setDecision("approve"); setAiSum({ loading: false, data: null, err: "" }); }}>
+                      onClick={() => { setDecideTarget(r); setDecision("approve"); }}>
                       处理
                     </Button>
                   )}
@@ -360,42 +342,6 @@ function InstanceList() {
         <Space direction="vertical" style={{ width: "100%" }}>
           <Alert type={decision === "approve" ? "success" : "warning"} showIcon
             message={decision === "approve" ? "通过后进入下一审批环节" : "驳回后该审批结束"} />
-          {/* AI 审批摘要：10 秒读卡（批的是什么 + 风险点）；AI 只摆事实，不给批准/驳回的倾向性结论 */}
-          {aiSum.loading ? (
-            <AiThinking steps={["正在读取审批上下文…", "正在核对候选人与岗位…", "正在提炼风险点…"]} />
-          ) : aiSum.data ? (
-            <div style={{ border: "1px solid #f0f0f0", borderRadius: 8, padding: 10 }}>
-              <div style={{ marginBottom: 4 }}>
-                <Tag color="geekblue" icon={<RobotOutlined />}>AI 摘要</Tag>
-              </div>
-              <div style={{ lineHeight: 1.7 }}><TypeText text={aiSum.data.summary} /></div>
-              {aiSum.data.risks.map((r, i) => (
-                <div key={i} style={{ marginTop: 4, fontSize: 12, color: "#ad4e00" }}>⚠ <TypeText text={r} /></div>
-              ))}
-              <Button size="small" type="text" icon={<RobotOutlined />} onClick={genSummary} style={{ marginTop: 4 }}>
-                重新生成
-              </Button>
-            </div>
-          ) : (
-            <div>
-              <Tooltip
-                title={
-                  !decideTarget
-                    ? "先选择一条审批"
-                    : "10 秒看懂批的是什么：AI 把候选人、岗位、条件与风险点浓缩成一屏（只摆事实，不给批准/驳回结论）"
-                }
-              >
-                <Button className="ai-btn" size="small" icon={<RobotOutlined />} onClick={genSummary} disabled={!decideTarget}>
-                  AI 摘要
-                </Button>
-              </Tooltip>
-              {aiSum.err && decideTarget && (
-                <div style={{ marginTop: 6, fontSize: 12, color: "#ad6800" }}>
-                  AI 暂不可用（{aiSum.err}）。可看：{decideTarget.title}（发起于 {Math.max(0, Math.floor((Date.now() - new Date(decideTarget.created_at.replace(" ", "T") + "Z").getTime()) / 86400000))} 天前，当前第 {(decideTarget.current_step ?? 0) + 1} 环）。
-                </div>
-              )}
-            </div>
-          )}
           <Select
             style={{ width: "100%" }}
             value={decision}

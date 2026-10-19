@@ -643,32 +643,11 @@ export interface TalentStageLog {
   user_name: string | null;
 }
 
-/** 沟通记录（communications 表；详情页时间线渲染） */
-export interface TalentCommunication {
-  id: string;
-  type: string | null;        // call / wechat / interview / email / other
-  content: string | null;
-  rating: number | null;      // 1-5 评分
-  follow_up_date: string | null;
-  created_at: string;
-  user_name: string | null;   // 记录人
-}
-
-/** 沟通方式中文标签 */
-export const COMM_TYPE_LABELS: Record<string, string> = {
-  call: "电话",
-  wechat: "微信",
-  interview: "面试",
-  email: "邮件",
-  other: "其他",
-};
-
 /** 人才详情聚合返回 */
 export interface TalentDetailData extends Talent {
   tasks: Task[];
   pipeline: TalentPipelineItem[];
   stage_logs: TalentStageLog[];
-  communications: TalentCommunication[];
 }
 
 // ---- 招聘漏斗 ----
@@ -757,28 +736,6 @@ export interface AiUsage {
   total_tokens: number;
 }
 
-// AI 看板下一步建议（/ai/next-step）：单卡决策建议 + 跟进话术草稿
-export interface AiNextStep {
-  /** 动作类型：advance / arrange_interview / push_offer / contact / standby / drop */
-  action: string;
-  /** 一句话动作建议（带具体时间） */
-  suggestion: string;
-  /** 2-3 条依据（引用停留天数/备注/评分等事实） */
-  reasons: string[];
-  /** 可复制的跟进话术草稿（AI 只出草稿，系统永不代发） */
-  draft: string;
-}
-
-// AI 今日重点（/ai/today-focus）：把逾期/今日/未来 7 天待办排个先后
-export interface AiTodayFocus {
-  /** 今天优先处理的 2-3 件事，每条「待办标题 — 一句话理由」 */
-  top3: string[];
-  /** 建议的处理顺序/时段安排（一句话） */
-  arrange: string;
-  /** 可放一放的待办 + 理由（可空） */
-  defer: string[];
-}
-
 // AI 岗位诊断（/ai/job-diagnosis）：单岗位「为什么招人慢」
 export interface AiJobDiagnosis {
   /** 一句话判断（瓶颈在哪） */
@@ -787,14 +744,6 @@ export interface AiJobDiagnosis {
   reasons: string[];
   /** 3 条可执行建议 */
   actions: string[];
-}
-
-// AI 审批摘要（/ai/approval-summary）：审批「10 秒读卡」
-export interface AiApprovalSummary {
-  /** 3 句话内讲清「批的是什么」 */
-  summary: string;
-  /** 0-2 条风险点（引用数据；AI 不给批准/驳回的倾向性结论） */
-  risks: string[];
 }
 
 // AI 入职清单（/ai/onboard-checklist）：按岗位/城市上下文生成材料初稿，前端预览勾选后入库
@@ -1391,20 +1340,6 @@ export interface AiOutreach {
   tone: AiRejectTone | null;
   title: string;
   content: string;
-  tips: string[];
-  _cached?: boolean;
-}
-
-// HR 侧 AI 改简历：把候选人简历精简、结构化并突出与岗位的匹配点。
-// 产出为草稿，供 HR 参考后手动复制，不写回候选人记录。
-export interface AiResumeOptimize {
-  /** 一句话核心亮点（放简历开头的定位句） */
-  headline: string;
-  /** 优化后的简历正文（精简、结构化） */
-  optimized: string;
-  /** 关键改动说明（做了哪些精简/突出） */
-  changes: string[];
-  /** 进一步优化建议 */
   tips: string[];
   _cached?: boolean;
 }

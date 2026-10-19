@@ -269,16 +269,14 @@ app.use("/api/roles/*", async (c, next) => {
 app.use("/api/ai/*", async (c, next) => {
   const p = c.req.path;
   const menuKey =
-    p.startsWith("/api/ai/outreach") || p.startsWith("/api/ai/resume-insight") || p.startsWith("/api/ai/resume-optimize")
-      ? "talents" // 沟通文案 / 简历解读 / 改简历：人才库语义，跟随 talents 权限
+    p.startsWith("/api/ai/outreach") || p.startsWith("/api/ai/resume-insight")
+      ? "talents" // 沟通文案 / 简历解读：人才库语义，跟随 talents 权限
       : p.startsWith("/api/ai/job-draft") || p.startsWith("/api/ai/job-diagnosis")
         ? "jobs" // JD 起草/优化与岗位诊断：岗位管理语义，跟随 jobs 权限
       : p.startsWith("/api/ai/talent-inventory")
         ? "talents" // AI 人才储备盘点：人才库语义，跟随 talents 权限
-        : p.startsWith("/api/ai/recap-report") || p.startsWith("/api/ai/next-step") || p.startsWith("/api/ai/approval-summary") || p.startsWith("/api/ai/onboard-checklist") || p.startsWith("/api/ai/weekly-report")
-          ? "pipeline" // AI 招聘复盘 / 看板建议 / 审批摘要 / 入职清单 / 招聘周报：招聘链路语义，跟随 pipeline 权限
-      : p.startsWith("/api/ai/today-focus")
-        ? "tasks" // AI 今日重点：待办日历语义，跟随 tasks 权限
+        : p.startsWith("/api/ai/recap-report") || p.startsWith("/api/ai/onboard-checklist") || p.startsWith("/api/ai/weekly-report")
+          ? "pipeline" // AI 招聘复盘 / 入职清单 / 招聘周报：招聘链路语义，跟随 pipeline 权限
         : p.startsWith("/api/ai/candidate-compare") || p.startsWith("/api/ai/offer-negotiation") || p.startsWith("/api/ai/sourcing-copy")
           ? "talents" // 候选人对比 / Offer 谈判话术 / 被动人才触达：人才库语义，跟随 talents 权限
           : p.startsWith("/api/ai/channel-advice")

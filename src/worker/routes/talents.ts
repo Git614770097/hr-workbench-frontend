@@ -879,15 +879,7 @@ talents.get("/:id", async (c) => {
     ).bind(id).all()
   ).results;
 
-  // 沟通记录：该人才的全部沟通（电话/微信/面试/邮件等），按时间倒序（最新在上）
-  const communications = (
-    await c.env.DB.prepare(
-      `SELECT c.id, c.type, c.content, c.rating, c.follow_up_date, c.created_at,
-              u.name as user_name
-         FROM communications c LEFT JOIN users u ON c.user_id = u.id
-        WHERE c.talent_id = ? ORDER BY c.created_at DESC`
-    ).bind(id).all()
-  ).results;
+  // （沟通记录功能已下线：全库无写入入口，详情页时间线恒为空，详见 git 历史）
 
   return c.json({
     ...(row as any),
@@ -896,7 +888,6 @@ talents.get("/:id", async (c) => {
     tasks,
     pipeline,
     stage_logs: stageLogs,
-    communications,
   });
 });
 
