@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
-import { Spin, Button, Alert } from "antd";
+import { Spin, Button, Alert, message } from "antd";
 import type { User } from "./types";
 import type { ThemeState } from "./theme";
 import { api } from "./api";
@@ -114,6 +114,15 @@ interface AppProps {
 export default function App({ theme, onChangeTheme }: AppProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  // 飞书 OAuth 回调结果：/?feishu=bound 或 /?feishu=error&reason=...
+  // 必须在首次渲染时就取走——已登录时 "/" 会立即被 Navigate 替换成 /funnel，
+  // 等 effect 跑完查询参数已从地址栏消失。回跳是整页加载，此时读一次即可。
+  const [feishuResult] = useState<{ status: string; reason: string | null } | null>(() => {
+    if (typeof window === "undefined") return null;
+    const p = new URLSearchParams(window.location.search);
+    const s = p.get("feishu");
+    return s ? { status: s, reason: p.get("reason") } : null;
+  });
   // 有 token 但首屏加载失败（典型：D1 冷启动导致 /api/auth/me 查询挂起超时），
   // 不进登录页、给「重试」入口，避免一直卡在 loading 出不来。
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -144,6 +153,30 @@ export default function App({ theme, onChangeTheme }: AppProps) {
   useEffect(() => {
     fetchUser();
   }, [fetchUser]);
+
+  // 飞书回调落地面提示（成功/失败各一条，随后清理 URL 防刷新重复弹）。
+  // 未登录时静默忽略——那说明授权中途会话过期，用户回登录页重新走即可。
+  const FEISHU_ERROR_TEXT: Record<string, string> = {
+    access_denied: "你取消了飞书授权",
+    missing_params: "飞书回调参数缺失",
+    bad_state: "授权状态已失效，请重新发起绑定",
+    no_app: "管理员尚未配置飞书应用",
+    exchange: "与飞书交换凭证失败",
+  };
+  useEffect(() => {
+    if (!feishuResult || !user) return;
+    if (feishuResult.status === "bound") {
+      message.success("飞书绑定成功，之后的提醒会推送到你的飞书");
+    } else {
+      const reason = feishuResult.reason || "";
+      const text = FEISHU_ERROR_TEXT[reason] || `绑定失败（${reason || "未知原因"}）`;
+      message.error(`飞书${text}`);
+    }
+    const u = new URL(window.location.href);
+    u.searchParams.delete("feishu");
+    u.searchParams.delete("reason");
+    window.history.replaceState({}, "", u.pathname + u.search);
+  }, [feishuResult, user]);
 
   // 静默刷新用户信息：管理员改了某人的身份 / 权限 / 会员状态后，对方把页面切回前台
   // 即可自动跟上，不必重新登录。（没有推送通道，只能靠这个 + 下次登录兜底。）

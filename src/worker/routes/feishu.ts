@@ -89,6 +89,16 @@ feishu.get("/oauth/start", async (c) => {
   return c.json({ url });
 });
 
+/**
+ * OAuth 回调破框：扫码登录在飞书官方 iframe 内完成授权，若用普通 302，
+ * 回调页只会渲染在那个小 iframe 里。返回一段脚本把顶层窗口带到目标地址
+ * （iframe 内外都正确：顶层场景 top === self，catch 分支等价于 302）。
+ */
+function breakoutRedirect(url: string): string {
+  const target = JSON.stringify(url);
+  return `<!doctype html><html><head><meta charset="utf-8"><title>正在返回系统…</title></head><body style="margin:0;font-family:sans-serif;color:#64748b;display:flex;align-items:center;justify-content:center;height:100vh">正在返回系统，请稍候…<script>try{top.location.replace(${target})}catch(e){location.replace(${target})}<\/script></body></html>`;
+}
+
 /** 飞书授权回跳：校验 state → 换 open_id → 绑定当前用户 → 回前端。 */
 feishu.get("/oauth/callback", async (c) => {
   const origin = new URL(c.req.url).origin;
@@ -96,25 +106,25 @@ feishu.get("/oauth/callback", async (c) => {
   const state = c.req.query("state");
   // 用户拒绝授权时飞书回跳 error=access_denied（无 code），与参数缺失区分开
   const denied = c.req.query("error");
-  if (denied) return c.redirect(`${origin}/?feishu=error&reason=${encodeURIComponent(denied)}`);
-  if (!code || !state) return c.redirect(`${origin}/?feishu=error&reason=missing_params`);
+  if (denied) return c.html(breakoutRedirect(`${origin}/?feishu=error&reason=${encodeURIComponent(denied)}`));
+  if (!code || !state) return c.html(breakoutRedirect(`${origin}/?feishu=error&reason=missing_params`));
   const raw = await sessionGet(c.env, `feishu:oauth:${state}`);
   await c.env.SESSIONS.delete(`feishu:oauth:${state}`);
-  if (!raw) return c.redirect(`${origin}/?feishu=error&reason=bad_state`);
+  if (!raw) return c.html(breakoutRedirect(`${origin}/?feishu=error&reason=bad_state`));
   let userId: string;
-  try { ({ userId } = JSON.parse(raw) as { userId: string }); } catch { return c.redirect(`${origin}/?feishu=error&reason=bad_state`); }
+  try { ({ userId } = JSON.parse(raw) as { userId: string }); } catch { return c.html(breakoutRedirect(`${origin}/?feishu=error&reason=bad_state`)); }
 
   // 用全局应用（或该用户所属 team 的应用）换 open_id
   const teamRow = await c.env.DB.prepare("SELECT team_id FROM users WHERE id = ?").bind(userId).first<{ team_id: string | null }>();
   const cfg = await resolveFeishuApp(c.env.DB, teamRow?.team_id ?? null, c.env.AI_KEY_SECRET);
-  if (!cfg) return c.redirect(`${origin}/?feishu=error&reason=no_app`);
+  if (!cfg) return c.html(breakoutRedirect(`${origin}/?feishu=error&reason=no_app`));
 
   const redirected = `${origin}/api/feishu/oauth/callback`;
   const { user, error } = await exchangeCodeForUser(cfg, code, redirected);
-  if (!user) return c.redirect(`${origin}/?feishu=error&reason=${encodeURIComponent(error || "exchange")}`);
+  if (!user) return c.html(breakoutRedirect(`${origin}/?feishu=error&reason=${encodeURIComponent(error || "exchange")}`));
   await c.env.DB.prepare("UPDATE users SET feishu_open_id = ?, notify_channel = 'feishu' WHERE id = ?")
     .bind(user.openId, userId).run();
-  return c.redirect(`${origin}/?feishu=bound`);
+  return c.html(breakoutRedirect(`${origin}/?feishu=bound`));
 });
 
 /** 事件订阅回调（公开）。P1 支持 URL 校验 + 事件 ACK；卡片交互/加密回包为 P2。 */
