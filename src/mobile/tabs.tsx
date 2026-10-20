@@ -14,6 +14,7 @@ import {
   DeploymentUnitOutlined,
   TeamOutlined,
   FunnelPlotOutlined,
+  ScheduleOutlined,
 } from "@ant-design/icons";
 import type { User } from "../types";
 
@@ -31,6 +32,8 @@ export interface MobileTab {
 
 export const MOBILE_TABS: MobileTab[] = [
   { path: "/m/tasks", perm: "tasks", navPath: "/tasks", label: "待办", icon: <CalendarOutlined /> },
+  // 面试排在待办之后：面完随手记、随时看时间，是手机上最高频的招聘动作
+  { path: "/m/interviews", perm: "interviews", navPath: "/interviews", label: "面试", icon: <ScheduleOutlined /> },
   { path: "/m/pipeline", perm: "pipeline", navPath: "/pipeline", label: "看板", icon: <DeploymentUnitOutlined /> },
   { path: "/m/talents", perm: "talents", navPath: "/talents", label: "人才库", icon: <TeamOutlined /> },
   { path: "/m/funnel", perm: "funnel", navPath: "/funnel", label: "概览", icon: <FunnelPlotOutlined /> },

@@ -54,9 +54,12 @@ const Roles = lazy(() => import("./pages/Roles"));
 const Settings = lazy(() => import("./pages/Settings"));
 // 日志管理：模块使用热度（管理员专属），含 ECharts，按需加载
 const Logs = lazy(() => import("./pages/Logs"));
+// 操作审计：admin 专属（仅管理员可见），同样按需加载
+const AuditLogs = lazy(() => import("./pages/AuditLogs"));
 // 团队管理：仅管理员（manager）与超管可见
 const Team = lazy(() => import("./pages/Team"));
 const MTasks = lazy(() => import("./mobile/MTasks"));
+const MInterviews = lazy(() => import("./mobile/MInterviews"));
 const MPipeline = lazy(() => import("./mobile/MPipeline"));
 const MTalents = lazy(() => import("./mobile/MTalents"));
 const MFunnel = lazy(() => import("./mobile/MFunnel"));
@@ -253,6 +256,8 @@ export default function App({ theme, onChangeTheme }: AppProps) {
             <Route path="tasks" element={<MGuard user={user} perm="tasks"><MTasks /></MGuard>} />
             <Route path="pipeline" element={<MGuard user={user} perm="pipeline"><MPipeline /></MGuard>} />
             <Route path="talents" element={<MGuard user={user} perm="talents"><MTalents /></MGuard>} />
+            {/* 面试：手机上最高频的场景（今天几场、谁来、几点），只读 + 轻操作 */}
+            <Route path="interviews" element={<MGuard user={user} perm="interviews"><MInterviews /></MGuard>} />
             <Route path="funnel" element={<MGuard user={user} perm="funnel"><MFunnel /></MGuard>} />
             <Route path="*" element={fallback} />
           </Route>
@@ -296,6 +301,8 @@ export default function App({ theme, onChangeTheme }: AppProps) {
           {user.role === "admin" && <Route path="/settings" element={<Settings />} />}
           {/* 日志管理：模块点击率统计，仅管理员；同上走 admin 硬放行 */}
           {user.role === "admin" && <Route path="/logs" element={<Logs />} />}
+          {/* 操作审计：谁/何时/对什么数据/做了什么，仅管理员；同样不占菜单权限 key */}
+          {user.role === "admin" && <Route path="/audit" element={<AuditLogs />} />}
           {/* 帮助中心：所有登录用户可看，不做权限控制 */}
           <Route path="/help" element={<Help />} />
           <Route path="*" element={<Navigate to="/" replace />} />
