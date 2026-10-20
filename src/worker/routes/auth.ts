@@ -450,7 +450,7 @@ auth.post("/login", async (c) => {
 auth.get("/me", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token, paid_until, status, intended_role, team_id FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null; must_change_password: number; pushplus_token: string | null; paid_until: string | null; status: string | null; intended_role: string | null; team_id: string | null }>();
+  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token, paid_until, status, intended_role, team_id, notify_channel, feishu_open_id FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null; must_change_password: number; pushplus_token: string | null; paid_until: string | null; status: string | null; intended_role: string | null; team_id: string | null; notify_channel: string | null; feishu_open_id: string | null }>();
   if (!user) return c.json({ error: "用户不存在" }, 401);
 
   // 管理员拥有全部权限；普通用户取角色 permissions
@@ -469,6 +469,8 @@ auth.get("/me", async (c) => {
     id: user.id, phone: user.phone, name: user.name, role: user.role, role_id: user.role_id,
     must_change_password: !!user.must_change_password,
     pushplus_configured: !!(user.pushplus_token && user.pushplus_token.trim()),
+    feishu_bound: !!(user.feishu_open_id && user.feishu_open_id.trim()),
+    notify_channel: user.notify_channel || "pushplus",
     paid_until: user.paid_until,
     status: user.status,
     permissions,

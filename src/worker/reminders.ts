@@ -1,5 +1,18 @@
 import type { Env } from "./index";
 import { escapeHtml } from "../utils/escapeHtml";
+import { resolveFeishuApp, sendFeishuText } from "./feishu";
+
+/** 飞书文本消息不渲染 HTML：把 notify* 系列拼的富文本转纯文本（<br>→换行、去标签、还原实体）。 */
+function htmlToPlain(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/&nbsp;/g, " ")
+    .replace(/<\/?[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
 
 // ---- 会员到期自动冻结（read-only）----
 // 每日定时执行：把「正常 active、非 admin、且会员有效期已过」的账号置为 frozen。
@@ -112,28 +125,51 @@ export async function notifyAdmins(
   title: string,
   content: string
 ): Promise<AdminNotifyResult> {
+  type AdminRecipient = {
+    id: string; name: string;
+    pushplus_token: string | null;
+    feishu_open_id: string | null;
+    notify_channel: string | null;
+  };
   const rows = await env.DB.prepare(
-    `SELECT u.id, u.name, u.pushplus_token
+    `SELECT u.id, u.name, u.pushplus_token, u.feishu_open_id, u.notify_channel
        FROM users u LEFT JOIN roles r ON u.role_id = r.id
       WHERE u.status = 'active'
-        AND u.pushplus_token IS NOT NULL AND u.pushplus_token != ''
+        AND ( (u.pushplus_token IS NOT NULL AND u.pushplus_token != '')
+              OR (u.notify_channel = 'feishu' AND u.feishu_open_id IS NOT NULL AND u.feishu_open_id != '') )
         AND (u.role = 'admin' OR r.permissions LIKE '%users%')`
-  ).all<{ id: string; name: string; pushplus_token: string }>();
+  ).all<AdminRecipient>();
 
-  const admins = (rows.results || []).filter((u) => u.pushplus_token && u.pushplus_token.trim());
+  const admins = (rows.results || []).filter(
+    (u) => (u.pushplus_token && u.pushplus_token.trim()) || (u.notify_channel === "feishu" && u.feishu_open_id)
+  );
 
   if (admins.length === 0) {
     if (!env.PUSHPLUS_TOKEN) {
-      return { pushedTo: 0, viaGlobal: false, note: "无可用推送通道（管理员均未配置 token，且无全局 PUSHPLUS_TOKEN）" };
+      return { pushedTo: 0, viaGlobal: false, note: "无可用推送通道（管理员均未配置推送渠道，且无全局 PUSHPLUS_TOKEN）" };
     }
     const res = await sendPushPlus(env.PUSHPLUS_TOKEN, title, content);
     return { pushedTo: res.ok ? 1 : 0, viaGlobal: true, note: res.message };
   }
 
+  // 飞书应用凭证（全局默认 / team 覆盖）；主密钥未配置则飞书不可用，自动回落 PushPlus
+  const feishuCfg = await resolveFeishuApp(env.DB, null, env.AI_KEY_SECRET);
+
   let pushedTo = 0;
+  let viaFeishu = 0;
   const failures: string[] = [];
   for (const u of admins) {
-    const res = await sendPushPlus(u.pushplus_token, title, content);
+    let res: { ok: boolean; message: string };
+    if (u.notify_channel === "feishu" && u.feishu_open_id && feishuCfg) {
+      res = await sendFeishuText(env.SESSIONS, feishuCfg, u.feishu_open_id, htmlToPlain(content));
+      if (res.ok) viaFeishu++;
+    } else if (u.pushplus_token && u.pushplus_token.trim()) {
+      res = await sendPushPlus(u.pushplus_token, title, content);
+    } else if (u.notify_channel === "feishu") {
+      res = { ok: false, message: "飞书绑定/配置不完整，未推送（可改用 PushPlus）" };
+    } else {
+      res = await sendPushPlus(u.pushplus_token || "", title, content);
+    }
     if (res.ok) pushedTo++;
     else failures.push(`${u.name}：${res.message}`);
   }
@@ -141,7 +177,7 @@ export async function notifyAdmins(
     pushedTo,
     viaGlobal: false,
     note: pushedTo > 0
-      ? `已推送给 ${pushedTo} 位管理员` + (failures.length > 0 ? `，${failures.length} 人失败` : "")
+      ? `已推送给 ${pushedTo} 位管理员` + (viaFeishu > 0 ? `（含飞书 ${viaFeishu} 位）` : "") + (failures.length > 0 ? `，${failures.length} 人失败` : "")
       : `推送失败：${failures.join("；")}`,
   };
 }

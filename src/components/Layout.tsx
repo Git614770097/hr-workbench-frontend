@@ -36,8 +36,9 @@ import {
   BarChartOutlined,
   ToolOutlined,
   RobotOutlined,
+  FileSearchOutlined,
 } from "@ant-design/icons";
-import { QuestionCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { QuestionCircleOutlined, PlayCircleOutlined, MessageOutlined } from "@ant-design/icons";
 import type { User } from "../types";
 import { ROLE_LABELS } from "../types";
 import { api } from "../api";
@@ -45,6 +46,7 @@ import { THEME_COLORS, type ThemeState } from "../theme";
 import Onboarding from "./Onboarding";
 import { onboardingStepsFor } from "./onboardingSteps";
 import PushplusModal from "./PushplusModal";
+import FeishuBindModal from "./FeishuBindModal";
 import PasswordModal from "./PasswordModal";
 import AiKeyModal from "./AiKeyModal";
 import MembershipModal from "./MembershipModal";
@@ -202,6 +204,8 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
       { to: "/settings", label: "系统设置", icon: <SettingOutlined />, color: "#64748b", perm: "settings", adminOnly: true },
       // 日志管理：模块使用热度（埋点数据），同为管理员专属，同样不占菜单权限 key
       { to: "/logs", label: "日志管理", icon: <BarChartOutlined />, color: "#64748b", perm: "logs", adminOnly: true },
+      // 操作审计：写操作 + 敏感读操作的留痕（合规追溯），仅管理员
+      { to: "/audit", label: "操作审计", icon: <FileSearchOutlined />, color: "#64748b", perm: "audit", adminOnly: true },
     ],
   },
 ];
@@ -272,6 +276,8 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   const [onbNonce, setOnbNonce] = useState(0);
   // 个人消息推送设置弹窗
   const [pushplusOpen, setPushplusOpen] = useState(false);
+  // 飞书推送绑定弹窗
+  const [feishuOpen, setFeishuOpen] = useState(false);
   // 修改自己的密码弹窗；forced=true 表示管理员重置过密码、本次登录必须先改掉
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [aiKeyOpen, setAiKeyOpen] = useState(false);
@@ -504,6 +510,12 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
       icon: <BellOutlined />,
       label: "消息推送设置",
       onClick: () => setPushplusOpen(true),
+    },
+    {
+      key: "feishu",
+      icon: <MessageOutlined />,
+      label: "飞书推送设置",
+      onClick: () => setFeishuOpen(true),
     },
     {
       key: "member",
@@ -779,6 +791,12 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
         configured={!!user.pushplus_configured}
         onClose={() => setPushplusOpen(false)}
         onConfiguredChange={(configured) => onUserChange({ ...user, pushplus_configured: configured })}
+      />
+
+      <FeishuBindModal
+        open={feishuOpen}
+        bound={!!user.feishu_bound}
+        onClose={() => setFeishuOpen(false)}
       />
 
       <PasswordModal

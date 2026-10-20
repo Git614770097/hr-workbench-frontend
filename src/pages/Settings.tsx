@@ -3,7 +3,7 @@ import { Card, Tabs, Input, InputNumber, Button, Alert, message, Typography, Sel
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { useDict } from "../dict";
-import { SOURCE_OPTIONS, REJECT_REASONS, EDUCATION_OPTIONS, JOB_TYPE_LABELS, CITY_OPTIONS, SKILL_OPTIONS } from "../types";
+import { SOURCE_OPTIONS, REJECT_REASONS, EDUCATION_OPTIONS, JOB_TYPE_LABELS, CITY_OPTIONS, SKILL_OPTIONS, FeishuSettings } from "../types";
 
 /** 字典类型元信息（顺序即列表展示顺序） */
 const DICT_TYPE_META: { key: string; label: string; color: string; hint: string; fixed?: boolean }[] = [
@@ -671,12 +671,111 @@ function AiQuotaSettings() {
   );
 }
 
+// ---- 飞书集成（admin）：BYOK 配置飞书自建应用，给绑定飞书的成员推送提醒 ----
+function FeishuSettingsPanel() {
+  const [cfg, setCfg] = useState<FeishuSettings | null>(null);
+  const [name, setName] = useState("");
+  const [appId, setAppId] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const [encryptKey, setEncryptKey] = useState("");
+  const [verificationToken, setVerificationToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const reload = () => {
+    api.getFeishuSettings()
+      .then((c) => {
+        setCfg(c);
+        if (c.configured) { setName(c.name || ""); setAppId(c.app_id || ""); }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+  useEffect(reload, []);
+
+  const handleSave = async () => {
+    if (!appId.trim()) { message.warning("App ID 必填"); return; }
+    if (!appSecret.trim() && !cfg?.configured) { message.warning("首次配置需填写 App Secret"); return; }
+    setSaving(true);
+    try {
+      await api.saveFeishuSettings({
+        name: name.trim(),
+        app_id: appId.trim(),
+        app_secret: appSecret.trim(),
+        encrypt_key: encryptKey.trim(),
+        verification_token: verificationToken.trim(),
+      });
+      message.success("飞书应用配置已保存");
+      setAppSecret(""); setEncryptKey(""); setVerificationToken("");
+      setLoading(true); reload();
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  return (
+    <div style={{ maxWidth: 760 }}>
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 20 }}
+        message="在飞书开放平台创建「企业自建应用」，把凭证填到这里（BYOK：各企业客户用各自的飞书应用）。"
+        description="系统据此给绑定了飞书的成员推送待办 / 面试 / 审批提醒；敏感凭证加密存储。成员在头像菜单「飞书推送设置」授权绑定后才会收到。"
+      />
+      <div style={{ marginBottom: 16 }}>
+        <Space>
+          <Typography.Text type="secondary">当前状态：</Typography.Text>
+          {cfg?.configured ? <Tag color="green">已配置{cfg.app_id ? ` · ${cfg.app_id}` : ""}</Tag> : <Tag color="default">未配置</Tag>}
+        </Space>
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel extra="选填，便于识别">应用名称</FieldLabel>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：XX 公司飞书" />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel>App ID</FieldLabel>
+        <Input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="cli_ 开头的应用 ID" />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel>App Secret</FieldLabel>
+        <Input.Password value={appSecret} onChange={(e) => setAppSecret(e.target.value)}
+          placeholder={cfg?.configured ? "已配置，留空则不修改；更换请重新输入" : "飞书应用的 App Secret"} autoComplete="off" />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel extra="选填；用于解密飞书事件回调">Encrypt Key</FieldLabel>
+        <Input.Password value={encryptKey} onChange={(e) => setEncryptKey(e.target.value)}
+          placeholder={cfg?.has_encrypt_key ? "已配置，留空则不修改" : "事件订阅的 Encrypt Key"} autoComplete="off" />
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <FieldLabel extra="选填；用于校验飞书事件回调">Verification Token</FieldLabel>
+        <Input.Password value={verificationToken} onChange={(e) => setVerificationToken(e.target.value)}
+          placeholder={cfg?.has_verification_token ? "已配置，留空则不修改" : "事件订阅的 Verification Token"} autoComplete="off" />
+      </div>
+      <Button type="primary" loading={saving} disabled={loading} onClick={handleSave} style={{ marginBottom: 24 }}>保存</Button>
+
+      <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="需在飞书后台配置以下回调地址" />
+      <div style={{ marginBottom: 8 }}>
+        <Typography.Text type="secondary">OAuth 重定向 URL：</Typography.Text>
+        <Typography.Text copyable code>{origin}/api/feishu/oauth/callback</Typography.Text>
+      </div>
+      <div>
+        <Typography.Text type="secondary">事件订阅请求 URL：</Typography.Text>
+        <Typography.Text copyable code>{origin}/api/feishu/event</Typography.Text>
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   // 后续再有全局配置（例如老带新奖励天数）直接加新 Tab，不必再动菜单
   const items = [
     { key: "pay", label: "收款码设置", children: <PaySettings /> },
     { key: "dict", label: "数据字典", children: <DictSettings /> },
     { key: "ai", label: "AI 配额", children: <AiQuotaSettings /> },
+    { key: "feishu", label: "飞书集成", children: <FeishuSettingsPanel /> },
     { key: "changelog", label: "更新公告", children: <ChangelogSettings /> },
   ];
 

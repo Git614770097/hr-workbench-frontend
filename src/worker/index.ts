@@ -20,9 +20,13 @@ import teamRoutes from "./routes/team";
 import { overview } from "./routes/overview";
 import logsRoutes, { purgeOldUsage } from "./routes/logs";
 import { backgroundRoutes } from "./routes/background";
+import { auditRoutes } from "./routes/audit";
+import { feishuRoutes } from "./routes/feishu";
+import { writeAudit } from "./audit";
 import { parsePermissions } from "./permissions";
 import { runReminders, freezeExpiredAccounts } from "./reminders";
 import { sessionGet } from "./kv";
+import type { SessionInfo } from "./routes/auth";
 
 export interface Env {
   DB: D1Database;
@@ -85,6 +89,50 @@ app.use("/api/*", async (c, next) => {
     return c.json({ error: "账户已冻结，仅可查看；续费后恢复使用", code: "FROZEN" }, 403);
   }
   return next();
+});
+
+// ---- 操作审计中间件 ----
+// 自动记录所有影响业务数据的写操作（POST/PUT/PATCH/DELETE，仅 2xx 入账），
+// targetType 由路径推导；敏感**读**操作（简历/合同/背调报告预览、批量导出）
+// 无法由中间件识别，在各自路由内显式调用 writeAudit（见 talents.ts / background.ts）。
+// 跳过：埋点上报、验证码/AI 生成（量大且与数据安全无关）、以及失败请求（避免灌爆日志）。
+const AUDIT_SKIP = [/^\/api\/logs/, /^\/api\/ai\//, /^\/api\/auth\/captcha/, /^\/api\/feishu\/event/, /^\/api\/feishu\/oauth/, /^\/api\/feishu\/test/];
+const AUDIT_ACTION_BY_METHOD: Record<string, string> = { POST: "create", PUT: "update", PATCH: "update", DELETE: "delete" };
+const AUDIT_TARGET_TYPE: Record<string, string> = {
+  talents: "talent", jobs: "job", pipeline: "pipeline", interviews: "interview",
+  approvals: "approval", onboarding: "onboarding", requisitions: "requisition",
+  templates: "template", background: "bgcheck", team: "team", tasks: "task",
+  match: "match", roles: "role", users: "user", auth: "auth",
+};
+app.use("/api/*", async (c, next) => {
+  const action = AUDIT_ACTION_BY_METHOD[c.req.method];
+  if (!action) return next();
+  const path = c.req.path;
+  if (AUDIT_SKIP.some((r) => r.test(path))) return next();
+
+  await next();
+  if (c.res.status >= 400) return;
+
+  // 会话只从 KV 读快照（不额外查库，避免给每个写请求加一次 DB 往返）；
+  // name/role 快照对「当时是谁操作的」这个审计目的已足够。
+  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  let session: SessionInfo | null = null;
+  if (token) {
+    const raw = await sessionGet(c.env, token);
+    if (raw) { try { session = JSON.parse(raw) as SessionInfo; } catch { /* 解析失败按匿名记 */ } }
+  }
+
+  const parts = path.split("/");
+  const targetId = parts[3] ? decodeURIComponent(parts[3]) : null;
+  const targetType = AUDIT_TARGET_TYPE[parts[2] || ""] || parts[2] || "unknown";
+  await writeAudit(c.env, session, {
+    action,
+    targetType,
+    targetId,
+    detail: { method: c.req.method, path },
+    ip: c.req.header("cf-connecting-ip") || "",
+    ua: c.req.header("user-agent") || "",
+  });
 });
 
 // ---- 菜单权限拦截 ----
@@ -314,6 +362,11 @@ app.route("/api/overview", overview);
 // 因此这里**不能**挂 menuGuard：那会把普通用户的上报一并拦掉。
 app.route("/api/logs", logsRoutes);
 app.route("/api/background", backgroundRoutes);
+// 操作审计：仅管理员（路由内部再校验 role）——数据合规的追溯面，不对外放开
+app.route("/api/audit", auditRoutes);
+// 飞书集成（BYOK）：鉴权在各路由内部按需分流——settings 仅 admin、oauth/test 需登录、
+// event/oauth-callback 为飞书侧回调（公开，靠 state/验签保护）。故这里不挂 menuGuard。
+app.route("/api/feishu", feishuRoutes);
 
 // ---- Health check ----
 app.get("/api/health", (c) =>
