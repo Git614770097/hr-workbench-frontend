@@ -8,6 +8,7 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test:parser": "node scripts/test-resume-parser.mjs",
+    "test:sql": "node scripts/test-sql-refactor.mjs",
     "preview": "vite preview",
     "deploy": "wrangler deploy",
     "deploy:staging": "wrangler deploy --config wrangler.staging.jsonc",

@@ -14,3 +14,6 @@ backups/
 # 临时素材/验证产物（推广素材、CDP 截图脚本与复刻页、下载的 vendor 库，禁止提交）
 _promo/
 _shots/
+
+# 代理工作区数据（记忆/任务），不入库
+.workbuddy-ai/
