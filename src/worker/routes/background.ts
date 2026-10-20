@@ -2,8 +2,10 @@ import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import type { SessionInfo } from "./auth";
 import { scopeConds, scopeParams, canTouch } from "../scope";
 import { genId, arrayBufferToBase64, base64ToArrayBuffer } from "../helpers";
+import { writeAudit } from "../audit";
 import { moveStageForward } from "../talentFlow";
 import { LEFT_JOIN_JOB_J } from "../sqlFragments";
 import { deepseekJsonWithUsage } from "../ai";
@@ -429,7 +431,7 @@ background.get("/:id/report", async (c) => {
   if (!token) return c.json({ error: "未登录" }, 401);
   const sessionStr = await c.env.SESSIONS.get(token);
   if (!sessionStr) return c.json({ error: "未登录" }, 401);
-  const session = JSON.parse(sessionStr) as { userId: string; role: string; teamId?: string | null };
+  const session = JSON.parse(sessionStr) as SessionInfo;
 
   const id = c.req.param("id");
   const row = await loadBg(c.env, id);
@@ -444,6 +446,15 @@ background.get("/:id/report", async (c) => {
   const meta = JSON.parse(stored) as { data: string; name: string; type: string };
   const bytes = base64ToArrayBuffer(meta.data);
   const isDownload = c.req.query("download") === "1";
+  // 背调报告是高敏材料（含犯罪/征信项），虽已有授权闸门，仍需留痕访问记录
+  await writeAudit(c.env, session, {
+    action: isDownload ? "export" : "view",
+    targetType: "bgcheck",
+    targetId: id,
+    targetName: row.report_name,
+    detail: { download: isDownload, high_risk: row.high_risk },
+  });
+
   const headers = new Headers();
   headers.set("Content-Type", meta.type || "application/octet-stream");
   headers.set("Content-Disposition", `${isDownload ? "attachment" : "inline"}; filename="${encodeURIComponent(row.report_name || "report")}"`);

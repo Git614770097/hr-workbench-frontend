@@ -531,6 +531,13 @@ export default function TalentList() {
           rows: rows.map((t) => Object.fromEntries(columns.map((c) => [c.key, c.get(t)]))),
         },
       ]);
+      // 导出发生在浏览器内存里，服务端无从得知——显式上报，留痕「谁把多少条人才数据导走了」
+      void api.reportAudit({
+        action: "export",
+        targetType: "talent",
+        targetName: `人才库导出（Excel）`,
+        detail: { rows: rows.length, selected: selectedKeys.length > 0 },
+      });
       const label = selectedKeys.length > 0 ? `已导出选中的 ${rows.length} 条` : `已导出 ${rows.length} 条人才`;
       message.success(termFor(profile, `${label}（Excel）`));
     } catch (err) {

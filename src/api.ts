@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult, DailyBrief } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult, DailyBrief, AuditLogRow, AuditLogsResponse, AuditActionStat } from "./types";
 
 const BASE = "/api";
 
@@ -126,6 +126,20 @@ export const api = {
   // 给当前用户推一条测试消息
   testMyPushplus: () =>
     request<{ ok: boolean; message: string }>("/auth/me/pushplus/test", { method: "POST" }),
+
+  // ---- 飞书集成（BYOK）----
+  // 读取本系统飞书应用配置（admin；敏感字段只回「是否已配置」）
+  getFeishuSettings: () =>
+    request<FeishuSettings>("/feishu/settings"),
+  // 保存飞书应用凭证（admin；敏感字段加密存库）
+  saveFeishuSettings: (data: { name?: string; app_id: string; app_secret?: string; encrypt_key?: string; verification_token?: string }) =>
+    request<{ ok: boolean }>("/feishu/settings", { method: "POST", body: JSON.stringify(data) }),
+  // 生成飞书 OAuth 授权 URL（前端拿到后跳转让用户授权绑定）
+  feishuBindUrl: () =>
+    request<{ url: string }>("/feishu/oauth/start"),
+  // 给当前用户发一条飞书测试消息
+  testFeishu: () =>
+    request<{ ok: boolean; message: string }>("/feishu/test", { method: "POST" }),
 
   // User management (admin only)
   getUsers: (status?: string) =>
@@ -966,6 +980,19 @@ export const api = {
       .join("&");
     return request<UsageOverview>(`/logs/overview${qs ? `?${qs}` : ""}`);
   },
+  // 操作审计日志——仅管理员可查询
+  getAuditLogs: (params: { days?: number; action?: string; target_type?: string; q?: string; page?: number; limit?: number } = {}) => {
+    const qs = Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && v !== "")
+      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
+      .join("&");
+    return request<AuditLogsResponse>(`/audit${qs ? `?${qs}` : ""}`);
+  },
+  getAuditActionStats: (days = 30) =>
+    request<{ items: AuditActionStat[] }>(`/audit/actions?days=${days}`),
+  // 上传/导出等「服务端无写操作」的动作由前端上报留痕
+  reportAudit: (data: { action: string; targetType: string; targetId?: string | null; targetName?: string | null; detail?: unknown }) =>
+    request<{ ok: boolean }>("/audit/client", { method: "POST", body: JSON.stringify(data) }),
   getUsageEvents: (params: { days?: number; menu?: string; user_id?: string; page?: number; page_size?: number } = {}) => {
     const qs = Object.entries(params)
       .filter(([, v]) => v !== undefined && v !== null && v !== "")

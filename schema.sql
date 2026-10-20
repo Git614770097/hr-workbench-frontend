@@ -450,6 +450,27 @@ CREATE TABLE IF NOT EXISTS usage_events (
 CREATE INDEX IF NOT EXISTS idx_usage_events_day ON usage_events(day, menu);
 CREATE INDEX IF NOT EXISTS idx_usage_events_user ON usage_events(user_id, ts);
 
+-- ---- 操作审计日志（合规刚需）：谁/何时/对何对象/做了什么 ----
+-- 与 usage_events（前端埋点热度）区别：audit_logs 记「影响数据的操作」，是追溯与个保合规依据。
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id          TEXT PRIMARY KEY,
+  ts          TEXT NOT NULL DEFAULT (datetime('now')),
+  user_id     TEXT,
+  user_name   TEXT,
+  role        TEXT,
+  action      TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id   TEXT,
+  target_name TEXT,
+  detail      TEXT,
+  ip          TEXT,
+  ua          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_logs(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id, ts);
+CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_logs(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action, ts);
+
 CREATE TABLE IF NOT EXISTS usage_daily (
   day TEXT NOT NULL,
   menu TEXT NOT NULL,

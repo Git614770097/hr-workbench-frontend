@@ -2,8 +2,10 @@ import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { getSession } from "./auth";
+import type { SessionInfo } from "./auth";
 import { ownerScope, scopeConds, scopeParams } from "../scope";
 import { genId } from "../helpers";
+import { writeAudit } from "../audit";
 import { STAGES, syncTalentStage } from "./pipeline";
 import { stageLogStmt, setLinkStageStmt, hasProbationTask } from "../talentFlow";
 import { JOIN_TALENT_T } from "../sqlFragments";
@@ -54,6 +56,17 @@ function dateOrNull(v: unknown): string | null {
 function normalizeEntryType(v: unknown, fallback = "manual"): string {
   const s = typeof v === "string" ? v.trim().toLowerCase() : "";
   return ["manual", "import", "sync"].includes(s) ? s : fallback;
+}
+
+// 文本字段净化：剔除控制字符 + 截断 + 去首尾空白，空值归 null。
+// why：姓名/公司/备注等字段会被拼进导出 HTML、Offer 模板、提醒推送，
+// 必须限制长度并剔除不可见控制字符；XSS 的根治在前端渲染时转义（OfferModal 已修），
+// 这里做的是「不让异常数据入库」的第一道闸，且与前端转义互为纵深。
+function cleanText(v: unknown, max = 200): string | null {
+  if (v === undefined || v === null) return null;
+  const s = String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim();
+  if (!s) return null;
+  return s.slice(0, max);
 }
 
 // ---- 合同/试用期到期 → 待办提醒（幂等同步）----
@@ -532,7 +545,9 @@ talents.get("/contracts/files/:id/file", async (c) => {
   if (!token) return c.json({ error: "未登录" }, 401);
   const sessionStr = await c.env.SESSIONS.get(token);
   if (!sessionStr) return c.json({ error: "未登录" }, 401);
-  const session = JSON.parse(sessionStr) as { userId: string; role: string };
+  // 类型用 SessionInfo：writeAudit 依赖 name/role 标注「当时是谁操作的」，
+  // 此处是 query token 通道（<a>/iframe 直开），快照里缺 name 时按空串落库即可。
+  const session = JSON.parse(sessionStr) as SessionInfo;
 
   const id = c.req.param("id");
   let sql = "SELECT id, filename, mime, kv_key, owner_id FROM contract_files WHERE id = ?";
@@ -544,10 +559,19 @@ talents.get("/contracts/files/:id/file", async (c) => {
   const stored = await c.env.RESUMES.get(row.kv_key);
   if (!stored) return c.json({ error: "合同文件不存在" }, 404);
 
+  const isDownload = c.req.query("download") === "1";
+  // 合同原件含身份证号/薪资等高敏信息，预览与下载都要留痕（个保合规）
+  await writeAudit(c.env, session, {
+    action: isDownload ? "export" : "view",
+    targetType: "contract",
+    targetId: id,
+    targetName: row.filename,
+    detail: { download: isDownload },
+  });
+
   const meta = JSON.parse(stored) as { data: string; name: string; type: string };
   const bytes = base64ToArrayBuffer(meta.data);
 
-  const isDownload = c.req.query("download") === "1";
   const headers = new Headers();
   headers.set("Content-Type", meta.type || row.mime || "application/octet-stream");
   headers.set("Content-Disposition", `${isDownload ? "attachment" : "inline"}; filename="${encodeURIComponent(row.filename)}"`);
@@ -917,13 +941,15 @@ talents.post("/", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const body = await c.req.json<any>();
+  const name = cleanText(body.name, 50);
+  if (!name) return c.json({ error: "请填写姓名" }, 400);
   const id = genId();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
   const tags = body.tags ? JSON.stringify(body.tags) : null;
   await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, major, current_company, current_title, years_experience, city, skills, tags, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, hire_date, next_follow_at, entry_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(id, session.userId, body.name || "", body.phone || null, body.email || null, body.age ?? null, body.gender || null, body.education || null, body.school || null, body.major || null, body.current_company || null, body.current_title || null, body.years_experience || null, body.city || null, skills, tags, body.industry || null, body.expected_salary || null, body.expected_city || null, body.status || "active", body.source || null, body.resume_url || null, body.notes || null, dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), dateOrNull(body.next_follow_at), normalizeEntryType(body.entry_type)).run();
+    .bind(id, session.userId, name, cleanText(body.phone, 30), cleanText(body.email, 120), body.age ?? null, cleanText(body.gender, 10), cleanText(body.education, 30), cleanText(body.school, 80), cleanText(body.major, 60), cleanText(body.current_company, 80), cleanText(body.current_title, 60), body.years_experience || null, cleanText(body.city, 40), skills, tags, cleanText(body.industry, 40), cleanText(body.expected_salary, 40), cleanText(body.expected_city, 40), cleanText(body.status, 20) || "active", cleanText(body.source, 30), cleanText(body.resume_url, 500), cleanText(body.notes, 2000), dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), dateOrNull(body.next_follow_at), normalizeEntryType(body.entry_type)).run();
 
-  return c.json({ id, ...body });
+  return c.json({ id, ...body, name });
 });
 
 // ---- 编辑人才 ----
@@ -953,10 +979,10 @@ talents.put("/:id", async (c) => {
   // D1 的 .bind() 不接受 undefined，必须归一化为 null，否则编辑时任意空字段都会 500。
   // 标量字段统一走 undefined → null 转换（name 为 NOT NULL，前端编辑时必传，不会是 null）。
   const scalars: (string | number | null)[] = [
-    body.name, body.phone, body.email, body.age, body.gender, body.education,
-    body.school, body.major, body.current_company, body.current_title, body.years_experience,
-    body.city, skills, body.tags ? JSON.stringify(body.tags) : null, body.industry, body.expected_salary, body.expected_city,
-    body.status, body.source, body.resume_url, body.notes,
+    cleanText(body.name, 50), cleanText(body.phone, 30), cleanText(body.email, 120), body.age, cleanText(body.gender, 10), cleanText(body.education, 30),
+    cleanText(body.school, 80), cleanText(body.major, 60), cleanText(body.current_company, 80), cleanText(body.current_title, 60), body.years_experience,
+    cleanText(body.city, 40), skills, body.tags ? JSON.stringify(body.tags) : null, cleanText(body.industry, 40), cleanText(body.expected_salary, 40), cleanText(body.expected_city, 40),
+    cleanText(body.status, 20), cleanText(body.source, 30), cleanText(body.resume_url, 500), cleanText(body.notes, 2000),
   ].map((v) => (v === undefined ? null : v));
   await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), major = COALESCE(?, major), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), tags = COALESCE(?, tags), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), source = COALESCE(?, source), resume_url = COALESCE(?, resume_url), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
     .bind(...scalars, ...dateParams, id).run();
@@ -1100,6 +1126,15 @@ talents.get("/:id/resume", async (c) => {
 
   const isDownload = c.req.query("download") === "1";
   const filename = meta.name || "resume";
+  // 简历属于候选人个人敏感信息：预览/下载都要留痕（个保合规的访问审计面）
+  await writeAudit(c.env, session, {
+    action: isDownload ? "export" : "view",
+    targetType: "resume",
+    targetId: id,
+    targetName: filename,
+    detail: { download: isDownload },
+  });
+
   const headers = new Headers();
   headers.set("Content-Type", meta.type || "application/octet-stream");
   headers.set("Content-Disposition", `${isDownload ? "attachment" : "inline"}; filename="${encodeURIComponent(filename)}"`);

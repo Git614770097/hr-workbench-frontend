@@ -9,6 +9,10 @@ export interface User {
   must_change_password?: boolean;
   /** 是否已配置个人 PushPlus 推送 token（用于到期提醒推送到本人微信） */
   pushplus_configured?: boolean;
+  /** 是否已绑定飞书 open_id（用于把提醒推送到飞书） */
+  feishu_bound?: boolean;
+  /** 到期提醒推送渠道：pushplus / feishu / wecom */
+  notify_channel?: string;
   /** 会员有效期（NULL=未开通；时间串=已过期/有效，由管理员手动开通） */
   paid_until?: string | null;
   /** 账号状态：active=正常 / frozen=已冻结(只读，到期未续费) / pending / rejected / disabled */
@@ -17,6 +21,16 @@ export interface User {
   intended_role?: string | null;
   /** 团队标识：NULL=个人；manager=自己的 id；团队成员=所属管理员 id */
   team_id?: string | null;
+}
+
+/** 飞书集成（admin）当前配置：GET /feishu/settings。敏感字段只回「是否已配置」。 */
+export interface FeishuSettings {
+  configured: boolean;
+  name?: string | null;
+  app_id?: string;
+  has_encrypt_key?: boolean;
+  has_verification_token?: boolean;
+  enabled?: boolean;
 }
 
 /** 用户管理列表行（管理员视角，含审批与重置申请状态） */
@@ -1357,4 +1371,33 @@ export interface AiCandidateSummary {
   suggested_result: string;
   rounds: number;
   _cached?: boolean;
+}
+
+/** 操作审计日志行（admin 的「操作审计」页） */
+export interface AuditLogRow {
+  id: string;
+  ts: string;
+  user_id: string | null;
+  user_name: string | null;
+  role: string | null;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  target_name: string | null;
+  detail: string | null;
+  ip: string | null;
+  ua: string | null;
+}
+
+export interface AuditLogsResponse {
+  items: AuditLogRow[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+export interface AuditActionStat {
+  action: string;
+  n: number;
 }
