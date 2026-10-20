@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Card, Tabs, Input, InputNumber, Button, Alert, message, Typography, Select, Modal, Form, Tag, Table, Space, Popconfirm } from "antd";
+import { Card, Tabs, Input, InputNumber, Button, Alert, message, Typography, Select, Modal, Form, Tag, Table, Space, Popconfirm, Collapse } from "antd";
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { useDict } from "../dict";
@@ -723,7 +723,7 @@ function FeishuSettingsPanel() {
         showIcon
         style={{ marginBottom: 20 }}
         message="在飞书开放平台创建「企业自建应用」，把凭证填到这里（BYOK：各企业客户用各自的飞书应用）。"
-        description="系统据此给绑定了飞书的成员推送待办 / 面试 / 审批提醒；敏感凭证加密存储。成员在头像菜单「飞书推送设置」授权绑定后才会收到。"
+        description="系统据此给绑定了飞书的成员推送待办 / 面试 / 审批提醒；敏感凭证加密存储。不清楚怎么配？展开下方「接入指引」按四步操作即可。"
       />
       <div style={{ marginBottom: 16 }}>
         <Space>
@@ -761,10 +761,76 @@ function FeishuSettingsPanel() {
         <Typography.Text type="secondary">OAuth 重定向 URL：</Typography.Text>
         <Typography.Text copyable code>{origin}/api/feishu/oauth/callback</Typography.Text>
       </div>
-      <div>
+      <div style={{ marginBottom: 16 }}>
         <Typography.Text type="secondary">事件订阅请求 URL：</Typography.Text>
         <Typography.Text copyable code>{origin}/api/feishu/event</Typography.Text>
       </div>
+
+      <Collapse
+        style={{ marginBottom: 24 }}
+        items={[
+          {
+            key: "guide",
+            label: "接入指引：从零配置飞书提醒（约 10 分钟，四步）",
+            children: (
+              <Space direction="vertical" size={20} style={{ width: "100%" }}>
+                <div>
+                  <Typography.Title level={5} style={{ marginBottom: 8 }}>第一步 · 创建飞书应用，把凭证填到本页</Typography.Title>
+                  <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
+                    <li>打开 <Typography.Link href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开发者后台</Typography.Link>，点「创建企业自建应用」（个人飞书账号即可创建，免费，无需企业主体认证）。</li>
+                    <li>进入应用 → 左侧「凭证与基础信息」→ 复制 <b>App ID</b>（cli_ 开头）和 <b>App Secret</b>。</li>
+                    <li>回到本页上方表单：名称随意（如「XX 公司飞书」），粘贴 App ID / App Secret 后保存。<b>Encrypt Key 与 Verification Token 留空</b>（那是事件订阅二期的选填项）。</li>
+                  </ol>
+                </div>
+                <div>
+                  <Typography.Title level={5} style={{ marginBottom: 8 }}>第二步 · 回飞书后台配两个地址（缺一不可）</Typography.Title>
+                  <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
+                    <li>
+                      「安全设置 → 重定向 URL」→ 添加下面这个地址（必须是完整路径，<b>不要带 # 或 ? 后缀</b>）：
+                      <br /><Typography.Text copyable code>{origin}/api/feishu/oauth/callback</Typography.Text>
+                      <br /><Typography.Text type="secondary" style={{ fontSize: 12 }}>漏配的后果：授权后跳不回来，报错 redirect_uri unmatch。</Typography.Text>
+                    </li>
+                    <li>
+                      「应用功能 → 网页」→ 启用网页能力 → 网页地址填：
+                      <br /><Typography.Text copyable code>{origin}</Typography.Text>
+                      <br /><Typography.Text type="secondary" style={{ fontSize: 12 }}>漏配的后果：成员弹窗里的二维码显示不出来。</Typography.Text>
+                    </li>
+                  </ol>
+                </div>
+                <div>
+                  <Typography.Title level={5} style={{ marginBottom: 8 }}>第三步 · 开权限并发布版本</Typography.Title>
+                  <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
+                    <li>「权限管理 → API 权限」→ 搜索 <Typography.Text code>im:message</Typography.Text> → 开通「给用户发送消息」→ 可用范围选「全员」（不含某成员时，该成员绑定了也收不到）。</li>
+                    <li>「版本管理与发布」→ 创建版本 → 申请发布。<b>权限、网页等任何改动都要发版后才生效</b>；企业若开启了应用审核，需管理员在飞书管理后台「工作台 → 应用审核」通过。</li>
+                  </ol>
+                </div>
+                <div>
+                  <Typography.Title level={5} style={{ marginBottom: 8 }}>第四步 · 成员绑定并验证</Typography.Title>
+                  <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
+                    <li>成员（含管理员自己）点右上角头像 →「飞书推送设置」。</li>
+                    <li>用飞书 App 扫一扫弹窗里的二维码，在手机上确认授权（手机不在身边就点「跳转网页授权」）。</li>
+                    <li>出现「已绑定」绿标后点「发送测试」，飞书能收到消息即全链路打通。</li>
+                  </ol>
+                </div>
+              </Space>
+            ),
+          },
+          {
+            key: "faq",
+            label: "排障：出问题先看这里",
+            children: (
+              <ul style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
+                <li><b>二维码区域提示「尚未配置飞书应用」</b>：本页 App ID / App Secret 还没保存成功，先完成第一步。</li>
+                <li><b>二维码不显示或空白</b>：网页能力没启用、应用没发布、或重定向 URL 漏配——对照第二步。</li>
+                <li><b>授权时报 redirect_uri unmatch</b>：重定向 URL 没添加，或填了带 # / ? 后缀的地址。</li>
+                <li><b>授权页报 20027</b>：请求了未开通的权限（本系统只用 im:message 一项）。</li>
+                <li><b>绑定成功但收不到提醒</b>：im:message 权限未发版生效，或应用可用范围不含该成员。</li>
+                <li><b>想停止给某人推送</b>：目前需管理员到数据库把该用户的 notify_channel 置空（解绑/切回 PushPlus 的界面排期中）。</li>
+              </ul>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }
