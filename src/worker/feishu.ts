@@ -10,6 +10,10 @@
 import { decryptAiKey } from "./aiKey";
 
 const FEISHU_BASE = "https://open.feishu.cn";
+// 授权页主机与 API 主机不同：OpenAPI（token/发消息）在 open.feishu.cn，
+// 用户授权页 authen/v1/authorize 在 accounts.feishu.cn（官方文档示例，
+// 曾误用 open.feishu.cn 导致绑定链接打不开）。见飞书文档「获取授权码」。
+const FEISHU_AUTHORIZE_HOST = "https://accounts.feishu.cn";
 
 export interface FeishuConfig {
   appId: string;
@@ -119,8 +123,11 @@ export async function sendFeishuText(
 
 /** 拼接 OAuth 授权 URL（不带 scope，仅取基础身份，降低权限申请摩擦）。 */
 export function buildAuthorizeUrl(cfg: FeishuConfig, state: string, redirectUri: string): string {
-  const u = new URL(`${FEISHU_BASE}/open-apis/authen/v1/authorize`);
-  u.searchParams.set("app_id", cfg.appId);
+  // 官方参数：client_id 即应用的 App ID；response_type 固定 code；
+  // scope 省略——本系统只用 code 换 open_id，不调用用户级 API（最小权限）。
+  const u = new URL(`${FEISHU_AUTHORIZE_HOST}/open-apis/authen/v1/authorize`);
+  u.searchParams.set("client_id", cfg.appId);
+  u.searchParams.set("response_type", "code");
   u.searchParams.set("redirect_uri", redirectUri);
   u.searchParams.set("state", state);
   return u.toString();

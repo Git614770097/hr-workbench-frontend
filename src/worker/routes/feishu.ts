@@ -94,6 +94,9 @@ feishu.get("/oauth/callback", async (c) => {
   const origin = new URL(c.req.url).origin;
   const code = c.req.query("code");
   const state = c.req.query("state");
+  // 用户拒绝授权时飞书回跳 error=access_denied（无 code），与参数缺失区分开
+  const denied = c.req.query("error");
+  if (denied) return c.redirect(`${origin}/?feishu=error&reason=${encodeURIComponent(denied)}`);
   if (!code || !state) return c.redirect(`${origin}/?feishu=error&reason=missing_params`);
   const raw = await sessionGet(c.env, `feishu:oauth:${state}`);
   await c.env.SESSIONS.delete(`feishu:oauth:${state}`);
