@@ -115,7 +115,10 @@ export default function OfferModal({
     };
     return tpl.content.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (whole, key: string) => {
       const v = map[key.trim()];
-      return v !== undefined && v !== "" ? v : whole;
+      // ⚠️ 必须转义：tpl.content 是富文本（原样渲染），但替换进去的是人才/岗位等
+      // 用户可控字段。不转义时，一个姓名里带 <img onerror> 的候选人就能在管理员
+      // 打开 Offer 弹窗时执行脚本（存储型 XSS）。模板本身不转义，只转义变量值。
+      return v !== undefined && v !== "" ? escapeHtml(v) : whole;
     });
   }, [tpl, card, salary, position, entryDate]);
 
