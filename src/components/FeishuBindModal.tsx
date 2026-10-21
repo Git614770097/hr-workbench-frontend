@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Modal, Button, Space, Alert, Tag, Typography, Spin, message } from "antd";
+import { Modal, Button, Space, Alert, Tag, Typography, Spin, message, Popconfirm } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 
@@ -28,6 +28,7 @@ const QR_H = 400;
 export default function FeishuBindModal({ open, bound, onClose }: Props) {
   const [binding, setBinding] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [unbinding, setUnbinding] = useState(false);
   const [qrUrl, setQrUrl] = useState("");
   const [qrState, setQrState] = useState<"loading" | "ready" | "failed">("loading");
   const [qrError, setQrError] = useState("");
@@ -77,6 +78,21 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
       message.error(err instanceof Error ? err.message : "发送失败");
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleUnbind = async () => {
+    setUnbinding(true);
+    try {
+      await api.unbindFeishu();
+      message.success("已解绑，将不再给你的飞书推送");
+      onClose();
+      // 让顶层用户态立即刷新（Layout 绑定的 bound 来自 /me）
+      window.location.reload();
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : "解绑失败");
+    } finally {
+      setUnbinding(false);
     }
   };
 
@@ -170,6 +186,14 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
         {bound && (
           <Space>
             <Button loading={testing} onClick={handleTest}>发送测试</Button>
+            <Popconfirm
+              title="解绑飞书"
+              description="解绑后将不再给你的飞书推送提醒（渠道回退 PushPlus），需要时随时可以重新绑定。确定解绑？"
+              onConfirm={handleUnbind}
+              okButtonProps={{ danger: true }}
+            >
+              <Button danger loading={unbinding}>解绑</Button>
+            </Popconfirm>
           </Space>
         )}
 

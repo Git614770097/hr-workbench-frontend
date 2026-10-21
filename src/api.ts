@@ -157,6 +157,9 @@ export const api = {
     request<{ mode: FeishuNotifyMode }>("/feishu/notify-mode"),
   setFeishuNotifyMode: (mode: FeishuNotifyMode) =>
     request<{ ok: boolean; mode: FeishuNotifyMode }>("/feishu/notify-mode", { method: "POST", body: JSON.stringify({ mode }) }),
+  // 解绑当前用户的飞书（渠道回退 pushplus）
+  unbindFeishu: () =>
+    request<{ ok: boolean }>("/feishu/bind", { method: "DELETE" }),
 
   // User management (admin only)
   getUsers: (status?: string) =>

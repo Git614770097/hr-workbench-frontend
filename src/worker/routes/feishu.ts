@@ -124,6 +124,11 @@ feishu.get("/oauth/callback", async (c) => {
   const redirected = `${origin}/api/feishu/oauth/callback`;
   const { user, error } = await exchangeCodeForUser(cfg, code, redirected);
   if (!user) return c.html(breakoutRedirect(`${origin}/?feishu=error&reason=${encodeURIComponent(error || "exchange")}`));
+  // open_id 全局唯一：同一飞书不允许绑到多个系统账号——否则后绑的覆盖前者、
+  // 消息全发给一个人，且静默无感知。冲突时拒绝并提示，不写库。
+  const clash = await c.env.DB.prepare("SELECT id, name FROM users WHERE feishu_open_id = ? AND id != ?")
+    .bind(user.openId, userId).first<{ id: string; name: string }>();
+  if (clash) return c.html(breakoutRedirect(`${origin}/?feishu=error&reason=open_id_taken`));
   await c.env.DB.prepare("UPDATE users SET feishu_open_id = ?, notify_channel = 'feishu' WHERE id = ?")
     .bind(user.openId, userId).run();
   return c.html(breakoutRedirect(`${origin}/?feishu=bound`));
@@ -168,6 +173,15 @@ feishu.post("/test", async (c) => {
   if (!cfg) return c.json({ ok: false, message: "尚未配置飞书应用" }, 400);
   const res = await sendFeishuText(c.env.SESSIONS, cfg, row.feishu_open_id, "【HR 工作台】飞书通道测试：你已成功绑定，后续到期待办/面试提醒将推送到这里。");
   return c.json(res);
+});
+
+/** 解绑当前用户的飞书（登录用户自助）。解绑后推送渠道回退 pushplus 默认值。 */
+feishu.delete("/bind", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  await c.env.DB.prepare("UPDATE users SET feishu_open_id = NULL, notify_channel = 'pushplus' WHERE id = ?")
+    .bind(session.userId).run();
+  return c.json({ ok: true });
 });
 
 // ---- 群自定义机器人（webhook）：零应用依赖的群推送 ----
