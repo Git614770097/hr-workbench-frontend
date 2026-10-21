@@ -471,6 +471,33 @@ CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id, ts);
 CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_logs(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action, ts);
 
+-- ---- 飞书集成（BYOK）：应用凭证 + 群机器人 webhook ----
+-- feishu_apps：team_id NULL=全局默认/非空=该 team 自配；app_secret 等密文，主密钥 AI_KEY_SECRET。
+-- 发送模式（群+个人/仅群/仅个人）存 site_settings（key = feishu_notify_mode）。
+CREATE TABLE IF NOT EXISTS feishu_apps (
+  id TEXT PRIMARY KEY,
+  team_id TEXT,
+  name TEXT,
+  app_id TEXT NOT NULL,
+  app_secret_enc TEXT NOT NULL,
+  encrypt_key_enc TEXT,
+  verification_token_enc TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- feishu_webhooks：飞书群自定义机器人（零应用依赖，群内全员可见，不能私信个人）。
+CREATE TABLE IF NOT EXISTS feishu_webhooks (
+  id TEXT PRIMARY KEY,
+  team_id TEXT,
+  name TEXT NOT NULL,
+  url_enc TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS usage_daily (
   day TEXT NOT NULL,
   menu TEXT NOT NULL,

@@ -202,3 +202,67 @@ export async function decryptFeishuEvent(encryptKey: string, encrypted: string):
     return null;
   }
 }
+
+// ---- 群自定义机器人（webhook）：零应用依赖的群推送通道 ----
+
+export interface FeishuWebhookRow {
+  id: string;
+  name: string;
+  url: string;
+}
+
+/** 群机器人 webhook 形态粗校验（open.feishu.cn/open-apis/bot/v2/hook/xxx）。 */
+export function isFeishuWebhookUrl(url: string): boolean {
+  return /^https:\/\/open\.feishu\.cn\/open-apis\/bot\/v2\/hook\/[A-Za-z0-9-]+$/.test(url.trim());
+}
+
+/**
+ * 往飞书群自定义机器人发一条文本消息。机器人只需在群里「添加自定义机器人」即可，
+ * 无需应用凭证；但消息群里全员可见，且无法精准私信个人。
+ * 飞书返回 code=0 为成功；常见失败：19021 关键词校验 / 19022 签名校验 / 19024 机器人被移出群。
+ */
+export async function sendFeishuWebhook(
+  url: string,
+  text: string
+): Promise<{ ok: boolean; message: string }> {
+  if (!isFeishuWebhookUrl(url)) return { ok: false, message: "webhook 地址格式不正确（应为 https://open.feishu.cn/open-apis/bot/v2/hook/... 形式）" };
+  let res: Response;
+  try {
+    res = await fetch(url.trim(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ msg_type: "text", content: { text } }),
+    });
+  } catch (err) {
+    return { ok: false, message: `飞书群机器人请求异常：${err instanceof Error ? err.message : String(err)}` };
+  }
+  const data = (await res.json().catch(() => null)) as { code?: number; msg?: string } | null;
+  const ok = res.ok && data?.code === 0;
+  const hint = data?.code === 19021 ? "（机器人设置了关键词校验，消息需包含约定关键词）"
+    : data?.code === 19022 ? "（机器人设置了签名校验，暂不支持，请在群里关闭签名或改用应用私信）"
+    : data?.code === 19024 ? "（机器人已被移出群聊）"
+    : "";
+  return { ok, message: ok ? "发送成功" : `飞书群机器人发送失败：code ${data?.code ?? "?"} ${data?.msg || ""}${hint}` };
+}
+
+/** 取启用中的群机器人 webhook：优先 team 自配，回落全局（team_id IS NULL），与 feishu_apps 同模式。 */
+export async function resolveFeishuWebhooks(
+  db: D1Database,
+  teamId?: string | null,
+  secret?: string
+): Promise<FeishuWebhookRow[]> {
+  if (!secret) return [];
+  const { results } = await db.prepare(
+    "SELECT id, team_id, name, url_enc FROM feishu_webhooks WHERE enabled = 1 AND (team_id IS NULL OR team_id = ?)"
+  ).bind(teamId ?? null).all<{ id: string; team_id: string | null; name: string; url_enc: string }>();
+  const teamRows: FeishuWebhookRow[] = [];
+  const globalRows: FeishuWebhookRow[] = [];
+  for (const r of results || []) {
+    const url = await decryptAiKey(secret, r.url_enc).catch(() => null);
+    if (!url) continue;
+    const row: FeishuWebhookRow = { id: r.id, name: r.name, url };
+    if (r.team_id) teamRows.push(row); // team 自配优先，全部缺失才回落全局
+    else globalRows.push(row);
+  }
+  return teamRows.length > 0 ? teamRows : globalRows;
+}

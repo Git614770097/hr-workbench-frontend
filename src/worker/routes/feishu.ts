@@ -3,13 +3,15 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { sessionGet } from "../kv";
 import { genId } from "../helpers";
-import { encryptAiKey } from "../aiKey";
+import { encryptAiKey, decryptAiKey } from "../aiKey";
 import {
   resolveFeishuApp,
   buildAuthorizeUrl,
   exchangeCodeForUser,
   sendFeishuText,
   decryptFeishuEvent,
+  isFeishuWebhookUrl,
+  sendFeishuWebhook,
 } from "../feishu";
 
 const feishu = new Hono<{ Bindings: Env }>();
@@ -166,6 +168,96 @@ feishu.post("/test", async (c) => {
   if (!cfg) return c.json({ ok: false, message: "尚未配置飞书应用" }, 400);
   const res = await sendFeishuText(c.env.SESSIONS, cfg, row.feishu_open_id, "【HR 工作台】飞书通道测试：你已成功绑定，后续到期待办/面试提醒将推送到这里。");
   return c.json(res);
+});
+
+// ---- 群自定义机器人（webhook）：零应用依赖的群推送 ----
+
+/** 群机器人列表（admin）。webhook URL 含 token 不回显，只回元信息。 */
+feishu.get("/webhooks", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可配置" }, 403);
+  const { results } = await c.env.DB.prepare(
+    "SELECT id, team_id, name, enabled, created_at FROM feishu_webhooks ORDER BY created_at DESC"
+  ).all<{ id: string; team_id: string | null; name: string; enabled: number; created_at: string }>();
+  return c.json({ webhooks: results || [] });
+});
+
+/** 保存/新增群机器人 webhook（admin）。URL 加密落库；主密钥缺失则拒绝。 */
+feishu.post("/webhooks", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可配置" }, 403);
+  if (!c.env.AI_KEY_SECRET) return c.json({ error: "未配置主密钥（AI_KEY_SECRET），无法安全保存" }, 400);
+
+  const body = await c.req.json<{ name?: string; url?: string }>();
+  const name = (body.name || "").trim() || "飞书群机器人";
+  const url = (body.url || "").trim();
+  if (!isFeishuWebhookUrl(url)) return c.json({ error: "webhook 地址格式不正确：应为 https://open.feishu.cn/open-apis/bot/v2/hook/... 形式（在飞书群设置里复制）" }, 400);
+
+  const existing = await c.env.DB.prepare("SELECT id FROM feishu_webhooks WHERE team_id IS NULL").first<{ id: string }>();
+  const urlEnc = await encryptAiKey(url, c.env.AI_KEY_SECRET);
+  if (existing) {
+    await c.env.DB.prepare("UPDATE feishu_webhooks SET name = ?, url_enc = ?, updated_at = datetime('now') WHERE id = ?")
+      .bind(name, urlEnc, existing.id).run();
+  } else {
+    await c.env.DB.prepare("INSERT INTO feishu_webhooks (id, team_id, name, url_enc) VALUES (?, NULL, ?, ?, ?)")
+      .bind(genId(), name, urlEnc).run();
+  }
+  return c.json({ ok: true });
+});
+
+/** 删除群机器人（admin）。 */
+feishu.delete("/webhooks/:id", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可配置" }, 403);
+  await c.env.DB.prepare("DELETE FROM feishu_webhooks WHERE id = ? AND team_id IS NULL").bind(c.req.param("id")).run();
+  return c.json({ ok: true });
+});
+
+/** 群机器人测试发送（admin）：可用已保存的 id，或临时贴一个 URL 试通再保存。 */
+feishu.post("/webhooks/test", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可配置" }, 403);
+  const body = await c.req.json<{ id?: string; url?: string }>().catch(() => ({} as { id?: string; url?: string }));
+  let url = (body.url || "").trim();
+  if (!url && body.id) {
+    if (!c.env.AI_KEY_SECRET) return c.json({ ok: false, message: "主密钥未配置，无法解密已保存地址" }, 400);
+    const row = await c.env.DB.prepare("SELECT url_enc FROM feishu_webhooks WHERE id = ? AND team_id IS NULL")
+      .bind(body.id).first<{ url_enc: string }>();
+    if (!row) return c.json({ ok: false, message: "记录不存在" }, 404);
+    url = (await decryptAiKey(c.env.AI_KEY_SECRET, row.url_enc).catch(() => null)) ?? "";
+    if (!url) return c.json({ ok: false, message: "解密失败，请重新保存地址" }, 500);
+  }
+  if (!url) return c.json({ ok: false, message: "缺少 webhook 地址" }, 400);
+  const res = await sendFeishuWebhook(url, "【HR 工作台】群机器人测试：配置成功，后续到期待办/审批提醒将推送到本群。");
+  return c.json(res);
+});
+
+/** 读取发送模式：both=群+个人 / group=仅群 / personal=仅个人（默认 personal，不擅自改变现有行为）。 */
+feishu.get("/notify-mode", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可配置" }, 403);
+  const row = await c.env.DB.prepare("SELECT value FROM site_settings WHERE key = 'feishu_notify_mode'").first<{ value: string | null }>();
+  const mode = row?.value;
+  return c.json({ mode: mode === "both" || mode === "group" ? mode : "personal" });
+});
+
+/** 设置发送模式（admin）。 */
+feishu.post("/notify-mode", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可配置" }, 403);
+  const body = await c.req.json<{ mode?: string }>().catch(() => ({} as { mode?: string }));
+  const mode = body.mode;
+  if (mode !== "both" && mode !== "group" && mode !== "personal") return c.json({ error: "mode 仅支持 both/group/personal" }, 400);
+  await c.env.DB.prepare(
+    "INSERT INTO site_settings (key, value) VALUES ('feishu_notify_mode', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  ).bind(mode).run();
+  return c.json({ ok: true, mode });
 });
 
 export const feishuRoutes = feishu;

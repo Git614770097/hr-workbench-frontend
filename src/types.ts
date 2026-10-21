@@ -33,6 +33,18 @@ export interface FeishuSettings {
   enabled?: boolean;
 }
 
+/** 飞书群自定义机器人（webhook 地址不回显，仅元信息）。 */
+export interface FeishuWebhook {
+  id: string;
+  team_id: string | null;
+  name: string;
+  enabled: number;
+  created_at: string;
+}
+
+/** 飞书提醒发送模式：both=群+个人 / group=仅群 / personal=仅个人。 */
+export type FeishuNotifyMode = "both" | "group" | "personal";
+
 /** 用户管理列表行（管理员视角，含审批与重置申请状态） */
 export interface UserRow {
   id: string;

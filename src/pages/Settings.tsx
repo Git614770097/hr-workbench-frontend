@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Card, Tabs, Input, InputNumber, Button, Alert, message, Typography, Select, Modal, Form, Tag, Table, Space, Popconfirm, Collapse } from "antd";
+import { Card, Tabs, Input, InputNumber, Button, Alert, message, Typography, Select, Modal, Form, Tag, Table, Space, Popconfirm, Collapse, Radio } from "antd";
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { useDict } from "../dict";
-import { SOURCE_OPTIONS, REJECT_REASONS, EDUCATION_OPTIONS, JOB_TYPE_LABELS, CITY_OPTIONS, SKILL_OPTIONS, FeishuSettings } from "../types";
+import { SOURCE_OPTIONS, REJECT_REASONS, EDUCATION_OPTIONS, JOB_TYPE_LABELS, CITY_OPTIONS, SKILL_OPTIONS, FeishuSettings, FeishuWebhook, FeishuNotifyMode } from "../types";
 
 /** 字典类型元信息（顺序即列表展示顺序） */
 const DICT_TYPE_META: { key: string; label: string; color: string; hint: string; fixed?: boolean }[] = [
@@ -682,6 +682,16 @@ function FeishuSettingsPanel() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // 群自定义机器人（零应用依赖的群推送通道）
+  const [webhooks, setWebhooks] = useState<FeishuWebhook[]>([]);
+  const [whName, setWhName] = useState("");
+  const [whUrl, setWhUrl] = useState("");
+  const [whSaving, setWhSaving] = useState(false);
+  const [whTesting, setWhTesting] = useState(false);
+  // 发送模式：both=群+个人 / group=仅群 / personal=仅个人（默认 personal）
+  const [notifyMode, setNotifyMode] = useState<FeishuNotifyMode>("personal");
+  const [modeSaving, setModeSaving] = useState(false);
+
   const reload = () => {
     api.getFeishuSettings()
       .then((c) => {
@@ -692,6 +702,59 @@ function FeishuSettingsPanel() {
       .finally(() => setLoading(false));
   };
   useEffect(reload, []);
+
+  const reloadWebhooks = () => {
+    api.getFeishuWebhooks().then((r) => setWebhooks(r.webhooks)).catch(() => {});
+    api.getFeishuNotifyMode().then((r) => setNotifyMode(r.mode)).catch(() => {});
+  };
+  useEffect(reloadWebhooks, []);
+
+  const handleSaveWebhook = async () => {
+    if (!whUrl.trim()) { message.warning("请粘贴飞书群机器人的 webhook 地址"); return; }
+    setWhSaving(true);
+    try {
+      await api.saveFeishuWebhook({ name: whName.trim() || "飞书群机器人", url: whUrl.trim() });
+      message.success("群机器人已保存（地址加密存储）");
+      setWhName(""); setWhUrl("");
+      reloadWebhooks();
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setWhSaving(false);
+    }
+  };
+
+  const handleTestWebhook = async (target: { id?: string; url?: string }) => {
+    setWhTesting(true);
+    try {
+      const res = await api.testFeishuWebhook(target);
+      if (res.ok) message.success("测试消息已发出，请到飞书群查看");
+      else message.error(res.message);
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setWhTesting(false);
+    }
+  };
+
+  const handleDeleteWebhook = async (id: string) => {
+    await api.deleteFeishuWebhook(id);
+    message.success("已删除");
+    reloadWebhooks();
+  };
+
+  const handleSetMode = async (mode: FeishuNotifyMode) => {
+    setModeSaving(true);
+    try {
+      await api.setFeishuNotifyMode(mode);
+      setNotifyMode(mode);
+      message.success("发送模式已更新");
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setModeSaving(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!appId.trim()) { message.warning("App ID 必填"); return; }
@@ -722,8 +785,8 @@ function FeishuSettingsPanel() {
         type="info"
         showIcon
         style={{ marginBottom: 20 }}
-        message="在飞书开放平台创建「企业自建应用」，把凭证填到这里（BYOK：各企业客户用各自的飞书应用）。"
-        description="系统据此给绑定了飞书的成员推送待办 / 面试 / 审批提醒；敏感凭证加密存储。不清楚怎么配？展开下方「接入指引」按四步操作即可。"
+        message="两种推送方式：① 群机器人（下面绿框，2 分钟、零应用依赖）② 企业自建应用（本表单，支持私信到个人）"
+        description="日常提醒推荐先用①跑起来；需要私信、精准通知某人时再配②（BYOK：各企业客户用各自的飞书应用，敏感凭证加密存储）。不清楚怎么配？任选一个展开下方「接入指引」按步骤操作。"
       />
       <div style={{ marginBottom: 16 }}>
         <Space>
@@ -756,6 +819,79 @@ function FeishuSettingsPanel() {
       </div>
       <Button type="primary" loading={saving} disabled={loading} onClick={handleSave} style={{ marginBottom: 24 }}>保存</Button>
 
+      {/* ---- 群机器人：零应用依赖的推送通道（比上方应用配置简单得多） ---- */}
+      <Card
+        size="small"
+        style={{ marginBottom: 24, borderColor: "#b7eb8f" }}
+        title={<Space><span>🚀 更简单的方案：群机器人推送</span><Tag color="green">2 分钟搞定 · 无需飞书应用</Tag></Space>}
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 0, fontSize: 13 }}>
+            在飞书群里「设置 → 群机器人 → 添加自定义机器人」复制 webhook 地址，贴到下面保存即可——
+            <b>不用建应用、不用填凭证、不用配权限、不用发版、不用扫码</b>，提醒直接发到群里。
+            代价：消息<b>群里全员可见</b>，不能私信个人、不能精准 @ 某人。适合日常提醒先跑起来；私密提醒用上面的应用推送。
+          </Typography.Paragraph>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <Input
+              style={{ width: 200 }}
+              value={whName}
+              onChange={(e) => setWhName(e.target.value)}
+              placeholder="备注名（如：HR 通知群）"
+            />
+            <Input
+              style={{ width: 380 }}
+              value={whUrl}
+              onChange={(e) => setWhUrl(e.target.value)}
+              placeholder="webhook 地址：https://open.feishu.cn/open-apis/bot/v2/hook/..."
+            />
+            <Button type="primary" loading={whSaving} onClick={handleSaveWebhook}>保存</Button>
+            <Button loading={whTesting} onClick={() => handleTestWebhook({ url: whUrl.trim() })}>先测试再保存</Button>
+          </div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            地址含密钥，保存时加密存储；「先测试再保存」不会写入系统，仅验证地址能否用。
+          </Typography.Text>
+          {webhooks.length > 0 && (
+            <Table
+              rowKey="id"
+              size="small"
+              pagination={false}
+              dataSource={webhooks}
+              columns={[
+                { title: "名称", dataIndex: "name" },
+                {
+                  title: "状态", dataIndex: "enabled",
+                  render: (v: number) => (v ? <Tag color="green">启用中</Tag> : <Tag>已停用</Tag>),
+                },
+                { title: "添加时间", dataIndex: "created_at", render: (v: string) => v?.slice(0, 16) },
+                {
+                  title: "操作",
+                  render: (_: unknown, row: FeishuWebhook) => (
+                    <Space>
+                      <Button size="small" loading={whTesting} onClick={() => handleTestWebhook({ id: row.id })}>测试</Button>
+                      <Popconfirm title="删除该群机器人？之后提醒不再发到这个群" onConfirm={() => handleDeleteWebhook(row.id)}>
+                        <Button size="small" danger>删除</Button>
+                      </Popconfirm>
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+          )}
+          <div>
+            <Typography.Text strong style={{ display: "block", marginBottom: 8 }}>提醒发送到哪：</Typography.Text>
+            <Radio.Group
+              value={notifyMode}
+              onChange={(e) => handleSetMode(e.target.value as FeishuNotifyMode)}
+              disabled={modeSaving}
+            >
+              <Radio value="personal">仅个人（各自按绑定渠道收，默认）</Radio>
+              <Radio value="group">仅群（配了群机器人时全员群里收，不发个人）</Radio>
+              <Radio value="both">群 + 个人（两个通道都发）</Radio>
+            </Radio.Group>
+          </div>
+        </Space>
+      </Card>
+
       <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="需在飞书后台配置以下回调地址" />
       <div style={{ marginBottom: 8 }}>
         <Typography.Text type="secondary">OAuth 重定向 URL：</Typography.Text>
@@ -781,6 +917,19 @@ function FeishuSettingsPanel() {
                     <li>进入应用 → 左侧「凭证与基础信息」→ 复制 <b>App ID</b>（cli_ 开头）和 <b>App Secret</b>。</li>
                     <li>回到本页上方表单：名称随意（如「XX 公司飞书」），粘贴 App ID / App Secret 后保存。<b>Encrypt Key 与 Verification Token 留空</b>（那是事件订阅二期的选填项）。</li>
                   </ol>
+                  {cfg?.app_id && (
+                    <div style={{ marginTop: 8 }}>
+                      <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 6 }}>
+                        已识别到 App ID，下面四个按钮直达该应用在飞书后台的对应页面，省得自己找菜单：
+                      </Typography.Text>
+                      <Space wrap size={4}>
+                        <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/baseinfo`} target="_blank" rel="noreferrer">① 凭证与基础信息</Button>
+                        <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/safe`} target="_blank" rel="noreferrer">② 安全设置（重定向 URL）</Button>
+                        <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/auth`} target="_blank" rel="noreferrer">③ 权限管理</Button>
+                        <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/version`} target="_blank" rel="noreferrer">④ 版本发布</Button>
+                      </Space>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <Typography.Title level={5} style={{ marginBottom: 8 }}>第二步 · 回飞书后台配两个地址（缺一不可）</Typography.Title>
@@ -820,11 +969,13 @@ function FeishuSettingsPanel() {
             label: "排障：出问题先看这里",
             children: (
               <ul style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
+                <li><b>只想最快收到提醒、不想配应用</b>：用上面绿框的群机器人方案，飞书群里加个自定义机器人、粘贴 webhook 即可，上面的应用表单可以完全跳过。</li>
+                <li><b>群机器人保存后没反应</b>：先点「测试」看具体报错；提示关键词校验（19021）需在群里给机器人配约定关键词，签名校验（19022）请在群设置里关闭签名（暂不支持）。</li>
                 <li><b>二维码区域提示「尚未配置飞书应用」</b>：本页 App ID / App Secret 还没保存成功，先完成第一步。</li>
                 <li><b>二维码不显示或空白</b>：网页能力没启用、应用没发布、或重定向 URL 漏配——对照第二步。</li>
                 <li><b>授权时报 redirect_uri unmatch</b>：重定向 URL 没添加，或填了带 # / ? 后缀的地址。</li>
                 <li><b>授权页报 20027</b>：请求了未开通的权限（本系统只用 im:message 一项）。</li>
-                <li><b>绑定成功但收不到提醒</b>：im:message 权限未发版生效，或应用可用范围不含该成员。</li>
+                <li><b>绑定成功但收不到提醒</b>：im:message 权限未发版生效，或应用可用范围不含该成员；也可能是发送模式选了「仅群」而群机器人未配置。</li>
                 <li><b>想停止给某人推送</b>：目前需管理员到数据库把该用户的 notify_channel 置空（解绑/切回 PushPlus 的界面排期中）。</li>
               </ul>
             ),

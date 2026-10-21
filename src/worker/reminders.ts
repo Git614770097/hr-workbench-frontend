@@ -1,6 +1,6 @@
 import type { Env } from "./index";
 import { escapeHtml } from "../utils/escapeHtml";
-import { resolveFeishuApp, sendFeishuText } from "./feishu";
+import { resolveFeishuApp, sendFeishuText, resolveFeishuWebhooks, sendFeishuWebhook } from "./feishu";
 
 /** 飞书文本消息不渲染 HTML：把 notify* 系列拼的富文本转纯文本（<br>→换行、去标签、还原实体）。 */
 function htmlToPlain(html: string): string {
@@ -120,6 +120,11 @@ export interface AdminNotifyResult {
 // 推给所有「管用户」的人：status='active' 且配了 token 的管理员
 // （role='admin'，或所在角色的 permissions 含 users 菜单权限）。
 // 兜底：一个都没配 token 时退回全局 PUSHPLUS_TOKEN（兼容单人部署）。
+//
+// 发送模式（site_settings: feishu_notify_mode）：
+//   personal=仅个人（默认，保持原行为）/ group=仅群机器人 / both=群+个人
+// 群机器人=飞书群自定义机器人 webhook，零应用依赖但群里全员可见；个人分发按
+// 各管理员自己的 notify_channel 走飞书私信或 PushPlus。
 export async function notifyAdmins(
   env: Env,
   title: string,
@@ -131,6 +136,36 @@ export async function notifyAdmins(
     feishu_open_id: string | null;
     notify_channel: string | null;
   };
+
+  // ---- 群机器人广播（模式非 personal 时先走这里）----
+  const modeRow = await env.DB.prepare("SELECT value FROM site_settings WHERE key = 'feishu_notify_mode'").first<{ value: string | null }>();
+  const notifyMode = modeRow?.value === "both" || modeRow?.value === "group" ? modeRow.value : "personal";
+  let viaGroup = 0;
+  const groupFailures: string[] = [];
+  let groupCount = 0;
+  if (notifyMode !== "personal") {
+    const webhooks = await resolveFeishuWebhooks(env.DB, null, env.AI_KEY_SECRET);
+    groupCount = webhooks.length;
+    const plain = htmlToPlain(content);
+    for (const w of webhooks) {
+      const r = await sendFeishuWebhook(w.url, `【${title}】\n${plain}`);
+      if (r.ok) viaGroup++;
+      else groupFailures.push(`群「${w.name}」：${r.message}`);
+    }
+    if (notifyMode === "group") {
+      // 仅群模式：没配群机器人必须显式失败，不能静默丢消息
+      return groupCount === 0
+        ? { pushedTo: 0, viaGlobal: false, note: "发送模式为「仅群」，但尚未配置群机器人（群设置 → 添加自定义机器人 → 复制 webhook 填到 飞书集成）" }
+        : {
+            pushedTo: viaGroup,
+            viaGlobal: false,
+            note: viaGroup > 0
+              ? `已推送到 ${viaGroup}/${groupCount} 个飞书群（仅群模式，未发个人）` + (groupFailures.length > 0 ? `；${groupFailures.length} 个群失败：${groupFailures.join("；")}` : "")
+              : `推送到群全部失败：${groupFailures.join("；")}`,
+          };
+    }
+  }
+
   const rows = await env.DB.prepare(
     `SELECT u.id, u.name, u.pushplus_token, u.feishu_open_id, u.notify_channel
        FROM users u LEFT JOIN roles r ON u.role_id = r.id
@@ -144,7 +179,7 @@ export async function notifyAdmins(
     (u) => (u.pushplus_token && u.pushplus_token.trim()) || (u.notify_channel === "feishu" && u.feishu_open_id)
   );
 
-  if (admins.length === 0) {
+  if (admins.length === 0 && (notifyMode === "personal" || groupCount === 0)) {
     if (!env.PUSHPLUS_TOKEN) {
       return { pushedTo: 0, viaGlobal: false, note: "无可用推送通道（管理员均未配置推送渠道，且无全局 PUSHPLUS_TOKEN）" };
     }
@@ -157,28 +192,34 @@ export async function notifyAdmins(
 
   let pushedTo = 0;
   let viaFeishu = 0;
-  const failures: string[] = [];
-  for (const u of admins) {
-    let res: { ok: boolean; message: string };
-    if (u.notify_channel === "feishu" && u.feishu_open_id && feishuCfg) {
-      res = await sendFeishuText(env.SESSIONS, feishuCfg, u.feishu_open_id, htmlToPlain(content));
-      if (res.ok) viaFeishu++;
-    } else if (u.pushplus_token && u.pushplus_token.trim()) {
-      res = await sendPushPlus(u.pushplus_token, title, content);
-    } else if (u.notify_channel === "feishu") {
-      res = { ok: false, message: "飞书绑定/配置不完整，未推送（可改用 PushPlus）" };
+  const failures: string[] = [...groupFailures];
+  if (admins.length === 0) {
+    // both 模式且群已送达：没有可私信的管理员不算失败
+  } else {
+    for (const u of admins) {
+      let res: { ok: boolean; message: string };
+      if (u.notify_channel === "feishu" && u.feishu_open_id && feishuCfg) {
+        res = await sendFeishuText(env.SESSIONS, feishuCfg, u.feishu_open_id, htmlToPlain(content));
+        if (res.ok) viaFeishu++;
+      } else if (u.pushplus_token && u.pushplus_token.trim()) {
+        res = await sendPushPlus(u.pushplus_token, title, content);
+      } else if (u.notify_channel === "feishu") {
+        res = { ok: false, message: "飞书绑定/配置不完整，未推送（可改用 PushPlus）" };
     } else {
       res = await sendPushPlus(u.pushplus_token || "", title, content);
     }
     if (res.ok) pushedTo++;
     else failures.push(`${u.name}：${res.message}`);
   }
+  }
   return {
     pushedTo,
     viaGlobal: false,
     note: pushedTo > 0
-      ? `已推送给 ${pushedTo} 位管理员` + (viaFeishu > 0 ? `（含飞书 ${viaFeishu} 位）` : "") + (failures.length > 0 ? `，${failures.length} 人失败` : "")
-      : `推送失败：${failures.join("；")}`,
+      ? `已推送给 ${pushedTo} 位管理员` + (viaGroup > 0 ? `（另已推送到 ${viaGroup} 个飞书群）` : "") + (viaFeishu > 0 ? `（含飞书 ${viaFeishu} 位）` : "") + (failures.length > 0 ? `，${failures.length} 个目标失败` : "")
+      : viaGroup > 0
+        ? `个人推送全部失败（${failures.join("；")}），但已推送到 ${viaGroup} 个飞书群`
+        : `推送失败：${failures.join("；")}`,
   };
 }
 

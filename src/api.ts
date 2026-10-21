@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult, DailyBrief, AuditLogRow, AuditLogsResponse, AuditActionStat } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuWebhook, FeishuNotifyMode, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult, DailyBrief, AuditLogRow, AuditLogsResponse, AuditActionStat } from "./types";
 
 const BASE = "/api";
 
@@ -140,6 +140,23 @@ export const api = {
   // 给当前用户发一条飞书测试消息
   testFeishu: () =>
     request<{ ok: boolean; message: string }>("/feishu/test", { method: "POST" }),
+  // 群自定义机器人列表（admin；webhook 地址不回显）
+  getFeishuWebhooks: () =>
+    request<{ webhooks: FeishuWebhook[] }>("/feishu/webhooks"),
+  // 保存群机器人 webhook（admin；地址加密存库）
+  saveFeishuWebhook: (data: { name?: string; url: string }) =>
+    request<{ ok: boolean }>("/feishu/webhooks", { method: "POST", body: JSON.stringify(data) }),
+  // 删除群机器人（admin）
+  deleteFeishuWebhook: (id: string) =>
+    request<{ ok: boolean }>(`/feishu/webhooks/${id}`, { method: "DELETE" }),
+  // 群机器人测试发送（admin；可临时贴地址试通）
+  testFeishuWebhook: (data: { id?: string; url?: string }) =>
+    request<{ ok: boolean; message: string }>("/feishu/webhooks/test", { method: "POST", body: JSON.stringify(data) }),
+  // 读取/设置发送模式（admin）：both=群+个人 / group=仅群 / personal=仅个人
+  getFeishuNotifyMode: () =>
+    request<{ mode: FeishuNotifyMode }>("/feishu/notify-mode"),
+  setFeishuNotifyMode: (mode: FeishuNotifyMode) =>
+    request<{ ok: boolean; mode: FeishuNotifyMode }>("/feishu/notify-mode", { method: "POST", body: JSON.stringify({ mode }) }),
 
   // User management (admin only)
   getUsers: (status?: string) =>
