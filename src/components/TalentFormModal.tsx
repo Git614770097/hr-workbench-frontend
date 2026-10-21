@@ -186,7 +186,7 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
             <Form.Item name="source" label="来源渠道">
               <Select allowClear showSearch placeholder="请选择来源渠道" options={sources.map((s) => ({ label: s, value: s }))} />
             </Form.Item>
-            <Form.Item name="skills" label="技能">
+            <Form.Item name="skills" label="技能" className="span-all">
               <Input placeholder="逗号分隔，如 Java, Spring" />
             </Form.Item>
           </div>

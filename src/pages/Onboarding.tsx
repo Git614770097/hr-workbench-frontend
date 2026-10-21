@@ -357,7 +357,7 @@ export default function Onboarding() {
                         key: "talent",
                         width: 130,
                         render: (_: unknown, r: OnboardingItem) => (
-                          <Link to={`/talents/${r.talent_id}`}>{r.talent_name || "—"}</Link>
+                          <Link to={`/talents/${r.talent_id}`}>{r.talent_name || "-"}</Link>
                         ),
                       }]
                     : []),

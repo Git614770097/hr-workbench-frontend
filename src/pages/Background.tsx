@@ -185,14 +185,14 @@ export default function Background() {
               {
                 title: "报告", key: "report", width: 90, align: "center",
                 render: (_: unknown, r: BackgroundCheck) =>
-                  r.has_report ? <Typography.Text type="success">已上传</Typography.Text> : <Typography.Text type="secondary">—</Typography.Text>,
+                  r.has_report ? <Typography.Text type="success">已上传</Typography.Text> : <Typography.Text type="secondary">-</Typography.Text>,
               },
               {
                 title: "结论", key: "result", width: 90, align: "center",
                 render: (_: unknown, r: BackgroundCheck) =>
                   r.result === "pass" ? <Tag color="green">建议通过</Tag>
                     : r.result === "fail" ? <Tag color="red">建议不通过</Tag>
-                      : <Typography.Text type="secondary">—</Typography.Text>,
+                      : <Typography.Text type="secondary">-</Typography.Text>,
               },
               {
                 title: "操作", key: "act", width: 140, align: "center",

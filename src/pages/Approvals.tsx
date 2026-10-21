@@ -102,7 +102,7 @@ function FlowSettings() {
             key: "steps",
             render: (_: unknown, r: ApprovalFlow) => (
               <Space size={4} wrap>
-                {r.steps.length === 0 ? <Typography.Text type="secondary">—</Typography.Text> : r.steps.map((s, i) => (
+                {r.steps.length === 0 ? <Typography.Text type="secondary">-</Typography.Text> : r.steps.map((s, i) => (
                   <Tag key={i} color="blue">{i + 1}. {s.name}</Tag>
                 ))}
               </Space>
@@ -322,7 +322,7 @@ function InstanceList() {
                 </Space>
               ) : (
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {r.steps.filter((s) => s.decision).slice(-1)[0]?.comment || "—"}
+                  {r.steps.filter((s) => s.decision).slice(-1)[0]?.comment || "-"}
                 </Typography.Text>
               ),
           },

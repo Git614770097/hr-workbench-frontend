@@ -335,16 +335,16 @@ export default function Pipeline() {
       (columns[k] || []).map((c) => ({
         name: c.name,
         stage: STAGE_META[c.stage]?.label || c.stage,
-        job: c.job_title || "—",
-        rating: c.rating != null ? c.rating : "—",
-        title: c.current_title || "—",
-        company: c.current_company || "—",
-        years: c.years_experience != null ? c.years_experience : "—",
-        edu: c.education || "—",
-        city: c.city || "—",
-        source: c.source || "—",
-        days: c.days_in_stage != null ? c.days_in_stage : "—",
-        phone: c.phone || "—",
+        job: c.job_title || "-",
+        rating: c.rating != null ? c.rating : "-",
+        title: c.current_title || "-",
+        company: c.current_company || "-",
+        years: c.years_experience != null ? c.years_experience : "-",
+        edu: c.education || "-",
+        city: c.city || "-",
+        source: c.source || "-",
+        days: c.days_in_stage != null ? c.days_in_stage : "-",
+        phone: c.phone || "-",
       }))
     );
 

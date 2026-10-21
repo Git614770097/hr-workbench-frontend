@@ -313,7 +313,7 @@ export default function Profiles() {
       title: "城市",
       key: "city",
       width: 130,
-      render: (_: unknown, r: MatchProfile) => r.city || "—",
+      render: (_: unknown, r: MatchProfile) => r.city || "-",
     },
     {
       title: "学历 / 年限",
@@ -335,7 +335,7 @@ export default function Profiles() {
       width: 260,
       render: (_: unknown, r: MatchProfile) => {
         const all = r.must_skills || [];
-        if (all.length === 0) return "—";
+        if (all.length === 0) return "-";
         const shown = all.slice(0, 3);
         const rest = all.length - shown.length;
         return (
@@ -351,9 +351,9 @@ export default function Profiles() {
       key: "salary",
       width: 140,
       render: (_: unknown, r: MatchProfile) =>
-        profileSalaryRange(r) ? <span className="salary-num" style={{ color: "#c0392b", fontWeight: 600 }}>{profileSalaryRange(r)}</span> : <span style={{ color: "#c2c6cc" }}>—</span>,
+        profileSalaryRange(r) ? <span className="salary-num" style={{ color: "#c0392b", fontWeight: 600 }}>{profileSalaryRange(r)}</span> : <span style={{ color: "#c2c6cc" }}>-</span>,
     },
-    { title: "更新时间", dataIndex: "updated_at", key: "updated_at", width: 160, render: (v: string) => v || "—" },
+    { title: "更新时间", dataIndex: "updated_at", key: "updated_at", width: 160, render: (v: string) => v || "-" },
     {
       title: "操作",
       key: "actions",
@@ -361,8 +361,8 @@ export default function Profiles() {
       fixed: "right" as const,
       render: (_: unknown, r: MatchProfile) => (
         <Space size={4}>
-          <Button size="small" onClick={() => navigate("/match", { state: { profileId: r.id } })}>
-            去匹配
+          <Button size="small" className="ai-btn" icon={<RobotOutlined />} onClick={() => navigate("/match", { state: { profileId: r.id } })}>
+            AI匹配
           </Button>
           <Button type="link" size="small" onClick={() => openEdit(r)}>编辑</Button>
           <Popconfirm title="删除这个画像？" okText="删除" cancelText="取消" onConfirm={() => handleDelete(r)}>

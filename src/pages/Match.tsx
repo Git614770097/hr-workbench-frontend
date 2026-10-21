@@ -90,6 +90,12 @@ export default function Match() {
   const [profileId, setProfileId] = useState<string | undefined>(
     () => (location.state as { profileId?: string } | null)?.profileId
   );
+  // 入口来源判定：只有从「人才库」链路进来（人才详情自动带人 / 人才库工具栏入口）
+  // 才显示「返回人才库」；从菜单、AI 助手、推进管道、画像/岗位页进来时没有人才库上下文，
+  // 挂一个「返回人才库」反而莫名其妙（用户反馈：菜单进入不要有返回人才库操作）
+  const fromTalents =
+    !!((location.state as { talentId?: string; from?: string } | null)?.talentId) ||
+    (location.state as { talentId?: string; from?: string } | null)?.from === "talents";
   // ⚠️ profile 必须由 profiles 派生，不能另存一份 state：
   // 路由跳转进来时 profiles 还没加载完，find 不到就会把 profile 置为 null，
   // 而 Select 仍然显示「已选中」→ 用户以为选好了，点「开始匹配」却被拦下（表现为点了没反应）。
@@ -390,7 +396,9 @@ export default function Match() {
   return (
     <div className="page-fill">
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/talents")}>{termFor(brand, "返回人才库")}</Button>
+        {fromTalents && (
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/talents")}>{termFor(brand, "返回人才库")}</Button>
+        )}
         <Typography.Title level={4} style={{ margin: 0 }}>智能匹配</Typography.Title>
         <Typography.Text type="secondary">
           选一份职位画像 + 候选人 → 按匹配度排序并给出理由

@@ -245,8 +245,8 @@ export default function Jobs() {
         </Tooltip>
       ),
     },
-    { title: "部门", dataIndex: "department", key: "department", width: 110, render: (v: string) => v || "—" },
-    { title: "城市", dataIndex: "city", key: "city", width: 90, render: (v: string) => v || "—" },
+    { title: "部门", dataIndex: "department", key: "department", width: 110, render: (v: string) => v || "-" },
+    { title: "城市", dataIndex: "city", key: "city", width: 90, render: (v: string) => v || "-" },
     {
       title: "类型", dataIndex: "job_type", key: "job_type", width: 80,
       render: (v: string) => jobTypeLabels[v] || v,
@@ -288,13 +288,13 @@ export default function Jobs() {
       title: "状态", dataIndex: "status", key: "status", width: 90,
       render: (v: string) => <Tag color={JOB_STATUS_COLORS[v] || "default"}>{JOB_STATUS_LABELS[v] || v}</Tag>,
     },
-    { title: "薪资", dataIndex: "salary_range", key: "salary_range", width: 130, render: (v: string) => v || "—" },
+    { title: "薪资", dataIndex: "salary_range", key: "salary_range", width: 130, render: (v: string) => v || "-" },
     ...(isAdmin ? [{
       title: "创建人", dataIndex: "owner_name", key: "owner_name", width: 100,
-      render: (v: string) => v || "—",
+      render: (v: string) => v || "-",
     }] : []),
     {
-      title: "操作", key: "action", width: 300, fixed: "right" as const,
+      title: "操作", key: "action", width: 380, fixed: "right" as const,
       render: (_: any, r: Job) => (
         <Space size={4}>
           <Button type="link" size="small" onClick={() => { setPresetJobId(r.id); setAddOpen(true); }}>
@@ -338,18 +338,18 @@ export default function Jobs() {
     for (const j of jobs) {
       rows.push([
         j.title,
-        j.department || "—",
-        j.city || "—",
+        j.department || "-",
+        j.city || "-",
         jobTypeLabels[j.job_type] || j.job_type,
         `${j.hired || 0}/${j.headcount || 1}`,
         j.active_count || 0,
         PRIORITY_LABELS[j.priority] || j.priority,
         JOB_STATUS_LABELS[j.status] || j.status,
-        j.salary_range || "—",
-        j.education || "—",
-        j.experience || "—",
-        j.owner_name || "—",
-        j.created_at || "—",
+        j.salary_range || "-",
+        j.education || "-",
+        j.experience || "-",
+        j.owner_name || "-",
+        j.created_at || "-",
       ].map(csvCell).join(","));
     }
 
@@ -430,7 +430,7 @@ export default function Jobs() {
           dataSource={jobs}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1500 }}
+          scroll={{ x: 1580 }}
           locale={{
             // 空库引导：新企业第一次进来，给一个一键看效果的入口
             emptyText: (
@@ -589,15 +589,15 @@ export default function Jobs() {
                       return <Tag color={m?.color} style={{ marginInlineEnd: 0 }}>{m?.label || v}</Tag>;
                     },
                   },
-                  { title: "职位", dataIndex: "current_title", width: 140, render: (v: string) => v || "—" },
-                  { title: "公司", dataIndex: "current_company", width: 160, render: (v: string) => v || "—" },
+                  { title: "职位", dataIndex: "current_title", width: 140, render: (v: string) => v || "-" },
+                  { title: "公司", dataIndex: "current_company", width: 160, render: (v: string) => v || "-" },
                   {
                     title: "年限", dataIndex: "years_experience", width: 70,
-                    render: (v: number | null) => (v != null ? `${v}年` : "—"),
+                    render: (v: number | null) => (v != null ? `${v}年` : "-"),
                   },
-                  { title: "学历", dataIndex: "education", width: 90, render: (v: string) => v || "—" },
-                  { title: "城市", dataIndex: "city", width: 80, render: (v: string) => v || "—" },
-                  { title: "手机号", dataIndex: "phone", width: 130, render: (v: string) => v || "—" },
+                  { title: "学历", dataIndex: "education", width: 90, render: (v: string) => v || "-" },
+                  { title: "城市", dataIndex: "city", width: 80, render: (v: string) => v || "-" },
+                  { title: "手机号", dataIndex: "phone", width: 130, render: (v: string) => v || "-" },
                 ]}
               />
             )}

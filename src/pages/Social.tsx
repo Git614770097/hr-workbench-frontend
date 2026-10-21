@@ -232,10 +232,10 @@ function RateTemplateModal({
         </Space>
       ),
     },
-    { title: "社保个人", dataIndex: "si_rate_personal", key: "p1", render: (v: number | null) => (v != null ? `${v}%` : "—") },
-    { title: "社保单位", dataIndex: "si_rate_company", key: "p2", render: (v: number | null) => (v != null ? `${v}%` : "—") },
-    { title: "公积金个人", dataIndex: "hf_rate_personal", key: "p3", render: (v: number | null) => (v != null ? `${v}%` : "—") },
-    { title: "公积金单位", dataIndex: "hf_rate_company", key: "p4", render: (v: number | null) => (v != null ? `${v}%` : "—") },
+    { title: "社保个人", dataIndex: "si_rate_personal", key: "p1", render: (v: number | null) => (v != null ? `${v}%` : "-") },
+    { title: "社保单位", dataIndex: "si_rate_company", key: "p2", render: (v: number | null) => (v != null ? `${v}%` : "-") },
+    { title: "公积金个人", dataIndex: "hf_rate_personal", key: "p3", render: (v: number | null) => (v != null ? `${v}%` : "-") },
+    { title: "公积金单位", dataIndex: "hf_rate_company", key: "p4", render: (v: number | null) => (v != null ? `${v}%` : "-") },
     {
       title: "操作", key: "op", width: 140,
       render: (_: unknown, r: SocialRateTemplate) => (
@@ -579,15 +579,15 @@ export default function Social() {
     }]);
   };
 
-  const fmtMoney = (v: number | null) => (v != null ? `¥${v.toLocaleString("zh-CN")}` : "—");
-  const fmtRate = (v: number | null) => (v != null ? `${v}%` : "—");
+  const fmtMoney = (v: number | null) => (v != null ? `¥${v.toLocaleString("zh-CN")}` : "-");
+  const fmtRate = (v: number | null) => (v != null ? `${v}%` : "-");
 
   const columns = [
     {
       title: "姓名", dataIndex: "name", key: "name", width: 120,
       render: (v: string, r: SocialItem) => <Link to={`/talents/${r.id}`}>{v}</Link>,
     },
-    { title: "入职日期", dataIndex: "hire_date", key: "hire_date", width: 110, render: (v: string | null) => v || "—" },
+    { title: "入职日期", dataIndex: "hire_date", key: "hire_date", width: 110, render: (v: string | null) => v || "-" },
     {
       title: "参保状态", dataIndex: "si_status", key: "si_status", width: 96,
       render: (v: string | null) => {
@@ -595,7 +595,7 @@ export default function Social() {
         return <Tag color={SI_STATUS_COLORS[s]}>{SI_STATUS_LABELS[s]}</Tag>;
       },
     },
-    { title: "参保地", dataIndex: "si_city", key: "si_city", width: 110, render: (v: string | null) => v || "—" },
+    { title: "参保地", dataIndex: "si_city", key: "si_city", width: 110, render: (v: string | null) => v || "-" },
     { title: "社保基数", dataIndex: "si_base", key: "si_base", width: 110, render: fmtMoney },
     { title: "公积金基数", dataIndex: "hf_base", key: "hf_base", width: 110, render: fmtMoney },
     { title: "个人比例", key: "rate_p", width: 120, render: (_: unknown, r: SocialItem) => `${fmtRate(r.si_rate_personal)} / ${fmtRate(r.hf_rate_personal)}` },
@@ -603,21 +603,21 @@ export default function Social() {
       title: "个人月缴", key: "fee_p", width: 110,
       render: (_: unknown, r: SocialItem) => {
         const v = monthlyFee(r, "personal");
-        return v != null ? <span style={{ fontWeight: 500 }}>¥{v.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span> : "—";
+        return v != null ? <span style={{ fontWeight: 500 }}>¥{v.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span> : "-";
       },
     },
     {
       title: "单位月缴", key: "fee_c", width: 110,
       render: (_: unknown, r: SocialItem) => {
         const v = monthlyFee(r, "company");
-        return v != null ? <span style={{ fontWeight: 500 }}>¥{v.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span> : "—";
+        return v != null ? <span style={{ fontWeight: 500 }}>¥{v.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}</span> : "-";
       },
     },
     {
       title: "待办动作", key: "action", width: 96,
       render: (_: unknown, r: SocialItem) => {
         const a = deriveAction(r);
-        return a ? <Tag color={ACTION_TAG[a].color}>{ACTION_TAG[a].text}</Tag> : "—";
+        return a ? <Tag color={ACTION_TAG[a].color}>{ACTION_TAG[a].text}</Tag> : "-";
       },
     },
     {

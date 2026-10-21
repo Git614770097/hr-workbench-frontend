@@ -80,7 +80,10 @@ jobs.get("/options", async (c) => {
   const params: string[] = [];
   const onlyOpen = c.req.query("open") === "1";
   const cond: string[] = [];
-  { const sc = ownerScope(session); cond.push(sc.sql.replace(/^ AND /, "")); params.push(...sc.params); }
+  // admin 的 ownerScope 返回空串：必须整体跳过，不能 push("")——否则拼出
+  // `WHERE  ORDER BY` 非法 SQL，D1 直接 500（曾导致管理员点「添加候选人」
+  // 报「服务器开小差了」；其他静默 catch 的下拉框则表现为岗位列表为空）
+  { const sc = ownerScope(session); if (sc.sql) { cond.push(sc.sql.replace(/^ AND /, "")); params.push(...sc.params); } }
   if (onlyOpen) cond.push("status = 'open'");
   if (cond.length) sql += " WHERE " + cond.join(" AND ");
   sql += " ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END, updated_at DESC";

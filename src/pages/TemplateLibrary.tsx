@@ -305,7 +305,7 @@ ${body}
       key: "owner",
       width: 100,
       render: (v: string | undefined, t: DocTemplate) =>
-        v || (t.owner_id === "system" ? "内置" : "—"),
+        v || (t.owner_id === "system" ? "内置" : "-"),
     },
     {
       title: "更新时间",

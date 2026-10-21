@@ -422,7 +422,7 @@ export default function Interviews() {
       width: 140,
       ellipsis: true,
       render: (_: unknown, r: Interview) =>
-        r.job_title || <Typography.Text type="secondary">—</Typography.Text>,
+        r.job_title || <Typography.Text type="secondary">-</Typography.Text>,
     },
     {
       title: "轮次",
@@ -477,7 +477,7 @@ export default function Interviews() {
       key: "interviewer",
       width: 110,
       ellipsis: true,
-      render: (v: string | null) => v || <Typography.Text type="secondary">—</Typography.Text>,
+      render: (v: string | null) => v || <Typography.Text type="secondary">-</Typography.Text>,
     },
     {
       title: "状态",
@@ -541,7 +541,7 @@ export default function Interviews() {
     {
       title: "操作",
       key: "action",
-      width: 120,
+      width: 150,
       render: (_: unknown, r: Interview) => (
         <Space size={4}>
           <Button type="link" size="small" onClick={() => openEdit(r)}>编辑/评价</Button>
@@ -689,7 +689,7 @@ export default function Interviews() {
           dataSource={filtered}
           loading={loading}
           columns={columns}
-          scroll={{ x: 1240 }}
+          scroll={{ x: 1300 }}
           locale={{
             emptyText: (
               <div style={{ padding: "40px 0", textAlign: "center" }}>

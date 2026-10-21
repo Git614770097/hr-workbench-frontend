@@ -63,7 +63,7 @@ function targetLabel(t: string) {
 
 /** detail 是 JSON 串，转成人话 */
 function detailText(raw: string | null): string {
-  if (!raw) return "—";
+  if (!raw) return "-";
   try {
     const d = JSON.parse(raw) as Record<string, unknown>;
     const parts: string[] = [];
@@ -209,7 +209,7 @@ export default function AuditLogs() {
             {
               title: "对象名称",
               dataIndex: "target_name",
-              render: (v: string | null, r) => v || <Typography.Text type="secondary">—</Typography.Text>,
+              render: (v: string | null, r) => v || <Typography.Text type="secondary">-</Typography.Text>,
             },
             {
               title: "详情",
@@ -231,7 +231,7 @@ export default function AuditLogs() {
               title: "IP",
               dataIndex: "ip",
               width: 130,
-              render: (v: string | null) => v || <Typography.Text type="secondary">—</Typography.Text>,
+              render: (v: string | null) => v || <Typography.Text type="secondary">-</Typography.Text>,
             },
           ]}
         />

@@ -334,7 +334,7 @@ export default function Users() {
       key: "name",
       render: (text: string) => <strong>{text}</strong>,
     },
-    { title: "手机号", dataIndex: "phone", key: "phone", width: 140 },
+    { title: "手机号", dataIndex: "phone", key: "phone", width: 140, render: (v: string | null) => v || "-" },
     {
       title: "身份",
       dataIndex: "intended_role",
@@ -385,7 +385,7 @@ export default function Users() {
       key: "name",
       render: (text: string) => <strong>{text}</strong>,
     },
-    { title: "手机号", dataIndex: "phone", key: "phone", width: 140 },
+    { title: "手机号", dataIndex: "phone", key: "phone", width: 140, render: (v: string | null) => v || "-" },
     {
       title: "申请时间",
       dataIndex: "reset_requested_at",
@@ -441,7 +441,7 @@ export default function Users() {
       key: "intended_role",
       width: 110,
       render: (v: string | null, record: UserRow) =>
-        record.role === "admin" ? <Typography.Text type="secondary">—</Typography.Text> : (intendedTag(v) || <Typography.Text type="secondary">未填</Typography.Text>),
+        record.role === "admin" ? <Typography.Text type="secondary">-</Typography.Text> : (intendedTag(v) || <Typography.Text type="secondary">未填</Typography.Text>),
     },
     {
       title: "创建时间",

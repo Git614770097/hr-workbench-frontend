@@ -225,7 +225,7 @@ export default function RequisitionPanel({
             width: 90,
             render: (_: unknown, r: Requisition) => JOB_TYPE_LABELS[r.job_type] || r.job_type,
           },
-          { title: "城市", dataIndex: "city", key: "city", width: 80, render: (v: string | null) => v || "—" },
+          { title: "城市", dataIndex: "city", key: "city", width: 80, render: (v: string | null) => v || "-" },
           {
             title: "期望到岗",
             dataIndex: "expect_date",
@@ -236,7 +236,7 @@ export default function RequisitionPanel({
                 <span style={{ color: isOverdue(r) ? "#dc2626" : undefined, fontWeight: isOverdue(r) ? 600 : 400 }}>
                   {v}{isOverdue(r) && " 已逾期"}
                 </span>
-              ) : "—",
+              ) : "-",
           },
           {
             title: "状态",
@@ -288,7 +288,7 @@ export default function RequisitionPanel({
                   </Typography.Text>
                 );
               }
-              return <Typography.Text type="secondary" style={{ fontSize: 12 }}>—</Typography.Text>;
+              return <Typography.Text type="secondary" style={{ fontSize: 12 }}>-</Typography.Text>;
             },
           },
         ]}

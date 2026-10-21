@@ -139,7 +139,7 @@ export default function Team() {
 
   const memberColumns = [
     { title: "姓名", dataIndex: "name", key: "name", render: (v: string) => <Typography.Text strong>{v}</Typography.Text> },
-    { title: "手机号", dataIndex: "phone", key: "phone" },
+    { title: "手机号", dataIndex: "phone", key: "phone", render: (v: string | null) => v || "-" },
     {
       title: "角色", dataIndex: "role_id", key: "role",
       render: (_: string | null, m: Member) => (

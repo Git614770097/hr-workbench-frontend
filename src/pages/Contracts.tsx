@@ -43,14 +43,14 @@ function daysUntil(dateStr: string | null): number | null {
 
 /** 剩余天数 → 导出文案：已过期 N 天 / N 天 / — */
 function fmtDays(d: number | null): string {
-  if (d == null) return "—";
+  if (d == null) return "-";
   if (d < 0) return `已过期 ${-d} 天`;
   return `${d} 天`;
 }
 
 /** 到期日 + 剩余天数 Tag（红=已过期 / 橙=30 天内 / 灰=充裕） */
 function DateWithTag({ date }: { date: string | null }) {
-  if (!date) return <span>—</span>;
+  if (!date) return <span>-</span>;
   const left = daysUntil(date);
   let tag = null;
   if (left != null) {
@@ -704,7 +704,7 @@ export default function Contracts() {
       title: "姓名", dataIndex: "name", key: "name", width: 120,
       render: (v: string, r: ContractItem) => <Link to={`/talents/${r.id}`}>{v}</Link>,
     },
-    { title: "手机号", dataIndex: "phone", key: "phone", width: 140, render: (v: string | null) => v || "—" },
+    { title: "手机号", dataIndex: "phone", key: "phone", width: 140, render: (v: string | null) => v || "-" },
     {
       title: termFor(profile, "人才状态"), dataIndex: "status", key: "status", width: 100,
       render: (v: string) => STATUS_LABELS[v as keyof typeof STATUS_LABELS] || v,

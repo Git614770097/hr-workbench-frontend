@@ -332,7 +332,7 @@ export default function Logs() {
         align: "center" as const,
         render: (_: unknown, r: UsageOverview["users"][number]) => {
           const v = r.menus[m] || 0;
-          if (!v) return <span style={{ color: isDark ? "#4b5563" : "#d1d5db" }}>—</span>;
+          if (!v) return <span style={{ color: isDark ? "#4b5563" : "#d1d5db" }}>-</span>;
           // 色深按相对热度线性映射（0.10~0.75），既看得出深浅又不至于糊成一片
           const alpha = 0.1 + 0.65 * (v / matrixMax);
           return (
