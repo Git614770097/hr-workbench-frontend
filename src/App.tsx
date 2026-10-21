@@ -165,7 +165,6 @@ export default function App({ theme, onChangeTheme }: AppProps) {
     bad_state: "授权状态已失效，请重新发起绑定",
     no_app: "管理员尚未配置飞书应用",
     exchange: "与飞书交换凭证失败",
-    open_id_taken: "这个飞书已经绑定到其他账号了（一个飞书只能绑一个系统账号）。请用本人的飞书扫码，或先让对方解绑",
   };
   useEffect(() => {
     if (!feishuResult || !user) return;

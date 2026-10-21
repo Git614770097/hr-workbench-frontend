@@ -21,15 +21,9 @@ export default function FeishuBindConfirmModal({ ck, onDone }: Props) {
   useEffect(() => {
     if (!ck) { setInfo(null); setError(""); return; }
     // 待确认信息（只读，不消费 token）
-    fetch(`/api/feishu/bind/pending?ck=${encodeURIComponent(ck)}`, {
-      headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
-    })
-      .then(async (r) => {
-        const d = (await r.json().catch(() => null)) as { error?: string; name?: string; avatar_url?: string } | null;
-        if (!r.ok) { setError(d?.error || "确认信息已过期，请重新扫码"); return; }
-        setInfo({ name: d?.name || "（未获取到昵称）", avatarUrl: d?.avatar_url || "" });
-      })
-      .catch(() => setError("网络异常，请重试或重新扫码"));
+    api.feishuBindPending(ck)
+      .then((d) => setInfo({ name: d.name || "（未获取到昵称）", avatarUrl: d.avatar_url || "" }))
+      .catch((e) => setError((e as Error).message || "确认信息已过期，请重新扫码"));
   }, [ck]);
 
   const handleConfirm = async () => {
@@ -39,7 +33,11 @@ export default function FeishuBindConfirmModal({ ck, onDone }: Props) {
       await api.confirmFeishuBind(ck);
       onDone(true);
     } catch (e) {
-      setError((e as Error).message);
+      const msg = (e as Error).message || "";
+      // open_id 被占用（409）时服务端已消耗确认 token，再点「确认绑定」只会得到
+      // 「已过期」——直接关弹窗，让用户从顶栏入口用本人飞书重新授权，路更清晰
+      if (msg.includes("已经绑定到其他账号")) { onDone(false); return; }
+      setError(msg);
       setConfirming(false);
     }
   };

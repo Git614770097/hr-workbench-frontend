@@ -771,6 +771,8 @@ function FeishuSettingsPanel() {
       });
       message.success("飞书应用配置已保存");
       setAppSecret(""); setEncryptKey(""); setVerificationToken("");
+      // 广播给顶栏飞书入口：横幅文案与「是否已配置」状态立即刷新（不等整页刷新）
+      window.dispatchEvent(new Event("feishu-config-changed"));
       setLoading(true); reload();
     } catch (e) {
       message.error((e as Error).message);
@@ -962,7 +964,7 @@ function FeishuSettingsPanel() {
                         <li>
                           「应用功能 → 网页」→ 启用网页能力 → 网页地址填：
                           <br /><Typography.Text copyable code>{origin}</Typography.Text>
-                          <br /><Typography.Text type="secondary" style={{ fontSize: 12 }}>漏配的后果：成员弹窗里的二维码显示不出来。</Typography.Text>
+                          <br /><Typography.Text type="secondary" style={{ fontSize: 12 }}>漏配的后果：成员点飞书入口后，飞书授权页打不开。</Typography.Text>
                         </li>
                       </ol>
                     </div>
@@ -1002,7 +1004,7 @@ function FeishuSettingsPanel() {
                 <li><b>授权时报 redirect_uri unmatch</b>：重定向 URL 没添加，或填了带 # / ? 后缀的地址。</li>
                 <li><b>授权页报 20027</b>：请求了未开通的权限（本系统只用 im:message 一项）。</li>
                 <li><b>绑定成功但收不到提醒</b>：im:message 权限未发版生效，或应用可用范围不含该成员；也可能是发送模式选了「仅群」而群机器人未配置。</li>
-                <li><b>想停止给某人推送</b>：目前需管理员到数据库把该用户的 notify_channel 置空（解绑/切回 PushPlus 的界面排期中）。</li>
+                <li><b>想停止给某人推送</b>：成员可自行解绑（点右上角飞书图标 →「解绑」，渠道自动回退 PushPlus）；也可由管理员到数据库把该用户的 notify_channel 置空。</li>
               </ul>
             ),
           },

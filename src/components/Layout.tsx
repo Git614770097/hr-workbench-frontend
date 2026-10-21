@@ -278,9 +278,15 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   const [pushplusOpen, setPushplusOpen] = useState(false);
   // 飞书推送绑定弹窗
   const [feishuOpen, setFeishuOpen] = useState(false);
-  // 飞书集成是否已配置（null=未知/查询失败）：顶栏入口与引导横幅按此分流，
-  // 让「没配置」的管理员直达设置页、成员拿到明确提示，已配置的用户一步进授权
+  // 飞书集成是否已配置（null=未知/查询失败）：**只用于引导横幅文案**。
+  // 不用于点击分流——那里一律以服务端 /oauth/start 的返回为准（见 openFeishuEntry），
+  // 否则「管理员刚配好、成员端缓存还写着未配置」会把可绑定的用户错误分流掉。
   const [feishuConfigured, setFeishuConfigured] = useState<boolean | null>(null);
+  const refreshFeishuStatus = useCallback(() => {
+    api.getFeishuStatus()
+      .then((res) => setFeishuConfigured(!!res.configured))
+      .catch(() => setFeishuConfigured(null));
+  }, []);
   useEffect(() => {
     let alive = true;
     api.getFeishuStatus()
@@ -288,6 +294,13 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
       .catch(() => { if (alive) setFeishuConfigured(null); });
     return () => { alive = false; };
   }, []);
+  // 管理员在设置页保存飞书配置后广播刷新（沿用 open-ai-key 的 window 事件模式）：
+  // 横幅文案即时从「未配置」翻成「立即开启」，不用等整页刷新
+  useEffect(() => {
+    const handler = () => refreshFeishuStatus();
+    window.addEventListener("feishu-config-changed", handler);
+    return () => window.removeEventListener("feishu-config-changed", handler);
+  }, [refreshFeishuStatus]);
   // 引导横幅关闭状态按用户记忆：换账号后新账号仍会看到一次
   const [feishuGuideDismissed, setFeishuGuideDismissed] = useState(() => {
     try {
@@ -304,15 +317,10 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   const [feishuJumping, setFeishuJumping] = useState(false);
   // 飞书功能统一入口（顶栏按钮 + 引导横幅共用）：未绑定用户点击后**直接整页跳转**
   // 飞书授权页，不再绕弹窗；授权回来后走既有「绑定确认页」闭环。
-  // 已绑定 → 弹窗（测试 / 解绑）；管理员未配置 → 去设置页；成员未配置 → 提示找管理员。
+  // 已绑定 → 弹窗（测试 / 解绑）。未绑定时不在前端按缓存预分流：一律先取授权
+  // 链接，取不到（未配置）再按角色走设置页 / 提示——服务端裁决，缓存只服务文案。
   const openFeishuEntry = () => {
     if (user.feishu_bound) { setFeishuOpen(true); return; }
-    if (feishuConfigured === false) {
-      if (user.role === "admin") { navigate("/settings?tab=feishu"); return; }
-      message.warning("飞书集成尚未启用，请联系管理员开启（系统设置 → 飞书集成）");
-      return;
-    }
-    // 已配置（或状态未知）：先取授权链接再整页跳转；取链接失败按错误文案兜底分流
     setFeishuJumping(true);
     api.feishuBindUrl()
       .then((res) => { window.location.href = res.url; })

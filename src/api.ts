@@ -166,6 +166,9 @@ export const api = {
   // 绑定确认（授权回调后展示飞书账号，用户点确认才真正写库）
   confirmFeishuBind: (ck: string) =>
     request<{ ok: boolean; name: string }>("/feishu/bind/confirm", { method: "POST", body: JSON.stringify({ ck }) }),
+  // 绑定确认页的待确认信息（授权回调后读飞书昵称/头像，不消费 token）
+  feishuBindPending: (ck: string) =>
+    request<{ name: string; avatar_url: string }>(`/feishu/bind/pending?ck=${encodeURIComponent(ck)}`),
 
   // User management (admin only)
   getUsers: (status?: string) =>

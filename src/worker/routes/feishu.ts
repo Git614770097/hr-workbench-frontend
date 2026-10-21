@@ -193,9 +193,8 @@ feishu.post("/event", async (c) => {
   // 若启用了 Encrypt Key（body.encrypt），尽力解密后按明文处理
   let payload = body as { type?: string; challenge?: string; token?: string; header?: unknown; event?: unknown; encrypt?: string };
   if (payload.encrypt && typeof payload.encrypt === "string") {
-    const row = await c.env.DB.prepare("SELECT id FROM feishu_apps WHERE team_id IS NULL AND enabled = 1").first<{ id: string }>();
     const cfg = await resolveFeishuApp(c.env.DB, null, c.env.AI_KEY_SECRET);
-    if (row && cfg?.encryptKey) {
+    if (cfg?.encryptKey) {
       const plain = await decryptFeishuEvent(cfg.encryptKey, payload.encrypt);
       if (plain) {
         try { payload = JSON.parse(plain) as typeof payload; } catch { /* 保持原 body */ }
