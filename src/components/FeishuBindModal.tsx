@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal, Button, Space, Alert, Tag, Typography, Spin, message } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
@@ -9,52 +9,42 @@ interface Props {
   onClose: () => void;
 }
 
-// 飞书官方扫码登录 SDK（LarkSSOSDKWebQRCode）：把我们后端生成的授权 URL（goto）
-// 包成一个飞书托管的二维码 iframe；用户飞书 App 扫一扫、手机确认后，飞书仍走
-// redirect_uri 把 code 带回 /api/feishu/oauth/callback —— 与跳转授权同一条后端链路。
-// SDK 极小，仅暴露 window.QRLogin({ id, goto, width, height, style })。
-declare global {
-  interface Window {
-    QRLogin?: (opts: { id: string; goto: string; width?: number; height?: number; style?: string }) => { matchOrigin: (origin: string) => boolean };
-  }
-}
-
-const FEISHU_QR_SDK = "https://sf3-cn.feishucdn.com/obj/static/lark/passport/qrcode/LarkSSOSDKWebQRCode-1.0.1.js";
-const QR_BOX_ID = "feishu-qr-box";
-const QR_SIZE = 200;
-
-function loadQrSdk(): Promise<void> {
-  if (window.QRLogin) return Promise.resolve();
-  return new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = FEISHU_QR_SDK;
-    s.async = true;
-    s.onload = () => (window.QRLogin ? resolve() : reject(new Error("二维码组件加载后未就绪")));
-    s.onerror = () => reject(new Error("二维码组件加载失败（网络原因）"));
-    document.head.appendChild(s);
-  });
-}
-
 // 飞书推送绑定：通过飞书 OAuth 把当前账号与飞书 open_id 绑定，之后到期/面试/审批
-// 提醒会自动推送到飞书。两种授权方式等价：扫码（默认）或跳转网页授权；
-// 完成后由飞书带回本系统并自动刷新绑定状态。
+// 提醒会自动推送到飞书。
+//
+// 二维码方案说明（2026-10-21 浏览器实测后确定）：
+// 飞书官方扫码 SDK（LarkSSOSDKWebQRCode）内部把授权 URL 包进
+// accounts.feishu.cn/accounts/auth_login/qr 挂件渲染二维码，但该挂件端点现已
+// 对所有请求返回 4401「请求无效」（实测带完整会话/真实 UA 均如此，旧方案已失效）。
+// 因此改为**直接 iframe 授权页本体**：
+//   - 授权端点 open-apis/authen/v1/authorize 实测无 X-Frame-Options / 无 CSP
+//     frame-ancestors，可嵌入；落地页 accounts/page/login 默认即「扫码登录」tab，
+//     canvas 二维码 + qrlogin/init + polling 全链路 200
+//   - 用户扫码 → 手机确认 → 授权页自动继续 → code 回跳 /api/feishu/oauth/callback
+//     → 破框脚本把顶层窗口带回 /?feishu=bound（与跳转授权同一条后端链路）
+const QR_W = 300;
+const QR_H = 400;
+
 export default function FeishuBindModal({ open, bound, onClose }: Props) {
   const [binding, setBinding] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [qrUrl, setQrUrl] = useState("");
   const [qrState, setQrState] = useState<"loading" | "ready" | "failed">("loading");
   const [qrError, setQrError] = useState("");
+  const loadTimer = useRef<number | undefined>(undefined);
 
   const initQr = useCallback(async () => {
     setQrState("loading");
     setQrError("");
+    window.clearTimeout(loadTimer.current);
     try {
-      const [res] = await Promise.all([api.feishuBindUrl(), loadQrSdk()]);
-      const box = document.getElementById(QR_BOX_ID);
-      // 弹窗可能在请求期间被关闭（destroyOnClose 会卸载内容），容器已不存在
-      if (!box) return;
-      box.innerHTML = "";
-      window.QRLogin!({ id: QR_BOX_ID, goto: res.url, width: QR_SIZE, height: QR_SIZE, style: "border:none;display:block" });
-      setQrState("ready");
+      const res = await api.feishuBindUrl();
+      setQrUrl(res.url);
+      // 跨域 iframe 读不到内部状态，onload 只证明服务器有响应；8s 未加载视为失败
+      loadTimer.current = window.setTimeout(() => {
+        setQrState((s) => (s === "loading" ? "failed" : s));
+        setQrError((e) => e || "飞书授权页加载超时，请改用右下角按钮跳转授权");
+      }, 8000);
     } catch (err) {
       setQrError(err instanceof Error ? err.message : "二维码初始化失败");
       setQrState("failed");
@@ -63,10 +53,7 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
 
   useEffect(() => {
     if (open && !bound) void initQr();
-    return () => {
-      const box = document.getElementById(QR_BOX_ID);
-      if (box) box.innerHTML = "";
-    };
+    return () => window.clearTimeout(loadTimer.current);
   }, [open, bound, initQr]);
 
   const handleBind = async () => {
@@ -94,7 +81,7 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
   };
 
   return (
-    <Modal open={open} onCancel={onClose} footer={null} title="飞书推送设置" width={520} destroyOnClose>
+    <Modal open={open} onCancel={onClose} footer={null} title="飞书推送设置" width={560} destroyOnClose>
       <Space direction="vertical" style={{ width: "100%" }} size={16}>
         <Alert
           type="info"
@@ -113,19 +100,39 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
           <>
             <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
               <div
-                id={QR_BOX_ID}
                 style={{
-                  width: QR_SIZE,
-                  height: QR_SIZE,
+                  width: QR_W,
+                  height: QR_H,
                   flex: "0 0 auto",
+                  border: "1px solid #f0f0f0",
+                  borderRadius: 8,
+                  overflow: "hidden",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  border: "1px solid #f0f0f0",
-                  borderRadius: 8,
+                  background: "#fff",
                 }}
               >
-                {qrState === "loading" && <Spin size="large" />}
+                {qrState === "loading" && !qrUrl && <Spin size="large" />}
+                {qrState === "failed" && !qrUrl && (
+                  <Typography.Text type="secondary" style={{ padding: 12, textAlign: "center", fontSize: 12 }}>
+                    {qrError || "二维码加载失败"}
+                  </Typography.Text>
+                )}
+                {qrUrl && (
+                  <iframe
+                    key={qrUrl /* state 每次刷新都会变，换 key 强制重载 */}
+                    src={qrUrl}
+                    title="飞书扫码绑定"
+                    width={QR_W}
+                    height={QR_H}
+                    style={{ border: 0, display: "block" }}
+                    onLoad={() => {
+                      window.clearTimeout(loadTimer.current);
+                      setQrState("ready");
+                    }}
+                  />
+                )}
               </div>
               <Space direction="vertical" size={8} style={{ flex: 1 }}>
                 {qrState === "failed" ? (
@@ -133,13 +140,16 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
                     type="warning"
                     showIcon
                     message="二维码暂时不可用"
-                    description={qrError || "请使用右侧按钮跳转授权"}
+                    description={qrError || "请使用下方按钮跳转授权"}
                   />
                 ) : (
                   <>
                     <Typography.Text strong>飞书扫一扫绑定</Typography.Text>
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      打开飞书 App → 点右上角「+」→ 扫一扫 → 扫描左侧二维码 → 在手机上确认授权。二维码有效期约 5 分钟，过期点下方刷新。
+                      打开飞书 App → 点右上角「+」→ 扫一扫 → 扫描左侧二维码 → 在手机上确认授权。
+                    </Typography.Text>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      二维码有效期约 5 分钟，过期后点飞书页面里的「刷新二维码」，或点下方按钮重新加载。
                     </Typography.Text>
                     <Button size="small" icon={<ReloadOutlined />} loading={qrState === "loading"} onClick={() => void initQr()}>
                       刷新二维码
