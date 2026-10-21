@@ -241,6 +241,8 @@ export async function sendFeishuWebhook(
   const hint = data?.code === 19021 ? "（机器人设置了关键词校验，消息需包含约定关键词）"
     : data?.code === 19022 ? "（机器人设置了签名校验，暂不支持，请在群里关闭签名或改用应用私信）"
     : data?.code === 19024 ? "（机器人已被移出群聊）"
+    : data?.code === 230006 ? "（机器人在群里被关闭，或企业管理员禁用了自定义机器人能力：群设置 → 群机器人 → 确认该机器人已开启）"
+    : data?.code === 9499 ? "（请求体格式或大小不合规，应联系管理员）"
     : "";
   return { ok, message: ok ? "发送成功" : `飞书群机器人发送失败：code ${data?.code ?? "?"} ${data?.msg || ""}${hint}` };
 }
