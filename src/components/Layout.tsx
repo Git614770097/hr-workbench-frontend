@@ -300,12 +300,32 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
     try { localStorage.setItem(`wb.feishu.guide.dismiss.${user.id}`, "1"); } catch {}
     setFeishuGuideDismissed(true);
   };
-  // 飞书功能统一入口（顶栏按钮 + 引导横幅共用）：按当前状态分流，已配置的用户点一下直接进授权
+  // 「开启飞书提醒」跳转中（取授权链接 → 整页离开前的 loading）
+  const [feishuJumping, setFeishuJumping] = useState(false);
+  // 飞书功能统一入口（顶栏按钮 + 引导横幅共用）：未绑定用户点击后**直接整页跳转**
+  // 飞书授权页，不再绕弹窗；授权回来后走既有「绑定确认页」闭环。
+  // 已绑定 → 弹窗（测试 / 解绑）；管理员未配置 → 去设置页；成员未配置 → 提示找管理员。
   const openFeishuEntry = () => {
-    if (user.feishu_bound) { setFeishuOpen(true); return; } // 已绑定 → 测试 / 解绑
-    if (feishuConfigured === null || feishuConfigured) { setFeishuOpen(true); return; } // 已配置（或未知）→ 直接打开授权页
-    if (user.role === "admin") { navigate("/settings?tab=feishu"); return; } // 管理员未配置 → 去配置
-    message.warning("飞书集成尚未启用，请联系管理员开启（系统设置 → 飞书集成）");
+    if (user.feishu_bound) { setFeishuOpen(true); return; }
+    if (feishuConfigured === false) {
+      if (user.role === "admin") { navigate("/settings?tab=feishu"); return; }
+      message.warning("飞书集成尚未启用，请联系管理员开启（系统设置 → 飞书集成）");
+      return;
+    }
+    // 已配置（或状态未知）：先取授权链接再整页跳转；取链接失败按错误文案兜底分流
+    setFeishuJumping(true);
+    api.feishuBindUrl()
+      .then((res) => { window.location.href = res.url; })
+      .catch((err) => {
+        setFeishuJumping(false);
+        const msg = err instanceof Error ? err.message : "";
+        if (msg.includes("尚未配置")) {
+          if (user.role === "admin") navigate("/settings?tab=feishu");
+          else message.warning("飞书集成尚未启用，请联系管理员开启（系统设置 → 飞书集成）");
+        } else {
+          message.error(msg || "发起授权失败，请稍后重试");
+        }
+      });
   };
   // 修改自己的密码弹窗；forced=true 表示管理员重置过密码、本次登录必须先改掉
   const [passwordOpen, setPasswordOpen] = useState(false);
@@ -741,6 +761,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
                   type="text"
                   className={"topbar-feishu-btn" + (user.feishu_bound ? " is-on" : "")}
                   icon={<MessageOutlined />}
+                  loading={feishuJumping}
                   onClick={openFeishuEntry}
                 />
               </Badge>
@@ -827,7 +848,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
               feishuConfigured ? (
                 <span>
                   合同到期、面试安排、审批结果自动推送到你的飞书，手机上不错过任何节点。
-                  <Button type="link" size="small" style={{ paddingInline: 4 }} onClick={openFeishuEntry}>
+                  <Button type="link" size="small" loading={feishuJumping} style={{ paddingInline: 4 }} onClick={openFeishuEntry}>
                     立即开启
                   </Button>
                 </span>
