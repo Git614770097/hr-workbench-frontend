@@ -283,10 +283,14 @@
 }
 .login-form .ant-input::placeholder,
 .login-form .ant-input-affix-wrapper input::placeholder { color: #94a3b8; }
+/* 聚焦不变白：早先聚焦时 background:#fff 会在浅蓝画布上刷出一块白色区域
+   （尤其 Input.Password 聚焦时整个 affix-wrapper 变白，像一块补丁盖住设计），
+   且 Chrome 记住密码自动填充时后缀眼睛区域也会露白。
+   聚焦反馈交给边框 + 外圈光晕即可，底色保持与静息态一致的 #f8fbff。 */
 .login-form .ant-input:focus,
 .login-form .ant-input-affix-wrapper:focus,
 .login-form .ant-input-affix-wrapper:focus-within {
-  background: #fff;
+  background: #f8fbff;
   border-color: #2563eb;
   color: #0f172a;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);

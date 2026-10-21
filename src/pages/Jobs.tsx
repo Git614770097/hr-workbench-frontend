@@ -301,7 +301,7 @@ export default function Jobs() {
             添加候选人
           </Button>
           {canProfiles && (
-            <Button type="link" size="small" onClick={() => goMatchForJob(r)}>匹配人才</Button>
+            <Button className="ai-btn" size="small" icon={<RobotOutlined />} onClick={() => goMatchForJob(r)}>匹配人才</Button>
           )}
           <Button type="link" size="small" onClick={() => navigate(`/profiles?job_id=${r.id}`)}>生成画像</Button>
           <Button type="link" size="small" onClick={() => { setEditingId(r.id); setFormOpen(true); }}>编辑</Button>

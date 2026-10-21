@@ -11,7 +11,7 @@ import {
   HistoryOutlined, UserOutlined, MessageOutlined,
   SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, BarsOutlined,
   PhoneOutlined, CalendarOutlined, DownloadOutlined, FileTextOutlined,
-  EyeOutlined, ThunderboltOutlined,
+  EyeOutlined, RobotOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -568,9 +568,9 @@ export default function Pipeline() {
                     !filtered && s.key === "screening" && canProfiles ? (
                       <div className="pipe-empty">
                         <Button
-                          type="link"
+                          className="ai-btn"
                           size="small"
-                          icon={<ThunderboltOutlined />}
+                          icon={<RobotOutlined />}
                           onClick={() => navigate("/match")}
                         >
                           这一列还没人，用智能匹配补人

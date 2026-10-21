@@ -2,15 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
-  Popconfirm, message, Dropdown, Alert, Modal, Empty, Form, Radio,
+  Popconfirm, message, Dropdown, Alert, Modal, Empty,
   Checkbox, Popover, Tooltip,
 } from "antd";
 import {
   ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
-  FileWordOutlined, TeamOutlined, PlusOutlined,
+  FileWordOutlined, PlusOutlined,
   FileExcelOutlined, SettingOutlined, RobotOutlined,
-  ThunderboltOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -24,7 +23,6 @@ import {
 import ImportModal from "../components/ImportModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
 import TalentFormModal from "../components/TalentFormModal";
-import AddToPipelineModal from "../components/AddToPipelineModal";
 import { useDict } from "../dict";
 import { registerOnbFill } from "../components/onboardingAutoFill";
 
@@ -176,17 +174,8 @@ export default function TalentList() {
     });
   }, []);
 
-  // 批量加入招聘看板：受控多选（跨页保留选中）+ 弹窗
+  // 受控多选（跨页保留选中）：勾选态仍服务于「导出选中」；批量入流程/批量操作已于 2026-10-21 移除
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
-  const [batchOpen, setBatchOpen] = useState(false);
-
-  // 批量操作：打标签 / 推进阶段 / 删除
-  const [tagsOpen, setTagsOpen] = useState(false);
-  const [stageOpen, setStageOpen] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [batchSaving, setBatchSaving] = useState(false);
-  const [tagsForm] = Form.useForm();
-  const [stageForm] = Form.useForm();
 
   // 合规到期提醒：合同 / 试用期 30 天内到期
   const [compliance, setCompliance] = useState<ComplianceResponse | null>(null);
@@ -320,64 +309,6 @@ export default function TalentList() {
       fetchTalents();
     } catch (err) {
       message.error((err as Error).message);
-    }
-  };
-
-  // 批量打标签：追加或替换
-  const handleBatchTags = async () => {
-    try {
-      const values = await tagsForm.validateFields();
-      if (!values.tags || values.tags.length === 0) {
-        message.warning("请至少输入一个标签");
-        return;
-      }
-      setBatchSaving(true);
-      const res = await api.batchTags({ ids: selectedKeys.map(String), tags: values.tags, mode: values.mode });
-      message.success(termFor(profile, `已为 ${res.updated} 位人才打标签${res.skipped ? `，跳过 ${res.skipped} 人（无权限）` : ""}`));
-      setTagsOpen(false);
-      tagsForm.resetFields();
-      setSelectedKeys([]);
-      fetchTalents();
-    } catch (err) {
-      if (err instanceof Error) message.error(err.message);
-    } finally {
-      setBatchSaving(false);
-    }
-  };
-
-  // 批量推进阶段：复用后端批量接口（推进到 hired 自动写入职联动）
-  const handleBatchStage = async () => {
-    try {
-      const values = await stageForm.validateFields();
-      setBatchSaving(true);
-      const res = await api.batchStageTalents({ ids: selectedKeys.map(String), stage: values.stage });
-      message.success(
-        `已推进 ${res.updated} 人${res.skipped ? `，跳过 ${res.skipped} 人（未加入招聘流程）` : ""}`
-      );
-      setStageOpen(false);
-      stageForm.resetFields();
-      setSelectedKeys([]);
-      fetchTalents();
-    } catch (err) {
-      if (err instanceof Error) message.error(err.message);
-    } finally {
-      setBatchSaving(false);
-    }
-  };
-
-  // 批量删除：复用后端级联清理
-  const handleBatchDelete = async () => {
-    try {
-      setBatchSaving(true);
-      const res = await api.batchDeleteTalents({ ids: selectedKeys.map(String) });
-      message.success(termFor(profile, `已删除 ${res.deleted} 位人才`));
-      setDeleteOpen(false);
-      setSelectedKeys([]);
-      fetchTalents();
-    } catch (err) {
-      if (err instanceof Error) message.error(err.message);
-    } finally {
-      setBatchSaving(false);
     }
   };
 
@@ -631,20 +562,20 @@ export default function TalentList() {
         <Link to={`/talents/${record.id}`} style={{ fontWeight: 600 }}>{text}</Link>
       ),
     },
-    current_title: { title: "职位", dataIndex: "current_title", key: "current_title", width: 150, render: (v: string) => v || "—" },
+    current_title: { title: "职位", dataIndex: "current_title", key: "current_title", width: 150, render: (v: string) => v || "-" },
     years_experience: {
       title: "年限", dataIndex: "years_experience", key: "years_experience", width: 90,
       sorter: true,
       sortOrder: sortField === "years_experience" ? sortOrder || undefined : null,
-      render: (v: number | null) => (v != null ? `${v}年` : "—"),
+      render: (v: number | null) => (v != null ? `${v}年` : "-"),
     },
-    age: { title: "年龄", dataIndex: "age", key: "age", width: 80, sorter: true, sortOrder: sortField === "age" ? sortOrder || undefined : null, render: (v: number | null) => (v != null ? v : "—") },
-    education: { title: "学历", dataIndex: "education", key: "education", width: 110, render: (v: string) => v || "—" },
-    school: { title: "院校", dataIndex: "school", key: "school", width: 160, render: (v: string) => v || "—" },
-    major: { title: "专业", dataIndex: "major", key: "major", width: 140, render: (v: string) => v || "—" },
-    city: { title: "城市", dataIndex: "city", key: "city", width: 90, render: (v: string) => v || "—" },
-    phone: { title: "手机号", dataIndex: "phone", key: "phone", width: 130, render: (v: string) => v || "—" },
-    email: { title: "邮箱", dataIndex: "email", key: "email", width: 200, render: (v: string) => v || "—" },
+    age: { title: "年龄", dataIndex: "age", key: "age", width: 80, sorter: true, sortOrder: sortField === "age" ? sortOrder || undefined : null, render: (v: number | null) => (v != null ? `${v}岁` : "-") },
+    education: { title: "学历", dataIndex: "education", key: "education", width: 110, render: (v: string) => v || "-" },
+    school: { title: "院校", dataIndex: "school", key: "school", width: 160, render: (v: string) => v || "-" },
+    major: { title: "专业", dataIndex: "major", key: "major", width: 140, render: (v: string) => v || "-" },
+    city: { title: "城市", dataIndex: "city", key: "city", width: 90, render: (v: string) => v || "-" },
+    phone: { title: "手机号", dataIndex: "phone", key: "phone", width: 130, render: (v: string) => v || "-" },
+    email: { title: "邮箱", dataIndex: "email", key: "email", width: 200, render: (v: string) => v || "-" },
     status: {
       title: "状态",
       dataIndex: "status",
@@ -652,7 +583,7 @@ export default function TalentList() {
       width: 110,
       render: (status: string) => (
         <Tag color={STATUS_COLORS[status] || "default"}>
-          {STATUS_LABELS[status] || status}
+          {STATUS_LABELS[status] || status || "-"}
         </Tag>
       ),
     },
@@ -663,12 +594,14 @@ export default function TalentList() {
       width: 168,
       render: (_: string, record: Talent) => {
         const t = record.entry_type || "manual";
+        // 来源渠道（source）为空时不占位：入口标签（如「简历导入」）本身已说明来历，
+        // 再补一个「-」只会让人以为漏填了字段（2026-10-21 用户反馈）
         return (
           <Space size={4} wrap>
             <Tag color={ENTRY_TYPE_COLORS[t] || ENTRY_TYPE_COLORS.manual} style={{ marginInlineEnd: 0 }}>
               {ENTRY_TYPE_LABELS[t] || "手动录入"}
             </Tag>
-            {record.source ? <Tag style={{ marginInlineEnd: 0 }}>{record.source}</Tag> : <span>—</span>}
+            {record.source && <Tag style={{ marginInlineEnd: 0 }}>{record.source}</Tag>}
           </Space>
         );
       },
@@ -685,14 +618,14 @@ export default function TalentList() {
               <Tag key={t} color="blue" style={{ marginInlineEnd: 0 }}>{t}</Tag>
             ))}
           </Space>
-        ) : <span>—</span>,
+        ) : <span>-</span>,
     },
     owner_name: {
       title: "创建人",
       dataIndex: "owner_name",
       key: "owner_name",
       width: 120,
-      render: (v: string) => v || "—",
+      render: (v: string) => v || "-",
     },
     action: {
       title: "操作",
@@ -822,38 +755,12 @@ export default function TalentList() {
               {termFor(profile, "新增人才")}
             </Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
-            {/* 智能匹配入口：从「挑人」场景顺手进匹配页（页内自选画像）；
-                与人才详情页头部按钮、画像页「去匹配」构成三个常规入口 */}
-            <Button icon={<ThunderboltOutlined />} onClick={() => navigate("/match")}>智能匹配</Button>
+            {/* 智能匹配入口：从「挑人」场景顺手进匹配页（页内自选画像）。
+                用站内统一 ai-btn（淡紫底 + 机器人图标）标识 AI 能力，
+                与人才详情页头部按钮、画像页「去匹配」视觉一致 */}
+            <Button className="ai-btn" icon={<RobotOutlined />} onClick={() => navigate("/match")}>智能匹配</Button>
             <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
               <Button icon={<ExportOutlined />} loading={exporting}>导出</Button>
-            </Dropdown>
-            <Button
-              icon={<TeamOutlined />}
-              disabled={selectedKeys.length === 0}
-              onClick={() => setBatchOpen(true)}
-            >
-              加入流程{selectedKeys.length > 0 ? `（${selectedKeys.length} 人）` : ""}
-            </Button>
-            <Dropdown
-              trigger={["click"]}
-              menu={{
-                items: [
-                  { key: "tags", label: "打标签", disabled: selectedKeys.length === 0 },
-                  { key: "stage", label: "推进阶段", disabled: selectedKeys.length === 0 },
-                  { type: "divider" },
-                  { key: "delete", label: "删除", danger: true, disabled: selectedKeys.length === 0 },
-                ],
-                onClick: ({ key }) => {
-                  if (key === "tags") setTagsOpen(true);
-                  else if (key === "stage") setStageOpen(true);
-                  else if (key === "delete") setDeleteOpen(true);
-                },
-              }}
-            >
-              <Button icon={<PlusOutlined />} disabled={selectedKeys.length === 0}>
-                批量操作{selectedKeys.length > 0 ? `（${selectedKeys.length}）` : ""}
-              </Button>
             </Dropdown>
             {/* 列设置：姓名/操作固定，其余列可勾选显隐，选择存 localStorage */}
             <Popover
@@ -961,89 +868,6 @@ export default function TalentList() {
         onClose={() => { setEditId(null); setAddOpen(false); setTalentPrefill(undefined); }}
         onSuccess={fetchTalents}
       />
-
-      {/* 批量加入招聘看板：勾选人才 → 选岗位 → 一次挂入（已在流程中的自动跳过） */}
-      <AddToPipelineModal
-        open={batchOpen}
-        presetTalentIds={selectedKeys.map(String)}
-        onClose={() => setBatchOpen(false)}
-        onSuccess={() => {
-          setSelectedKeys([]);
-          fetchTalents();
-        }}
-      />
-
-      {/* 批量打标签：追加到现有 / 替换为指定 */}
-      <Modal
-        title={`批量打标签（${selectedKeys.length} 人）`}
-        open={tagsOpen}
-        onOk={handleBatchTags}
-        onCancel={() => setTagsOpen(false)}
-        confirmLoading={batchSaving}
-        okText="打标签"
-        destroyOnClose
-      >
-        <Form form={tagsForm} layout="vertical" initialValues={{ mode: "add" }}>
-          <Form.Item name="tags" label="标签" rules={[{ required: true, message: "请输入标签" }]}>
-            <Select mode="tags" placeholder="输入后回车添加，可多个" tokenSeparators={[","]} />
-          </Form.Item>
-          <Form.Item name="mode" label="方式">
-            <Radio.Group>
-              <Radio value="add">追加到现有标签</Radio>
-              <Radio value="replace">替换为以下标签</Radio>
-            </Radio.Group>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* 批量推进阶段：将选中人才在其招聘流程中的阶段统一推进 */}
-      <Modal
-        title={`批量推进阶段（${selectedKeys.length} 人）`}
-        open={stageOpen}
-        onOk={handleBatchStage}
-        onCancel={() => setStageOpen(false)}
-        confirmLoading={batchSaving}
-        okText="推进"
-        destroyOnClose
-      >
-        <Form form={stageForm} layout="vertical">
-          <Form.Item name="stage" label="目标阶段" rules={[{ required: true, message: "请选择目标阶段" }]}>
-            <Select
-              placeholder="选择要推进到的阶段"
-              options={[
-                { value: "screening", label: "初筛" },
-                { value: "interview1", label: "面试一" },
-                { value: "interview2", label: "面试二" },
-                { value: "offer", label: "Offer" },
-                { value: "hired", label: "已入职" },
-                { value: "rejected", label: "淘汰" },
-                { value: "withdrawn", label: "放弃" },
-              ]}
-            />
-          </Form.Item>
-          <Alert
-            type="info"
-            showIcon
-            message="将把选中人才在其招聘流程中的阶段统一推进；未加入任何流程的人才会被跳过。推进到「已入职」会自动写入职日期并生成社保增员待办。"
-          />
-        </Form>
-      </Modal>
-
-      {/* 批量删除确认 */}
-      <Modal
-        title="确认批量删除"
-        open={deleteOpen}
-        onOk={handleBatchDelete}
-        onCancel={() => setDeleteOpen(false)}
-        confirmLoading={batchSaving}
-        okText="删除"
-        okButtonProps={{ danger: true }}
-      >
-        <p>确认删除选中的 <b>{selectedKeys.length}</b> {termFor(profile, "位人才？")}</p>
-        <p style={{ color: "#999", fontSize: 12, marginTop: 8 }}>
-          所有关联数据（投递记录、待办、合同、社保）将一并清除，不可恢复。
-        </p>
-      </Modal>
 
       {/* 合规到期名单：30 天内合同 / 试用期到期（含已过期），点姓名进详情 */}
       <Modal

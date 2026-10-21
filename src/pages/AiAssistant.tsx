@@ -5,7 +5,7 @@ import {
 } from "antd";
 import {
   ArrowLeftOutlined, FileTextOutlined, RobotOutlined, SolutionOutlined,
-  SearchOutlined, TeamOutlined, WarningOutlined, ThunderboltOutlined,
+  SearchOutlined, TeamOutlined, WarningOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import AiResultCard from "../components/AiResultCard";
@@ -1188,7 +1188,7 @@ export default function AiAssistant() {
                 message="想按岗位画像批量筛人？用「智能匹配」"
                 description="选一个职位画像，从人才库挑几个候选人，AI 按匹配度排序并给出理由，合适的直接推进看板。"
                 action={
-                  <Button size="small" type="primary" icon={<ThunderboltOutlined />} onClick={() => navigate("/match")}>
+                  <Button size="small" className="ai-btn" icon={<RobotOutlined />} onClick={() => navigate("/match")}>
                     打开
                   </Button>
                 }
