@@ -137,6 +137,9 @@ export const api = {
   // 生成飞书 OAuth 授权 URL（前端拿到后跳转让用户授权绑定）
   feishuBindUrl: () =>
     request<{ url: string }>("/feishu/oauth/start"),
+  // 飞书集成是否已配置（任何登录用户：入口按此分流「去配置 / 去授权」）
+  getFeishuStatus: () =>
+    request<{ configured: boolean }>("/feishu/status"),
   // 给当前用户发一条飞书测试消息
   testFeishu: () =>
     request<{ ok: boolean; message: string }>("/feishu/test", { method: "POST" }),

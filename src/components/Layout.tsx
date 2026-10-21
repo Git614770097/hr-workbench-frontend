@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Avatar, Button, Tag, Dropdown, Tooltip, Popover, Alert } from "antd";
+import { Avatar, Button, Tag, Dropdown, Tooltip, Popover, Alert, Badge, message } from "antd";
 import {
   LogoutOutlined,
   MobileOutlined,
@@ -278,6 +278,35 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   const [pushplusOpen, setPushplusOpen] = useState(false);
   // 飞书推送绑定弹窗
   const [feishuOpen, setFeishuOpen] = useState(false);
+  // 飞书集成是否已配置（null=未知/查询失败）：顶栏入口与引导横幅按此分流，
+  // 让「没配置」的管理员直达设置页、成员拿到明确提示，已配置的用户一步进授权
+  const [feishuConfigured, setFeishuConfigured] = useState<boolean | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api.getFeishuStatus()
+      .then((res) => { if (alive) setFeishuConfigured(!!res.configured); })
+      .catch(() => { if (alive) setFeishuConfigured(null); });
+    return () => { alive = false; };
+  }, []);
+  // 引导横幅关闭状态按用户记忆：换账号后新账号仍会看到一次
+  const [feishuGuideDismissed, setFeishuGuideDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(`wb.feishu.guide.dismiss.${user.id}`) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismissFeishuGuide = () => {
+    try { localStorage.setItem(`wb.feishu.guide.dismiss.${user.id}`, "1"); } catch {}
+    setFeishuGuideDismissed(true);
+  };
+  // 飞书功能统一入口（顶栏按钮 + 引导横幅共用）：按当前状态分流，已配置的用户点一下直接进授权
+  const openFeishuEntry = () => {
+    if (user.feishu_bound) { setFeishuOpen(true); return; } // 已绑定 → 测试 / 解绑
+    if (feishuConfigured === null || feishuConfigured) { setFeishuOpen(true); return; } // 已配置（或未知）→ 直接打开授权页
+    if (user.role === "admin") { navigate("/settings?tab=feishu"); return; } // 管理员未配置 → 去配置
+    message.warning("飞书集成尚未启用，请联系管理员开启（系统设置 → 飞书集成）");
+  };
   // 修改自己的密码弹窗；forced=true 表示管理员重置过密码、本次登录必须先改掉
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [aiKeyOpen, setAiKeyOpen] = useState(false);
@@ -705,6 +734,17 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
             onClick={toggleMenu}
           />
           <div className="topbar-right">
+            {/* 飞书提醒常驻入口：任何页面可见。未绑定时红点提示，已绑定变绿 */}
+            <Tooltip title={user.feishu_bound ? "飞书提醒已开启" : "开启飞书提醒"}>
+              <Badge dot={!user.feishu_bound} color="#ef4444" offset={[-2, 3]}>
+                <Button
+                  type="text"
+                  className={"topbar-feishu-btn" + (user.feishu_bound ? " is-on" : "")}
+                  icon={<MessageOutlined />}
+                  onClick={openFeishuEntry}
+                />
+              </Badge>
+            </Tooltip>
             {/* 帮助入口：重看新手指引 / 常见问题。data-onb 锚点保留给引导高亮 */}
             <Dropdown
               menu={{
@@ -769,6 +809,38 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
                   去续费
                 </Button>
               </span>
+            }
+          />
+        )}
+
+        {/* 飞书引导横幅：未绑定用户可见（可关闭，按用户记忆；绑定后自动消失）。
+            文案按「已配置 / 管理员未配置 / 成员未配置」分流，按钮共用统一入口。 */}
+        {!user.feishu_bound && !feishuGuideDismissed && feishuConfigured !== null && (
+          <Alert
+            type="info"
+            showIcon
+            closable
+            onClose={dismissFeishuGuide}
+            className="feishu-guide-banner"
+            message="开启飞书提醒"
+            description={
+              feishuConfigured ? (
+                <span>
+                  合同到期、面试安排、审批结果自动推送到你的飞书，手机上不错过任何节点。
+                  <Button type="link" size="small" style={{ paddingInline: 4 }} onClick={openFeishuEntry}>
+                    立即开启
+                  </Button>
+                </span>
+              ) : user.role === "admin" ? (
+                <span>
+                  飞书集成还没有配置：配好应用后，成员点一下就能绑定，到期 / 面试 / 审批提醒直达飞书。
+                  <Button type="link" size="small" style={{ paddingInline: 4 }} onClick={openFeishuEntry}>
+                    去配置
+                  </Button>
+                </span>
+              ) : (
+                <span>管理员还没有开启飞书集成，开启后即可把合同到期、面试、审批提醒直接收到飞书。</span>
+              )
             }
           />
         )}

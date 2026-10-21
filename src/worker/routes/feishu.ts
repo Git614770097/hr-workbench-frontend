@@ -78,6 +78,18 @@ feishu.post("/settings", async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * 飞书集成是否已配置（任何登录用户可查）。
+ * 用途：前端常驻入口按此分流——已配置直接进授权，管理员未配置跳设置页，成员未配置提示找管理员。
+ * 只回布尔，不泄露 App ID / 掩码等敏感信息。
+ */
+feishu.get("/status", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const cfg = await resolveFeishuApp(c.env.DB, session.teamId, c.env.AI_KEY_SECRET);
+  return c.json({ configured: !!cfg });
+});
+
 /** 生成飞书 OAuth 授权 URL（登录用户）。state 绑 userId 存 KV。 */
 feishu.get("/oauth/start", async (c) => {
   const session = await getSession(c);

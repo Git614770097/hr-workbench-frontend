@@ -3,6 +3,7 @@ import { Card, Tabs, Input, InputNumber, Button, Alert, message, Typography, Sel
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { useDict } from "../dict";
+import { useSearchParams } from "react-router-dom";
 import { SOURCE_OPTIONS, REJECT_REASONS, EDUCATION_OPTIONS, JOB_TYPE_LABELS, CITY_OPTIONS, SKILL_OPTIONS, FeishuSettings, FeishuWebhook, FeishuNotifyMode } from "../types";
 
 /** 字典类型元信息（顺序即列表展示顺序） */
@@ -975,7 +976,7 @@ function FeishuSettingsPanel() {
                     <div>
                       <Typography.Text strong>第四步 · 成员绑定并验证</Typography.Text>
                       <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
-                        <li>成员（含管理员自己）点右上角头像 →「飞书推送设置」。</li>
+                        <li>成员（含管理员自己）有两种入口：点<b>右上角飞书图标</b>，或点右上角头像 →「飞书推送设置」。</li>
                         <li>弹窗左侧是飞书官方授权页：<b>没登录飞书的浏览器显示二维码</b>——用飞书 App 扫一扫、在手机上确认；<b>已登录飞书的浏览器直接显示「授权信息」确认页</b>——点「同意授权」即可。两条路都会自动返回本系统，并在绑定前再确认一次账号。</li>
                         <li>想强制走扫码（比如电脑登录的是别人的飞书）：点弹窗里「复制绑定链接」，用浏览器隐私窗口（Ctrl+Shift+N）打开，必出二维码。</li>
                         <li>出现「已绑定」绿标后点「发送测试」，飞书能收到消息即全链路打通。</li>
@@ -1021,10 +1022,19 @@ export default function Settings() {
     { key: "changelog", label: "更新公告", children: <ChangelogSettings /> },
   ];
 
+  // 支持 ?tab=feishu 直达（顶栏飞书入口「去配置」跳这里）；参数无效时回落收款码
+  const [params] = useSearchParams();
+  const tabFromUrl = params.get("tab");
+  const [tab, setTab] = useState(() => (tabFromUrl && items.some((i) => i.key === tabFromUrl) ? tabFromUrl : "pay"));
+  useEffect(() => {
+    const t = params.get("tab");
+    if (t && items.some((i) => i.key === t)) setTab(t);
+  }, [params]);
+
   return (
     <div className="page-fill">
       <Card>
-        <Tabs className="app-pill-tabs" items={items} />
+        <Tabs className="app-pill-tabs" activeKey={tab} onChange={setTab} items={items} />
       </Card>
     </div>
   );

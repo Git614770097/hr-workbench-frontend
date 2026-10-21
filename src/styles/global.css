@@ -243,6 +243,11 @@ html[data-theme-mode="dark"] :is(.ant-table-content, .ant-table-header, .ant-tab
 /* 新手指引入口，与换肤按钮同一视觉权重 */
 .topbar-help-btn { font-size: 1.05rem; color: #5b6472; }
 .topbar-help-btn:hover { color: var(--color-primary, #3b82f6); }
+/* 飞书提醒常驻入口：未绑定灰图标（外挂红点 Badge），已绑定变绿表示已开启 */
+.topbar-feishu-btn { font-size: 1.05rem; color: #5b6472; }
+.topbar-feishu-btn:hover { color: var(--color-primary, #3b82f6); }
+.topbar-feishu-btn.is-on { color: #10b981; }
+.topbar-feishu-btn.is-on:hover { color: #059669; }
 .topbar-user-trigger {
   display: flex; align-items: center; gap: 0.6rem; cursor: pointer;
   padding: 0.25rem 0.5rem; border-radius: 8px; transition: background 0.15s;
@@ -290,6 +295,10 @@ html[data-theme-mode="dark"] .theme-mode-btn.is-active { color: #fff; }
 
 /* 冻结只读横幅 */
 .frozen-banner { margin: 0.75rem 1rem 0; }
+
+/* 飞书引导横幅（未绑定用户全局提示，可关闭；与冻结横幅同款外边距，可堆叠） */
+.feishu-guide-banner { margin: 0.75rem 1rem 0; }
+.feishu-guide-banner .ant-alert-description { font-size: 0.85rem; }
 
 /* 详情页 */
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
@@ -445,6 +454,8 @@ html[data-theme-mode="dark"] .topbar-user-trigger:hover { background: #2a2a2a; }
 html[data-theme-mode="dark"] .topbar-user-name { color: #e5e7eb; }
 html[data-theme-mode="dark"] .topbar-theme-btn { color: #b0b6c0; }
 html[data-theme-mode="dark"] .topbar-help-btn { color: #b0b6c0; }
+html[data-theme-mode="dark"] .topbar-feishu-btn { color: #b0b6c0; }
+html[data-theme-mode="dark"] .topbar-feishu-btn.is-on { color: #34d399; }
 html[data-theme-mode="dark"] .topbar-collapse { color: #b0b6c0; }
 
 html[data-theme-mode="dark"] .main-content { background: #141414; }
