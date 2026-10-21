@@ -560,12 +560,8 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
       label: "消息推送设置",
       onClick: () => setPushplusOpen(true),
     },
-    {
-      key: "feishu",
-      icon: <MessageOutlined />,
-      label: "飞书推送设置",
-      onClick: () => setFeishuOpen(true),
-    },
+    // 飞书入口已上顶栏（MessageOutlined 图标）：未绑定点击直跳飞书授权页，已绑定点击开
+    // 管理弹窗（发送测试 / 解绑），此处不再放重复菜单项（两个入口两种行为只会困惑）
     {
       key: "member",
       icon: <CrownOutlined />,

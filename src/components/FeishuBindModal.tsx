@@ -122,7 +122,11 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
           type="info"
           showIcon
           message="把到期 / 面试 / 审批提醒推送到你的飞书"
-          description="授权仅获取你的 open_id 用于收发消息。左侧嵌入飞书官方授权页：没登录飞书时是二维码（App 扫一扫确认），已登录时直接是授权确认页（点「同意授权」）——两条路都会自动返回本系统，绑定前系统还会再让你确认一次账号。"
+          description={
+            bound
+              ? "已推送到你本人的飞书。可发送一条测试消息验证通道，也可随时解绑（渠道回退 PushPlus）。"
+              : "授权仅获取你的 open_id 用于收发消息。左侧嵌入飞书官方授权页：没登录飞书时是二维码（App 扫一扫确认），已登录时直接是授权确认页（点「同意授权」）——两条路都会自动返回本系统，绑定前系统还会再让你确认一次账号。"
+          }
         />
         <div>
           <Space>

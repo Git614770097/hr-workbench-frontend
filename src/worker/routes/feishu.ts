@@ -220,7 +220,7 @@ feishu.post("/test", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
   const row = await c.env.DB.prepare("SELECT feishu_open_id, notify_channel FROM users WHERE id = ?")
     .bind(session.userId).first<{ feishu_open_id: string | null; notify_channel: string | null }>();
-  if (!row?.feishu_open_id) return c.json({ ok: false, message: "请先绑定飞书（设置 → 绑定飞书）" }, 400);
+  if (!row?.feishu_open_id) return c.json({ ok: false, message: "请先绑定飞书（点右上角飞书图标完成绑定）" }, 400);
   const cfg = await resolveFeishuApp(c.env.DB, session.teamId, c.env.AI_KEY_SECRET);
   if (!cfg) return c.json({ ok: false, message: "尚未配置飞书应用" }, 400);
   const res = await sendFeishuText(c.env.SESSIONS, cfg, row.feishu_open_id, "【HR 工作台】飞书通道测试：你已成功绑定，后续到期待办/面试提醒将推送到这里。");
