@@ -160,6 +160,9 @@ export const api = {
   // 解绑当前用户的飞书（渠道回退 pushplus）
   unbindFeishu: () =>
     request<{ ok: boolean }>("/feishu/bind", { method: "DELETE" }),
+  // 绑定确认（授权回调后展示飞书账号，用户点确认才真正写库）
+  confirmFeishuBind: (ck: string) =>
+    request<{ ok: boolean; name: string }>("/feishu/bind/confirm", { method: "POST", body: JSON.stringify({ ck }) }),
 
   // User management (admin only)
   getUsers: (status?: string) =>

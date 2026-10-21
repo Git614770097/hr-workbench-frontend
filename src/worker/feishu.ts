@@ -125,17 +125,22 @@ export async function sendFeishuText(
 export function buildAuthorizeUrl(cfg: FeishuConfig, state: string, redirectUri: string): string {
   // 官方参数：client_id 即应用的 App ID；response_type 固定 code；
   // scope 省略——本系统只用 code 换 open_id，不调用用户级 API（最小权限）。
+  // prompt=consent：强制显式展示授权页——飞书授权页会默认带出浏览器里已登录的
+  // 飞书账号（实测陈慧杰账号弹出了刘鹏的授权），无 force_login 参数可强制切换，
+  // 至少让授权页显式出现、用户能看清默认账号是谁，配合回调后的绑定确认页兜底。
   const u = new URL(`${FEISHU_AUTHORIZE_HOST}/open-apis/authen/v1/authorize`);
   u.searchParams.set("client_id", cfg.appId);
   u.searchParams.set("response_type", "code");
   u.searchParams.set("redirect_uri", redirectUri);
   u.searchParams.set("state", state);
+  u.searchParams.set("prompt", "consent");
   return u.toString();
 }
 
 export interface FeishuUserInfo {
   openId: string;
   name?: string;
+  avatarUrl?: string;
 }
 
 /**
@@ -177,11 +182,11 @@ export async function exchangeCodeForUser(
   } catch (err) {
     return { error: `飞书用户信息请求异常：${err instanceof Error ? err.message : String(err)}` };
   }
-  const infoData = (await infoRes.json()) as { code?: number; data?: { open_id?: string; name?: string } };
+  const infoData = (await infoRes.json()) as { code?: number; data?: { open_id?: string; name?: string; avatar_url?: string } };
   if (infoData.code !== 0 || !infoData.data?.open_id) {
     return { error: `读取飞书用户信息失败：code ${infoData.code}` };
   }
-  return { user: { openId: infoData.data.open_id, name: infoData.data.name } };
+  return { user: { openId: infoData.data.open_id, name: infoData.data.name, avatarUrl: infoData.data.avatar_url } };
 }
 
 /**

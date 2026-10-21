@@ -124,14 +124,54 @@ feishu.get("/oauth/callback", async (c) => {
   const redirected = `${origin}/api/feishu/oauth/callback`;
   const { user, error } = await exchangeCodeForUser(cfg, code, redirected);
   if (!user) return c.html(breakoutRedirect(`${origin}/?feishu=error&reason=${encodeURIComponent(error || "exchange")}`));
-  // open_id 全局唯一：同一飞书不允许绑到多个系统账号——否则后绑的覆盖前者、
-  // 消息全发给一个人，且静默无感知。冲突时拒绝并提示，不写库。
-  const clash = await c.env.DB.prepare("SELECT id, name FROM users WHERE feishu_open_id = ? AND id != ?")
-    .bind(user.openId, userId).first<{ id: string; name: string }>();
-  if (clash) return c.html(breakoutRedirect(`${origin}/?feishu=error&reason=open_id_taken`));
+  // 不直接写库——授权页会默认带出浏览器里已登录的飞书账号（成员可能在他人电脑上
+  // 操作、或旧登录态没清），静默绑定会把提醒推到一个错误的飞书上。生成一次性
+  // 确认 token 存 KV，由前端「绑定确认页」展示飞书昵称/头像、用户点确认后才写库。
+  const ck = crypto.randomUUID();
+  await c.env.SESSIONS.put(`feishu:bind:${ck}`, JSON.stringify({
+    userId, openId: user.openId, name: user.name || "", avatarUrl: user.avatarUrl || "",
+  }), { expirationTtl: 600 });
+  return c.html(breakoutRedirect(`${origin}/?feishu=confirm&ck=${ck}`));
+});
+
+/**
+ * 绑定确认页的数据（登录用户）：只读待确认的飞书昵称/头像，不消费 token。
+ */
+feishu.get("/bind/pending", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const ck = c.req.query("ck") || "";
+  const raw = await sessionGet(c.env, `feishu:bind:${ck}`);
+  if (!raw) return c.json({ error: "确认已过期，请重新扫码" }, 400);
+  let pending: { userId: string; openId: string; name: string; avatarUrl: string };
+  try { pending = JSON.parse(raw) as typeof pending; } catch { return c.json({ error: "确认数据损坏" }, 400); }
+  if (pending.userId !== session.userId) return c.json({ error: "确认链接与当前账号不匹配" }, 403);
+  return c.json({ name: pending.name, avatar_url: pending.avatarUrl });
+});
+
+/**
+ * 绑定确认（登录用户）：展示过飞书昵称/头像、用户点「确认绑定」后才真正写库。
+ * token 一次性，验证后立即删除；ttl 10 分钟。open_id 唯一性校验同回调。
+ */
+feishu.post("/bind/confirm", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const body = await c.req.json<{ ck?: string }>().catch(() => ({} as { ck?: string }));
+  if (!body.ck) return c.json({ error: "参数缺失" }, 400);
+  const raw = await sessionGet(c.env, `feishu:bind:${body.ck}`);
+  if (!raw) return c.json({ error: "确认已过期，请重新扫码" }, 400);
+  await c.env.SESSIONS.delete(`feishu:bind:${body.ck}`);
+  let pending: { userId: string; openId: string; name: string; avatarUrl: string };
+  try { pending = JSON.parse(raw) as typeof pending; } catch { return c.json({ error: "确认数据损坏" }, 400); }
+  // 只允许确认自己的绑定（防拿别人的确认链接恶意绑定）
+  if (pending.userId !== session.userId) return c.json({ error: "确认链接与当前账号不匹配" }, 403);
+  // open_id 全局唯一：同一飞书不允许绑到多个系统账号
+  const clash = await c.env.DB.prepare("SELECT id FROM users WHERE feishu_open_id = ? AND id != ?")
+    .bind(pending.openId, session.userId).first<{ id: string }>();
+  if (clash) return c.json({ error: "这个飞书已经绑定到其他账号了（一个飞书只能绑一个系统账号）" }, 409);
   await c.env.DB.prepare("UPDATE users SET feishu_open_id = ?, notify_channel = 'feishu' WHERE id = ?")
-    .bind(user.openId, userId).run();
-  return c.html(breakoutRedirect(`${origin}/?feishu=bound`));
+    .bind(pending.openId, session.userId).run();
+  return c.json({ ok: true, name: pending.name });
 });
 
 /** 事件订阅回调（公开）。P1 支持 URL 校验 + 事件 ACK；卡片交互/加密回包为 P2。 */

@@ -167,6 +167,9 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
                     <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                       二维码有效期约 5 分钟，过期后点飞书页面里的「刷新二维码」，或点下方按钮重新加载。
                     </Typography.Text>
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      授权页顶部显示的飞书账号<b>必须是你本人的</b>；如果显示的是别人（共用电脑或切换过账号），点授权页里的「<b>使用其他账号</b>」切换，或点下方「跳转网页授权」重新走一遍。扫码授权后系统还会再让你确认一次账号。
+                    </Typography.Text>
                     <Button size="small" icon={<ReloadOutlined />} loading={qrState === "loading"} onClick={() => void initQr()}>
                       刷新二维码
                     </Button>

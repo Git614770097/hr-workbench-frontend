@@ -9,6 +9,7 @@ import { DictProvider } from "./dict";
 import Login from "./pages/Login";
 import Landing from "./pages/Landing";
 import Layout from "./components/Layout";
+import FeishuBindConfirmModal from "./components/FeishuBindConfirmModal";
 // 移动版（/m）：独立布局 + 页面，与桌面侧栏体系完全分开
 import MobileLayout from "./mobile/MobileLayout";
 import { mobileTabsFor } from "./mobile/tabs";
@@ -114,15 +115,17 @@ interface AppProps {
 export default function App({ theme, onChangeTheme }: AppProps) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  // 飞书 OAuth 回调结果：/?feishu=bound 或 /?feishu=error&reason=...
+  // 飞书 OAuth 回调结果：/?feishu=bound 或 /?feishu=error&reason=... 或 /?feishu=confirm&ck=...
   // 必须在首次渲染时就取走——已登录时 "/" 会立即被 Navigate 替换成 /funnel，
   // 等 effect 跑完查询参数已从地址栏消失。回跳是整页加载，此时读一次即可。
-  const [feishuResult] = useState<{ status: string; reason: string | null } | null>(() => {
+  const [feishuResult] = useState<{ status: string; reason: string | null; ck: string | null } | null>(() => {
     if (typeof window === "undefined") return null;
     const p = new URLSearchParams(window.location.search);
     const s = p.get("feishu");
-    return s ? { status: s, reason: p.get("reason") } : null;
+    return s ? { status: s, reason: p.get("reason"), ck: p.get("ck") } : null;
   });
+  // 绑定确认页（授权回来后确认飞书账号是本人）
+  const [feishuConfirm, setFeishuConfirm] = useState<string | null>(null);
   // 有 token 但首屏加载失败（典型：D1 冷启动导致 /api/auth/me 查询挂起超时），
   // 不进登录页、给「重试」入口，避免一直卡在 loading 出不来。
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -166,8 +169,11 @@ export default function App({ theme, onChangeTheme }: AppProps) {
   };
   useEffect(() => {
     if (!feishuResult || !user) return;
-    if (feishuResult.status === "bound") {
+    if (feishuResult.status === "confirm" && feishuResult.ck) {
+      setFeishuConfirm(feishuResult.ck); // 弹绑定确认页，不直接弹 message
+    } else if (feishuResult.status === "bound") {
       message.success("飞书绑定成功，之后的提醒会推送到你的飞书");
+      fetchUser();
     } else {
       const reason = feishuResult.reason || "";
       const text = FEISHU_ERROR_TEXT[reason] || `绑定失败（${reason || "未知原因"}）`;
@@ -176,8 +182,9 @@ export default function App({ theme, onChangeTheme }: AppProps) {
     const u = new URL(window.location.href);
     u.searchParams.delete("feishu");
     u.searchParams.delete("reason");
+    u.searchParams.delete("ck");
     window.history.replaceState({}, "", u.pathname + u.search);
-  }, [feishuResult, user]);
+  }, [feishuResult, user, fetchUser]);
 
   // 静默刷新用户信息：管理员改了某人的身份 / 权限 / 会员状态后，对方把页面切回前台
   // 即可自动跟上，不必重新登录。（没有推送通道，只能靠这个 + 下次登录兜底。）
@@ -343,6 +350,13 @@ export default function App({ theme, onChangeTheme }: AppProps) {
         </Routes>
       </Suspense>
     </Layout>
+    <FeishuBindConfirmModal
+      ck={feishuConfirm}
+      onDone={(bound) => {
+        setFeishuConfirm(null);
+        if (bound) { message.success("飞书绑定成功，之后的提醒会推送到你的飞书"); fetchUser(); }
+      }}
+    />
     </DictProvider>
   );
 }
