@@ -28,7 +28,9 @@ const ROUTE_MENU: RouteMenu[] = [
   { prefix: "/funnel", menu: "funnel" },
   { prefix: "/talents", menu: "talents" },
   { prefix: "/profiles", menu: "profiles" },
-  { prefix: "/match", menu: "profiles" },
+  // /match 独立计一个 key：以前并入 profiles 时，匹配功能「用了多少」在日志里
+  // 永远看不出（被画像访问量盖住），优化入口后也无法验收。前缀互不重叠，顺序无关。
+  { prefix: "/match", menu: "match" },
   { prefix: "/contracts", menu: "contracts" },
   { prefix: "/social", menu: "social" },
   { prefix: "/background", menu: "background" },
@@ -51,6 +53,7 @@ export const MENU_LABELS: Record<string, string> = {
   funnel: "招聘概览",
   talents: "人才库管理",
   profiles: "人才画像",
+  match: "智能匹配",
   contracts: "合同管理",
   social: "社保公积金",
   background: "背调中心",
@@ -73,6 +76,7 @@ export const MENU_COLORS: Record<string, string> = {
   funnel: "#14b8a6",
   talents: "#3b82f6",
   profiles: "#10b981",
+  match: "#6366f1",
   contracts: "#d97706",
   social: "#0d9488",
   background: "#ef4444",

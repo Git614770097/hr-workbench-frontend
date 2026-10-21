@@ -66,7 +66,7 @@ const CATEGORIES: Category[] = [
               <li><Text type="secondary">「岗位管理」创建在招岗位</Text></li>
               <li><Text type="secondary">「人才画像」新建画像：填目标职位 → AI 生成 JD → AI 生成画像 → 保存</Text></li>
               <li><Text type="secondary">「人才库管理」录入或批量导入简历</Text></li>
-              <li><Text type="secondary">「人才库管理」工具栏进入智能匹配，挑出合适候选人</Text></li>
+              <li><Text type="secondary">侧栏「人才资产 → 智能匹配」：选一个职位画像，从人才库添加若干候选人，AI 按匹配度排序挑人</Text></li>
               <li><Text type="secondary">「招聘看板」推进候选人阶段</Text></li>
               <li><Text type="secondary">「招聘概览」查看各环节转化与渠道效果</Text></li>
             </ul>
@@ -249,6 +249,25 @@ const CATEGORIES: Category[] = [
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
             AI 结果只是初稿，会落在弹窗的「画像字段」区，保存前可以任意修改。建议把 AI 生成的内容当作起点，结合岗位实际情况调整后再保存。
           </Paragraph>
+        ),
+      },
+      {
+        q: "智能匹配怎么用？和「AI 简历解读」有什么区别？",
+        a: (
+          <>
+            <Paragraph type="secondary" style={{ marginBottom: 4 }}>
+              「智能匹配」是一个职位画像对多个候选人的横向筛选：选画像 → 从人才库添加若干候选人（也可直接拖入简历）→ AI 按匹配度打分、排序并给出理由，合适的可直接推进看板。四个入口：
+            </Paragraph>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              <li><Text type="secondary">侧栏「人才资产 → 智能匹配」（常规入口）</Text></li>
+              <li><Text type="secondary">人才库工具栏「智能匹配」（挑人场景顺手进）</Text></li>
+              <li><Text type="secondary">人才详情页头部「智能匹配」（测单个人）</Text></li>
+              <li><Text type="secondary">岗位管理每行「匹配人才」（按岗位标题自动找同名画像）</Text></li>
+            </ul>
+            <Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 8 }}>
+              区别：「AI 简历解读」看的是单个候选人的亮点与风险；「智能匹配」回答的是一堆人里先看谁。
+            </Paragraph>
+          </>
         ),
       },
     ],

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Alert, Button, Card, Col, Empty, Input, Row, Select, Space, Table, Tabs, Tag, Typography, message,
 } from "antd";
 import {
   ArrowLeftOutlined, FileTextOutlined, RobotOutlined, SolutionOutlined,
-  SearchOutlined, TeamOutlined, WarningOutlined,
+  SearchOutlined, TeamOutlined, WarningOutlined, ThunderboltOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import AiResultCard from "../components/AiResultCard";
@@ -129,6 +130,7 @@ export default function AiAssistant() {
   const isAdmin = user?.role === "admin";
   const perms = user?.permissions || [];
   const can = (p: string) => isAdmin || perms.includes(p);
+  const navigate = useNavigate();
 
   /** 进入某个分组（二级页）；null = 停在卡片总览 */
   const [group, setGroup] = useState<string | null>(null);
@@ -1175,7 +1177,25 @@ export default function AiAssistant() {
         }
       >
         {items.length > 0 ? (
-          <Tabs items={items} />
+          <>
+            {/* 智能匹配入口卡：批量筛人场景（一个画像 × 多个候选人）不在本页内联能力里，
+                用横幅指向 /match；按 profiles 权限显隐，避免指到无权页 */}
+            {group === "read" && can("profiles") && (
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 12 }}
+                message="想按岗位画像批量筛人？用「智能匹配」"
+                description="选一个职位画像，从人才库挑几个候选人，AI 按匹配度排序并给出理由，合适的直接推进看板。"
+                action={
+                  <Button size="small" type="primary" icon={<ThunderboltOutlined />} onClick={() => navigate("/match")}>
+                    打开
+                  </Button>
+                }
+              />
+            )}
+            <Tabs items={items} />
+          </>
         ) : (
           <Alert type="info" showIcon message="该分组下暂无可用功能" description="请联系管理员开通对应权限。" />
         )}

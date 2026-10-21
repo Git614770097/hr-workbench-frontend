@@ -119,6 +119,34 @@ export default function Jobs() {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
   })();
   const isAdmin = currentUser?.role === "admin";
+  // 智能匹配与画像同为 profiles 权限；无权时不拉画像列表、不渲染「匹配人才」按钮
+  const canProfiles = isAdmin || (currentUser?.permissions || []).includes("profiles");
+  const [matchProfiles, setMatchProfiles] = useState<{ id: string; title: string }[]>([]);
+  useEffect(() => {
+    if (!canProfiles) return;
+    let alive = true;
+    api.getMatchProfiles()
+      .then((list) => {
+        if (!alive) return;
+        // id 理论必填，防御性过滤；画像与岗位靠标题关联，取标题做匹配键
+        setMatchProfiles(
+          list
+            .map((p) => ({ id: p.id || "", title: (p.job_title || p.name || "").trim() }))
+            .filter((p) => p.id),
+        );
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [canProfiles]);
+
+  // 行内「匹配人才」：按岗位标题找同名画像 → 直达匹配页；没有就引导先去建画像
+  // （画像与岗位是两套数据，靠标题关联——找不到时给明确动作，不要静默跳空页）
+  const goMatchForJob = (job: Job) => {
+    const t = (job.title || "").trim().toLowerCase();
+    const hit = matchProfiles.find((p) => p.title && p.title.toLowerCase() === t);
+    if (hit) navigate("/match", { state: { profileId: hit.id } });
+    else message.warning(`还没有与「${job.title}」同名的职位画像，先点右侧「生成画像」建一个，再来匹配`);
+  };
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -272,6 +300,9 @@ export default function Jobs() {
           <Button type="link" size="small" onClick={() => { setPresetJobId(r.id); setAddOpen(true); }}>
             添加候选人
           </Button>
+          {canProfiles && (
+            <Button type="link" size="small" onClick={() => goMatchForJob(r)}>匹配人才</Button>
+          )}
           <Button type="link" size="small" onClick={() => navigate(`/profiles?job_id=${r.id}`)}>生成画像</Button>
           <Button type="link" size="small" onClick={() => { setEditingId(r.id); setFormOpen(true); }}>编辑</Button>
           <Dropdown

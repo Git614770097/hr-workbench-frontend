@@ -168,14 +168,16 @@ const HEADHUNTER_PROFILE: IdentityProfile = {
   // 其余步骤文案由 termFor 统一替换（岗位→职位、人才→候选人、招聘看板→推进管道、招聘概览→业绩概览）。
   // 下标随 onboardingSteps.ts 的 BASE_STEPS 顺序：3=待办、6=合同、7=社保(跳过)。
   onboardingCopy: {
+    // ⚠️ 下标按 BASE_STEPS 原序。2026-10-21 在「AI 助手」步后插入「智能匹配」步：
+    //    原 6（合同）→ 7，原 7（社保，skip）→ 8，本项 3 不变。
     3: {
       desc: "「待办日历」→ 点左上角「新建待办」，选日期写内容。合同/试用到期会自动落进来。",
     },
-    6: {
+    7: {
       title: "合同材料：别漏签",
       desc: "候选人状态改「已入职」→ 合同提醒自动来。上传原件，AI 识别签订/到期日，交付不烂尾。",
     },
-    7: { skip: true },
+    8: { skip: true },
   },
 };
 

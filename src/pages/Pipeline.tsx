@@ -11,7 +11,7 @@ import {
   HistoryOutlined, UserOutlined, MessageOutlined,
   SyncOutlined, CheckCircleOutlined, CloseCircleOutlined, BarsOutlined,
   PhoneOutlined, CalendarOutlined, DownloadOutlined, FileTextOutlined,
-  EyeOutlined,
+  EyeOutlined, ThunderboltOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -86,6 +86,8 @@ export default function Pipeline() {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
   })();
   const isAdmin = currentUser?.role === "admin";
+  // 智能匹配入口用 profiles 权限把关（与侧栏菜单、/match 路由守卫同口径）
+  const canProfiles = isAdmin || (currentUser?.permissions || []).includes("profiles");
 
   const fetchPipeline = useCallback(async () => {
     setLoading(true);
@@ -562,7 +564,21 @@ export default function Pipeline() {
                 </div>
                 <div className={`pipe-col-body${dropTarget === s.key ? " drop-target" : ""}`}>
                   {list.length === 0 ? (
-                    <div className="pipe-empty">{filtered ? "无符合条件的候选人" : "拖拽卡片到此"}</div>
+                    // 简历筛选列空态 = 最需要补人的时刻：给智能匹配直达入口（有权者可见）
+                    !filtered && s.key === "screening" && canProfiles ? (
+                      <div className="pipe-empty">
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<ThunderboltOutlined />}
+                          onClick={() => navigate("/match")}
+                        >
+                          这一列还没人，用智能匹配补人
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="pipe-empty">{filtered ? "无符合条件的候选人" : "拖拽卡片到此"}</div>
+                    )
                   ) : (
                     list.map((card) => {
                       // 停留预警分级：≥7 天黄色、≥14 天红色（仅非终态阶段）

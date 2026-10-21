@@ -37,6 +37,7 @@ import {
   ToolOutlined,
   RobotOutlined,
   FileSearchOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 import { QuestionCircleOutlined, PlayCircleOutlined, MessageOutlined } from "@ant-design/icons";
 import type { User } from "../types";
@@ -159,6 +160,9 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
     children: [
       { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
       { to: "/profiles", label: "人才画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },
+      // 智能匹配：与画像并列的独立菜单。画像=配置岗位能力模型，匹配=按模型给候选人评分，
+      // 两件事分开摆概念更清晰；权限仍复用 profiles（后端路由同口径）
+      { to: "/match", label: "智能匹配", icon: <ThunderboltOutlined />, color: "#6366f1", perm: "profiles" },
     ],
   },
 

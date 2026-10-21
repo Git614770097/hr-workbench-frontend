@@ -19,7 +19,7 @@ import { genId } from "../helpers";
 // 合法菜单白名单：与前端 src/usageMeta.ts 的 MENU_LABELS 同步。
 // 不在表内的上报一律丢弃，避免有人往库里灌垃圾 key。
 const USAGE_MENUS = [
-  "tasks", "jobs", "pipeline", "interviews", "funnel", "talents", "profiles",
+  "tasks", "jobs", "pipeline", "interviews", "funnel", "talents", "profiles", "match",
   "contracts", "social", "background", "templates", "roles", "users", "settings", "logs", "help", "team",
 ] as const;
 

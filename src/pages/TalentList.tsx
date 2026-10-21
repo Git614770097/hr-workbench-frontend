@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
   Popconfirm, message, Dropdown, Alert, Modal, Empty, Form, Radio,
@@ -10,6 +10,7 @@ import {
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
   FileWordOutlined, TeamOutlined, PlusOutlined,
   FileExcelOutlined, SettingOutlined, RobotOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -124,6 +125,7 @@ import { termFor } from "../identityProfiles";
 
 export default function TalentList() {
   const profile = useIdentityProfile();
+  const navigate = useNavigate();
   const { education: educationOptions } = useDict();
   const [talents, setTalents] = useState<Talent[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
@@ -820,6 +822,9 @@ export default function TalentList() {
               {termFor(profile, "新增人才")}
             </Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
+            {/* 智能匹配入口：从「挑人」场景顺手进匹配页（页内自选画像）；
+                与人才详情页头部按钮、画像页「去匹配」构成三个常规入口 */}
+            <Button icon={<ThunderboltOutlined />} onClick={() => navigate("/match")}>智能匹配</Button>
             <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
               <Button icon={<ExportOutlined />} loading={exporting}>导出</Button>
             </Dropdown>
