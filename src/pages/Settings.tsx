@@ -907,59 +907,80 @@ function FeishuSettingsPanel() {
         items={[
           {
             key: "guide",
-            label: "接入指引：从零配置飞书提醒（约 10 分钟，四步）",
+            label: "接入指引：两种方式按需选（群机器人约 2 分钟 / 应用私信约 10 分钟）",
             children: (
               <Space direction="vertical" size={20} style={{ width: "100%" }}>
-                <div>
-                  <Typography.Title level={5} style={{ marginBottom: 8 }}>第一步 · 创建飞书应用，把凭证填到本页</Typography.Title>
+                {/* 方式 A：群机器人 */}
+                <div style={{ background: "#f6ffed", border: "1px solid #b7eb8f", borderRadius: 8, padding: "12px 16px" }}>
+                  <Typography.Title level={5} style={{ marginBottom: 8 }}>方式 A · 群机器人推送（推荐先配，日常提醒够用）</Typography.Title>
                   <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
-                    <li>打开 <Typography.Link href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开发者后台</Typography.Link>，点「创建企业自建应用」（个人飞书账号即可创建，免费，无需企业主体认证）。</li>
-                    <li>进入应用 → 左侧「凭证与基础信息」→ 复制 <b>App ID</b>（cli_ 开头）和 <b>App Secret</b>。</li>
-                    <li>回到本页上方表单：名称随意（如「XX 公司飞书」），粘贴 App ID / App Secret 后保存。<b>Encrypt Key 与 Verification Token 留空</b>（那是事件订阅二期的选填项）。</li>
+                    <li>打开要收提醒的飞书群 → 右上角<b>设置 → 群机器人 → 添加机器人 → 自定义机器人</b>（起个名字，如「HR 通知」）。</li>
+                    <li>添加完成后复制 <b>webhook 地址</b>（形如 https://open.feishu.cn/open-apis/bot/v2/hook/…），点「完成」。</li>
+                    <li>回到本页上方<b>绿色卡片</b>：粘贴地址 → 先点「先测试再保存」→ 群里能看到测试消息 → 点「保存」。</li>
+                    <li>在同一卡片选发送方式：「仅群」或「群 + 个人」。</li>
                   </ol>
-                  {cfg?.app_id && (
-                    <div style={{ marginTop: 8 }}>
-                      <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 6 }}>
-                        已识别到 App ID，下面四个按钮直达该应用在飞书后台的对应页面，省得自己找菜单：
-                      </Typography.Text>
-                      <Space wrap size={4}>
-                        <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/baseinfo`} target="_blank" rel="noreferrer">① 凭证与基础信息</Button>
-                        <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/safe`} target="_blank" rel="noreferrer">② 安全设置（重定向 URL）</Button>
-                        <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/auth`} target="_blank" rel="noreferrer">③ 权限管理</Button>
-                        <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/version`} target="_blank" rel="noreferrer">④ 版本发布</Button>
-                      </Space>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>零应用、零绑定、新成员无操作；代价是消息群里全员可见、不能私信个人。</Typography.Text>
+                </div>
+
+                {/* 方式 B：应用私信 */}
+                <div>
+                  <Typography.Title level={5} style={{ marginBottom: 8 }}>方式 B · 应用私信推送（需要精准通知到个人时）</Typography.Title>
+                  <Space direction="vertical" size={20} style={{ width: "100%" }}>
+                    <div>
+                      <Typography.Text strong>第一步 · 创建飞书应用并开启「机器人」能力</Typography.Text>
+                      <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
+                        <li>打开 <Typography.Link href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开发者后台</Typography.Link>，点「创建企业自建应用」（个人飞书账号即可创建，免费，无需企业主体认证）。</li>
+                        <li>进入应用 → 「凭证与基础信息」→ 复制 <b>App ID</b>（cli_ 开头）和 <b>App Secret</b>；<b>Encrypt Key 与 Verification Token 留空</b>（事件订阅二期才用）。</li>
+                        <li>回到本页上方表单：名称随意（如「XX 公司飞书」），粘贴 App ID / App Secret 后保存。</li>
+                        <li>
+                          <b>回飞书后台给应用添加「机器人」能力</b>（<Typography.Text type="danger">最容易漏、漏了发消息就报 230006</Typography.Text>）：应用页 → 「添加应用能力」→ 添加<b>机器人</b> → 保存。
+                        </li>
+                      </ol>
+                      {cfg?.app_id && (
+                        <div style={{ marginTop: 8 }}>
+                          <Typography.Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 6 }}>
+                            已识别到 App ID，下面按钮直达该应用在飞书后台的对应页面，省得自己找菜单：
+                          </Typography.Text>
+                          <Space wrap size={4}>
+                            <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/baseinfo`} target="_blank" rel="noreferrer">① 凭证与基础信息</Button>
+                            <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/safe`} target="_blank" rel="noreferrer">② 安全设置（重定向 URL）</Button>
+                            <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/auth`} target="_blank" rel="noreferrer">③ 权限管理</Button>
+                            <Button size="small" href={`https://open.feishu.cn/app/${cfg.app_id}/version`} target="_blank" rel="noreferrer">④ 版本发布</Button>
+                          </Space>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <div>
-                  <Typography.Title level={5} style={{ marginBottom: 8 }}>第二步 · 回飞书后台配两个地址（缺一不可）</Typography.Title>
-                  <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
-                    <li>
-                      「安全设置 → 重定向 URL」→ 添加下面这个地址（必须是完整路径，<b>不要带 # 或 ? 后缀</b>）：
-                      <br /><Typography.Text copyable code>{origin}/api/feishu/oauth/callback</Typography.Text>
-                      <br /><Typography.Text type="secondary" style={{ fontSize: 12 }}>漏配的后果：授权后跳不回来，报错 redirect_uri unmatch。</Typography.Text>
-                    </li>
-                    <li>
-                      「应用功能 → 网页」→ 启用网页能力 → 网页地址填：
-                      <br /><Typography.Text copyable code>{origin}</Typography.Text>
-                      <br /><Typography.Text type="secondary" style={{ fontSize: 12 }}>漏配的后果：成员弹窗里的二维码显示不出来。</Typography.Text>
-                    </li>
-                  </ol>
-                </div>
-                <div>
-                  <Typography.Title level={5} style={{ marginBottom: 8 }}>第三步 · 开权限并发布版本</Typography.Title>
-                  <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
-                    <li>「权限管理 → API 权限」→ 搜索 <Typography.Text code>im:message</Typography.Text> → 开通「给用户发送消息」→ 可用范围选「全员」（不含某成员时，该成员绑定了也收不到）。</li>
-                    <li>「版本管理与发布」→ 创建版本 → 申请发布。<b>权限、网页等任何改动都要发版后才生效</b>；企业若开启了应用审核，需管理员在飞书管理后台「工作台 → 应用审核」通过。</li>
-                  </ol>
-                </div>
-                <div>
-                  <Typography.Title level={5} style={{ marginBottom: 8 }}>第四步 · 成员绑定并验证</Typography.Title>
-                  <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
-                    <li>成员（含管理员自己）点右上角头像 →「飞书推送设置」。</li>
-                    <li>用飞书 App 扫一扫弹窗里的二维码，在手机上确认授权（手机不在身边就点「跳转网页授权」）。</li>
-                    <li>出现「已绑定」绿标后点「发送测试」，飞书能收到消息即全链路打通。</li>
-                  </ol>
+                    <div>
+                      <Typography.Text strong>第二步 · 回飞书后台配两个地址（缺一不可）</Typography.Text>
+                      <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
+                        <li>
+                          「安全设置 → 重定向 URL」→ 添加下面这个地址（必须是完整路径，<b>不要带 # 或 ? 后缀</b>）：
+                          <br /><Typography.Text copyable code>{origin}/api/feishu/oauth/callback</Typography.Text>
+                          <br /><Typography.Text type="secondary" style={{ fontSize: 12 }}>漏配的后果：授权后跳不回来，报错 redirect_uri unmatch。</Typography.Text>
+                        </li>
+                        <li>
+                          「应用功能 → 网页」→ 启用网页能力 → 网页地址填：
+                          <br /><Typography.Text copyable code>{origin}</Typography.Text>
+                          <br /><Typography.Text type="secondary" style={{ fontSize: 12 }}>漏配的后果：成员弹窗里的二维码显示不出来。</Typography.Text>
+                        </li>
+                      </ol>
+                    </div>
+                    <div>
+                      <Typography.Text strong>第三步 · 开 im:message 权限并发布版本</Typography.Text>
+                      <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
+                        <li>「权限管理 → API 权限」→ 搜索 <Typography.Text code>im:message</Typography.Text> → 开通「给用户发送消息」→ 可用范围选「全员」（不含某成员时，该成员绑定了也收不到）。</li>
+                        <li>「版本管理与发布」→ 创建版本 → 申请发布。<b>任何改动（含添加机器人能力）都要发版后才生效</b>；企业若开启了应用审核，需管理员在飞书管理后台「工作台 → 应用审核」通过。</li>
+                      </ol>
+                    </div>
+                    <div>
+                      <Typography.Text strong>第四步 · 成员绑定并验证</Typography.Text>
+                      <ol style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
+                        <li>成员（含管理员自己）点右上角头像 →「飞书推送设置」。</li>
+                        <li>用飞书 App 扫一扫弹窗里的二维码，在手机上确认授权（手机不在身边就点「跳转网页授权」）。</li>
+                        <li>出现「已绑定」绿标后点「发送测试」，飞书能收到消息即全链路打通。</li>
+                      </ol>
+                    </div>
+                  </Space>
                 </div>
               </Space>
             ),
@@ -970,9 +991,11 @@ function FeishuSettingsPanel() {
             children: (
               <ul style={{ paddingLeft: 20, margin: 0, lineHeight: 2 }}>
                 <li><b>只想最快收到提醒、不想配应用</b>：用上面绿框的群机器人方案，飞书群里加个自定义机器人、粘贴 webhook 即可，上面的应用表单可以完全跳过。</li>
-                <li><b>群机器人保存后没反应</b>：先点「测试」看具体报错；提示关键词校验（19021）需在群里给机器人配约定关键词，签名校验（19022）请在群设置里关闭签名（暂不支持）。</li>
-                <li><b>二维码区域提示「尚未配置飞书应用」</b>：本页 App ID / App Secret 还没保存成功，先完成第一步。</li>
-                <li><b>二维码不显示或空白</b>：网页能力没启用、应用没发布、或重定向 URL 漏配——对照第二步。</li>
+                <li><b>群机器人测试报 230006</b>：机器人在群里被关闭，或企业禁用了自定义机器人能力——群设置 → 群机器人 → 确认该机器人已开启；不行就删了重加一个。</li>
+                <li><b>群机器人其他报错</b>：19021=需要包含约定关键词（给机器人配关键词或在安全设置里关掉）；19022=开了签名校验（暂不支持，请关闭签名）；19024=机器人已被移出群。</li>
+                <li><b>应用私信测试报 230006 Bot ability is not activated</b>：应用没开「机器人」能力——开发者后台 → 应用 →「添加应用能力」→ 添加「机器人」→ 保存 → 去「版本管理与发布」发版（对照方式 B 第一步）。</li>
+                <li><b>二维码区域提示「尚未配置飞书应用」</b>：本页 App ID / App Secret 还没保存成功，先完成方式 B 第一步。</li>
+                <li><b>二维码不显示或空白</b>：网页能力没启用、应用没发布、或重定向 URL 漏配——对照方式 B 第二步。</li>
                 <li><b>授权时报 redirect_uri unmatch</b>：重定向 URL 没添加，或填了带 # / ? 后缀的地址。</li>
                 <li><b>授权页报 20027</b>：请求了未开通的权限（本系统只用 im:message 一项）。</li>
                 <li><b>绑定成功但收不到提醒</b>：im:message 权限未发版生效，或应用可用范围不含该成员；也可能是发送模式选了「仅群」而群机器人未配置。</li>
