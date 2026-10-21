@@ -524,8 +524,26 @@ export default function Funnel() {
   const analysisReady = !loading && !!s && s.total > 0;
   // 行动层分栏开关：数据（今日重点 + KPI）与早报同时在場 → 桌面左右分栏；
   // 任一被「调整模块」关掉 → 另一个自动通栏，不留半空容器
-  const showStats = !isHidden("today_focus") || !isHidden("kpi_band");
-  const showBrief = !isHidden("daily_brief");
+  const statsOn = !isHidden("today_focus") || !isHidden("kpi_band");
+  const briefOn = !isHidden("daily_brief");
+  // 「无数据」判定：overview 已返回且账号核心指标全为零（新注册/空账号）时，
+  // 指标条与早报两块区域整体隐藏——否则首屏是一排 0 加「今天没有人等你」，
+  // 对空账号没有信息量。任一项非零即视为有数据，两块照常展示（早报保留空态文案）。
+  const actionEmpty = !!overview
+    && (overview.totalTalents ?? 0) === 0
+    && (overview.openJobs ?? 0) === 0
+    && (overview.activeCandidates ?? 0) === 0
+    && (overview.weeklyNewTalents ?? 0) === 0
+    && (overview.todayInterviewCount ?? 0) === 0
+    && (overview.tasks?.pending ?? 0) === 0
+    && (overview.tasks?.overdue ?? 0) === 0
+    && (overview.tasks?.today ?? 0) === 0
+    && dueSoon.length === 0;
+  // 指标条：加载中/拉取失败维持原样（骨架 / 不显示），仅「已返回且全零」时隐藏
+  const showStats = statsOn && !actionEmpty;
+  // 早报：等 overview 出结果再决定去留——避免空账号先闪一下「今天没有人等你」
+  // 再消失；overview 拉取失败（null）时不阻断早报展示
+  const showBrief = briefOn && !ovLoading && !actionEmpty;
 
   return (
     <div className="funnel-page workbench-page">
