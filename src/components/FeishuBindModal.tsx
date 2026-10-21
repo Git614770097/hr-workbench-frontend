@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal, Button, Space, Alert, Tag, Typography, Spin, message, Popconfirm } from "antd";
-import { ReloadOutlined } from "@ant-design/icons";
+import { ReloadOutlined, CopyOutlined } from "@ant-design/icons";
 import { api } from "../api";
 
 interface Props {
@@ -22,6 +22,15 @@ interface Props {
 //     canvas 二维码 + qrlogin/init + polling 全链路 200
 //   - 用户扫码 → 手机确认 → 授权页自动继续 → code 回跳 /api/feishu/oauth/callback
 //     → 破框脚本把顶层窗口带回 /?feishu=bound（与跳转授权同一条后端链路）
+//
+// 2026-10-21 补充实测结论（解释"刷新二维码出来的是授权信息"）：
+// 授权页是**有会话就走快捷确认、无会话才出登录页**的：
+//   - 浏览器没有飞书登录态 → 302 到 accounts/page/login，默认即「扫码登录」tab → 二维码
+//   - 浏览器已登录飞书（cookie）→ 飞书直接跳过登录，显示「授权信息」确认页 → 没有二维码
+// 这正是之前陈慧杰授权出刘鹏账号的同一根因（浏览器旧登录态被默认带出），
+// 也无 URL 参数可强制切号/强制扫码。因此弹窗文案需同时覆盖两种形态，
+// 并给「想强制扫码」的用户一条确定可用的路：复制绑定链接 → 隐私窗口打开（必出二维码）。
+// 扫码确认后的收尾依赖浏览器侧飞书会话（未文档化、无法真机验证），不自建二维码接口。
 const QR_W = 300;
 const QR_H = 400;
 
@@ -44,7 +53,7 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
       // 跨域 iframe 读不到内部状态，onload 只证明服务器有响应；8s 未加载视为失败
       loadTimer.current = window.setTimeout(() => {
         setQrState((s) => (s === "loading" ? "failed" : s));
-        setQrError((e) => e || "飞书授权页加载超时，请改用右下角按钮跳转授权");
+        setQrError((e) => e || "飞书授权页加载超时，请改用下方「跳转网页授权」");
       }, 8000);
     } catch (err) {
       setQrError(err instanceof Error ? err.message : "二维码初始化失败");
@@ -65,6 +74,16 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
     } catch (err) {
       message.error(err instanceof Error ? err.message : "发起授权失败");
       setBinding(false);
+    }
+  };
+
+  const handleCopyUrl = async () => {
+    try {
+      const res = await api.feishuBindUrl();
+      await navigator.clipboard.writeText(res.url);
+      message.success("绑定链接已复制：粘贴到浏览器隐私窗口（Ctrl+Shift+N）打开，即可扫码");
+    } catch {
+      message.error("复制失败，请改用「跳转网页授权」");
     }
   };
 
@@ -103,7 +122,7 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
           type="info"
           showIcon
           message="把到期 / 面试 / 审批提醒推送到你的飞书"
-          description="授权仅获取你的 open_id 用于收发消息；扫码或在飞书网页里确认后自动返回本系统，即完成绑定。"
+          description="授权仅获取你的 open_id 用于收发消息。左侧嵌入飞书官方授权页：没登录飞书时是二维码（App 扫一扫确认），已登录时直接是授权确认页（点「同意授权」）——两条路都会自动返回本系统，绑定前系统还会再让你确认一次账号。"
         />
         <div>
           <Space>
@@ -151,30 +170,32 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
                 )}
               </div>
               <Space direction="vertical" size={8} style={{ flex: 1 }}>
-                {qrState === "failed" ? (
+                {qrState === "failed" && (
                   <Alert
                     type="warning"
                     showIcon
-                    message="二维码暂时不可用"
+                    message="授权页加载失败"
                     description={qrError || "请使用下方按钮跳转授权"}
                   />
-                ) : (
-                  <>
-                    <Typography.Text strong>飞书扫一扫绑定</Typography.Text>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      打开飞书 App → 点右上角「+」→ 扫一扫 → 扫描左侧二维码 → 在手机上确认授权。
-                    </Typography.Text>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      二维码有效期约 5 分钟，过期后点飞书页面里的「刷新二维码」，或点下方按钮重新加载。
-                    </Typography.Text>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      授权页顶部显示的飞书账号<b>必须是你本人的</b>；如果显示的是别人（共用电脑或切换过账号），点授权页里的「<b>使用其他账号</b>」切换，或点下方「跳转网页授权」重新走一遍。扫码授权后系统还会再让你确认一次账号。
-                    </Typography.Text>
-                    <Button size="small" icon={<ReloadOutlined />} loading={qrState === "loading"} onClick={() => void initQr()}>
-                      刷新二维码
-                    </Button>
-                  </>
                 )}
+                <Typography.Text strong>左侧页面有两种形态，任选其一完成即绑定成功</Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  ① 左侧显示<b>二维码</b>：说明此浏览器未登录飞书。打开飞书 App → 右上角「+」→ 扫一扫 → 扫描左侧二维码 → 在手机上确认授权。
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  ② 左侧显示<b>「授权信息」确认页</b>（没有二维码）：说明此浏览器已经登录过飞书，飞书会跳过扫码、直接让你确认——点页面里的「同意授权」即可，同样安全。授权页顶部显示的飞书账号<b>必须是你本人的</b>；如果不是，点页面里的「使用其他账号」切换。
+                </Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  想在已登录飞书的电脑上<b>强制扫码</b>：点「复制绑定链接」，用浏览器隐私窗口（Ctrl+Shift+N）打开该链接，即可看到二维码。
+                </Typography.Text>
+                <Space>
+                  <Button size="small" icon={<ReloadOutlined />} loading={qrState === "loading"} onClick={() => void initQr()}>
+                    重新加载授权页
+                  </Button>
+                  <Button size="small" icon={<CopyOutlined />} onClick={() => void handleCopyUrl()}>
+                    复制绑定链接
+                  </Button>
+                </Space>
               </Space>
             </div>
             <div style={{ textAlign: "center" }}>
