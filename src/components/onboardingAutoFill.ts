@@ -64,6 +64,15 @@ export function fillOnbForm(route: string): boolean {
   return request(route, "fill");
 }
 
+/**
+ * 清空排队中的 open/fill 请求。引导关闭/卸载时调用：
+ * 否则「还没跳到目标页就关掉引导」会留下残留请求，用户之后自己进该页面时
+ * 突然弹出新增弹窗（新用户首次进岗位管理的典型症状）。
+ */
+export function clearOnbPending(): void {
+  for (const k of Object.keys(pending)) delete pending[k];
+}
+
 /** 业务页新建保存成功后广播，引导据此判定动手任务完成 */
 export function notifyOnbSaved(): void {
   try {

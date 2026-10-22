@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "antd";
 import { CloseOutlined, ArrowRightOutlined, ArrowLeftOutlined, CheckOutlined } from "@ant-design/icons";
-import { openOnbForm, fillOnbForm } from "./onboardingAutoFill";
+import { openOnbForm, fillOnbForm, clearOnbPending } from "./onboardingAutoFill";
 import "../styles/onboarding.css";
 
 export interface OnbStep {
@@ -123,6 +123,12 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, index]);
 
+  // 引导关闭/卸载时清空排队请求：否则「还没跳到目标页就关掉引导」会留下残留的
+  // open 请求，用户之后自己进页面时突然弹出新增弹窗（新用户首次进岗位管理常见）。
+  useEffect(() => {
+    return () => clearOnbPending();
+  }, []);
+
   // 点中之后给一点正反馈再自动进下一步，别让用户怀疑点没点上
   useEffect(() => {
     if (!open || !done) return;
@@ -162,9 +168,10 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
     }
   }, [index, tick, missing, done, waiting, open, step]);
 
-  // 进入带 goTo 的步骤时自动跳转：动手任务页先跳再自动打开空表单，
-  // 其余页直接跳（不再要求点「去看看」）。目标页需 mount 并向 onboardingAutoFill
-  // 登记 open/fill 处理器；open 调用若页面未就绪会被排队，登记后自动 flush。
+  // 进入带 goTo 的步骤时自动跳转：动手任务页只高亮入口按钮，**不再自动弹出新建表单**
+  // （自动弹窗会被用户当成「系统乱弹窗」——新用户一进岗位管理就冒出「新增岗位」）。
+  // 表单由用户点「帮我填好表单」时显式打开；目标页需 mount 并向 onboardingAutoFill
+  // 登记 open/fill 处理器，请求若页面未就绪会被排队，登记后自动 flush。
   // ⚠️ 必须放在 return null 之前，否则 open 为 false 时此 Hook 不执行，
   //    与 open 为 true 时的 Hook 数量不一致 → React 崩溃白屏。
   useEffect(() => {
@@ -173,8 +180,7 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
       onNavigate?.(step.goTo);
     }
     if (step.action && step.goTo) {
-      // 自动弹出空的新建表单，等用户点「帮我填好表单」填示例数据
-      openOnbForm(step.goTo);
+      // armed 提前置上：用户自己点按钮新建并保存，同样能通过 onb:record-saved 自动进下一步
       setArmed(true);
       armedRef.current = true;
     }
@@ -196,9 +202,14 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
 
   const goPrev = () => setIndex((i) => Math.max(i - 1, 0));
 
-  // 动手任务：点「帮我填好表单」把示例数据写进已打开的表单；保存成功即判完成
+  // 动手任务：点「帮我填好表单」——表单没开就先打开（用户显式操作，不算自动弹窗），
+  // 等弹窗/抽屉渲染出来再写示例值（Form 未挂载时 setFieldsValue 不生效）。
   const fillAction = () => {
-    if (step?.goTo) fillOnbForm(step.goTo);
+    const route = step?.goTo;
+    if (route) {
+      openOnbForm(route);
+      window.setTimeout(() => fillOnbForm(route), 120);
+    }
     setWaiting(true);
     setArmed(true);
     armedRef.current = true;
@@ -270,7 +281,7 @@ export default function Onboarding({ steps, open, onClose, onNavigate }: Props) 
             ) : (
               <>
                 <span className="obo-do-icon">👉</span>
-                <span>点「帮我填好表单」自动填好示例数据，再点「保存」即可。</span>
+                <span>点「帮我填好表单」会打开表单并填好示例数据，再点「保存」即可。</span>
               </>
             )}
           </div>
