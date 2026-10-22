@@ -121,13 +121,13 @@ const BASE_STEPS: OnbStep[] = [
     goTo: "/jobs",
     goToLabel: "去看看 AI 能力",
   },
-  // ── v1.2 新增：智能匹配（2026-10-21 插在 AI 助手步之后、收尾步之前。
-  //    本文件下标被 identityProfiles 的 onboardingCopy 按 BASE_STEPS 原序引用，
-  //    此次插入后：原收尾步 11→12；HEADHUNTER_PROFILE 的覆盖 6→7、7→8 已同步）──
+  // ── v1.2 新增：人才AI匹配（2026-10-21 插在 AI 助手步之后、收尾步之前。
+  //    本文件下标被 identityProfiles 的 onboardingCopy 按 BASE_STEPS 原序引用；
+  //    追加在末尾只会把收尾步 11→12，不会动 6/7 等靠前的覆盖位）──
   {
     target: '[data-onb="/match"]',
-    title: "智能匹配：让 AI 替你挑人",
-    desc: "「人才资产 → 智能匹配」选一个职位画像，从人才库添加几个候选人，AI 按匹配度排序并给出理由，先聊分高的；也可以从人才详情页点「智能匹配」测单个人。",
+    title: "人才AI匹配：让 AI 替你挑人",
+    desc: "「人才资产 → 人才AI匹配」选一个职位画像，从人才库添加几个候选人，AI 按匹配度排序并给出理由，先聊分高的；也可以从人才详情页点「人才AI匹配」测单个人。",
     goTo: "/match",
     goToLabel: "去匹配看看",
   },

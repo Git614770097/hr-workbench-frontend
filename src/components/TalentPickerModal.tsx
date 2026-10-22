@@ -17,7 +17,7 @@ interface Props {
 const PAGE_SIZE = 20;
 
 /**
- * 从人才库勾选已有人选参与智能匹配。
+ * 从人才库勾选已有人选参与人才AI匹配。
  * 只负责"选人"：简历原文的抽取由调用方做（那里才有解析管线），本组件不碰文件。
  */
 export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: Props) {

@@ -6,7 +6,7 @@ import { genId } from "../helpers";
 import { deepseekJson, deepseekJsonSafe, toStringArray } from "../ai";
 import { resolveAiKey } from "../aiKey";
 
-// 智能匹配：候选人（上传简历或从人才库挑人）+ 职位画像 → 排序推荐 + 理由
+// 人才AI匹配：候选人（上传简历或从人才库挑人）+ 职位画像 → 排序推荐 + 理由
 // - 画像 = 一个职位（job_title）的整体要求：城市、学历、年限区间、薪资范围、
 //   行业背景、必备/加分技能、其它要求，以及原始 JD 文本。
 // - JD 文本 → 结构化画像（AI 抽取，可人工改）

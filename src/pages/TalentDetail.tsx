@@ -173,12 +173,12 @@ export default function TalentDetail() {
           <Tooltip title="按场景生成邀约 / 婉拒 / 跟进话术，复制后由你自行发送">
             <Button className="ai-btn" icon={<RobotOutlined />} onClick={() => setOutreachOpen(true)}>AI 沟通文案</Button>
           </Tooltip>
-          {/* 智能匹配：带本人才跳到匹配页，AI 按画像评分（/match 原本全站无入口）。
+          {/* 人才AI匹配：带本人才跳到匹配页，AI 按画像评分（/match 原本全站无入口）。
               用站内统一 ai-btn 标识 AI 能力 */}
           {canP("profiles") && (
             <Tooltip title="选一个职位画像，AI 按匹配度给该候选人评分并给出理由">
               <Button className="ai-btn" icon={<RobotOutlined />} onClick={() => navigate("/match", { state: { talentId: talent.id } })}>
-                智能匹配
+                人才AI匹配
               </Button>
             </Tooltip>
           )}

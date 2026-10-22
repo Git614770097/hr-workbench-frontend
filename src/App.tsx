@@ -19,7 +19,7 @@ import { firstAccessiblePath } from "./utils/routeAccess";
 /**
  * 是否属于移动版路由。
  * 必须是「/m」或「/m/…」，不能用 startsWith("/m")——
- * 那样 "/match"（智能匹配页）也会被当成移动版，渲染空白页（无路由匹配）。
+ * 那样 "/match"（人才AI匹配页）也会被当成移动版，渲染空白页（无路由匹配）。
  */
 function isMobilePath(pathname: string): boolean {
   return pathname === "/m" || pathname.startsWith("/m/");
@@ -33,7 +33,7 @@ import UsageTracker from "./components/UsageTracker";
 // 推迟到真正访问对应页面时才下载，降低首屏体积。
 const TalentList = lazy(() => import("./pages/TalentList"));
 const TalentDetail = lazy(() => import("./pages/TalentDetail"));
-// 智能匹配：从人才库工具栏进入，页面内含 pdfjs/mammoth 等重依赖，按需加载
+// 人才AI匹配：从人才库工具栏进入，页面内含 pdfjs/mammoth 等重依赖，按需加载
 const Match = lazy(() => import("./pages/Match"));
 // 人才画像：独立的画像分级管理页
 const Profiles = lazy(() => import("./pages/Profiles"));
@@ -217,7 +217,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
   // 手动覆盖（移动版里的「切换到完整版」）优先于 UA，不会被反复跳回。
   //
   // ⚠️ 判定移动版必须用 isMobilePath()，不能写 pathname.startsWith("/m")：
-  //    "/match"（智能匹配页）也以 /m 开头，会被误判成移动版而渲染成空白页。
+  //    "/match"（人才AI匹配页）也以 /m 开头，会被误判成移动版而渲染成空白页。
   useEffect(() => {
     if (!user) return;
     if (isMobilePath(location.pathname)) return;

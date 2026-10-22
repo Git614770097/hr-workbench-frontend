@@ -296,7 +296,7 @@ export const api = {
     }),
 
   // Resume file upload and preview
-  // 读取人才库里已存的简历文件（智能匹配勾选库内人选时，重新抽取原文做语义比对）
+  // 读取人才库里已存的简历文件（人才AI匹配勾选库内人选时，重新抽取原文做语义比对）
   // 返回 null 表示这条人才没存简历文件，调用方需回退到「用已录入字段拼文本」
   fetchResumeFile: async (talentId: string): Promise<{ blob: Blob; name: string } | null> => {
     const ctrl = new AbortController();
@@ -549,7 +549,7 @@ export const api = {
   deleteSocialRate: (id: string) =>
     request<{ ok: true }>(`/talents/social/rates/${id}`, { method: "DELETE" }),
 
-  // 智能匹配（简历 + 人才画像 → 排序推荐）
+  // 人才AI匹配（简历 + 人才画像 → 排序推荐）
   // 按职位生成招聘 JD（AI 起草，用户可改后再提炼画像）
   generateJd: (jobTitle: string, city?: string) =>
     request<{ jd: string }>(

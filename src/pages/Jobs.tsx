@@ -118,7 +118,7 @@ export default function Jobs() {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
   })();
   const isAdmin = currentUser?.role === "admin";
-  // 智能匹配与画像同为 profiles 权限；无权时不拉画像列表、不渲染「匹配人才」按钮
+  // 人才AI匹配与画像同为 profiles 权限；无权时不拉画像列表、不渲染「匹配人才」按钮
   const canProfiles = isAdmin || (currentUser?.permissions || []).includes("profiles");
   const [matchProfiles, setMatchProfiles] = useState<{ id: string; title: string }[]>([]);
   useEffect(() => {

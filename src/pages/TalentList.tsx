@@ -755,10 +755,10 @@ export default function TalentList() {
               {termFor(profile, "新增人才")}
             </Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
-            {/* 智能匹配入口：从「挑人」场景顺手进匹配页（页内自选画像）。
+            {/* 人才AI匹配入口：从「挑人」场景顺手进匹配页（页内自选画像）。
                 用站内统一 ai-btn（淡紫底 + 机器人图标）标识 AI 能力，
                 与人才详情页头部按钮、画像页「去匹配」视觉一致 */}
-            <Button className="ai-btn" icon={<RobotOutlined />} onClick={() => navigate("/match", { state: { from: "talents" } })}>智能匹配</Button>
+            <Button className="ai-btn" icon={<RobotOutlined />} onClick={() => navigate("/match", { state: { from: "talents" } })}>人才AI匹配</Button>
             <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
               <Button icon={<ExportOutlined />} loading={exporting}>导出</Button>
             </Dropdown>

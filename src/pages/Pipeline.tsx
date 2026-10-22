@@ -86,7 +86,7 @@ export default function Pipeline() {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
   })();
   const isAdmin = currentUser?.role === "admin";
-  // 智能匹配入口用 profiles 权限把关（与侧栏菜单、/match 路由守卫同口径）
+  // 人才AI匹配入口用 profiles 权限把关（与侧栏菜单、/match 路由守卫同口径）
   const canProfiles = isAdmin || (currentUser?.permissions || []).includes("profiles");
 
   const fetchPipeline = useCallback(async () => {
@@ -564,7 +564,7 @@ export default function Pipeline() {
                 </div>
                 <div className={`pipe-col-body${dropTarget === s.key ? " drop-target" : ""}`}>
                   {list.length === 0 ? (
-                    // 简历筛选列空态 = 最需要补人的时刻：给智能匹配直达入口（有权者可见）
+                    // 简历筛选列空态 = 最需要补人的时刻：给人才AI匹配直达入口（有权者可见）
                     !filtered && s.key === "screening" && canProfiles ? (
                       <div className="pipe-empty">
                         <Button
@@ -573,7 +573,7 @@ export default function Pipeline() {
                           icon={<RobotOutlined />}
                           onClick={() => navigate("/match", { state: { from: "pipeline" } })}
                         >
-                          这一列还没人，用智能匹配补人
+                          这一列还没人，用「人才AI匹配」补人
                         </Button>
                       </div>
                     ) : (

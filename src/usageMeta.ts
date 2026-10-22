@@ -53,7 +53,7 @@ export const MENU_LABELS: Record<string, string> = {
   funnel: "招聘概览",
   talents: "人才库管理",
   profiles: "人才画像",
-  match: "智能匹配",
+  match: "人才AI匹配",
   contracts: "合同管理",
   social: "社保公积金",
   background: "背调中心",

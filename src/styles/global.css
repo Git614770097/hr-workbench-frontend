@@ -1345,7 +1345,7 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 .profiles-page > .ant-card:last-child > .ant-card-body,
 .funnel-page > .ant-card:last-child > .ant-card-body { flex: 1; }
 
-/* ===== 智能匹配：左右分栏工作台 ===== */
+/* ===== 人才AI匹配：左右分栏工作台 ===== */
 /* 左列「操作台」sticky 常驻（选画像/加人/开始匹配），条件与结果同屏；
    右列结果区随内容增长。≤1280px 堆叠回单列并取消 sticky。 */
 .match-layout {

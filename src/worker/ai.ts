@@ -1,5 +1,5 @@
 // DeepSeek 调用与返回解析的公共封装。
-// 简历解析（aiParse）与智能匹配（match）都要用，抽出来避免两份几乎一样的 fetch + 取 JSON 逻辑。
+// 简历解析（aiParse）与人才AI匹配（match）都要用，抽出来避免两份几乎一样的 fetch + 取 JSON 逻辑。
 
 /** 从 AI 返回内容里稳健地抽出 JSON 对象（兼容被 ```json 包裹 / 前后有杂文的情况） */
 export function extractJson(text: string): Record<string, unknown> | null {

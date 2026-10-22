@@ -74,7 +74,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     try {
       const parsed: ParsedTalent[] = [];
       for (const file of files) {
-        // 抽文本 + 本地规则兜底 + AI 解析（失败/超时自动回退），与智能匹配页共用同一套解析
+        // 抽文本 + 本地规则兜底 + AI 解析（失败/超时自动回退），与人才AI匹配页共用同一套解析
         const { talent } = await parseResumeToTalent(file, nextKey());
         parsed.push(talent);
       }

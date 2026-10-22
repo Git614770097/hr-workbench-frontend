@@ -85,7 +85,7 @@ function talentToText(t: Talent, brand: IdentityProfile): string {
   return lines.join("\n");
 }
 
-// 智能匹配：选一个职位画像（含分级）+ 候选人 → 按匹配度排序 + 理由
+// 人才AI匹配：选一个职位画像（含分级）+ 候选人 → 按匹配度排序 + 理由
 export default function Match() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -299,7 +299,7 @@ export default function Match() {
     }
   };
 
-  // 从人才详情「智能匹配」跳过来：路由 state 带 talentId，直接把该人才加进候选人
+  // 从人才详情「人才AI匹配」跳过来：路由 state 带 talentId，直接把该人才加进候选人
   // （否则用户到了本页还要手动点「从人才库添加」再找一遍，入口等于白加）
   const consumedTalentRef = useRef(false);
   useEffect(() => {
@@ -485,7 +485,7 @@ export default function Match() {
             {termFor(brand, backToTalents ? "返回人才库" : "返回上一步")}
           </Button>
         )}
-        <Typography.Title level={4} style={{ margin: 0 }}>智能匹配</Typography.Title>
+        <Typography.Title level={4} style={{ margin: 0 }}>人才AI匹配</Typography.Title>
         <Typography.Text type="secondary">
           选一份职位画像 + 候选人 → 按匹配度排序并给出理由
         </Typography.Text>

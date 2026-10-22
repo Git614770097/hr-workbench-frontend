@@ -80,7 +80,7 @@ const FEATURES = [
   },
   {
     title: "AI 招聘助手", desc: "一键生成岗位 JD 与人才画像，候选人匹配评分，招人更快更准。",
-    tags: ["AI 生成", "智能匹配"], c1: "#7c3aed", c2: "#c084fc",
+    tags: ["AI 生成", "人才AI匹配"], c1: "#7c3aed", c2: "#c084fc",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M12 3.5l1.7 4.3L18 9.5l-4.3 1.7L12 15.5l-1.7-4.3L6 9.5l4.3-1.7L12 3.5Z" />
