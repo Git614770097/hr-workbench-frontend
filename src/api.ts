@@ -169,6 +169,10 @@ export const api = {
   // 绑定确认页的待确认信息（授权回调后读飞书昵称/头像，不消费 token）
   feishuBindPending: (ck: string) =>
     request<{ name: string; avatar_url: string }>(`/feishu/bind/pending?ck=${encodeURIComponent(ck)}`),
+  // 一键创建飞书会议（面试表单用）：返回会议链接，前端回填到「会议链接」字段。
+  // 会议归属人=当前用户（需已绑定飞书）；topic 建议带上候选人姓名，minutes=面试时长
+  createFeishuMeeting: (data: { topic?: string; minutes?: number }) =>
+    request<{ ok: boolean; url: string; meeting_no?: string; password?: string }>("/feishu/meeting", { method: "POST", body: JSON.stringify(data) }),
 
   // User management (admin only)
   getUsers: (status?: string) =>

@@ -9,7 +9,7 @@ import {
   SearchOutlined, ReloadOutlined, PlusOutlined, VideoCameraOutlined,
   EnvironmentOutlined, PhoneOutlined, CalendarOutlined, ClockCircleOutlined,
   FieldTimeOutlined, CheckCircleOutlined, InfoCircleOutlined, UserOutlined,
-  RobotOutlined, CloseCircleOutlined,
+  RobotOutlined, CloseCircleOutlined, VideoCameraAddOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
@@ -131,6 +131,7 @@ export default function Interviews() {
   const [items, setItems] = useState<Interview[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [creatingMeeting, setCreatingMeeting] = useState(false);
 
   // 搜索：草稿态 + 生效态分离（点「查询」才生效，与全站列表页一致）
   const [draftKeyword, setDraftKeyword] = useState("");
@@ -260,6 +261,27 @@ export default function Interviews() {
       status: "scheduled",
     } as any);
     setOpen(true);
+  };
+
+  // 一键创建飞书会议：按表单里的面试时长预约，链接自动回填「会议链接」。
+  // 会议归属人是当前用户（飞书要求登记），所以必须先完成飞书绑定；失败原因
+  // （未配置应用 / 未绑定 / 应用缺视频会议权限）由后端说清楚，这里原样提示。
+  const createFeishuMeeting = async () => {
+    const talentId = form.getFieldValue("talent_id") as string | undefined;
+    const talentLabel = talentOptions.find((o) => o.value === talentId)?.label || "";
+    const minutes = Number(form.getFieldValue("duration")) || 60;
+    setCreatingMeeting(true);
+    try {
+      const r = await api.createFeishuMeeting({ topic: `面试：${talentLabel || "候选人"}`, minutes });
+      form.setFieldValue("meeting_url", r.url);
+      message.success(
+        r.password ? `飞书会议已创建，链接已填入（入会密码 ${r.password}）` : "飞书会议已创建，链接已填入"
+      );
+    } catch (e) {
+      message.error((e as Error).message);
+    } finally {
+      setCreatingMeeting(false);
+    }
   };
 
   const openEdit = (row: Interview) => {
@@ -832,8 +854,27 @@ export default function Interviews() {
                         <Input placeholder="如：公司 3 楼会议室 / 客户现场" />
                       </Form.Item>
                     ) : formMode === "online" ? (
-                      <Form.Item name="meeting_url" label="会议链接" rules={[{ required: true, message: "请填写会议链接" }]}>
-                        <Input placeholder="如：飞书会议 / 腾讯会议链接" />
+                      <Form.Item
+                        name="meeting_url"
+                        label="会议链接"
+                        rules={[{ required: true, message: "请填写会议链接" }]}
+                        extra="也可以点右侧「生成飞书会议」自动创建：链接回填后直接保存即可，候选人点链接就能入会（无需安装飞书）"
+                      >
+                        <Input
+                          placeholder="如：飞书会议 / 腾讯会议链接"
+                          addonAfter={
+                            <Button
+                              type="link"
+                              size="small"
+                              style={{ paddingInline: 0 }}
+                              icon={<VideoCameraAddOutlined />}
+                              loading={creatingMeeting}
+                              onClick={createFeishuMeeting}
+                            >
+                              生成飞书会议
+                            </Button>
+                          }
+                        />
                       </Form.Item>
                     ) : null}
                     <div className="form-grid">

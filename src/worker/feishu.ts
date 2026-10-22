@@ -121,6 +121,60 @@ export async function sendFeishuText(
   return { ok, message: ok ? "发送成功" : `飞书发送失败：code ${data.code} ${data.msg || ""}` };
 }
 
+/**
+ * 创建飞书预约会议（vc/v1/reserves/apply）——「一键创建飞书会议」用。
+ * tenant_access_token 下 owner_id（会议归属人）必传，须为同租户已绑定飞书的用户。
+ * 限制：只能预约未来 30 天内的会议；以此方式预约的会议不生成飞书日程。
+ * 返回会议链接 / 9 位会议号 / 密码（不传 password 时飞书按个人设置决定是否随机分配，
+ * 面试场景候选人要点链接入会，这里显式传空串 = 不设密码）。
+ */
+export async function createFeishuReserve(
+  kv: KVNamespace,
+  cfg: FeishuConfig,
+  params: { ownerOpenId: string; topic: string; endTimeSec: number }
+): Promise<{ ok: boolean; message: string; url?: string; meetingNo?: string; password?: string }> {
+  const token = await getTenantAccessToken(kv, cfg);
+  if (!token) return { ok: false, message: "获取飞书 tenant_access_token 失败" };
+  let res: Response;
+  try {
+    res = await fetch(`${FEISHU_BASE}/open-apis/vc/v1/reserves/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        end_time: String(params.endTimeSec),
+        owner_id: params.ownerOpenId,
+        meeting_settings: {
+          topic: params.topic,
+          meeting_initial_type: 1, // 多人会议
+          password: "",            // 不设密码：候选人点链接即入会
+          auto_record: false,
+        },
+      }),
+    });
+  } catch (err) {
+    return { ok: false, message: `飞书请求异常：${err instanceof Error ? err.message : String(err)}` };
+  }
+  const data = (await res.json()) as {
+    code?: number; msg?: string;
+    data?: { reserve?: { id?: string; meeting_no?: string; password?: string; url?: string } };
+  };
+  if (!res.ok || data.code !== 0 || !data.data?.reserve?.url) {
+    // 权限缺失是最常见原因（应用没加 vc:reserve 或没发布版本），把排查方向说清楚
+    const hint = /permission|权限|forbidden/i.test(`${data.msg || ""}${data.code ?? ""}`)
+      ? "（如提示无权限：请让管理员在飞书开发者后台为应用添加「视频会议」权限并发布版本）"
+      : "";
+    return { ok: false, message: `创建飞书会议失败：code ${data.code ?? res.status} ${data.msg || ""}${hint}`.trim() };
+  }
+  const r = data.data.reserve;
+  return {
+    ok: true,
+    message: "创建成功",
+    url: r.url,
+    meetingNo: r.meeting_no,
+    password: r.password,
+  };
+}
+
 /** 拼接 OAuth 授权 URL（不带 scope，仅取基础身份，降低权限申请摩擦）。 */
 export function buildAuthorizeUrl(cfg: FeishuConfig, state: string, redirectUri: string): string {
   // 官方参数：client_id 即应用的 App ID；response_type 固定 code；

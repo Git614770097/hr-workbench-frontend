@@ -12,6 +12,7 @@ import {
   decryptFeishuEvent,
   isFeishuWebhookUrl,
   sendFeishuWebhook,
+  createFeishuReserve,
 } from "../feishu";
 
 const feishu = new Hono<{ Bindings: Env }>();
@@ -88,6 +89,41 @@ feishu.get("/status", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
   const cfg = await resolveFeishuApp(c.env.DB, session.teamId, c.env.AI_KEY_SECRET);
   return c.json({ configured: !!cfg });
+});
+
+/**
+ * 一键创建飞书会议（预约会议）——面试表单「生成飞书会议」用。
+ * 只负责建会并返回链接，不落库：前端把链接回填到表单，用户保存面试时正常写入。
+ * 前置条件（失败时把原因说清楚，别让用户对着飞书错误码猜）：
+ * 1. 管理员已配置飞书应用（feishu_apps）；
+ * 2. 当前用户已完成飞书 OAuth 绑定——tenant token 下 owner_id（会议归属人）必传；
+ * 3. 应用已添加「视频会议」权限（vc:reserve）并发布版本。
+ */
+feishu.post("/meeting", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const body = await c.req.json<{ topic?: string; minutes?: number }>().catch(() => ({}) as { topic?: string; minutes?: number });
+
+  const cfg = await resolveFeishuApp(c.env.DB, session.teamId, c.env.AI_KEY_SECRET);
+  if (!cfg) return c.json({ error: "尚未配置飞书应用，请联系管理员在「飞书集成」里配置" }, 400);
+
+  const user = await c.env.DB.prepare("SELECT feishu_open_id FROM users WHERE id = ?")
+    .bind(session.userId).first<{ feishu_open_id: string | null }>();
+  const ownerOpenId = (user?.feishu_open_id || "").trim();
+  if (!ownerOpenId) {
+    return c.json({ error: "你还没有绑定飞书（会议需要登记归属人）。请点页面右上角飞书图标完成绑定" }, 400);
+  }
+
+  // 会议时长=面试时长（15 分钟~8 小时，越界夹紧）；end_time 为 unix 秒
+  const minutes = Math.min(480, Math.max(15, Number(body.minutes) || 60));
+  const endTimeSec = Math.floor(Date.now() / 1000) + minutes * 60;
+  const r = await createFeishuReserve(c.env.SESSIONS, cfg, {
+    ownerOpenId,
+    topic: (body.topic || "").trim() || "面试",
+    endTimeSec,
+  });
+  if (!r.ok) return c.json({ error: r.message }, 502);
+  return c.json({ ok: true, url: r.url, meeting_no: r.meetingNo, password: r.password });
 });
 
 /** 生成飞书 OAuth 授权 URL（登录用户）。state 绑 userId 存 KV。 */
