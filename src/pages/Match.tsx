@@ -14,6 +14,8 @@ import type { MatchProfile, MatchResult, Talent } from "../types";
 import { parseResumeToTalent, parseResumeFile, recordToData } from "../utils/resumeImport";
 import type { ParsedTalent } from "../utils/resumeImport";
 import MatchResultCard from "../components/MatchResultCard";
+import MatchCompareChart from "../components/MatchCompareChart";
+import type { CompareRow } from "../components/MatchCompareChart";
 import TalentPickerModal from "../components/TalentPickerModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import { useIdentityProfile } from "../useIdentity";
@@ -465,6 +467,23 @@ export default function Match() {
     .filter((c) => results[c.key])
     .sort((a, b) => results[b.key].score - results[a.key].score);
 
+  // 对比图数据：与 ranked 同序（分数从高到低），评估进行中也实时增长
+  const compareRows: CompareRow[] = ranked.map((cd, i) => {
+    const r = results[cd.key];
+    const skillHit = r.hard?.must_skills?.hit.length ?? 0;
+    const skillTotal = skillHit + (r.hard?.must_skills?.miss.length ?? 0);
+    return {
+      key: cd.key,
+      rank: i + 1,
+      name: cd.talent.name || cd.fileName || "未识别",
+      score: r.score,
+      verdict: r.verdict,
+      skillHit,
+      skillTotal,
+      hard: r.hard,
+    };
+  });
+
   // 动态步骤引导：全页只保留这一条引导（落地场景、缺条件场景都收进这一条），
   // 避免多条 Alert 叠加让用户分不清重点
   const stepHint: string | null = !profile
@@ -728,6 +747,9 @@ export default function Match() {
             </div>
           </div>
         )}
+
+        {/* 对比图：所有候选人同图对比（≥2 位才有对比意义）；评估进行中也实时增长 */}
+        {compareRows.length >= 2 && <MatchCompareChart rows={compareRows} />}
 
         {ranked.map((cd, i) => (
           <MatchResultCard

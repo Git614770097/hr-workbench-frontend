@@ -1350,9 +1350,8 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
    右列结果区随内容增长。≤1280px 堆叠回单列并取消 sticky。 */
 .match-layout {
   display: grid;
-  /* 5:5：操作台与结果区各占一半。条件区（画像/候选人/开始匹配）与结果同屏对比，
-     两侧都不挤压；结果多时右列内部滚动，不牵动左列 */
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* 4:6：操作台收窄，结果区（含对比图）拿大头——结果才是这个页面的主角 */
+  grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);
   gap: 12px;
   align-items: start;
   flex: 1;
@@ -1432,6 +1431,55 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
   50% { box-shadow: 0 0 0 6px rgba(22, 119, 255, 0); }
 }
 
+/* ===== 结果对比图：所有候选人同图对比 ===== */
+.match-compare {
+  border: 1px solid #f0f0f0; border-radius: 10px;
+  padding: 12px 14px 10px; margin-bottom: 12px; background: #fff;
+}
+.match-compare-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.match-compare-title { font-size: 13px; font-weight: 600; color: #374151; }
+.match-compare-hint { font-size: 11px; color: #9ca3af; }
+.match-compare-avg { margin-left: auto; font-size: 11px; color: #6b7280; white-space: nowrap; }
+
+.match-cmp-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.match-cmp-row + .match-cmp-row { border-top: 1px dashed #f3f4f6; }
+/* 姓名列定宽，长名省略号；结论文字紧跟姓名，颜色即档位 */
+.match-cmp-name { width: 148px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.match-cmp-rank {
+  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+  background: #f3f4f6; color: #6b7280; font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.match-cmp-nm {
+  font-size: 13px; font-weight: 500; color: #262626; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.match-cmp-verdict { font-size: 11px; flex-shrink: 0; }
+
+.match-cmp-bars { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.match-cmp-bar { display: flex; align-items: center; gap: 8px; }
+.match-cmp-track { position: relative; flex: 1; min-width: 0; height: 10px; background: #f0f0f0; border-radius: 5px; }
+.match-cmp-bar.is-skill .match-cmp-track { height: 6px; border-radius: 3px; }
+.match-cmp-fill { height: 100%; border-radius: inherit; transition: width 0.4s ease; }
+/* 均值参考线：每行同一 x 位置，纵向看连成一条虚线 */
+.match-cmp-avgline { position: absolute; top: -2px; bottom: -2px; border-left: 1px dashed #9ca3af; pointer-events: none; }
+.match-cmp-val {
+  width: 30px; flex-shrink: 0; text-align: right;
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.match-cmp-val.is-sm { font-size: 11px; font-weight: 600; color: #8c8c8c; }
+
+/* 硬性条件状态点：hover 出 tooltip */
+.match-cmp-hard { display: flex; gap: 4px; flex-shrink: 0; }
+.match-cmp-dot {
+  width: 18px; height: 18px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 11px;
+}
+.match-cmp-dot.is-ok { color: #059669; background: #ecfdf5; }
+.match-cmp-dot.is-no { color: #dc2626; background: #fef2f2; }
+.match-cmp-dot.is-over { color: #d97706; background: #fffbeb; }
+.match-cmp-dot.is-null { color: #9ca3af; background: #fafafa; }
+
 html[data-theme-mode="dark"] .match-parse { border-color: #1f3a5f; background: #16202e; }
 html[data-theme-mode="dark"] .match-parse-name { color: #e5e7eb; }
 html[data-theme-mode="dark"] .match-parse-bar { background: #2a2a2a; }
@@ -1442,6 +1490,21 @@ html[data-theme-mode="dark"] .match-skel-bars > div { background: #2a2a2a; }
 html[data-theme-mode="dark"] .match-cand-list { border-top-color: #303030; }
 html[data-theme-mode="dark"] .match-cand { border-bottom-color: #2a2a2a; }
 html[data-theme-mode="dark"] .match-cand-name { color: #e5e7eb; }
+
+html[data-theme-mode="dark"] .match-compare { border-color: #303030; background: #1a1a1a; }
+html[data-theme-mode="dark"] .match-compare-title { color: #e5e7eb; }
+html[data-theme-mode="dark"] .match-compare-hint { color: #6b7280; }
+html[data-theme-mode="dark"] .match-compare-avg { color: #9ca3af; }
+html[data-theme-mode="dark"] .match-cmp-row + .match-cmp-row { border-top-color: #2a2a2a; }
+html[data-theme-mode="dark"] .match-cmp-rank { background: #2a2a2a; color: #9ca3af; }
+html[data-theme-mode="dark"] .match-cmp-nm { color: #e5e7eb; }
+html[data-theme-mode="dark"] .match-cmp-track { background: #2a2a2a; }
+html[data-theme-mode="dark"] .match-cmp-avgline { border-left-color: #6b7280; }
+html[data-theme-mode="dark"] .match-cmp-val.is-sm { color: #9ca3af; }
+html[data-theme-mode="dark"] .match-cmp-dot.is-ok { color: #34d399; background: rgba(16, 185, 129, 0.12); }
+html[data-theme-mode="dark"] .match-cmp-dot.is-no { color: #f87171; background: rgba(239, 68, 68, 0.12); }
+html[data-theme-mode="dark"] .match-cmp-dot.is-over { color: #fbbf24; background: rgba(245, 158, 11, 0.12); }
+html[data-theme-mode="dark"] .match-cmp-dot.is-null { color: #6b7280; background: #2a2a2a; }
 
 @media (max-width: 1280px) {
   .match-layout { grid-template-columns: minmax(0, 1fr); }
