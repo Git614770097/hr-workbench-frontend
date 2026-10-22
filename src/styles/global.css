@@ -1350,7 +1350,9 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
    右列结果区随内容增长。≤1280px 堆叠回单列并取消 sticky。 */
 .match-layout {
   display: grid;
-  grid-template-columns: 400px minmax(0, 1fr);
+  /* 5:5：操作台与结果区各占一半。条件区（画像/候选人/开始匹配）与结果同屏对比，
+     两侧都不挤压；结果多时右列内部滚动，不牵动左列 */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
   align-items: start;
   flex: 1;
@@ -1389,6 +1391,53 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 
 /* 开始匹配：禁用原因就地说明，不依赖顶部引导条 */
 .match-run-hint { margin-top: 6px; text-align: center; font-size: 12px; color: #8c8c8c; }
+
+/* ===== 等待态：解析清单 ===== */
+.match-parse { margin-top: 8px; border: 1px solid #e6f4ff; background: #fafcff; border-radius: 8px; padding: 8px 10px; }
+.match-parse-head { display: flex; justify-content: space-between; font-size: 12px; color: #262626; font-weight: 500; margin-bottom: 6px; }
+.match-parse-head span:last-child { color: #8c8c8c; font-weight: 400; }
+.match-parse-list { max-height: 132px; overflow-y: auto; }
+.match-parse-item { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 0; }
+.match-parse-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #262626; }
+.match-parse-icon { width: 14px; flex-shrink: 0; text-align: center; line-height: 1; }
+.match-parse-icon.is-done { color: #0f6e56; }
+.match-parse-icon.is-parsing { color: #185fa5; }
+.match-parse-icon.is-failed { color: #a32d2d; }
+.match-parse-icon.is-pending { color: #bfbfbf; }
+.match-parse-tag { font-size: 11px; color: #185fa5; }
+.match-parse-tag.is-fail { color: #a32d2d; }
+.match-parse-bar { margin-top: 6px; height: 4px; background: #f0f0f0; border-radius: 2px; overflow: hidden; }
+.match-parse-bar > div { height: 100%; background: #378add; border-radius: 2px; transition: width 0.3s; }
+.match-spin { width: 10px; height: 10px; border: 2px solid #b5d4f4; border-top-color: #185fa5; border-radius: 50%; display: inline-block; animation: match-spin 0.8s linear infinite; }
+@keyframes match-spin { to { transform: rotate(360deg); } }
+
+/* ===== 等待态：评估进度行 + 阶段文案 ===== */
+.match-run-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: #262626; margin-top: 4px; }
+.match-run-meta span:last-child { color: #8c8c8c; flex-shrink: 0; }
+.match-phase { font-size: 12px; color: #8c8c8c; margin-top: 2px; }
+
+/* ===== 等待态：骨架结果卡 ===== */
+.match-skel { border: 1px dashed #d9d9d9; border-radius: 10px; padding: 12px 16px; margin-bottom: 12px; background: #fafafa; }
+.match-skel-head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #262626; font-weight: 500; }
+.match-skel-status { font-size: 12px; font-weight: 400; color: #185fa5; }
+.match-skel-status.is-queue { color: #8c8c8c; }
+.match-skel-bars { margin-top: 10px; }
+.match-skel-bars > div { height: 8px; background: #efefef; border-radius: 4px; margin-bottom: 6px; }
+.match-skel-bars > div:last-child { width: 65%; }
+
+/* 开始匹配就绪脉冲（候选人刚加入时吸引一次注意） */
+.match-run.is-pulse .ant-btn-primary { animation: match-run-pulse 1.2s ease-in-out 2; }
+@keyframes match-run-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(22, 119, 255, 0.3); }
+  50% { box-shadow: 0 0 0 6px rgba(22, 119, 255, 0); }
+}
+
+html[data-theme-mode="dark"] .match-parse { border-color: #1f3a5f; background: #16202e; }
+html[data-theme-mode="dark"] .match-parse-name { color: #e5e7eb; }
+html[data-theme-mode="dark"] .match-parse-bar { background: #2a2a2a; }
+html[data-theme-mode="dark"] .match-skel { border-color: #303030; background: #1a1a1a; }
+html[data-theme-mode="dark"] .match-skel-head { color: #e5e7eb; }
+html[data-theme-mode="dark"] .match-skel-bars > div { background: #2a2a2a; }
 
 html[data-theme-mode="dark"] .match-cand-list { border-top-color: #303030; }
 html[data-theme-mode="dark"] .match-cand { border-bottom-color: #2a2a2a; }
@@ -1928,6 +1977,23 @@ html[data-theme-mode="dark"] .wb-pal-swatch { box-shadow: 0 0 0 1px rgba(255, 25
   background: #f7f8fa; font-size: 13px; line-height: 1.7; color: #595959;
 }
 .wb-diagnosis-line { }
+
+/* 当前筛选口径提示条：随筛选出现，避免用户忘了自己在看「某个岗位的近 30 天」 */
+.wb-filter-bar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin: -4px 0 12px;
+}
+.wb-filter-bar .ant-btn { padding-left: 4px; padding-right: 4px; height: auto; }
+
+/* ---- AI 复盘正文 ----
+   2026-10-22 补：这个类早就写在 JSX 里，但 CSS 一直没有定义（扫描 className 时发现），
+   正文只能靠内联行距撑着，暗色下 <b> 的对比度也不够。 */
+.wb-recap { font-size: 13px; line-height: 1.8; color: #374151; }
+.wb-recap p { margin: 0 0 10px; line-height: 1.7; }
+.wb-recap-line { line-height: 1.8; }
+.wb-recap b { font-weight: 600; color: #1f2937; }
+html[data-theme-mode="dark"] .wb-recap { color: #d1d5db; }
+html[data-theme-mode="dark"] .wb-recap b { color: #e5e7eb; }
 
 /* ---- 招聘周期：构成一行 + 紧凑表 ---- */
 .wb-cycle-line { font-size: 13px; color: #595959; line-height: 1.6; margin-bottom: 10px; }

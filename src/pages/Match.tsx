@@ -6,7 +6,7 @@ import {
 } from "antd";
 import {
   InboxOutlined, ArrowLeftOutlined, ThunderboltOutlined, DatabaseOutlined,
-  UserSwitchOutlined, TrophyOutlined, CloseOutlined,
+  UserSwitchOutlined, TrophyOutlined, CloseOutlined, ClearOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import { VERDICT_COLORS } from "../types";
@@ -20,6 +20,14 @@ import { useIdentityProfile } from "../useIdentity";
 import { termFor, type IdentityProfile } from "../identityProfiles";
 
 const { Dragger } = Upload;
+
+/** 评估阶段轮换文案：每位候选人的评估都包含这三步，按时间片旋转，
+ *  让用户感知到等待时间花在了哪里（单次评分是一次 AI 调用，无法拿到真实子阶段） */
+const MATCH_PHASES = [
+  "正在比对硬性条件：学历 / 年限 / 城市",
+  "正在分析必备技能命中情况",
+  "AI 正在综合撰写推荐理由与风险",
+];
 
 /** 一份待比选的候选人 */
 interface Candidate {
@@ -118,6 +126,26 @@ export default function Match() {
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
   const [stale, setStale] = useState(false);
 
+  // ---- 等待态增强（解析清单 / 评估骨架 / 耗时预估）----
+  /** 解析进度清单：逐份状态，黑盒变白盒 */
+  interface ParseJob { name: string; status: "pending" | "parsing" | "done" | "failed" }
+  const [parseJobs, setParseJobs] = useState<ParseJob[]>([]);
+  const [parseEta, setParseEta] = useState<number | null>(null);
+  /** 正在评估的候选人 key（骨架卡标「评估中」用） */
+  const [currentKey, setCurrentKey] = useState<string | null>(null);
+  /** 预计剩余秒数（按已完成条目的平均耗时外推） */
+  const [eta, setEta] = useState<number | null>(null);
+  /** 评估阶段轮换文案（每份评估都含这三步，按时间片旋转提示当前在做什么） */
+  const [phase, setPhase] = useState(0);
+  /** 候选人刚就绪时给「开始匹配」一次脉冲提示，提醒下一步点它 */
+  const [justReady, setJustReady] = useState(false);
+
+  useEffect(() => {
+    if (!running) return;
+    const id = window.setInterval(() => setPhase((p) => (p + 1) % 3), 5000);
+    return () => window.clearInterval(id);
+  }, [running]);
+
   // ---- 落地 ----
   const [importingKey, setImportingKey] = useState<string | null>(null);
   const [savedIds, setSavedIds] = useState<Record<string, string>>({});
@@ -136,29 +164,60 @@ export default function Match() {
     loadProfiles();
   }, []);
 
-  const handleSelectProfile = (id?: string) => setProfileId(id);
+  const handleSelectProfile = (id?: string) => {
+    setProfileId(id);
+    // 换画像（或清空选择）后，旧结果自动标记过期：支持「匹配完一个岗位再匹配另一个」
+    // 的连续操作——结果先留着可对比，也可用右上方「清除结果」一键清空
+    if (Object.keys(results).length > 0) setStale(true);
+  };
 
   // ---- 上传并解析简历 ----
+  // 逐份串行解析：每完成一份立即加入候选列表（用户看着候选人在变多，不用干等最后一份），
+  // 单份失败不影响其余；parseJobs 驱动左侧「正在解析 X/N」清单。
   const handleFiles = async (files: File[]) => {
     setParsing(true);
+    setParseJobs(files.map((f) => ({ name: f.name, status: "pending" as const })));
+    setParseEta(null);
+    const t0 = Date.now();
     const added: Candidate[] = [];
-    try {
-      for (const file of files) {
+    let missing = 0;
+    let failed = 0;
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setParseJobs((prev) => prev.map((j, idx) => (idx === i ? { ...j, status: "parsing" } : j)));
+      let cand: Candidate;
+      try {
         const { talent, text } = await parseResumeToTalent(file, nextKey());
-        added.push({ key: talent.key, fileName: file.name, file, text, talent, source: "file" });
+        cand = { key: talent.key, fileName: file.name, file, text, talent, source: "file" };
+      } catch (err) {
+        failed++;
+        setParseJobs((prev) => prev.map((j, idx) => (idx === i ? { ...j, status: "failed" } : j)));
+        message.error(`「${file.name}」解析失败：${(err as Error).message}`);
+        continue;
       }
-      setCandidates((prev) => [...prev, ...added]);
-      const missing = added.filter((c) => !c.talent.name).length;
+      added.push(cand);
+      if (!cand.talent.name) missing++;
+      setParseJobs((prev) => prev.map((j, idx) => (idx === i ? { ...j, status: "done" } : j)));
+      setCandidates((prev) => [...prev, cand]);
+      // 预估：已用时长 / 已完成数 × 剩余数
+      const done = added.length + failed;
+      const remain = files.length - done;
+      if (remain > 0) setParseEta(Math.max(1, Math.round(((Date.now() - t0) / done) * remain / 1000)));
+    }
+    if (added.length > 0) {
       if (missing > 0) {
         message.warning(`已解析 ${added.length} 份，其中 ${missing} 份未识别出姓名，可在结果卡片里查看原文确认`);
       } else {
         message.success(`已解析 ${added.length} 份简历`);
       }
       setStale(true);
-    } catch (err) {
-      message.error((err as Error).message);
     }
     setParsing(false);
+    // 候选人刚就绪：脉冲提醒点「开始匹配」（条件不满足就不打扰）
+    if (profile && added.length > 0) {
+      setJustReady(true);
+      window.setTimeout(() => setJustReady(false), 4000);
+    }
   };
 
   const handleBeforeUpload = (file: File) => {
@@ -187,52 +246,57 @@ export default function Match() {
   const addFromLibrary = async (rows: Talent[]) => {
     setPickerOpen(false);
     setParsing(true);
-    const added: Candidate[] = [];
+    setParseJobs(rows.map((t) => ({ name: t.name, status: "pending" as const })));
+    setParseEta(null);
+    const t0 = Date.now();
     let weakCount = 0;
-    try {
-      for (const t of rows) {
-        let text = "";
-        try {
-          const f = await api.fetchResumeFile(t.id);
-          if (f?.blob) {
-            const ext = (f.name.match(/\.([a-z0-9]+)$/i)?.[1] || (f.blob.type.includes("pdf") ? "pdf" : "docx")).toLowerCase();
-            const file = new File([f.blob], `resume.${ext}`);
-            text = await parseResumeFile(file);
-          }
-        } catch {
-          // 读取或解析失败不中断：退化为字段文本
+    let done = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const t = rows[i];
+      setParseJobs((prev) => prev.map((j, idx) => (idx === i ? { ...j, status: "parsing" } : j)));
+      let text = "";
+      try {
+        const f = await api.fetchResumeFile(t.id);
+        if (f?.blob) {
+          const ext = (f.name.match(/\.([a-z0-9]+)$/i)?.[1] || (f.blob.type.includes("pdf") ? "pdf" : "docx")).toLowerCase();
+          const file = new File([f.blob], `resume.${ext}`);
+          text = await parseResumeFile(file);
         }
-        if (text.trim().length < 10) {
-          text = talentToText(t, brand);
-          weakCount++;
-        }
-        const key = `lib-${t.id}`;
-        added.push({
-          key,
-          fileName: t.name,
-          file: null,
-          text,
-          talent: talentToParsed(t, key, brand),
-          source: "library",
-          talentId: t.id,
-        });
+      } catch {
+        // 读取或解析失败不中断：退化为字段文本
       }
-      setCandidates((prev) => [...prev, ...added]);
-      setSavedIds((prev) => {
-        const next = { ...prev };
-        for (const c of added) next[c.key] = c.talentId!;
-        return next;
-      });
-      setStale(true);
-      if (weakCount > 0) {
-        message.warning(`已加入 ${added.length} 位，其中 ${weakCount} 位没存简历原文，只能按已录入字段比对，评分仅供参考`);
-      } else {
-        message.success(`已加入 ${added.length} 位人选`);
+      if (text.trim().length < 10) {
+        text = talentToText(t, brand);
+        weakCount++;
       }
-    } catch (err) {
-      message.error((err as Error).message);
+      const key = `lib-${t.id}`;
+      const cand: Candidate = {
+        key,
+        fileName: t.name,
+        file: null,
+        text,
+        talent: talentToParsed(t, key, brand),
+        source: "library",
+        talentId: t.id,
+      };
+      done++;
+      setParseJobs((prev) => prev.map((j, idx) => (idx === i ? { ...j, status: "done" } : j)));
+      setCandidates((prev) => [...prev, cand]);
+      setSavedIds((prev) => ({ ...prev, [key]: t.id }));
+      const remain = rows.length - done;
+      if (remain > 0) setParseEta(Math.max(1, Math.round(((Date.now() - t0) / done) * remain / 1000)));
+    }
+    setStale(true);
+    if (weakCount > 0) {
+      message.warning(`已加入 ${rows.length} 位，其中 ${weakCount} 位没存简历原文，只能按已录入字段比对，评分仅供参考`);
+    } else {
+      message.success(`已加入 ${rows.length} 位人选`);
     }
     setParsing(false);
+    if (profile && rows.length > 0) {
+      setJustReady(true);
+      window.setTimeout(() => setJustReady(false), 4000);
+    }
   };
 
   // 从人才详情「智能匹配」跳过来：路由 state 带 talentId，直接把该人才加进候选人
@@ -268,6 +332,17 @@ export default function Match() {
     });
   };
 
+  // 清除上一次匹配结果：换岗位/换画像重来时，不用刷新页面就能清空右列
+  // （只清结果，不动画像与候选人——换岗位只需另选画像，候选人通常还要复用）
+  const clearResults = () => {
+    setResults({});
+    setEta(null);
+    setCurrentKey(null);
+    setProgress({ done: 0, total: 0, current: "" });
+    setStale(false);
+    message.success("已清除上次匹配结果，选好画像后重新开始");
+  };
+
   // ---- 逐份评分（串行 + 进度）----
   const handleMatch = async () => {
     if (!profile) {
@@ -282,10 +357,14 @@ export default function Match() {
     setRunning(true);
     setResults({});
     setStale(false);
+    setEta(null);
+    setCurrentKey(null);
     const next: Record<string, MatchResult> = {};
+    const t0 = Date.now();
     for (let i = 0; i < candidates.length; i++) {
       const cd = candidates[i];
       setProgress({ done: i, total: candidates.length, current: cd.talent.name || cd.fileName });
+      setCurrentKey(cd.key);
       try {
         next[cd.key] = await api.scoreCandidate(profile, {
           text: cd.text,
@@ -303,8 +382,13 @@ export default function Match() {
       } catch (err) {
         message.error(`「${cd.talent.name || cd.fileName}」评估失败：${(err as Error).message}`);
       }
+      // 预估：已用时长 / 已评估数 × 剩余数（首位耗时偏差大，从第 2 位起才显示）
+      const done = i + 1;
+      const remain = candidates.length - done;
+      if (done >= 2 && remain > 0) setEta(Math.max(1, Math.round((Date.now() - t0) / done * remain / 1000)));
     }
     setProgress({ done: candidates.length, total: candidates.length, current: "" });
+    setCurrentKey(null);
     setRunning(false);
     message.success(`匹配完成，共 ${Object.keys(next).length} 份`);
   };
@@ -428,10 +512,17 @@ export default function Match() {
           >
             <Select
               style={{ width: "100%" }}
-              placeholder="选用一个职位画像"
+              placeholder="选用一个职位画像（可输入职位名搜索）"
               value={profileId}
               onChange={handleSelectProfile}
               allowClear
+              showSearch
+              /* 职位名、画像名都能搜：下拉显示职位名，但用户可能只记得画像（配置）时的名字 */
+              filterOption={(input, option) => {
+                const p = profiles.find((x) => x.id === option?.value);
+                if (!p) return false;
+                return `${p.job_title || ""} ${p.name || ""}`.toLowerCase().includes(input.toLowerCase());
+              }}
               options={profiles.map((p) => ({ label: p.job_title || p.name, value: p.id! }))}
             />
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 6 }}>
@@ -472,7 +563,29 @@ export default function Match() {
               <p className="ant-upload-hint">支持 .pdf、.docx，可一次多份</p>
             </Dragger>
 
-            {parsing && <Alert message="简历解析中…" type="info" showIcon style={{ marginTop: 8 }} />}
+            {parsing && parseJobs.length > 0 && (
+              <div className="match-parse">
+                <div className="match-parse-head">
+                  <span>正在解析 {parseJobs.filter((j) => j.status === "done" || j.status === "failed").length} / {parseJobs.length}</span>
+                  {parseEta != null && <span>约还需 {parseEta} 秒</span>}
+                </div>
+                <div className="match-parse-list">
+                  {parseJobs.map((j, i) => (
+                    <div className="match-parse-item" key={i}>
+                      <span className={`match-parse-icon is-${j.status}`}>
+                        {j.status === "done" ? "✓" : j.status === "failed" ? "✕" : j.status === "parsing" ? <span className="match-spin" /> : "○"}
+                      </span>
+                      <span className="match-parse-name">{j.name}</span>
+                      {j.status === "parsing" && <span className="match-parse-tag">解析中</span>}
+                      {j.status === "failed" && <span className="match-parse-tag is-fail">失败</span>}
+                    </div>
+                  ))}
+                </div>
+                <div className="match-parse-bar">
+                  <div style={{ width: `${Math.round((parseJobs.filter((j) => j.status === "done" || j.status === "failed").length / parseJobs.length) * 100)}%` }} />
+                </div>
+              </div>
+            )}
 
             {candidates.length > 0 && (
               <div className="match-cand-list">
@@ -494,8 +607,9 @@ export default function Match() {
             )}
           </Card>
 
-          {/* 开始匹配：紧邻条件区，禁用原因就地说明（不再依赖顶部引导条猜缺什么） */}
-          <div className="match-run">
+          {/* 开始匹配：紧邻条件区，禁用原因就地说明（不再依赖顶部引导条猜缺什么））；
+              候选人刚就绪时脉冲提示一次 */}
+          <div className={`match-run${justReady ? " is-pulse" : ""}`}>
             <Button
               type="primary"
               block
@@ -529,15 +643,29 @@ export default function Match() {
               </Space>
             }
             size="small"
+            extra={
+              Object.keys(results).length > 0 ? (
+                <Button size="small" icon={<ClearOutlined />} disabled={running} onClick={clearResults}>
+                  清除结果
+                </Button>
+              ) : null
+            }
           >
         {/* 缺条件的原因由顶部唯一的「当前该做什么」引导条承担，这里只留一行浅色说明，不再重复 Alert */}
-        {running && (
-          <Progress
-            percent={progress.total ? Math.round((progress.done / progress.total) * 100) : 0}
-            format={() => `正在评估 ${progress.done + 1}/${progress.total}${progress.current ? `：${progress.current}` : ""}`}
-            style={{ marginBottom: 12 }}
-          />
-        )}
+            {running && (
+              <>
+                <Progress
+                  percent={progress.total ? Math.round((progress.done / progress.total) * 100) : 0}
+                  format={() => `正在评估 ${progress.done + 1}/${progress.total}${progress.current ? `：${progress.current}` : ""}`}
+                  style={{ marginBottom: 4 }}
+                />
+                <div className="match-run-meta">
+                  <span>第 {progress.done + 1} / {progress.total} 位：{progress.current || "准备中"}</span>
+                  {eta != null && <span>预计还需约 {eta} 秒</span>}
+                </div>
+                <div className="match-phase">{MATCH_PHASES[phase]}</div>
+              </>
+            )}
 
         {stale && Object.keys(results).length > 0 && (
           <Alert
@@ -556,8 +684,8 @@ export default function Match() {
           </Typography.Paragraph>
         )}
 
-        {/* 结果概览：整体结论一眼可见（各档人数 + 最佳人选） */}
-        {ranked.length > 0 && (
+        {/* 结果概览：整体结论一眼可见（各档人数 + 最佳人选）；评估进行中只显示部分结果，不展示概览 */}
+        {!running && ranked.length > 0 && (
           <div
             style={{
               display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
@@ -615,6 +743,22 @@ export default function Match() {
             onAddToPipeline={() => handleAddToPipeline(cd)}
             onCreateTask={() => handleCreateTask(cd)}
           />
+        ))}
+
+        {/* 等待位：未出分的候选人渲染骨架卡——总共几位、完成几位、正在评谁、还剩谁，一目了然 */}
+        {running && candidates.filter((c) => !results[c.key]).map((cd) => (
+          <div className="match-skel" key={cd.key}>
+            <div className="match-skel-head">
+              <span>{cd.talent.name || cd.fileName || "未识别"}</span>
+              {currentKey === cd.key
+                ? <span className="match-skel-status">评估中…</span>
+                : <span className="match-skel-status is-queue">排队中</span>}
+            </div>
+            <div className="match-skel-bars">
+              <div />
+              <div />
+            </div>
+          </div>
         ))}
           </Card>
         </div>
