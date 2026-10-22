@@ -76,7 +76,7 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
       title={termFor(profile, "从人才库添加人选")}
       open={open}
       onCancel={onCancel}
-      width={900}
+      width={1080}
       getContainer={() => document.body}
       zIndex={1050}
       footer={
@@ -146,7 +146,7 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
         columns={[
           { title: "姓名", dataIndex: "name", width: 100 },
           { title: "当前职位", dataIndex: "current_title", ellipsis: true, render: (v) => v || "-" },
-          { title: "公司", dataIndex: "current_company", ellipsis: true, render: (v) => v || "-" },
+          { title: "公司", dataIndex: "current_company", width: 160, ellipsis: true, render: (v) => v || "-" },
           {
             title: "年限",
             dataIndex: "years_experience",
@@ -158,6 +158,7 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
           {
             title: "技能",
             dataIndex: "skills",
+            width: 220,
             ellipsis: true,
             render: (v: string[] | null) =>
               v && v.length > 0 ? (

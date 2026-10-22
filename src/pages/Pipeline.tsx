@@ -571,7 +571,7 @@ export default function Pipeline() {
                           className="ai-btn"
                           size="small"
                           icon={<RobotOutlined />}
-                          onClick={() => navigate("/match")}
+                          onClick={() => navigate("/match", { state: { from: "pipeline" } })}
                         >
                           这一列还没人，用智能匹配补人
                         </Button>
