@@ -1345,6 +1345,60 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
 .profiles-page > .ant-card:last-child > .ant-card-body,
 .funnel-page > .ant-card:last-child > .ant-card-body { flex: 1; }
 
+/* ===== 智能匹配：左右分栏工作台 ===== */
+/* 左列「操作台」sticky 常驻（选画像/加人/开始匹配），条件与结果同屏；
+   右列结果区随内容增长。≤1280px 堆叠回单列并取消 sticky。 */
+.match-layout {
+  display: grid;
+  grid-template-columns: 400px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  flex: 1;
+}
+.match-side {
+  position: sticky;
+  top: 8px;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+/* 右列撑满：空态时结果卡仍撑高，与改造前一致 */
+.match-main { display: flex; flex-direction: column; min-width: 0; }
+.match-main > .ant-card { flex: 1; display: flex; flex-direction: column; }
+.match-main > .ant-card > .ant-card-body { flex: 1; }
+
+/* 紧凑拖拽区：缩图标与文案，占位高度约降到原来一半 */
+.match-drop.ant-upload-drag { padding: 10px 8px; }
+.match-drop .ant-upload-drag-icon { margin-bottom: 4px; font-size: 20px; }
+.match-drop .ant-upload-text { font-size: 12px; margin-bottom: 2px; }
+.match-drop .ant-upload-hint { font-size: 11px; }
+
+/* 候选人紧凑列表（替代原表格：匹配场景只需知道有谁、能移除，详情在结果卡里看） */
+.match-cand-list { margin-top: 8px; border-top: 1px solid #f0f0f0; }
+.match-cand {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 2px; border-bottom: 1px solid #f5f5f5; font-size: 12px;
+}
+.match-cand:last-child { border-bottom: none; }
+.match-cand-name {
+  font-weight: 500; color: #262626; max-width: 110px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.match-cand-meta { flex: 1; color: #8c8c8c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.match-cand .ant-btn { flex-shrink: 0; }
+
+/* 开始匹配：禁用原因就地说明，不依赖顶部引导条 */
+.match-run-hint { margin-top: 6px; text-align: center; font-size: 12px; color: #8c8c8c; }
+
+html[data-theme-mode="dark"] .match-cand-list { border-top-color: #303030; }
+html[data-theme-mode="dark"] .match-cand { border-bottom-color: #2a2a2a; }
+html[data-theme-mode="dark"] .match-cand-name { color: #e5e7eb; }
+
+@media (max-width: 1280px) {
+  .match-layout { grid-template-columns: minmax(0, 1fr); }
+  .match-side { position: static; max-height: none; overflow: visible; }
+}
+
 .tasks-page {
   display: flex;
   flex-direction: column;

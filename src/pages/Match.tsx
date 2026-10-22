@@ -2,11 +2,11 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   Card, Button, Input, Select, Upload, Space, Tag, message, Modal, Alert,
-  Progress, Typography, Popconfirm, Table, Tooltip,
+  Progress, Typography, Popconfirm,
 } from "antd";
 import {
   InboxOutlined, ArrowLeftOutlined, ThunderboltOutlined, DatabaseOutlined,
-  UserSwitchOutlined, TrophyOutlined,
+  UserSwitchOutlined, TrophyOutlined, CloseOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import { VERDICT_COLORS } from "../types";
@@ -384,13 +384,13 @@ export default function Match() {
   // 动态步骤引导：全页只保留这一条引导（落地场景、缺条件场景都收进这一条），
   // 避免多条 Alert 叠加让用户分不清重点
   const stepHint: string | null = !profile
-    ? "第 1 步：在下方「① 选择画像」里选中一个职位画像"
+    ? "第 1 步：在左侧「① 选择画像」里选中一个职位画像"
     : candidates.length === 0
-      ? `第 2 步：添加候选人 —— 点「② 候选人」右上角的「从${termFor(brand, "人才库")}添加」一键加入，或直接拖拽简历文件上传（就绪后点「③ 开始匹配」）`
+      ? `第 2 步：添加候选人 —— 点「② 候选人」右上角的「从${termFor(brand, "人才库")}添加」一键加入，或直接拖拽简历文件上传（就绪后点左下角「开始匹配」）`
       : running
         ? "正在评估中，请稍候…"
         : ranked.length === 0
-          ? "第 3 步：就绪！点右上角「开始匹配」"
+          ? "第 3 步：就绪！点左下角「开始匹配」"
           : null;
 
   return (
@@ -417,127 +417,89 @@ export default function Match() {
         />
       )}
 
-      {/* ① 选择画像 */}
-      <Card
-        title={<Space size={6}>① 选择画像 {!profile ? <Tag color="orange">待选</Tag> : <Tag color="green">已选 ✓</Tag>}</Space>}
-        size="small"
-        style={{ marginBottom: 12 }}
-      >
-        <Space wrap>
-          <Select
-            style={{ width: 360 }}
-            placeholder="选用一个职位画像"
-            value={profileId}
-            onChange={handleSelectProfile}
-            allowClear
-            options={profiles.map((p) => ({ label: p.job_title || p.name, value: p.id! }))}
-          />
-          <Button icon={<UserSwitchOutlined />} onClick={() => navigate("/profiles")}>管理画像</Button>
-        </Space>
-        {profile && (
-          <Typography.Paragraph type="secondary" style={{ margin: "8px 0 0", fontSize: 13 }}>
-            {[
-              profile.job_title && `职位 ${profile.job_title}`,
-              profile.city && `城市 ${profile.city}`,
-              profile.education && `学历 ${profile.education}`,
-              profile.jd_raw ? "已填招聘需求" : "无招聘需求",
-            ].filter(Boolean).join(" · ")}
-          </Typography.Paragraph>
-        )}
-      </Card>
-
-      {/* ② 候选人 */}
-      <Card
-        title={<Space size={6}>② 候选人（{candidates.length} 位）{candidates.length === 0 ? <Tag color="orange">待添加</Tag> : <Tag color="green">已就绪 ✓</Tag>}</Space>}
-        size="small"
-        style={{ marginBottom: 12 }}
-        extra={
-          <Button icon={<DatabaseOutlined />} onClick={() => setPickerOpen(true)}>
-            从{termFor(brand, "人才库")}添加
-          </Button>
-        }
-      >
-        <Dragger
-          multiple
-          showUploadList={false}
-          disabled={parsing}
-          beforeUpload={handleBeforeUpload}
-        >
-          <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-          <p className="ant-upload-text">点击或拖拽简历文件到此处</p>
-          <p className="ant-upload-hint">
-            {termFor(brand, "支持 .pdf、.docx（单份 ≤ 20MB），可一次上传多份；已有的人选从右上角「从人才库添加」")}
-          </p>
-        </Dragger>
-
-        {parsing && <Alert message="简历解析中…" type="info" showIcon style={{ marginTop: 12 }} />}
-
-        {candidates.length > 0 && (
-          <Table
-            style={{ marginTop: 12 }}
+      {/* 左右分栏：左侧「操作台」常驻（选画像 / 加人 / 开始匹配），右侧结果区随内容增长 */}
+      <div className="match-layout">
+        <div className="match-side">
+          {/* ① 选择画像 */}
+          <Card
+            title={<Space size={6}>① 选择画像 {!profile ? <Tag color="orange">待选</Tag> : <Tag color="green">已选 ✓</Tag>}</Space>}
             size="small"
-            rowKey="key"
-            pagination={false}
-            dataSource={candidates}
-            columns={[
-              {
-                title: "来源",
-                dataIndex: "fileName",
-                ellipsis: true,
-                render: (v: string, r: Candidate) => (
-                  <Space size={6}>
-                    <span>{v}</span>
-                    {r.source === "library" ? <Tag color="blue">{termFor(brand, "人才库")}</Tag> : <Tag>新简历</Tag>}
-                  </Space>
-                ),
-              },
-              {
-                title: "姓名",
-                render: (_, r) => r.talent.name || <span style={{ color: "#c2410c" }}>未识别</span>,
-                width: 100,
-              },
-              { title: "当前职位", render: (_, r) => r.talent.current_title || "-", width: 160, ellipsis: true },
-              {
-                title: "年限",
-                render: (_, r) => (r.talent.years_experience != null ? `${r.talent.years_experience} 年` : "-"),
-                width: 80,
-              },
-              { title: "城市", render: (_, r) => r.talent.city || "-", width: 90 },
-              {
-                title: "解析",
-                render: (_, r: Candidate) =>
-                  r.source === "library"
-                    ? <Tag color="cyan">已录入</Tag>
-                    : (r.talent._ai ? <Tag color="blue">AI</Tag> : <Tag>本地规则</Tag>),
-                width: 90,
-              },
-              {
-                title: "操作",
-                render: (_, r) => (
-                  <Popconfirm title="移除这份简历？" okText="移除" cancelText="取消" onConfirm={() => removeCandidate(r.key)}>
-                    <Button type="link" size="small" danger>移除</Button>
-                  </Popconfirm>
-                ),
-                width: 80,
-              },
-            ]}
-          />
-        )}
-      </Card>
+            style={{ marginBottom: 12 }}
+          >
+            <Select
+              style={{ width: "100%" }}
+              placeholder="选用一个职位画像"
+              value={profileId}
+              onChange={handleSelectProfile}
+              allowClear
+              options={profiles.map((p) => ({ label: p.job_title || p.name, value: p.id! }))}
+            />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 6 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {profile
+                  ? [
+                      profile.job_title && `职位 ${profile.job_title}`,
+                      profile.city && `城市 ${profile.city}`,
+                      profile.education && `学历 ${profile.education}`,
+                      profile.jd_raw ? "已填招聘需求" : "无招聘需求",
+                    ].filter(Boolean).join(" · ")
+                  : "从下拉列表选一个画像开始"}
+              </Typography.Text>
+              <Button type="link" size="small" style={{ paddingInline: 0, flexShrink: 0 }} icon={<UserSwitchOutlined />} onClick={() => navigate("/profiles")}>管理画像</Button>
+            </div>
+          </Card>
 
-      {/* ③ 匹配结果 */}
-      <Card
-        title={
-          <Space size={6}>
-            ③ 匹配结果
-            {running ? <Tag color="blue">进行中</Tag> : ranked.length > 0 ? <Tag color="green">已完成 ✓</Tag> : <Tag color="orange">待开始</Tag>}
-          </Space>
-        }
-        size="small"
-        extra={
-          <Tooltip title={!profile || candidates.length === 0 ? "先选画像并添加至少 1 位候选人" : ""}>
+          {/* ② 候选人 */}
+          <Card
+            title={<Space size={6}>② 候选人（{candidates.length} 位）{candidates.length === 0 ? <Tag color="orange">待添加</Tag> : <Tag color="green">已就绪 ✓</Tag>}</Space>}
+            size="small"
+            style={{ marginBottom: 12 }}
+            extra={
+              <Button size="small" icon={<DatabaseOutlined />} onClick={() => setPickerOpen(true)}>
+                从{termFor(brand, "人才库")}添加
+              </Button>
+            }
+          >
+            <Dragger
+              multiple
+              showUploadList={false}
+              disabled={parsing}
+              beforeUpload={handleBeforeUpload}
+              className="match-drop"
+            >
+              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+              <p className="ant-upload-text">点击或拖拽简历到此处</p>
+              <p className="ant-upload-hint">支持 .pdf、.docx，可一次多份</p>
+            </Dragger>
+
+            {parsing && <Alert message="简历解析中…" type="info" showIcon style={{ marginTop: 8 }} />}
+
+            {candidates.length > 0 && (
+              <div className="match-cand-list">
+                {candidates.map((r) => (
+                  <div className="match-cand" key={r.key} title={r.fileName}>
+                    <span className="match-cand-name">{r.talent.name || "未识别"}</span>
+                    <span className="match-cand-meta">
+                      {[r.talent.years_experience != null ? `${r.talent.years_experience} 年` : "", r.talent.city].filter(Boolean).join(" · ")}
+                    </span>
+                    {r.source === "library"
+                      ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>{termFor(brand, "库")}</Tag>
+                      : <Tag style={{ marginInlineEnd: 0 }}>新</Tag>}
+                    <Popconfirm title="移除这份简历？" okText="移除" cancelText="取消" onConfirm={() => removeCandidate(r.key)}>
+                      <Button type="text" size="small" danger icon={<CloseOutlined />} />
+                    </Popconfirm>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          {/* 开始匹配：紧邻条件区，禁用原因就地说明（不再依赖顶部引导条猜缺什么） */}
+          <div className="match-run">
             <Button
               type="primary"
+              block
+              size="large"
               icon={<ThunderboltOutlined />}
               loading={running}
               disabled={running || !profile || candidates.length === 0}
@@ -545,9 +507,29 @@ export default function Match() {
             >
               开始匹配
             </Button>
-          </Tooltip>
-        }
-      >
+            <div className="match-run-hint">
+              {running
+                ? "正在评估中，请稍候…"
+                : !profile
+                  ? "先选择职位画像"
+                  : candidates.length === 0
+                    ? "再添加至少 1 位候选人"
+                    : `将评估 ${candidates.length} 位候选人`}
+            </div>
+          </div>
+        </div>
+
+        {/* ③ 匹配结果 */}
+        <div className="match-main">
+          <Card
+            title={
+              <Space size={6}>
+                ③ 匹配结果
+                {running ? <Tag color="blue">进行中</Tag> : ranked.length > 0 ? <Tag color="green">已完成 ✓</Tag> : <Tag color="orange">待开始</Tag>}
+              </Space>
+            }
+            size="small"
+          >
         {/* 缺条件的原因由顶部唯一的「当前该做什么」引导条承担，这里只留一行浅色说明，不再重复 Alert */}
         {running && (
           <Progress
@@ -569,8 +551,8 @@ export default function Match() {
         {ranked.length === 0 && !running && (
           <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
             {!profile || candidates.length === 0
-              ? termFor(brand, "先按上方「当前该做什么」提示补齐画像和候选人，这里就能开始匹配了")
-              : "点右上角「开始匹配」开始评估，结果会按匹配度从高到低排列。"}
+              ? termFor(brand, "先按左侧操作台补齐画像和候选人，这里就能开始匹配了")
+              : "点左侧「开始匹配」开始评估，结果会按匹配度从高到低排列。"}
           </Typography.Paragraph>
         )}
 
@@ -634,7 +616,9 @@ export default function Match() {
             onCreateTask={() => handleCreateTask(cd)}
           />
         ))}
-      </Card>
+          </Card>
+        </div>
+      </div>
 
       {/* 比对依据 */}
       <Modal
