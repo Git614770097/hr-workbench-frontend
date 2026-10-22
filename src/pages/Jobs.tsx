@@ -2,14 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Button, Space, Tag, Input, Select, Popconfirm, message, Tooltip,
-  Progress, Modal, Empty, Spin, Badge, Dropdown,
+  Progress, Modal, Empty, Spin, Badge,
 } from "antd";
 import {
   PlusOutlined, SearchOutlined, ReloadOutlined,
-  TeamOutlined, PlayCircleOutlined, PauseCircleOutlined, StopOutlined,
-  CheckOutlined, DownloadOutlined, RobotOutlined, CopyOutlined,
+  TeamOutlined,
+  DownloadOutlined, RobotOutlined, CopyOutlined,
 } from "@ant-design/icons";
-import type { MenuProps } from "antd";
 import { api } from "../api";
 import AiThinking from "../components/AiThinking";
 import { TypeText } from "../utils/useTypewriter";
@@ -139,13 +138,16 @@ export default function Jobs() {
     return () => { alive = false; };
   }, [canProfiles]);
 
-  // 行内「匹配人才」：按岗位标题找同名画像 → 直达匹配页；没有就引导先去建画像
-  // （画像与岗位是两套数据，靠标题关联——找不到时给明确动作，不要静默跳空页）
+  // 行内「AI匹配」：按岗位标题找同名画像 → 直达匹配页；没有同名画像时直接进画像创建
+  // （岗位信息自动预填）——原「生成画像」按钮已合并进这里：少一步跳转，功能不丢失
   const goMatchForJob = (job: Job) => {
     const t = (job.title || "").trim().toLowerCase();
     const hit = matchProfiles.find((p) => p.title && p.title.toLowerCase() === t);
     if (hit) navigate("/match", { state: { profileId: hit.id } });
-    else message.warning(`还没有与「${job.title}」同名的职位画像，先点右侧「生成画像」建一个，再来匹配`);
+    else {
+      message.info(`还没有与「${job.title}」同名的职位画像，已带你创建并预填岗位信息`);
+      navigate(`/profiles?job_id=${job.id}`);
+    }
   };
 
   const fetchJobs = useCallback(async () => {
@@ -181,17 +183,6 @@ export default function Jobs() {
     setPage(1);
   };
 
-  // 快速切换岗位状态（在招 ⇄ 暂停 / 关闭）
-  const quickStatus = async (job: Job, status: string) => {
-    try {
-      await api.updateJob(job.id, { status } as Partial<Job>);
-      message.success(`「${job.title}」已${JOB_STATUS_LABELS[status]}`);
-      fetchJobs();
-    } catch (err) {
-      message.error((err as Error).message);
-    }
-  };
-
   const handleDelete = async (job: Job) => {
     try {
       await api.deleteJob(job.id);
@@ -215,23 +206,6 @@ export default function Jobs() {
     }
     setDetailLoading(false);
   };
-
-  // 切换状态菜单：当前状态项打勾置灰不可点，其余为可执行动作。
-  // 图标语义：在招=播放、暂停=暂停、关闭=停止；菜单外观用「开关」而非导出图标。
-  const statusMenu = (job: Job): MenuProps["items"] =>
-    (["open", "paused", "closed"] as const).map((s) => {
-      const isCurrent = s === job.status;
-      return {
-        key: s,
-        disabled: isCurrent,
-        label: isCurrent
-          ? `${JOB_STATUS_LABELS[s]}（当前）`
-          : termFor(profile, s === "open" ? "设为在招" : s === "paused" ? "暂停招聘" : "关闭岗位"),
-        icon: isCurrent
-          ? <CheckOutlined />
-          : s === "open" ? <PlayCircleOutlined /> : s === "paused" ? <PauseCircleOutlined /> : <StopOutlined />,
-      };
-    });
 
   const columns = [
     {
@@ -294,7 +268,7 @@ export default function Jobs() {
       render: (v: string) => v || "-",
     }] : []),
     {
-      title: "操作", key: "action", width: 380, fixed: "right" as const,
+      title: "操作", key: "action", width: 260, fixed: "right" as const,
       render: (_: any, r: Job) => (
         <Space size={4}>
           <Button type="link" size="small" onClick={() => { setPresetJobId(r.id); setAddOpen(true); }}>
@@ -303,14 +277,7 @@ export default function Jobs() {
           {canProfiles && (
             <Button className="ai-btn" size="small" icon={<RobotOutlined />} onClick={() => goMatchForJob(r)}>匹配人才</Button>
           )}
-          <Button type="link" size="small" onClick={() => navigate(`/profiles?job_id=${r.id}`)}>生成画像</Button>
           <Button type="link" size="small" onClick={() => { setEditingId(r.id); setFormOpen(true); }}>编辑</Button>
-          <Dropdown
-            menu={{ items: statusMenu(r), onClick: ({ key }) => quickStatus(r, key), selectable: true, selectedKeys: [r.status] }}
-            trigger={["click"]}
-          >
-            <Button type="link" size="small">切换状态</Button>
-          </Dropdown>
           <Popconfirm
             title={termFor(profile, "确认删除该岗位？")}
             description={termFor(profile, "岗位下的候选人关联会被清除，人才档案保留。")}
@@ -430,7 +397,7 @@ export default function Jobs() {
           dataSource={jobs}
           rowKey="id"
           loading={loading}
-          scroll={{ x: 1580 }}
+          scroll={{ x: 1450 }}
           locale={{
             // 空库引导：新企业第一次进来，给一个一键看效果的入口
             emptyText: (
