@@ -97,26 +97,34 @@ export interface ResolvedAiKey {
   key: string | null;
   /** true = 用户自有 Key（花用户的钱，不占系统配额） */
   own: boolean;
+  /**
+   * 智谱 GLM Key（系统级，兜底使用）。
+   * 未配置 ZHIPU_API_KEY 时为 null，调用层就只有 DeepSeek 一条路。
+   */
+  zhipu: string | null;
 }
 
 /**
- * 解析本次 AI 调用该用哪个 Key：用户配了自有 Key 就用用户的（解密失败按未配处理），
- * 否则回落系统 Key（DEEPSEEK_API_KEY）。
+ * 解析本次 AI 调用该用哪个 Key：
+ * - `key` 是**主路径**：用户配了自有 Key 就用用户的，否则用系统 DeepSeek Key；
+ * - `zhipu` 是**兜底**：仅在主路径失败（超时/限流/异常）时由调用层自动切换；
+ * - 解密失败按未配处理。
  */
 export async function resolveAiKey(
-  env: { DB: D1Database; DEEPSEEK_API_KEY?: string; AI_KEY_SECRET?: string },
+  env: { DB: D1Database; DEEPSEEK_API_KEY?: string; ZHIPU_API_KEY?: string; AI_KEY_SECRET?: string },
   userId: string
 ): Promise<ResolvedAiKey> {
   const systemKey = env.DEEPSEEK_API_KEY ?? null;
-  if (!env.AI_KEY_SECRET) return { key: systemKey, own: false };
+  const zhipu = env.ZHIPU_API_KEY ?? null;
+  if (!env.AI_KEY_SECRET) return { key: systemKey, own: false, zhipu };
   try {
     const row = await env.DB.prepare("SELECT ai_key FROM users WHERE id = ?").bind(userId).first<{ ai_key: string | null }>();
-    if (!row?.ai_key) return { key: systemKey, own: false };
+    if (!row?.ai_key) return { key: systemKey, own: false, zhipu };
     const plain = await decryptAiKey(row.ai_key, env.AI_KEY_SECRET);
-    if (!plain) return { key: systemKey, own: false };
-    return { key: plain, own: true };
+    if (!plain) return { key: systemKey, own: false, zhipu };
+    return { key: plain, own: true, zhipu };
   } catch {
-    return { key: systemKey, own: false };
+    return { key: systemKey, own: false, zhipu };
   }
 }
 

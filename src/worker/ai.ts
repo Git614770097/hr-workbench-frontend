@@ -1,10 +1,13 @@
 // AI 调用与返回解析的公共封装。
 // 简历解析（aiParse）与人才AI匹配（match）都要用，抽出来避免两份几乎一样的 fetch + 取 JSON 逻辑。
 //
-// ── 供应商策略（2026-10-22）─────────────────────────────────────────────
-// 优先智谱 GLM-4.7-Flash（永久免费档），命中 429/超时/异常/解析失败时**自动回落 DeepSeek**。
-// 免费档限流是「同时 1 个并发」，多用户并发时 429 是常态而非故障，所以回落是主路径不是兜底路径。
-// 未配置智谱 Key（ZHIPU_API_KEY）时行为与旧版完全一致，只走 DeepSeek。
+// ── 供应商策略（2026-10-23 调整）────────────────────────────────────────
+// **DeepSeek 优先，智谱 GLM-4.7-Flash 兜底。**
+// 早先是智谱优先（免费档省钱），但智谱免费档「同时 1 个并发」，高峰期经常 17s+ 才响应、
+// 甚至直接 429，导致每次 AI 调用先白等一段时间才回落——用户体验就是「一直在转」。
+// DeepSeek 实测约 100 tok/s、稳定性好，单次成本极低（一份周报约 0.002 元），
+// 所以让它当主路径，把智谱降为「DeepSeek 不可用时」的备份，省下的等待远比省下的钱值。
+// 未配置 DeepSeek Key 时行为不变，直接走智谱。
 // ────────────────────────────────────────────────────────────────────────
 
 /** 从 AI 返回内容里稳健地抽出 JSON 对象（兼容被 ```json 包裹 / 前后有杂文的情况） */
@@ -41,11 +44,11 @@ export interface AiUsage {
   total_tokens: number;
 }
 
-/** 一次 AI 调用所用的 Key 集合：智谱优先，DeepSeek 回落 */
+/** 一次 AI 调用所用的 Key 集合：DeepSeek 优先，智谱兜底 */
 export interface AiKeys {
-  /** 智谱 GLM Key（优先）；未配置则直接走 DeepSeek */
+  /** 智谱 GLM Key（兜底）；DeepSeek 不可用时才用 */
   zhipu?: string | null;
-  /** DeepSeek Key（回落） */
+  /** DeepSeek Key（优先） */
   deepseek?: string | null;
 }
 
@@ -133,10 +136,9 @@ async function callProvider(
   // 智谱的 id.secret 格式 Key 必须做 JWT 动态签名，直接当 Bearer 发会 401
   const auth = provider === "zhipu" ? await zhipuBearer(key) : `Bearer ${key}`;
   // ⚠️ 单次超时必须按供应商区分，不能都等 60s：
-  // 智谱免费档高峰期会长时间不响应（正常也要 17s+），若等满 60s，前端的 60s
-  // 超时同时到点，用户看到「请求超时（超过 60 秒）」——而其实后端还没来得及
-  // 回落到 DeepSeek。智谱只给 20s，拿不到就立刻换；DeepSeek 实测约 100 tok/s，
-  // 40s 足够生成 4000 token。
+  // DeepSeek 是主路径，实测约 100 tok/s，40s 足够生成 4000 token；
+  // 智谱只作兜底，免费档高峰期会长时间不响应（正常也要 17s+），只给 20s，拿不到就算了。
+  // 最坏 40+20=60s，仍在前端 90s 之内，用户不会看到「请求超时」而其实后端还能成功。
   const timeoutMs = provider === "zhipu" ? 20_000 : 40_000;
   try {
     const resp = await fetch(url, {
@@ -198,6 +200,9 @@ async function callProvider(
  * 智谱熔断：免费档 1305「访问量过大」是常态而非故障，每次都先撞一次再回落，
  * 会让所有 AI 调用白付 0.3~0.5s。连续失败后短时间内直接跳过智谱，到期自动再试。
  * 存在 isolate 级全局变量（同一 isolate 内共享，跨 isolate 不保证）——最佳努力即可。
+ *
+ * 智谱现在只是**兜底**，只有 DeepSeek 失败才会走到它，所以这个熔断主要是防止
+ * 「DeepSeek 挂了 + 智谱也在 429」时每一单都白等 20s。
  */
 let zhipuOpenUntil = 0;
 let zhipuFails = 0;
@@ -205,8 +210,11 @@ const ZHIPU_COOLDOWN_MS = 60_000;
 const ZHIPU_FAIL_THRESHOLD = 2;
 
 /**
- * 按「智谱优先 → DeepSeek 回落」的顺序跑完一次调用，返回第一个成功解析出 JSON 的结果。
+ * 按「DeepSeek 优先 → 智谱兜底」的顺序跑完一次调用，返回第一个成功解析出 JSON 的结果。
  * 任一环的失败（429/超时/解析失败）都继续走下一环，全部失败返回 null。
+ *
+ * 为什么要倒过来：智谱免费档「同时 1 个并发」，高峰期首字节经常 17s+ 才回来，
+ * 每次调用都先撞它等于每次白等十几秒；DeepSeek 稳定在 100 tok/s，等待时间可预期。
  */
 async function callWithFallback(
   apiKey: AiKeyInput,
@@ -217,8 +225,8 @@ async function callWithFallback(
   const keys = toKeys(apiKey);
   const zhipuCooled = Date.now() < zhipuOpenUntil;
   const chain: { provider: Provider; key: string | null | undefined }[] = [
-    { provider: "zhipu", key: zhipuCooled ? null : keys.zhipu },
     { provider: "deepseek", key: keys.deepseek },
+    { provider: "zhipu", key: zhipuCooled ? null : keys.zhipu },
   ];
 
   for (const step of chain) {
@@ -230,23 +238,22 @@ async function callWithFallback(
         if (zhipuFails >= ZHIPU_FAIL_THRESHOLD) {
           zhipuOpenUntil = Date.now() + ZHIPU_COOLDOWN_MS;
           zhipuFails = 0;
-          console.log(`[ai] 智谱连续 ${ZHIPU_FAIL_THRESHOLD} 次不可用，熔断 ${ZHIPU_COOLDOWN_MS / 1000}s（本次起直接走 DeepSeek）`);
+          console.log(`[ai] 智谱连续 ${ZHIPU_FAIL_THRESHOLD} 次不可用，熔断 ${ZHIPU_COOLDOWN_MS / 1000}s`);
         }
         // 1305/1302 是免费档常态，不刷屏；其余错误才记
         if (!/^HTTP (429|503)/.test(raw.reason)) {
-          console.log(`[ai] 智谱失败，回落 DeepSeek: ${raw.reason}`);
+          console.log(`[ai] 智谱兜底也失败: ${raw.reason}`);
         }
       } else {
-        console.log(`[ai] DeepSeek 也失败: ${raw.reason}`);
+        // DeepSeek 是主路径，失败一定要记（这是真异常，不是预期内的限流）
+        console.log(`[ai] DeepSeek 失败，回落智谱: ${raw.reason}`);
       }
       continue;
     }
     const parsed = extractJson(raw.content);
     if (!parsed) {
-      if (step.provider === "zhipu") {
-        zhipuFails += 1;
-        console.log(`[ai] 智谱返回内容解析不出 JSON，回落 DeepSeek`);
-      }
+      console.log(`[ai] ${PROVIDER_LABEL[step.provider]} 返回内容解析不出 JSON，换下一个供应商`);
+      if (step.provider === "zhipu") zhipuFails += 1;
       continue;
     }
     // 成功即清零失败计数
@@ -260,9 +267,9 @@ async function callWithFallback(
 }
 
 /**
- * 调 AI 并取回 JSON 对象 + token 用量（智谱优先，DeepSeek 回落）。
+ * 调 AI 并取回 JSON 对象 + token 用量（DeepSeek 优先，智谱兜底）。
  * 约定用 response_format=json_object，但仍走 extractJson 兜底（模型偶尔会带围栏）。
- * 60s 超时：AI 接口耗时较长，但超时后必须中断，避免前端永久挂起。
+ * 超时按供应商区分（DeepSeek 40s / 智谱 20s），超时后必须中断，避免前端永久挂起。
  * 失败/无内容/解析不出 JSON 时返回 null（调用方降级），不抛错。
  */
 export async function deepseekJsonWithUsage(
@@ -276,7 +283,7 @@ export async function deepseekJsonWithUsage(
 }
 
 /**
- * 调 AI 并取回 JSON 对象（智谱优先，DeepSeek 回落）。
+ * 调 AI 并取回 JSON 对象（DeepSeek 优先，智谱兜底）。
  * 与 deepseekJsonWithUsage 的差别只在不返回 usage；两者都失败时抛错（调用方需捕获）。
  */
 export async function deepseekJson(
@@ -286,7 +293,7 @@ export async function deepseekJson(
   opts: { temperature?: number; maxTokens?: number } = {}
 ): Promise<Record<string, unknown> | null> {
   const r = await callWithFallback(apiKey, system, user, opts);
-  if (!r) throw new Error("AI 调用失败（智谱与 DeepSeek 均不可用）");
+  if (!r) throw new Error("AI 调用失败（DeepSeek 与智谱均不可用）");
   return r.data;
 }
 
