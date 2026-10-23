@@ -134,7 +134,8 @@ export default function Match() {
   const [parseJobs, setParseJobs] = useState<ParseJob[]>([]);
   const [parseEta, setParseEta] = useState<number | null>(null);
   /** 正在评估的候选人 key（骨架卡标「评估中」用） */
-  const [currentKey, setCurrentKey] = useState<string | null>(null);
+  // 并发评估时可能同时有多位在进行，用数组记录：骨架卡据此分别显示「评估中」
+  const [activeKeys, setActiveKeys] = useState<string[]>([]);
   /** 预计剩余秒数（按已完成条目的平均耗时外推） */
   const [eta, setEta] = useState<number | null>(null);
   /** 评估阶段轮换文案（每份评估都含这三步，按时间片旋转提示当前在做什么） */
@@ -339,7 +340,7 @@ export default function Match() {
   const clearResults = () => {
     setResults({});
     setEta(null);
-    setCurrentKey(null);
+    setActiveKeys([]);
     setProgress({ done: 0, total: 0, current: "" });
     setStale(false);
     message.success("已清除上次匹配结果，选好画像后重新开始");
@@ -360,39 +361,63 @@ export default function Match() {
     setResults({});
     setStale(false);
     setEta(null);
-    setCurrentKey(null);
+    setActiveKeys([]);
     const next: Record<string, MatchResult> = {};
+    const failed: string[] = [];
     const t0 = Date.now();
-    for (let i = 0; i < candidates.length; i++) {
-      const cd = candidates[i];
-      setProgress({ done: i, total: candidates.length, current: cd.talent.name || cd.fileName });
-      setCurrentKey(cd.key);
-      try {
-        next[cd.key] = await api.scoreCandidate(profile, {
-          text: cd.text,
-          parsed: {
-            name: cd.talent.name,
-            education: cd.talent.education,
-            years_experience: cd.talent.years_experience,
-            city: cd.talent.city,
-            current_title: cd.talent.current_title,
-            current_company: cd.talent.current_company,
-            skills: cd.talent.skills ? cd.talent.skills.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
-          },
-        });
-        setResults({ ...next });
-      } catch (err) {
-        message.error(`「${cd.talent.name || cd.fileName}」评估失败：${(err as Error).message}`);
+    let done = 0;
+    let cursor = 0;
+
+    // 并发池：单次评分 1~2s，10 位串行要 15~20s，3 路并发能压到 5s 左右。
+    // 仍是「完成一位立即写入结果」，界面保持逐条出分的观感。
+    // ⚠️ 智谱免费档只有 1 并发，超出的请求会 429 并自动回落 DeepSeek（多花一点
+    // token 换速度）；若想优先省钱，把 CONCURRENCY 调回 1 即可恢复串行。
+    const CONCURRENCY = Math.min(3, candidates.length);
+
+    const worker = async () => {
+      while (cursor < candidates.length) {
+        const cd = candidates[cursor++];
+        setActiveKeys((prev) => [...prev, cd.key]);
+        try {
+          next[cd.key] = await api.scoreCandidate(profile, {
+            text: cd.text,
+            parsed: {
+              name: cd.talent.name,
+              education: cd.talent.education,
+              years_experience: cd.talent.years_experience,
+              city: cd.talent.city,
+              current_title: cd.talent.current_title,
+              current_company: cd.talent.current_company,
+              skills: cd.talent.skills ? cd.talent.skills.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
+            },
+          });
+          setResults({ ...next });
+        } catch (err) {
+          // 失败不打断其余：并发下逐条弹窗会刷屏，先收集、结束时统一提示
+          failed.push(`${cd.talent.name || cd.fileName}：${(err as Error).message}`);
+        } finally {
+          setActiveKeys((prev) => prev.filter((k) => k !== cd.key));
+        }
+        done++;
+        setProgress({ done, total: candidates.length, current: cd.talent.name || cd.fileName });
+        // 预估：已用时长 / 已完成数 × 剩余数（并发下按完成数算，从第 2 位起才显示）
+        const remain = candidates.length - done;
+        if (done >= 2 && remain > 0) {
+          setEta(Math.max(1, Math.round(((Date.now() - t0) / done) * remain / 1000)));
+        }
       }
-      // 预估：已用时长 / 已评估数 × 剩余数（首位耗时偏差大，从第 2 位起才显示）
-      const done = i + 1;
-      const remain = candidates.length - done;
-      if (done >= 2 && remain > 0) setEta(Math.max(1, Math.round((Date.now() - t0) / done * remain / 1000)));
-    }
+    };
+
+    await Promise.all(Array.from({ length: CONCURRENCY }, worker));
     setProgress({ done: candidates.length, total: candidates.length, current: "" });
-    setCurrentKey(null);
+    setActiveKeys([]);
     setRunning(false);
-    message.success(`匹配完成，共 ${Object.keys(next).length} 份`);
+    const okCount = Object.keys(next).length;
+    if (failed.length > 0) {
+      message.warning(`完成 ${okCount} 份，${failed.length} 份评估失败：${failed.join("；")}`, 6);
+    } else {
+      message.success(`匹配完成，共 ${okCount} 份`);
+    }
   };
 
   // ---- 录入人才库 ----
@@ -495,6 +520,12 @@ export default function Match() {
         : ranked.length === 0
           ? "第 3 步：就绪！点左下角「开始匹配」"
           : null;
+
+  // 并发评估中的人名（最多 CONCURRENCY 位），用于进度条文案
+  const activeNames = activeKeys.map((k) => {
+    const c = candidates.find((x) => x.key === k);
+    return c?.talent.name || c?.fileName || "未识别";
+  });
 
   return (
     <div className="page-fill">
@@ -675,11 +706,17 @@ export default function Match() {
               <>
                 <Progress
                   percent={progress.total ? Math.round((progress.done / progress.total) * 100) : 0}
-                  format={() => `正在评估 ${progress.done + 1}/${progress.total}${progress.current ? `：${progress.current}` : ""}`}
+                  format={() => `已完成 ${progress.done}/${progress.total}`}
                   style={{ marginBottom: 4 }}
                 />
                 <div className="match-run-meta">
-                  <span>第 {progress.done + 1} / {progress.total} 位：{progress.current || "准备中"}</span>
+                  <span>
+                    {activeNames.length > 0
+                      ? `正在评估：${activeNames.join("、")}`
+                      : progress.done >= progress.total
+                        ? "正在汇总结果…"
+                        : "准备中"}
+                  </span>
                   {eta != null && <span>预计还需约 {eta} 秒</span>}
                 </div>
                 <div className="match-phase">{MATCH_PHASES[phase]}</div>
@@ -772,7 +809,7 @@ export default function Match() {
           <div className="match-skel" key={cd.key}>
             <div className="match-skel-head">
               <span>{cd.talent.name || cd.fileName || "未识别"}</span>
-              {currentKey === cd.key
+              {activeKeys.includes(cd.key)
                 ? <span className="match-skel-status">评估中…</span>
                 : <span className="match-skel-status is-queue">排队中</span>}
             </div>
