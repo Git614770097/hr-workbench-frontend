@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Modal, Input, Table, Button, Tag, Space, Typography, Tooltip, message } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
+import { LoadingOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import type { Talent } from "../types";
 import { useIdentityProfile } from "../useIdentity";
@@ -15,20 +15,45 @@ interface Props {
 }
 
 const PAGE_SIZE = 20;
+/** 输入即检索的防抖间隔：低于 300ms 会在快速输入时打出过多查询，高于 500ms 会觉得迟钝 */
+const SEARCH_DEBOUNCE_MS = 350;
 
 /**
  * 从人才库勾选已有人选参与人才AI匹配。
  * 只负责"选人"：简历原文的抽取由调用方做（那里才有解析管线），本组件不碰文件。
+ *
+ * 检索是「输入即查」（无查询按钮），三个坑必须处理：
+ * 1. 竞态：连续输入会并发多个请求，慢的「张」可能覆盖快的「张三」→ 用递增 seq 只认最新一次
+ * 2. 中文输入法：拼音组词过程中 onChange 会带出 zhangs 这类中间态 → composition 期间不查
+ * 3. 闪烁：Table 的 loading 会让整张表每敲一个字闪白 → 只在输入框右侧转小圈，表格保留旧结果
  */
 export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: Props) {
   const [rows, setRows] = useState<Talent[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  /** 输入框里的当前值（每次按键都变） */
   const [kw, setKw] = useState("");
+  /** 已经生效的检索词（分页要用它，不能跟着输入框乱变） */
   const [query, setQuery] = useState("");
+  /** 表格 loading：只在首次打开和翻页时出现 */
   const [loading, setLoading] = useState(false);
+  /** 输入框右侧的小转圈：输入即查时出现 */
+  const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<Talent[]>([]);
   const profile = useIdentityProfile();
+
+  /** 请求序号：只有最后一次发出的请求才有权写入结果 */
+  const seqRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
+  /** 输入法是否正在组词（true 时不触发查询） */
+  const composingRef = useRef(false);
+
+  const clearTimer = () => {
+    if (timerRef.current != null) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
 
   // 常驻挂载时 open 再次变 true 必须重置，否则上次的搜索词/选中项会残留
   useEffect(() => {
@@ -37,26 +62,57 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
     setKw("");
     setQuery("");
     setSelected([]);
-    load(1, "");
+    load(1, "", "table");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const load = async (p: number, q: string) => {
-    setLoading(true);
+  // 关闭 / 卸载时把待触发的防抖定时器清掉，避免请求打到已关闭的弹窗
+  useEffect(() => () => clearTimer(), []);
+
+  const load = async (p: number, q: string, mode: "table" | "search" = "table") => {
+    const seq = ++seqRef.current;
+    if (mode === "table") setLoading(true);
+    else setSearching(true);
     try {
       const res = await api.getTalents({ q, page: p, limit: PAGE_SIZE });
+      // 过期响应直接丢弃：期间用户又输入了新的词
+      if (seq !== seqRef.current) return;
       setRows(res.items || []);
       setTotal(res.total || 0);
     } catch (err) {
+      if (seq !== seqRef.current) return;
       message.error((err as Error).message);
+    } finally {
+      // 只有最新那次请求有权收掉加载态，否则旧请求会把新请求的转圈提前关掉
+      if (seq === seqRef.current) {
+        setLoading(false);
+        setSearching(false);
+      }
     }
-    setLoading(false);
   };
 
-  const handleSearch = () => {
+  /** 真正发起一次检索：词没变就不重复请求（删字又打回同一个词的情况很常见）；force=回车强制刷新 */
+  const runSearch = (value: string, force = false) => {
+    const q = value.trim();
+    if (!force && q === query) return;
+    setQuery(q);
     setPage(1);
-    setQuery(kw.trim());
-    load(1, kw.trim());
+    load(1, q, "search");
+  };
+
+  const handleKwChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    setKw(v);
+    // 输入法组词中：等 compositionend 再查，否则会拿拼音中间态去搜
+    if (composingRef.current) return;
+    clearTimer();
+    timerRef.current = window.setTimeout(() => runSearch(v), SEARCH_DEBOUNCE_MS);
+  };
+
+  const handleCompositionEnd = (e: React.CompositionEvent<HTMLInputElement>) => {
+    composingRef.current = false;
+    clearTimer();
+    runSearch((e.target as HTMLInputElement).value);
   };
 
   // 支持跨页多选：本页之外的选中项原样保留，本页以当前勾选状态为准。
@@ -100,17 +156,22 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
         </div>
       }
     >
-      <Space style={{ marginBottom: 12 }}>
+      <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
         <Input
-          style={{ width: 260 }}
+          style={{ width: 300 }}
           allowClear
           value={kw}
-          placeholder="姓名 / 公司 / 职位 / 技能"
-          onChange={(e) => setKw(e.target.value)}
-          onPressEnter={handleSearch}
+          placeholder="输入即搜索：姓名 / 公司 / 职位 / 技能"
+          suffix={searching ? <LoadingOutlined style={{ color: "#1677ff" }} /> : null}
+          onChange={handleKwChange}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={handleCompositionEnd}
+          onPressEnter={() => { clearTimer(); runSearch(kw, true); }}
         />
-        <Button icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
-      </Space>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {searching ? "搜索中…" : loading ? "加载中…" : query ? `「${query}」命中 ${total} 人` : `共 ${total} 人`}
+        </Typography.Text>
+      </div>
 
       <Table
         size="small"
