@@ -124,7 +124,8 @@ export default function Jobs() {
   useEffect(() => {
     if (!canProfiles) return;
     let alive = true;
-    api.getMatchProfiles()
+    // 只用于「有没有画像 / 按标题关联」，用轻量列表即可，不必拉 JD 原文
+    api.getMatchProfilesLite()
       .then((list) => {
         if (!alive) return;
         // id 理论必填，防御性过滤；画像与岗位靠标题关联，取标题做匹配键

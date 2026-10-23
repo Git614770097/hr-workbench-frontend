@@ -32,16 +32,22 @@ export function base64ToArrayBuffer(b64: string): ArrayBuffer {
  * @param cacheKey 缓存 key，必须包含 owner/role 等隔离维度，确保多租户不串数据
  * @param ttl      缓存有效期（秒）
  * @param fn       回源查询函数，仅在缓存未命中时执行
+ * @param opts.force 跳过读缓存，强制回源（仍会写回缓存）。
+ *                   用于「用户主动点查询」：既保证拿到最新数，也顺手把缓存刷新，
+ *                   否则用户刷新后过一会儿再进页面又会看到旧值。
  */
 export async function cachedJson<T>(
   ctx: { waitUntil: (p: Promise<unknown>) => void },
   cacheKey: string,
   ttl: number,
-  fn: () => Promise<T>
+  fn: () => Promise<T>,
+  opts: { force?: boolean } = {}
 ): Promise<Response> {
   const cache = (caches as unknown as { default: Cache }).default;
-  const cached = await cache.match(new Request(cacheKey));
-  if (cached) return cached;
+  if (!opts.force) {
+    const cached = await cache.match(new Request(cacheKey));
+    if (cached) return cached;
+  }
 
   const data = await fn();
   const resp = new Response(JSON.stringify(data), {

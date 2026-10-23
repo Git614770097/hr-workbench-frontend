@@ -3,8 +3,8 @@ import {
   Table, Button, Space, Tag, Modal, Form, Input, InputNumber, message,
   Empty, Typography, Select, DatePicker, Alert, Tabs, Popconfirm, Row, Col,
 } from "antd";
-import { PlusOutlined, ReloadOutlined, EditOutlined, RollbackOutlined } from "@ant-design/icons";
-import { Link } from "react-router-dom";
+import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { useNavigate } from "react-router-dom";
 import dayjs from "dayjs";
 import { api } from "../api";
 import { useDict } from "../dict";
@@ -37,6 +37,7 @@ export default function RequisitionPanel({
   /** 提交入口已由父级 toolbar 提供时，隐藏组件内部的触发按钮 */
   hideSubmitButton?: boolean;
 }) {
+  const navigate = useNavigate();
   const { cities } = useDict();
   const [items, setItems] = useState<Requisition[]>([]);
   const [loading, setLoading] = useState(false);
@@ -247,25 +248,24 @@ export default function RequisitionPanel({
           },
           {
             title: "操作",
-            key: "act",
+            key: "action",
             width: 200,
-            align: "center",
+            fixed: "right" as const,
             render: (_: unknown, r: Requisition) => {
               if (r.status === "pending") {
                 const canManage = isAdmin || r.owner_id === currentUserId;
                 return (
-                  <Space size={8}>
-                    <Button type="link" size="small" style={{ paddingInline: 0 }} onClick={() => handleConvert(r)}>
+                  <Space size={4}>
+                    <Button type="link" size="small" onClick={() => handleConvert(r)}>
                       转为岗位
                     </Button>
                     {canManage && (
                       <>
-                        <Button type="link" size="small" icon={<EditOutlined />} style={{ paddingInline: 0 }}
-                          onClick={() => openEdit(r)}>
+                        <Button type="link" size="small" onClick={() => openEdit(r)}>
                           编辑
                         </Button>
                         <Popconfirm title="确认撤回该需求？" onConfirm={() => handleWithdraw(r)} okText="撤回" cancelText="取消">
-                          <Button type="link" size="small" icon={<RollbackOutlined />} style={{ paddingInline: 0 }}>
+                          <Button type="link" size="small" danger>
                             撤回
                           </Button>
                         </Popconfirm>
@@ -276,19 +276,19 @@ export default function RequisitionPanel({
               }
               if (r.status === "approved") {
                 return (
-                  <Link to={`/jobs${r.job_id ? `?focus=${r.job_id}` : ""}`} className="ant-btn-link" style={{ fontSize: 12 }}>
-                    查看岗位 →
-                  </Link>
+                  <Button type="link" size="small" onClick={() => navigate(`/jobs${r.job_id ? `?focus=${r.job_id}` : ""}`)}>
+                    查看岗位
+                  </Button>
                 );
               }
               if (r.status === "rejected") {
                 return (
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <Typography.Text type="secondary">
                     {r.reject_reason || "已驳回"}
                   </Typography.Text>
                 );
               }
-              return <Typography.Text type="secondary" style={{ fontSize: 12 }}>-</Typography.Text>;
+              return <Typography.Text type="secondary">-</Typography.Text>;
             },
           },
         ]}

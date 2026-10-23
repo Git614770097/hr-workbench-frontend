@@ -34,7 +34,12 @@ export default function WorkbenchTrendChart({ data, dark = false, height = 280, 
       if (chartOut) chartOut.current = chartRef.current;
     }
     const chart = chartRef.current;
-    if (!data) return;
+    if (!data) {
+      // 数据被清空时只清画面、不卸载组件：否则 div 被移除后 echarts 实例会绑在
+      // 已脱离文档的节点上，下次挂载就画不出来（黑图）
+      chart.clear();
+      return;
+    }
 
     const series = data.series.map((s) => ({
       name: s.label,
@@ -104,7 +109,6 @@ export default function WorkbenchTrendChart({ data, dark = false, height = 280, 
     };
   }, [chartOut]);
 
-  if (!data) return null;
-
+  // 始终渲染容器：图表的挂载/卸载会导致 echarts 实例与 DOM 脱钩（见上）
   return <div ref={boxRef} style={{ width: "100%", height }} />;
 }

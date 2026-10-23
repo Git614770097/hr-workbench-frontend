@@ -369,8 +369,8 @@ interviews.post("/:id/ai-summary", async (c) => {
     return c.json({ error: "请先填写面试评价后再生成总结" }, 400);
   }
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成总结，请手动填写" }, 500);
   }
 

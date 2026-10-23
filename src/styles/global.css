@@ -48,8 +48,7 @@ body {
 .ant-table-body,
 .ant-modal-body,
 .ant-drawer-body,
-.ant-select-dropdown,
-.wb-brief-list {
+.ant-select-dropdown {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
@@ -60,8 +59,7 @@ body {
 .ant-table-body::-webkit-scrollbar,
 .ant-modal-body::-webkit-scrollbar,
 .ant-drawer-body::-webkit-scrollbar,
-.ant-select-dropdown::-webkit-scrollbar,
-.wb-brief-list::-webkit-scrollbar {
+.ant-select-dropdown::-webkit-scrollbar {
   width: 6px; height: 6px;
 }
 .main-content::-webkit-scrollbar-track,
@@ -71,8 +69,7 @@ body {
 .ant-table-body::-webkit-scrollbar-track,
 .ant-modal-body::-webkit-scrollbar-track,
 .ant-drawer-body::-webkit-scrollbar-track,
-.ant-select-dropdown::-webkit-scrollbar-track,
-.wb-brief-list::-webkit-scrollbar-track {
+.ant-select-dropdown::-webkit-scrollbar-track {
   background: transparent;
 }
 .main-content::-webkit-scrollbar-thumb,
@@ -82,8 +79,7 @@ body {
 .ant-table-body::-webkit-scrollbar-thumb,
 .ant-modal-body::-webkit-scrollbar-thumb,
 .ant-drawer-body::-webkit-scrollbar-thumb,
-.ant-select-dropdown::-webkit-scrollbar-thumb,
-.wb-brief-list::-webkit-scrollbar-thumb {
+.ant-select-dropdown::-webkit-scrollbar-thumb {
   background: transparent; border-radius: 3px; transition: background 0.2s;
 }
 .main-content:hover,
@@ -93,8 +89,7 @@ body {
 .ant-table-body:hover,
 .ant-modal-body:hover,
 .ant-drawer-body:hover,
-.ant-select-dropdown:hover,
-.wb-brief-list:hover {
+.ant-select-dropdown:hover {
   scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
 .main-content:hover::-webkit-scrollbar-thumb,
@@ -104,8 +99,7 @@ body {
 .ant-table-body:hover::-webkit-scrollbar-thumb,
 .ant-modal-body:hover::-webkit-scrollbar-thumb,
 .ant-drawer-body:hover::-webkit-scrollbar-thumb,
-.ant-select-dropdown:hover::-webkit-scrollbar-thumb,
-.wb-brief-list:hover::-webkit-scrollbar-thumb {
+.ant-select-dropdown:hover::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.2);
 }
 html[data-theme-mode="dark"] .main-content:hover,
@@ -115,8 +109,7 @@ html[data-theme-mode="dark"] .resume-doc-preview:hover,
 html[data-theme-mode="dark"] .ant-table-body:hover,
 html[data-theme-mode="dark"] .ant-modal-body:hover,
 html[data-theme-mode="dark"] .ant-drawer-body:hover,
-html[data-theme-mode="dark"] .ant-select-dropdown:hover,
-html[data-theme-mode="dark"] .wb-brief-list:hover {
+html[data-theme-mode="dark"] .ant-select-dropdown:hover {
   scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
 }
 html[data-theme-mode="dark"] .main-content:hover::-webkit-scrollbar-thumb,
@@ -126,8 +119,7 @@ html[data-theme-mode="dark"] .resume-doc-preview:hover::-webkit-scrollbar-thumb,
 html[data-theme-mode="dark"] .ant-table-body:hover::-webkit-scrollbar-thumb,
 html[data-theme-mode="dark"] .ant-modal-body:hover::-webkit-scrollbar-thumb,
 html[data-theme-mode="dark"] .ant-drawer-body:hover::-webkit-scrollbar-thumb,
-html[data-theme-mode="dark"] .ant-select-dropdown:hover::-webkit-scrollbar-thumb,
-html[data-theme-mode="dark"] .wb-brief-list:hover::-webkit-scrollbar-thumb {
+html[data-theme-mode="dark"] .ant-select-dropdown:hover::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.22);
 }
 
@@ -248,6 +240,11 @@ html[data-theme-mode="dark"] :is(.ant-table-content, .ant-table-header, .ant-tab
 .topbar-feishu-btn:hover { color: var(--color-primary, #3b82f6); }
 .topbar-feishu-btn.is-on { color: #10b981; }
 .topbar-feishu-btn.is-on:hover { color: #059669; }
+/* 飞书图标是品牌色块（不跟随文字色，否则就不像飞书了），
+   绑定状态改用明度表达：未绑定压暗 + 红点提示，已绑定满色 */
+.topbar-feishu-btn .feishu-logo { opacity: 0.5; transition: opacity 0.15s; }
+.topbar-feishu-btn:hover .feishu-logo,
+.topbar-feishu-btn.is-on .feishu-logo { opacity: 1; }
 .topbar-user-trigger {
   display: flex; align-items: center; gap: 0.6rem; cursor: pointer;
   padding: 0.25rem 0.5rem; border-radius: 8px; transition: background 0.15s;
@@ -1431,6 +1428,20 @@ html[data-theme-mode="dark"] .funnel-health.is-slow { background: #2b1611; color
   50% { box-shadow: 0 0 0 6px rgba(22, 119, 255, 0); }
 }
 
+/* ===== 结果概览条：共评估 N 位 + 档位分布 + 最佳人选 ===== */
+.match-overview-bar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 12px;
+  background: linear-gradient(90deg, #fffbeb 0%, #fafafa 60%);
+  border: 1px solid #f0f0f0; border-radius: 8px;
+}
+.match-overview-bar .ov-divider { width: 1px; height: 22px; background: #e5e7eb; }
+html[data-theme-mode="dark"] .match-overview-bar {
+  background: linear-gradient(90deg, #2b2416 0%, #1f1f1f 60%);
+  border-color: #303030;
+}
+html[data-theme-mode="dark"] .match-overview-bar .ov-divider { background: #434343; }
+
 /* ===== 结果对比图：所有候选人同图对比 ===== */
 .match-compare {
   border: 1px solid #f0f0f0; border-radius: 10px;
@@ -1851,102 +1862,17 @@ html[data-theme-mode="dark"] .logs-page .logs-sec-tip { color: #8b95a5; }
 
 /* ============================================================
    工作台（招聘概览页 /funnel）：行动层 + 分析层
-   —— 行动层：今日早报 / 今日重点 / KPI 快照
+   —— 行动层：今日重点 / 关键指标
    —— 分析层：趋势折线 / 转化漏斗 / 渠道 / 周期 / 停留 / 淘汰
    配色仍走「显式色值 + 暗色覆盖」，不要用未定义的 CSS 变量。
    ============================================================ */
 /* 快捷入口（wb-quick）已于 2026-10-19 下线：四个按钮均与侧栏菜单重复，
-   首屏让位给「今日早报」。顶栏现只剩「调整模块」，右对齐即可。 */
+   顶栏现只剩「调整模块」，右对齐即可。 */
 .wb-topbar {
   display: flex; align-items: center; justify-content: flex-end;
   gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
 }
 
-/* ---- 今日早报（行动层第一张卡：先看人，再看数）---- */
-.wb-brief {
-  background: #ffffff;
-  border: 1px solid #eef0f3;
-  border-radius: 10px;
-  padding: 0.7rem 1rem;
-  margin-bottom: 16px;
-}
-.wb-brief-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 0.35rem; }
-.wb-brief-title { font-size: 0.95rem; font-weight: 600; color: #1f2937; }
-.wb-brief-count {
-  flex: 0 0 auto;
-  font-size: 0.7rem; font-weight: 600; color: #b45309;
-  background: rgba(245, 158, 11, 0.12); border-radius: 999px; padding: 1px 8px;
-}
-.wb-brief-date { font-size: 0.74rem; color: #8c8c8c; }
-.wb-brief-note {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  font-size: 0.82rem; color: #4b5563;
-  background: #f8fafc; border: 1px solid #eef0f3; border-radius: 8px;
-  padding: 0.3rem 0.55rem; margin-bottom: 0.35rem;
-}
-.wb-brief-ai-tag {
-  flex: 0 0 auto;
-  font-size: 0.68rem; font-weight: 600; color: #7c3aed;
-  background: rgba(124, 58, 237, 0.10); border-radius: 4px; padding: 1px 6px;
-}
-/* 名单限高 3 条：超出卡内滚动（滚动条走全局极细自动隐藏名单），
-   行动层高度因此受控、与左栏数据栏齐平；头部「N 人在等」计数提示有更多。
-   单条行距已收紧（padding 0.18rem）：3 条约 5.1rem，限高 5.4rem 略有换行余量 */
-.wb-brief-list {
-  list-style: none; margin: 0; padding: 0;
-  max-height: 5.4rem; overflow-y: auto;
-  scrollbar-width: thin; scrollbar-color: transparent transparent;
-}
-.wb-brief-item {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 0.18rem 0; font-size: 0.85rem; color: #1f2937;
-}
-.wb-brief-item + .wb-brief-item { border-top: 1px dashed #eef0f3; }
-.wb-brief-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; }
-.wb-brief-dot.is-red { background: #ef4444; }
-.wb-brief-dot.is-amber { background: #f59e0b; }
-.wb-brief-dot.is-blue { background: #3b82f6; }
-.wb-brief-name { font-weight: 600; color: #1f2937; text-decoration: none; }
-.wb-brief-name:hover { color: #3b82f6; }
-.wb-brief-job { font-size: 0.78rem; color: #8c8c8c; }
-.wb-brief-reason { color: #4b5563; }
-.wb-brief-action {
-  margin-left: auto; flex: 0 0 auto;
-  font-size: 0.74rem; color: #3b82f6;
-  background: rgba(59, 130, 246, 0.08); border-radius: 4px; padding: 1px 8px;
-}
-.wb-brief-empty { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0.2rem 0; }
-.wb-brief-empty-main { font-size: 0.85rem; font-weight: 600; color: #1f2937; }
-.wb-brief-empty-link { font-size: 0.78rem; color: #3b82f6; }
-html[data-theme-mode="dark"] .wb-brief { background: #1f1f1f; border-color: #303030; }
-html[data-theme-mode="dark"] .wb-brief-title,
-html[data-theme-mode="dark"] .wb-brief-name,
-html[data-theme-mode="dark"] .wb-brief-empty-main { color: #e5e7eb; }
-html[data-theme-mode="dark"] .wb-brief-date,
-html[data-theme-mode="dark"] .wb-brief-job { color: #8b95a5; }
-html[data-theme-mode="dark"] .wb-brief-note { background: #262626; border-color: #303030; color: #d1d5db; }
-html[data-theme-mode="dark"] .wb-brief-item + .wb-brief-item { border-top-color: #303030; }
-html[data-theme-mode="dark"] .wb-brief-reason { color: #d1d5db; }
-html[data-theme-mode="dark"] .wb-brief-name:hover,
-html[data-theme-mode="dark"] .wb-brief-action,
-html[data-theme-mode="dark"] .wb-brief-empty-link { color: #60a5fa; }
-html[data-theme-mode="dark"] .wb-brief-ai-tag { color: #a78bfa; background: rgba(167, 139, 250, 0.14); }
-html[data-theme-mode="dark"] .wb-brief-count { color: #fbbf24; background: rgba(245, 158, 11, 0.18); }
-
-/* ---- 行动层分栏：桌面左「数据」右「早报」（左略宽，等高齐平）；
-       单模块在场时不套此容器（自动通栏）；移动端同序堆叠 = 数据在上、早报在下 ---- */
-.wb-action-split {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-  gap: 16px;
-  align-items: stretch;
-  margin-bottom: 16px;
-}
-/* 子卡自带 margin-bottom 会让两列底部差一截，分栏内统一归零靠容器间距 */
-.wb-action-split > * { margin-bottom: 0; }
-@media (max-width: 900px) {
-  .wb-action-split { grid-template-columns: minmax(0, 1fr); }
-}
 /* ---- 行动层：左「今日重点」+ 右 KPI（2×2）----
    分栏复用 antd Row/Col xl 14/10（与分析层同源，保证左右栏严格等宽）。
    此处只负责高度撑满与间距。 */
@@ -2144,14 +2070,11 @@ html[data-theme-mode="dark"] .wb-mod-item-desc { color: #6b7280; }
   .wb-topbar { align-items: flex-start; }
   .wb-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   /* 早报动作pill：窄屏不再右推，跟在理由后面自然换行 */
-  .wb-brief-action { margin-left: 0; }
   /* 窄屏条目换行后每条约两行高——3 条的限高按换行高度放大，仍只露 3 条 */
-  .wb-brief-list { max-height: 9.4rem; }
 }
 @media (max-width: 420px) {
   .wb-strip { grid-template-columns: minmax(0, 1fr); }
   /* 更窄：要素竖排每条约三行，三行条目有物理下限，再放大一档 */
-  .wb-brief-list { max-height: 12.2rem; }
 }
 
 /* ===== 岗位列表可点击元素（岗位名称 / 流程中人数）=====

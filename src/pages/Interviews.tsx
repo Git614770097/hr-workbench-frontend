@@ -564,6 +564,7 @@ export default function Interviews() {
       title: "操作",
       key: "action",
       width: 150,
+      fixed: "right" as const,
       render: (_: unknown, r: Interview) => (
         <Space size={4}>
           <Button type="link" size="small" onClick={() => openEdit(r)}>编辑/评价</Button>

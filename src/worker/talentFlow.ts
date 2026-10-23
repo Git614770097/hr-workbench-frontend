@@ -128,7 +128,7 @@ export function setLinkStageStmt(db: D1Database, linkId: string, stage: string) 
 /** 该人才是否已有未完成的「试用期跟进」待办（入职联动防重） */
 export async function hasProbationTask(db: D1Database, talentId: string): Promise<boolean> {
   const dup = await db
-    .prepare("SELECT id FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND title LIKE '试用期跟进%'")
+    .prepare("SELECT id FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND task_type = 'probation'")
     .bind(talentId)
     .first();
   return !!dup;
@@ -142,7 +142,7 @@ async function createProbationTask(
   if (await hasProbationTask(db, opts.talentId)) return false;
 
   await db.prepare(
-    "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
+    "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', 'probation')"
   ).bind(
     genId(), opts.ownerId, opts.talentId, opts.jobId,
     `试用期跟进：${opts.talentName}`,

@@ -64,7 +64,8 @@ tasks.get("/", async (c) => {
 
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
-  // 排序：逾期/今日到期优先 → 到期日近的优先 → 高优先级优先 → 最近创建
+  // 排序：逾期越久越靠前 → 到期日近的优先 → 高优先级优先 → 最近创建
+  // 逾期天数权重：用 days_left（已计算），负数越小（逾期越久）越靠前
   const rows = await c.env.DB.prepare(`
     SELECT k.*, t.name as talent_name, j.title as job_title, u.name as owner_name
     FROM talent_tasks k
@@ -80,7 +81,18 @@ tasks.get("/", async (c) => {
       k.created_at DESC
   `).bind(...params).all();
 
+  // 用 decorate 算出来的 days_left 做二次排序，让"逾期 30 天"排在"逾期 1 天"前面
   const items = (rows.results as any[]).map(decorate);
+  items.sort((a: any, b: any) => {
+    if (a.status !== "pending" || b.status !== "pending") return 0; // 非待办保持原有顺序
+    if (a.days_left === null && b.days_left === null) return 0;
+    if (a.days_left === null) return 1;
+    if (b.days_left === null) return -1;
+    if (a.days_left < 0 && b.days_left < 0) return a.days_left - b.days_left; // 逾期越久越靠前
+    if (a.days_left < 0) return -1; // 逾期的排在前面
+    if (b.days_left < 0) return 1;
+    return a.days_left - b.days_left; // 都未逾期则按剩几天升序
+  });
   return c.json({ items, total: items.length });
 });
 
@@ -120,13 +132,14 @@ tasks.post("/", async (c) => {
   // 手动待办的 original_due / shifted 由前端在保存时确认填写（周末顺延）
   const originalDue = body.original_due || null;
   const shifted = body.shifted ? 1 : 0;
+  const taskType = body.task_type || "manual";
   await c.env.DB.prepare(`
-    INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, original_due, shifted)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+    INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, original_due, shifted, task_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)
   `).bind(
     id, session.userId, body.talent_id || null, body.job_id || null,
     String(body.title).trim(), body.content || null, due,
-    body.priority || "normal", body.source || "manual", originalDue, shifted
+    body.priority || "normal", body.source || "manual", originalDue, shifted, taskType
   ).run();
 
   return c.json({ id });
@@ -146,7 +159,7 @@ tasks.put("/:id", async (c) => {
 
   const body = await c.req.json<any>();
   // original_due / shifted 也允许更新（拖拽改期落周末时顺延并标注）
-  const fields = ["title", "content", "due_date", "priority", "status", "talent_id", "job_id", "original_due", "shifted"] as const;
+  const fields = ["title", "content", "due_date", "priority", "status", "talent_id", "job_id", "original_due", "shifted", "task_type"] as const;
 
   const sets: string[] = [];
   const params: (string | number | null)[] = [];

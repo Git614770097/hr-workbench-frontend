@@ -34,6 +34,9 @@ export interface Env {
   ASSETS: Fetcher;
   RESUMES: KVNamespace;
   DEEPSEEK_API_KEY?: string;
+  /** 智谱 GLM Key（wrangler secret put ZHIPU_API_KEY）：配了就优先走免费的 GLM-4.7-Flash，
+   *  429/异常时自动回落 DEEPSEEK_API_KEY。未配置则行为与旧版一致，只走 DeepSeek。 */
+  ZHIPU_API_KEY?: string;
   /** 用户自有 AI Key 的加密主密钥（wrangler secret put AI_KEY_SECRET）；未配置则关闭自定义 Key 功能 */
   AI_KEY_SECRET?: string;
   PUSHPLUS_TOKEN?: string;

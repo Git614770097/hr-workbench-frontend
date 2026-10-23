@@ -149,6 +149,7 @@ CREATE TABLE IF NOT EXISTS talent_tasks (
   priority TEXT DEFAULT 'normal',    -- high / normal / low
   status TEXT DEFAULT 'pending',     -- pending / done / cancelled
   source TEXT DEFAULT 'manual',      -- manual / follow_up / system
+  task_type TEXT DEFAULT 'manual',   -- manual / probation / social_add / social_leave / contract_expire / pipeline_stall / follow_up / interview_remind
   done_at TEXT,
   created_at TEXT DEFAULT (datetime('now'))
 );

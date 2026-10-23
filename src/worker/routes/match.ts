@@ -265,8 +265,8 @@ match.post("/parse-profile", async (c) => {
   const jd = str(body?.jd);
   if (jd.length < 10) return c.json({ error: "招聘需求内容太短，无法提炼画像" }, 400);
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) return c.json({ error: "未配置 AI 密钥，无法自动生成画像，请手动填写" }, 500);
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) return c.json({ error: "未配置 AI 密钥，无法自动生成画像，请手动填写" }, 500);
 
   try {
     const raw = await deepseekJson(apiKey, PROFILE_SYSTEM, `请把下面这段招聘需求提炼成人才画像：\n\n${jd.slice(0, 6000)}`);
@@ -300,8 +300,8 @@ match.post("/generate-jd", async (c) => {
   const jobTitle = str(body?.job_title);
   if (!jobTitle) return c.json({ error: "请先填写目标职位" }, 400);
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) return c.json({ error: "未配置 AI 密钥，无法自动生成 JD，请手动填写" }, 500);
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) return c.json({ error: "未配置 AI 密钥，无法自动生成 JD，请手动填写" }, 500);
 
   const city = str(body?.city);
   try {
@@ -339,6 +339,57 @@ match.get("/profiles", async (c) => {
     updated_at: r.updated_at,
   }));
   return c.json(items);
+});
+
+// ---- 画像下拉轻量列表（只回「选哪一个」所需的字段）----
+// 为什么单独开一个接口：完整列表带 jd_raw（整份 JD 原文）与 requirements，
+// 几十份画像一起返回时几百 KB 往下传，表现为「点开下拉要转很久」——
+// 而下拉根本不需要原文。真正算匹配时再按 id 取完整一份（下方 /profiles/:id），
+// 把大字段的代价从「每次进页面」挪到「确实点开始匹配」这一刻。
+// ⚠️ 必须写在 /profiles/:id 之前：否则 "lite" 会被当成 id 匹配掉。
+match.get("/profiles/lite", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  // has_jd 用 CASE 在库里算好：JD 原文一律不出库，只回「有没有」
+  let sql = "SELECT id, name, job_title, city, education, updated_at, " +
+    "CASE WHEN jd_raw IS NOT NULL AND jd_raw <> '' THEN 1 ELSE 0 END AS has_jd FROM match_profiles";
+  const params: string[] = [];
+  { const sc = ownerScope(session); sql += " WHERE 1=1" + sc.sql; params.push(...sc.params); }
+  sql += " ORDER BY updated_at DESC";
+  const rows = await c.env.DB.prepare(sql).bind(...params).all<{
+    id: string; name: string | null; job_title: string | null;
+    city: string | null; education: string | null; updated_at: string | null; has_jd: number;
+  }>();
+  return c.json((rows.results || []).map((r) => ({
+    id: r.id,
+    name: str(r.name),
+    job_title: str(r.job_title),
+    city: str(r.city),
+    education: str(r.education),
+    has_jd: !!r.has_jd,
+    updated_at: r.updated_at ?? undefined,
+  })));
+});
+
+// ---- 单个完整画像（匹配计算用：/match/score 需要 jd_raw 拼 AI prompt）----
+match.get("/profiles/:id", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const id = c.req.param("id");
+
+  let sql = "SELECT id, owner_id, name, job_title, city, education, min_years, max_years, salary_range, industry, must_skills, nice_skills, requirements, jd_raw, created_at, updated_at FROM match_profiles WHERE id = ?";
+  const params: string[] = [id];
+  // sc.sql 以「 AND ...」开头，接在 WHERE id = ? 之后正好（非 admin 自动限自己/同队）
+  { const sc = ownerScope(session); sql += sc.sql; params.push(...sc.params); }
+  const row = await c.env.DB.prepare(sql).bind(...params).first<Record<string, any>>();
+  if (!row) return c.json({ error: "画像不存在或无权访问" }, 404);
+  return c.json({
+    id: row.id,
+    ...serializeProfile(row),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  });
 });
 
 match.post("/profiles", async (c) => {
@@ -449,8 +500,8 @@ match.post("/score", async (c) => {
     招聘需求: profile.jd_raw ? profile.jd_raw.slice(0, 1200) : "未填写",
   };
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     const fb = ruleScore(hard);
     return c.json({
       ...fb,

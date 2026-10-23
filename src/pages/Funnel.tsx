@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import {
   Card, Button, Select, Space, Empty, Spin, Tooltip, message, Table,
-  Alert, Segmented, Skeleton, Popover,
+  Alert, Segmented, Skeleton, Popover, Dropdown, Typography,
 } from "antd";
 import {
   ReloadOutlined, SearchOutlined, FunnelPlotOutlined, DownloadOutlined,
@@ -23,21 +23,16 @@ import type {
   FunnelResponse, FunnelStayItem, Job, User, OverviewResponse, TrendResponse,
   WorkbenchModuleKey, AiRecapReport,
 } from "../types";
-import FunnelChartView from "../components/FunnelChart";
+import FunnelChartView, { exportFunnelPng } from "../components/FunnelChart";
 import OverviewPanel from "../components/OverviewPanel";
 import AiUsageFoot from "../components/AiUsageFoot";
 import WorkbenchTrendChart from "../components/WorkbenchTrendChart";
 import WorkbenchModulesModal from "../components/WorkbenchModulesModal";
-import DailyBrief from "../components/DailyBrief";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
 import { loadWorkbenchConfig, saveWorkbenchConfig } from "../workbenchPrefs";
 import { FUNNEL_PALETTES, DEFAULT_FUNNEL_PALETTE, loadFunnelPalette, saveFunnelPalette } from "../funnelPalette";
-
-// 周期指标的配色（与漏斗同一套柔和色系，暗色模式取亮档）
-const KPI_COLORS_LIGHT = ["#2563eb", "#0891b2", "#d97706", "#059669"];
-const KPI_COLORS_DARK = ["#60a5fa", "#22d3ee", "#fbbf24", "#34d399"];
 
 // 周期表行（精简版：不再用 4 张大数值卡，改为紧凑表格）
 const CYCLE_ROWS = [
@@ -60,6 +55,9 @@ const TIME_RANGES = [
 const pct = (v: number) => `${(v * 100).toFixed(v >= 0.1 || v === 0 ? 0 : 1)}%`;
 const dayText = (v: number | null) => (v == null ? "—" : `${v}`);
 const r1 = (v: number) => Math.round(v * 10) / 10;
+
+// 「全流程周期偏慢」的判定线（天）。放在这里而不是散在提示逻辑里，便于按行业调整。
+const SLOW_CYCLE_DAYS = 35;
 
 /** 环比文案：curr vs prev。上升绿、下降橙、持平灰；prev=0 时用「新增」避免除零 */
 function wowText(curr: number, prev: number): { text: string; tone: "up" | "down" | "flat" } {
@@ -132,33 +130,54 @@ export default function Funnel() {
   }, []);
 
   // ---- 漏斗数据（分析层）----
-  const fetchFunnel = useCallback(async () => {
+  // reloadToken：点「查询」时自增，即使筛选条件没变也强制重拉一次。
+  // （只 setState 相同值会被 React 跳过，用户点查询会毫无反应——2026-10-22 修）
+  const [reloadToken, setReloadToken] = useState(0);
+
+  // 竞态保护：快速切换筛选时只认最后一次请求，避免旧响应覆盖新响应
+  const funnelReqRef = useRef(0);
+  const fetchFunnel = useCallback(async (bust = false) => {
+    const seq = ++funnelReqRef.current;
     setLoading(true);
     try {
       const res = await api.getFunnel({
         job_id: jobFilter || undefined,
         owner_id: ownerFilter || undefined,
         days: daysFilter || undefined,
+        // 主动刷新时带时间戳 → 后端绕过 30s Edge Cache
+        t: bust ? Date.now() : undefined,
       });
-      setData(res);
+      if (seq === funnelReqRef.current) setData(res);
     } catch (err) {
-      message.error((err as Error).message);
+      if (seq === funnelReqRef.current) message.error((err as Error).message);
+    } finally {
+      if (seq === funnelReqRef.current) setLoading(false);
     }
-    setLoading(false);
   }, [jobFilter, ownerFilter, daysFilter]);
 
-  useEffect(() => { fetchFunnel(); }, [fetchFunnel]);
+  // 手动查询标记：条件没变时 React 会跳过 setState，光靠 reloadToken 也能触发 effect，
+  // 但「是否要绕过缓存」必须由用户动作决定 —— 用 ref 传递，比比较条件签名更直接。
+  const forceBustRef = useRef(false);
+  useEffect(() => {
+    const force = forceBustRef.current;
+    forceBustRef.current = false;
+    fetchFunnel(force);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchFunnel, reloadToken]);
 
   // ---- 行动层数据（轻量，随首屏一起拉）----
+  const [ovToken, setOvToken] = useState(0);
+  const [ovErr, setOvErr] = useState(false);
   useEffect(() => {
     let alive = true;
     setOvLoading(true);
+    setOvErr(false);
     api.getOverview()
       .then((r) => { if (alive) setOverview(r); })
-      .catch(() => { /* 行动层失败不阻塞页面 */ })
+      .catch(() => { if (alive) setOvErr(true); }) // 行动层失败不阻塞页面，但要让用户知道
       .finally(() => { if (alive) setOvLoading(false); });
     return () => { alive = false; };
-  }, []);
+  }, [ovToken]);
 
   // ---- 趋势折线 ----
   useEffect(() => {
@@ -204,21 +223,32 @@ export default function Funnel() {
     if (isAdmin) api.getUsers().then(setUsers).catch(() => {});
   }, [isAdmin]);
 
+  // 应用筛选：条件未变也要重拉（用户点「查询」的语义就是「给我最新数」）
   const applySearch = () => {
+    forceBustRef.current = true;
     setJobFilter(draftJob);
     setOwnerFilter(draftOwner);
     setDaysFilter(draftDays);
+    setReloadToken((n) => n + 1);
   };
 
   const resetSearch = () => {
+    forceBustRef.current = true;
     setDraftJob(""); setDraftOwner(""); setDraftDays(0);
     setJobFilter(""); setOwnerFilter(""); setDaysFilter(0);
+    setReloadToken((n) => n + 1);
   };
 
   const filtered = !!(jobFilter || ownerFilter || daysFilter);
 
   const s = data?.summary;
   const stages = data?.stages || [];
+
+  // 岗位名兜底：选了已删除的岗位时不能悄悄显示成「全部岗位」——那会让导出报告的口径撒谎
+  const jobLabelOf = () =>
+    jobFilter
+      ? jobs.find((j) => j.id === jobFilter)?.title ?? termFor(profile, "已删除岗位")
+      : termFor(profile, "全部岗位");
 
   // 耗时构成三段
   const segRaw = data ? [data.cycles.segments.s1, data.cycles.segments.s2, data.cycles.segments.s3] : [];
@@ -235,6 +265,8 @@ export default function Funnel() {
 
   const overdue = overview?.tasks.overdue ?? 0;
   const dueSoon = overview?.dueSoonTasks ?? [];
+  // KPI 用后端 COUNT（dueSoonTasks 有 LIMIT 20，团队/管理员超 20 条会被截断成 20）
+  const dueSoonCount = overview?.dueSoonCount ?? dueSoon.length;
 
   // ---- 诊断提示（原「结论」卡精简为漏斗下方的一段提示）----
   const diagnosis: string[] = (() => {
@@ -249,7 +281,7 @@ export default function Funnel() {
       );
     }
     const tc = data.cycles.total;
-    if (tc.avg != null && tc.avg > 35) hints.push(`全流程平均 ${tc.avg} 天偏慢（中位 ${dayText(tc.p50)} 天）`);
+    if (tc.avg != null && tc.avg > SLOW_CYCLE_DAYS) hints.push(`全流程平均 ${tc.avg} 天偏慢（中位 ${dayText(tc.p50)} 天）`);
     if (tc.p50 != null && tc.p90 != null && tc.p50 > 0 && tc.p90 >= tc.p50 * 2) {
       hints.push(`周期长尾明显：P90 是中位的 ${(tc.p90 / tc.p50).toFixed(1)} 倍，少数人在拖慢整体`);
     }
@@ -266,12 +298,19 @@ export default function Funnel() {
   const [recapLoading, setRecapLoading] = useState(false);
   const [recapErr, setRecapErr] = useState("");
   const recapScope = `${jobFilter || "all"}:${daysFilter || "all"}:${ownerFilter || "all"}`;
+
+  // 筛选一变，上一轮复盘就属于「旧口径」——直接作废，
+  // 否则用户会把旧结论当成新筛选的结果拿去汇报（2026-10-22 修）。
+  useEffect(() => {
+    setRecap(null);
+    setRecapErr("");
+  }, [jobFilter, ownerFilter, daysFilter]);
   const genRecap = async () => {
     if (!data || !s) return;
     setRecapLoading(true);
     setRecapErr("");
     try {
-      const jobLabel = jobs.find((j) => j.id === jobFilter)?.title || "全部岗位";
+      const jobLabel = jobLabelOf();
       const timeLabel = TIME_RANGES.find((t) => t.value === daysFilter)?.label || "全部时间";
       const ownerLabel = isAdmin && ownerFilter ? users.find((u) => u.id === ownerFilter)?.name || ownerFilter : "";
       const r = await api.aiRecapReport({
@@ -333,12 +372,33 @@ export default function Funnel() {
     a.remove();
   };
 
+  /**
+   * 漏斗 PNG：阶段名与转化率是 HTML 叠加层，不在 ECharts canvas 里，
+   * 直接 getDataURL 会导出「没有阶段名的色块」。改走 FunnelChart 的合成导出。
+   */
+  const downloadFunnelPng = async () => {
+    if (!data) return;
+    try {
+      const url = await exportFunnelPng(funnelChartRef.current, stages, data.stage_stay);
+      if (!url) { message.warning("图表尚未就绪，请稍后再试"); return; }
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${termFor(profile, "招聘漏斗")}_${dateStamp()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      message.success("已导出 PNG（含阶段名与转化率）");
+    } catch {
+      message.error("导出失败，请稍后再试");
+    }
+  };
+
   /** 导出招聘漏斗全量数据（CSV 五段，保留原有能力） */
   const exportFunnel = () => {
     if (!data || !s) return;
     const rows: string[] = [];
     const timeLabel = TIME_RANGES.find((t) => t.value === daysFilter)?.label || "全部时间";
-    const jobLabel = jobs.find((j) => j.id === jobFilter)?.title || termFor(profile, "全部岗位");
+    const jobLabel = jobLabelOf();
 
     rows.push(termFor(profile, "招聘漏斗数据导出"));
     rows.push([termFor(profile, `岗位：${jobLabel}`), `时间范围：${timeLabel}`, `导出时间：${new Date().toLocaleString("zh-CN")}`].map(csvCell).join(","));
@@ -522,13 +582,10 @@ export default function Funnel() {
   };
 
   const analysisReady = !loading && !!s && s.total > 0;
-  // 行动层分栏开关：数据（今日重点 + KPI）与早报同时在場 → 桌面左右分栏；
-  // 任一被「调整模块」关掉 → 另一个自动通栏，不留半空容器
+  // 行动层（今日重点 + 关键指标）显隐：任一模块在「调整模块」里开着就显示
   const statsOn = !isHidden("today_focus") || !isHidden("kpi_band");
-  const briefOn = !isHidden("daily_brief");
   // 「无数据」判定：overview 已返回且账号核心指标全为零（新注册/空账号）时，
-  // 指标条与早报两块区域整体隐藏——否则首屏是一排 0 加「今天没有人等你」，
-  // 对空账号没有信息量。任一项非零即视为有数据，两块照常展示（早报保留空态文案）。
+  // 指标条整块隐藏——否则首屏是一排 0，对空账号没有信息量。
   const actionEmpty = !!overview
     && (overview.totalTalents ?? 0) === 0
     && (overview.openJobs ?? 0) === 0
@@ -538,98 +595,97 @@ export default function Funnel() {
     && (overview.tasks?.pending ?? 0) === 0
     && (overview.tasks?.overdue ?? 0) === 0
     && (overview.tasks?.today ?? 0) === 0
-    && dueSoon.length === 0;
+    && dueSoonCount === 0;
   // 指标条：加载中/拉取失败维持原样（骨架 / 不显示），仅「已返回且全零」时隐藏
   const showStats = statsOn && !actionEmpty;
-  // 早报：等 overview 出结果再决定去留——避免空账号先闪一下「今天没有人等你」
-  // 再消失；overview 拉取失败（null）时不阻断早报展示
-  const showBrief = briefOn && !ovLoading && !actionEmpty;
 
   return (
-    <div className="funnel-page workbench-page">
+    <div className="funnel-page">
       {/* ===== 顶部操作行：调整模块（快捷入口已下线——搜人才/加候选人/发 JD/面试安排
-           均与侧栏菜单重复，首屏让位给今日早报；入口在「人才资产/招聘推进」分组）===== */}
+           均与侧栏菜单重复，入口在「人才资产/招聘推进」分组）===== */}
       <div className="wb-topbar">
         <Button icon={<AppstoreOutlined />} onClick={() => setCfgOpen(true)}>调整模块</Button>
       </div>
 
-      {/* ===== 行动层：左「数据」右「早报」分栏（桌面 grid，左略宽）；
-           单模块被「调整模块」关掉时另一个自动通栏；移动端同序堆叠 ===== */}
-      {(showStats || showBrief) && (
-        <div className={showStats && showBrief ? "wb-action-split" : undefined}>
-          {showStats && (
-            <div className="wb-hero">
-              {overview ? (
-                <div className="page-stats wb-strip">
-                  {/* 关键指标 */}
-                  {!isHidden("kpi_band") && (
-                    <>
-                      <div className="stat">
-                        <span className="stat-icon is-neutral"><AimOutlined /></span>
-                        <span className="stat-body">
-                          <span className="stat-num is-neutral"><AnimatedNumber value={overview.openJobs ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                          <span className="stat-label">{termFor(profile, "在招岗位")}</span>
-                        </span>
-                      </div>
-                      <div className="stat">
-                        <span className="stat-icon is-neutral"><TeamOutlined /></span>
-                        <span className="stat-body">
-                          <span className="stat-num"><AnimatedNumber value={overview.activeCandidates ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                          <span className="stat-label">{termFor(profile, "待推进")}</span>
-                        </span>
-                      </div>
-                      <div className="stat">
-                        <span className="stat-icon is-good"><RiseOutlined /></span>
-                        <span className="stat-body">
-                          <span className="stat-num is-good"><AnimatedNumber value={overview.weeklyNewTalents ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                          <span className="stat-label">
-                            本周新增
-                            {(() => {
-                              const w = wowText(overview.weeklyNewTalents ?? 0, overview.prevWeekNewTalents ?? 0);
-                              const color = w.tone === "up" ? "#16a34a" : w.tone === "down" ? "#ea580c" : "#94a3b8";
-                              return <span className="wb-wow" style={{ color }}>较上周 {w.text}</span>;
-                            })()}
-                          </span>
-                        </span>
-                      </div>
-                    </>
-                  )}
-                  {/* 今日重点：今日面试 / 近 3 天到期（带逾期红徽标，点击进对应页） */}
-                  {!isHidden("today_focus") && (
-                    <>
-                      <Link to="/interviews" className="stat is-link">
-                        <span className="stat-icon is-warn"><CalendarOutlined /></span>
-                        <span className="stat-body">
-                          <span className="stat-num is-warn"><AnimatedNumber value={overview.todayInterviewCount ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                          <span className="stat-label">
-                            今日面试
-                            {(() => {
-                              const w = wowText(overview.todayInterviewCount ?? 0, overview.prevWeekdayInterviewCount ?? 0);
-                              const color = w.tone === "up" ? "#16a34a" : w.tone === "down" ? "#ea580c" : "#94a3b8";
-                              return <span className="wb-wow" style={{ color }}>较上周 {w.text}</span>;
-                            })()}
-                          </span>
-                        </span>
-                      </Link>
-                      <Link to="/tasks" className="stat is-link">
-                        <span className="stat-icon is-warn"><AlertOutlined /></span>
-                        <span className="stat-body">
-                          <span className="stat-num is-warn">{dueSoon.length}</span>
-                          <span className="stat-label">
-                            近 3 天到期
-                            {overdue > 0 && <span className="wb-focus-overdue">{overdue} 逾期</span>}
-                          </span>
-                        </span>
-                      </Link>
-                    </>
-                  )}
-                </div>
-              ) : ovLoading ? (
-                <Card><Skeleton active paragraph={{ rows: 1 }} /></Card>
-              ) : null}
+      {/* ===== 行动层：今日重点 + 关键指标（通栏）===== */}
+      {showStats && (overview || ovLoading || ovErr) && (
+        <div className="wb-hero">
+          {overview ? (
+            <div className="page-stats wb-strip">
+              {/* 关键指标 */}
+              {!isHidden("kpi_band") && (
+                <>
+                  <div className="stat">
+                    <span className="stat-icon is-neutral"><AimOutlined /></span>
+                    <span className="stat-body">
+                      <span className="stat-num is-neutral"><AnimatedNumber value={overview.openJobs ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                      <span className="stat-label">{termFor(profile, "在招岗位")}</span>
+                    </span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-icon is-neutral"><TeamOutlined /></span>
+                    <span className="stat-body">
+                      <span className="stat-num"><AnimatedNumber value={overview.activeCandidates ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                      <span className="stat-label">{termFor(profile, "待推进")}</span>
+                    </span>
+                  </div>
+                  <div className="stat">
+                    <span className="stat-icon is-good"><RiseOutlined /></span>
+                    <span className="stat-body">
+                      <span className="stat-num is-good"><AnimatedNumber value={overview.weeklyNewTalents ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                      <span className="stat-label">
+                        本周新增
+                        {(() => {
+                          const w = wowText(overview.weeklyNewTalents ?? 0, overview.prevWeekNewTalents ?? 0);
+                          const color = w.tone === "up" ? "#16a34a" : w.tone === "down" ? "#ea580c" : "#94a3b8";
+                          return <span className="wb-wow" style={{ color }}>较上周 {w.text}</span>;
+                        })()}
+                      </span>
+                    </span>
+                  </div>
+                </>
+              )}
+              {/* 今日重点：今日面试 / 近 3 天到期（带逾期红徽标，点击进对应页） */}
+              {!isHidden("today_focus") && (
+                <>
+                  <Link to="/interviews" className="stat is-link">
+                    <span className="stat-icon is-warn"><CalendarOutlined /></span>
+                    <span className="stat-body">
+                      <span className="stat-num is-warn"><AnimatedNumber value={overview.todayInterviewCount ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
+                      <span className="stat-label">
+                        今日面试
+                        {(() => {
+                          const w = wowText(overview.todayInterviewCount ?? 0, overview.prevWeekdayInterviewCount ?? 0);
+                          const color = w.tone === "up" ? "#16a34a" : w.tone === "down" ? "#ea580c" : "#94a3b8";
+                          return <span className="wb-wow" style={{ color }}>较上周 {w.text}</span>;
+                        })()}
+                      </span>
+                    </span>
+                  </Link>
+                  <Link to="/tasks" className="stat is-link">
+                    <span className="stat-icon is-warn"><AlertOutlined /></span>
+                    <span className="stat-body">
+                      <span className="stat-num is-warn">{dueSoonCount}</span>
+                      <span className="stat-label">
+                        近 3 天到期
+                        {overdue > 0 && <span className="wb-focus-overdue">{overdue} 逾期</span>}
+                      </span>
+                    </span>
+                  </Link>
+                </>
+              )}
             </div>
+          ) : ovLoading ? (
+            <Card><Skeleton active paragraph={{ rows: 1 }} /></Card>
+          ) : (
+            // 拉取失败：给一行可重试的提示，而不是留一块空白（用户会以为页面坏了）
+            <Card styles={{ body: { padding: "10px 16px" } }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                关键指标加载失败，其他数据不受影响。
+              </Typography.Text>
+              <Button size="small" type="link" onClick={() => setOvToken((n) => n + 1)}>重试</Button>
+            </Card>
           )}
-          {showBrief && <DailyBrief />}
         </div>
       )}
 
@@ -650,11 +706,26 @@ export default function Funnel() {
               ]}
             />
           )}
-          <Tooltip title="按当前筛选口径，让 AI 写出叙述性复盘（瓶颈 + 建议），可复制用于汇报">
-            <Button className="ai-btn" size="small" icon={<RobotOutlined />} onClick={genRecap} loading={recapLoading} disabled={!data}>AI 复盘</Button>
+          <Tooltip title={analysisReady ? "按当前筛选口径，让 AI 写出叙述性复盘（瓶颈 + 建议），可复制用于汇报" : "先有招聘数据，AI 才能复盘"}>
+            <Button className="ai-btn" size="small" icon={<RobotOutlined />} onClick={genRecap} loading={recapLoading} disabled={!analysisReady}>AI 复盘</Button>
           </Tooltip>
-          <Button size="small" icon={<FileExcelOutlined />} onClick={exportWorkbook} disabled={!data}>导出汇报 Excel</Button>
-          <Button size="small" icon={<DownloadOutlined />} onClick={exportFunnel} disabled={!data}>导出数据</Button>
+          {/* 两个导出入口合并成一个下拉：卡头在 1280px 下已有 Segmented + AI + 导出，
+              按钮再多就换行；CSV 是 Excel 的子集，按需选即可 */}
+          <Dropdown
+            disabled={!analysisReady}
+            menu={{
+              items: [
+                { key: "xlsx", icon: <FileExcelOutlined />, label: "汇报 Excel（多表）" },
+                { key: "csv", icon: <DownloadOutlined />, label: "数据 CSV" },
+              ],
+              onClick: ({ key }) => {
+                if (key === "xlsx") void exportWorkbook();
+                else exportFunnel();
+              },
+            }}
+          >
+            <Button size="small" icon={<DownloadOutlined />} disabled={!analysisReady}>导出</Button>
+          </Dropdown>
         </Space>
       </div>
 
@@ -710,6 +781,20 @@ export default function Funnel() {
         </div>
       </Card>
 
+      {/* 筛选生效提示：漏斗、趋势、导出都按这个口径算，滚到下面或离开再回来很容易忘 */}
+      {filtered && (
+        <div className="wb-filter-bar">
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            当前口径：{[
+              jobFilter ? jobLabelOf() : "",
+              ownerFilter ? (users.find((u) => u.id === ownerFilter)?.name ?? "指定成员") : "",
+              daysFilter ? (TIME_RANGES.find((t) => t.value === daysFilter)?.label ?? `${daysFilter} 天内`) : "",
+            ].filter(Boolean).join(" · ")}
+          </Typography.Text>
+          <Button size="small" type="link" onClick={resetSearch}>清除筛选</Button>
+        </div>
+      )}
+
       {/* AI 招聘复盘：生成后内嵌展示（复制全文 / 重新生成）；AI 失败时降级显示规则诊断 */}
       {!loading && analysisReady && (recap || recapErr || recapLoading) && (
         <Card
@@ -728,12 +813,12 @@ export default function Funnel() {
             <AiThinking steps={["正在读取数据…", "正在分析漏斗与周期…", "正在组织复盘结论…"]} />
           ) : recap ? (
             <div className="wb-recap">
-              <p style={{ margin: "0 0 10px", lineHeight: 1.7 }}><TypeText text={recap.summary} /></p>
+              <p><TypeText text={recap.summary} /></p>
               {recap.bottlenecks.map((b, i) => (
-                <div key={`b${i}`} style={{ lineHeight: 1.8 }}>· <b>瓶颈</b>：<TypeText text={b} /></div>
+                <div className="wb-recap-line" key={`b${i}`}>· <b>瓶颈</b>：<TypeText text={b} /></div>
               ))}
               {recap.suggestions.map((sg, i) => (
-                <div key={`s${i}`} style={{ lineHeight: 1.8 }}>· <b>建议</b>：<TypeText text={sg} /></div>
+                <div className="wb-recap-line" key={`s${i}`}>· <b>建议</b>：<TypeText text={sg} /></div>
               ))}
               <AiUsageFoot usage={recap._usage} />
             </div>
@@ -793,7 +878,7 @@ export default function Funnel() {
                   title={<Space><LineChartOutlined />招聘趋势</Space>}
                   styles={{ body: { padding: "12px 16px" } }}
                   extra={
-                    <Tooltip title="新增人才=talents 入库；进入面试=曾到达「初试」；入职=曾到达「已入职」。与漏斗同源。">
+                    <Tooltip title="单位是「人次」：同一人才投多个岗位、同一岗位反复推进会分别计；漏斗统计的是去重人数，两者不能直接对账。新增=人才入库；进入面试=到达初试的日志；入职=到达已入职的日志。最后一周是本周至今，尚未满一周。">
                       <Button
                         size="small" type="text" icon={<PictureOutlined />}
                         onClick={() => downloadPng(trendChartRef.current, "招聘趋势")}
@@ -855,10 +940,10 @@ export default function Funnel() {
                           <Button size="small" type="text" icon={<BgColorsOutlined />} />
                         </Tooltip>
                       </Popover>
-                      <Tooltip title="下载高清 PNG（白底，可直接贴进汇报 PPT）">
+                      <Tooltip title="下载高清 PNG（白底，含阶段名与转化率，可直接贴进汇报 PPT）">
                         <Button
                           size="small" type="text" icon={<PictureOutlined />}
-                          onClick={() => downloadPng(funnelChartRef.current, "转化漏斗")}
+                          onClick={downloadFunnelPng}
                         >PNG</Button>
                       </Tooltip>
                     </Space>

@@ -80,17 +80,20 @@ function contractTaskStmts(db: any, t: TalentContractRow, existing: ExistingTask
   const kinds = [
     {
       prefix: "合同到期",
+      task_type: "contract_expire",
       due: t.contract_end,
       content: `${t.name} 的劳动合同将于 ${t.contract_end} 到期，请及时安排续签评估或离职交接。`,
     },
     {
       prefix: "试用期到期",
+      task_type: "contract_expire",
       due: t.probation_end,
       content: `${t.name} 的试用期将于 ${t.probation_end} 到期，请提前完成转正评估。`,
     },
     {
       // 录入表单填的「下次跟进时间」：提醒自己（推到负责人），由 PushPlus 推微信
       prefix: "跟进提醒",
+      task_type: "follow_up",
       due: t.next_follow_at ? String(t.next_follow_at).slice(0, 10) : null,
       content: `${t.name} 的跟进时间已到（${t.next_follow_at}），请及时联系候选人并推进流程。`,
       priority: "normal" as const,
@@ -98,7 +101,7 @@ function contractTaskStmts(db: any, t: TalentContractRow, existing: ExistingTask
   ];
   const stmts: any[] = [];
   let created = 0, updated = 0, cancelled = 0;
-  for (const { prefix, due, content } of kinds) {
+  for (const { prefix, task_type, due, content } of kinds) {
     const title = `${prefix}：${t.name}`;
     const dup = existing.find((x) => x.title === title);
     if (!due) {
@@ -108,7 +111,7 @@ function contractTaskStmts(db: any, t: TalentContractRow, existing: ExistingTask
     const sh = shiftToWorkday(due);
     const pr = (kinds.find((x) => x.prefix === prefix) as any)?.priority || 'high';
     if (!dup) {
-      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source, original_due, shifted) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 'system', ?, ?)`).bind(genId(), t.owner_id, t.id, title, content, sh.due, pr, sh.original, sh.shifted ? 1 : 0));
+      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source, original_due, shifted, task_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 'system', ?, ?, ?)`).bind(genId(), t.owner_id, t.id, title, content, sh.due, pr, sh.original, sh.shifted ? 1 : 0, task_type));
       created++;
       continue;
     }
@@ -135,12 +138,14 @@ function socialTaskStmts(db: any, t: SocialTalentRow, existing: ExistingTask[]) 
   const kinds = [
     {
       prefix: "社保增员",
+      task_type: "social_add",
       active: onboarded && si === "none",
       due: t.hire_date || null,
       content: `${t.name} 已入职${t.hire_date ? `（${t.hire_date}）` : ""}，尚未办理社保参保登记，请及时办理社保增员。`,
     },
     {
       prefix: "社保减员",
+      task_type: "social_leave",
       active: !!t.resignation_date && si === "active",
       due: t.resignation_date,
       content: `${t.name} 将于 ${t.resignation_date} 离职，社保仍在缴，请在离职当月及时办理社保减员（停缴）。`,
@@ -148,7 +153,7 @@ function socialTaskStmts(db: any, t: SocialTalentRow, existing: ExistingTask[]) 
   ];
   const stmts: any[] = [];
   let created = 0, updated = 0, cancelled = 0;
-  for (const { prefix, active, due, content } of kinds) {
+  for (const { prefix, task_type, active, due, content } of kinds) {
     const title = `${prefix}：${t.name}`;
     const dup = existing.find((x) => x.title === title);
     if (!active) {
@@ -158,7 +163,7 @@ function socialTaskStmts(db: any, t: SocialTalentRow, existing: ExistingTask[]) 
     const sh = shiftToWorkday(due || new Date().toISOString().slice(0, 10));
     const effectiveDue = sh.due;
     if (!dup) {
-      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source, original_due, shifted) VALUES (?, ?, ?, ?, ?, ?, 'high', 'pending', 'system', ?, ?)`).bind(genId(), t.owner_id, t.id, title, content, effectiveDue, sh.original, sh.shifted ? 1 : 0));
+      stmts.push(db.prepare(`INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source, original_due, shifted, task_type) VALUES (?, ?, ?, ?, ?, ?, 'high', 'pending', 'system', ?, ?, ?)`).bind(genId(), t.owner_id, t.id, title, content, effectiveDue, sh.original, sh.shifted ? 1 : 0, task_type));
       created++;
       continue;
     }
@@ -179,7 +184,7 @@ async function syncSocialTasksForTalent(db: any, talentId: string) {
   ).bind(talentId).first()) as SocialTalentRow | undefined;
   if (!t) return;
   const tasks = (await db.prepare(
-    `SELECT id, title, due_date FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND (title LIKE '社保增员：%' OR title LIKE '社保减员：%')`
+    `SELECT id, title, due_date, task_type FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND task_type IN ('social_add', 'social_leave')`
   ).bind(talentId).all()) as { results: ExistingTask[] };
   const { stmts } = socialTaskStmts(db, t, tasks.results || []);
   if (stmts.length) await db.batch(stmts);
@@ -400,7 +405,7 @@ talents.post("/contracts/sync-tasks", async (c) => {
   const ids = talentsRows.map((t) => t.id);
   const placeholders = ids.map(() => "?").join(",");
   const tasksRows = (await c.env.DB.prepare(
-    `SELECT id, talent_id, title, due_date FROM talent_tasks WHERE talent_id IN (${placeholders}) AND status = 'pending' AND (title LIKE '合同到期：%' OR title LIKE '试用期到期：%')`
+    `SELECT id, talent_id, title, due_date, task_type FROM talent_tasks WHERE talent_id IN (${placeholders}) AND status = 'pending' AND task_type = 'contract_expire'`
   ).bind(...ids).all<ExistingTask & { talent_id: string }>()).results;
 
   const byTalent: Record<string, ExistingTask[]> = {};
@@ -498,7 +503,7 @@ talents.post("/contracts/files", async (c) => {
   if (text.length >= 10) {
     try {
       const raw = await deepseekJson(
-        (await resolveAiKey(c.env, session.userId)).key ?? "",
+        await resolveAiKey(c.env, session.userId),
         CONTRACT_EXTRACT_SYSTEM,
         `请解析以下劳动合同文本（${talent.name}）：\n\n${text.slice(0, 6000)}`,
         { maxTokens: 200 }
@@ -675,7 +680,7 @@ talents.post("/social/sync-tasks", async (c) => {
   const ids = talentsRows.map((t) => t.id);
   const placeholders = ids.map(() => "?").join(",");
   const tasksRows = (await c.env.DB.prepare(
-    `SELECT id, talent_id, title, due_date FROM talent_tasks WHERE talent_id IN (${placeholders}) AND status = 'pending' AND (title LIKE '社保增员：%' OR title LIKE '社保减员：%')`
+    `SELECT id, talent_id, title, due_date, task_type FROM talent_tasks WHERE talent_id IN (${placeholders}) AND status = 'pending' AND task_type IN ('social_add', 'social_leave')`
   ).bind(...ids).all<ExistingTask & { talent_id: string }>()).results;
 
   const byTalent: Record<string, ExistingTask[]> = {};
@@ -867,7 +872,7 @@ talents.post("/batch/stage", async (c) => {
     const due = new Date(Date.now() + 90 * 86400000);
     const p = (n: number) => String(n).padStart(2, "0");
     await c.env.DB.prepare(
-      "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system')"
+      "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, task_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', 'probation')"
     ).bind(
       genId(), h.owner_id, h.talent_id, h.job_id,
       `试用期跟进：${h.talent_name}`,
@@ -991,7 +996,7 @@ talents.put("/:id", async (c) => {
   if (body.contract_end !== undefined || body.probation_end !== undefined) {
     const t = await c.env.DB.prepare(`SELECT id, owner_id, name, contract_end, probation_end FROM talents WHERE id = ?`).bind(id).first<TalentContractRow>();
     if (t) {
-      const tasks = await c.env.DB.prepare(`SELECT id, title, due_date FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND (title LIKE '合同到期：%' OR title LIKE '试用期到期：%')`).bind(id).all<ExistingTask>();
+      const tasks = await c.env.DB.prepare(`SELECT id, title, due_date, task_type FROM talent_tasks WHERE talent_id = ? AND status = 'pending' AND task_type = 'contract_expire'`).bind(id).all<ExistingTask & { task_type?: string }>();
       const { stmts } = contractTaskStmts(c.env.DB, t, tasks.results || []);
       if (stmts.length) await c.env.DB.batch(stmts);
     }

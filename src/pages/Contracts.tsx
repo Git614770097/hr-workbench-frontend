@@ -11,6 +11,7 @@ import { api } from "../api";
 import type { ContractItem, ContractFile, Talent } from "../types";
 import { STATUS_LABELS } from "../types";
 import { extractContractText } from "../utils/contractFile";
+import { fmtDateTime } from "../utils/time";
 import { downloadBlob, dateStamp, csvCell, escapeHtml } from "../utils/file";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
@@ -189,7 +190,7 @@ function ContractFilesModal({
           : <Typography.Text type="secondary">未识别</Typography.Text>;
       },
     },
-    { title: "上传时间", dataIndex: "created_at", key: "created_at", width: 160, render: (v: string) => (v || "").replace("T", " ").slice(0, 16) },
+    { title: "上传时间", dataIndex: "created_at", key: "created_at", width: 160, render: (v: string) => fmtDateTime(v) },
     {
       title: "操作", key: "action", width: 110,
       render: (_: unknown, r: ContractFile) => (

@@ -39,7 +39,7 @@ import {
   FileSearchOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
-import { QuestionCircleOutlined, PlayCircleOutlined, MessageOutlined } from "@ant-design/icons";
+import { QuestionCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import type { User } from "../types";
 import { ROLE_LABELS } from "../types";
 import { api } from "../api";
@@ -47,6 +47,7 @@ import { THEME_COLORS, type ThemeState } from "../theme";
 import Onboarding from "./Onboarding";
 import { onboardingStepsFor } from "./onboardingSteps";
 import PushplusModal from "./PushplusModal";
+import FeishuLogo from "./FeishuLogo";
 import FeishuBindModal from "./FeishuBindModal";
 import PasswordModal from "./PasswordModal";
 import AiKeyModal from "./AiKeyModal";
@@ -572,7 +573,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
       label: "消息推送设置",
       onClick: () => setPushplusOpen(true),
     },
-    // 飞书入口已上顶栏（MessageOutlined 图标）：未绑定点击直跳飞书授权页，已绑定点击开
+    // 飞书入口已上顶栏（飞书 logo 图标）：未绑定点击直跳飞书授权页，已绑定点击开
     // 管理弹窗（发送测试 / 解绑），此处不再放重复菜单项（两个入口两种行为只会困惑）
     {
       key: "member",
@@ -768,7 +769,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
                 <Button
                   type="text"
                   className={"topbar-feishu-btn" + (user.feishu_bound ? " is-on" : "")}
-                  icon={<MessageOutlined />}
+                  icon={<FeishuLogo />}
                   loading={feishuJumping}
                   onClick={openFeishuEntry}
                 />

@@ -104,3 +104,35 @@ export function hasHolidayData(year: number): boolean {
 export function knownYears(): number[] {
   return [...KNOWN_YEARS].sort((a, b) => a - b);
 }
+
+/**
+ * 顺延到下一个工作日。
+ * - 目标日期是节假日 / 周末（rest = true）时才顺延；调休补班（rest = false）不顺延
+ * - 已超出已知年份（dayInfo.known = false）时退化为「只看周六周日」的简易判断，与日历降级策略一致
+ * @returns { nextYmd, originalYmd, shifted } 原日期本身 + 顺延到的工作日 + 是否发生顺延
+ */
+export function shiftToNextWorkday(ymd: string): { nextYmd: string; originalYmd: string; shifted: boolean } {
+  const info = dayInfo(ymd);
+  if (!info.rest) return { nextYmd: ymd, originalYmd: ymd, shifted: false };
+
+  // 超出内置年份时：只按周六 / 周日判断，避免用 holiday/makeup 误判
+  const isWeekendOnly = () => {
+    const wd = new Date(`${ymd}T00:00:00Z`).getUTCDay();
+    return wd === 0 || wd === 6;
+  };
+  if (!info.known && !isWeekendOnly()) {
+    // 降级 + 这天不是周末（比如 2025 年的清明节当天），保守不顺延
+    return { nextYmd: ymd, originalYmd: ymd, shifted: false };
+  }
+
+  // 往后加 1 天，直到找到 rest = false 的那天
+  let d = new Date(`${ymd}T00:00:00Z`);
+  for (let i = 1; i <= 7; i++) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const candidate = d.toISOString().slice(0, 10);
+    const ci = dayInfo(candidate);
+    if (!ci.rest) return { nextYmd: candidate, originalYmd: ymd, shifted: true };
+  }
+  // 7 天内必能碰到工作日（最极端的春节也不过 7 天连休），理论上到不了这里
+  return { nextYmd: ymd, originalYmd: ymd, shifted: false };
+}

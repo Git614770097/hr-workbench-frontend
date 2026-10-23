@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Segmented, Tag, Drawer, Button, Input, Select, DatePicker, message, Spin, Popconfirm } from "antd";
+import { Segmented, Tag, Drawer, Button, Input, Select, DatePicker, message, Spin, Popconfirm, Modal } from "antd";
 import { CheckOutlined, DeleteOutlined, StopOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
 import type { Task } from "../types";
 import { PRIORITY_LABELS } from "../types";
+import { shiftToNextWorkday } from "../utils/holidays";
 
 const SCOPES = [
   { label: "未完成", value: "todo" },
@@ -84,26 +85,48 @@ export default function MTasks() {
       message.warning("先写点什么");
       return;
     }
-    setSaving(true);
-    try {
-      await api.createTask({
-        title: draft.title.trim(),
-        content: draft.content.trim() || null,
-        due_date: draft.due_date ? draft.due_date.format("YYYY-MM-DD") : null,
-        priority: draft.priority,
-        source: "manual",
+
+    const rawDue = draft.due_date ? draft.due_date.format("YYYY-MM-DD") : null;
+
+    const doSave = async (finalDue: string | null, originalDue: string | null, shifted: boolean) => {
+      setSaving(true);
+      try {
+        await api.createTask({
+          title: draft.title.trim(),
+          content: draft.content.trim() || null,
+          due_date: finalDue,
+          original_due: shifted ? originalDue : null,
+          shifted: shifted ? 1 : 0,
+          priority: draft.priority,
+          source: "manual",
+        });
+        message.success("待办已添加");
+        setCreateOpen(false);
+        setDraft({ title: "", due_date: null, priority: "normal", content: "" });
+        setScope("todo");
+        load();
+      } catch (e) {
+        message.error((e as Error).message);
+      } finally {
+        setSaving(false);
+      }
+    };
+
+    if (!rawDue) return doSave(null, null, false);
+
+    const { nextYmd, originalYmd, shifted } = shiftToNextWorkday(rawDue);
+    if (shifted) {
+      Modal.confirm({
+        title: "日期在假期",
+        content: `${rawDue} 是假期/周末，顺延到 ${nextYmd} 更稳妥。是否顺延？`,
+        okText: `顺延到 ${nextYmd}`,
+        cancelText: `保持 ${rawDue}`,
+        onOk: () => doSave(nextYmd, originalYmd, true),
+        onCancel: () => doSave(rawDue, rawDue, false),
       });
-      message.success("待办已添加");
-      setCreateOpen(false);
-      setDraft({ title: "", due_date: null, priority: "normal", content: "" });
-      // 新建后回到「未完成」视图，否则新待办可能不在当前筛选里，看着像没加上
-      setScope("todo");
-      load();
-    } catch (e) {
-      message.error((e as Error).message);
-    } finally {
-      setSaving(false);
+      return;
     }
+    await doSave(rawDue, rawDue, false);
   };
 
   const dueText = (t: Task) => {

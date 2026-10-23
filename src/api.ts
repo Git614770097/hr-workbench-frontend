@@ -1,5 +1,5 @@
 import { message } from "antd";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuWebhook, FeishuNotifyMode, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult, DailyBrief, AuditLogRow, AuditLogsResponse, AuditActionStat } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuWebhook, FeishuNotifyMode, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult, AuditLogRow, AuditLogsResponse, AuditActionStat } from "./types";
 
 const BASE = "/api";
 
@@ -74,7 +74,9 @@ export const api = {
       return r;
     }),
 
-  me: () => request<User>("/auth/me", {}, 8000),
+  // ⚠️ 首屏关键接口：实测服务端已优化到 ~1s，但网络/TLS 层偶发抖动（实测 TLS 握手 0.5~10.8s）。
+  // 超时给足余量，且允许调用方传更短的超时做「快速失败 + 渐进重试」。
+  me: (timeoutMs = 15000) => request<User>("/auth/me", {}, timeoutMs),
 
   // 自助注册（注册后为 pending 状态，需管理员审批）
   // ref 为选填邀请码：非法码后端静默忽略，不影响注册结果
@@ -604,6 +606,12 @@ export const api = {
 
   getMatchProfiles: () => request<MatchProfile[]>("/match/profiles"),
 
+  // 下拉/列表专用：不带 JD 原文，几十份画像也能秒开
+  getMatchProfilesLite: () => request<MatchProfileLite[]>("/match/profiles/lite"),
+
+  // 单份完整画像：点「开始匹配」时才取（/match/score 需要 jd_raw 拼 AI prompt）
+  getMatchProfile: (id: string) => request<MatchProfile>(`/match/profiles/${id}`),
+
   createMatchProfile: (data: Partial<MatchProfile>) =>
     request<{ id: string }>("/match/profiles", {
       method: "POST",
@@ -743,7 +751,9 @@ export const api = {
     request<{ deleted: number }>("/talents/batch/delete", { method: "POST", body: JSON.stringify(data) }),
 
   // ---- 招聘漏斗 ----
-  getFunnel: (params: { job_id?: string; owner_id?: string; days?: number } = {}) => {
+  // t 只在用户主动点「查询 / 重置」时传（时间戳），后端见到 t 就绕过 Edge Cache，
+  // 保证「点了就一定是新数」；不传则吃 30s 缓存，降低进页面的 D1 压力。
+  getFunnel: (params: { job_id?: string; owner_id?: string; days?: number; t?: number } = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params)
         .filter(([, v]) => v !== undefined && v !== null && v !== "" && v !== 0)
@@ -762,8 +772,6 @@ export const api = {
   getTaskSummary: () => request<TaskSummary>("/tasks/summary"),
   // 招聘概览首页聚合（全员可看，按 owner 隔离）
   getOverview: () => request<OverviewResponse>("/overview"),
-  // 今日早报：今天在等你回复与决定的人（规则名单 + 可选 AI 一句话）
-  getDailyBrief: () => request<DailyBrief>("/overview/daily-brief"),
   // 工作台趋势折线：新增人才 / 进入面试 / 入职（周粒度，4w/12w/24w 三档窗口）
   getTrend: (range: "4w" | "12w" | "24w" = "12w") =>
     request<TrendResponse>(`/overview/trend?range=${range}`),

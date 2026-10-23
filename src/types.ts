@@ -1128,6 +1128,8 @@ export interface TodayInterviewItem {
   location: string | null;
   meeting_url: string | null;
   interviewer: string | null;
+  /** 面试状态：scheduled / done / no_show（已取消的不返回） */
+  status?: string;
   talent_name: string;
   job_title: string | null;
 }
@@ -1167,6 +1169,8 @@ export interface OverviewResponse {
   todayInterviews: TodayInterviewItem[];
   /** 近 3 天到期待办（含今日，action 层用） */
   dueSoonTasks: DueSoonTaskItem[];
+  /** 近 3 天到期待办总数（不受 dueSoonTasks 的 LIMIT 20 影响，KPI 用它展示） */
+  dueSoonCount?: number;
 }
 
 // ---- 工作台趋势折线（GET /api/overview/trend）----
@@ -1189,7 +1193,6 @@ export interface TrendResponse {
 
 // ---- 工作台「调整模块」配置（存 user_settings.workbench_modules）----
 export type WorkbenchModuleKey =
-  | "daily_brief"
   | "today_focus"
   | "kpi_band"
   | "trend"
@@ -1202,26 +1205,6 @@ export type WorkbenchModuleKey =
 export interface WorkbenchModuleConfig {
   /** 被隐藏的模块 key 列表（缺省 = 全部显示） */
   hidden: WorkbenchModuleKey[];
-}
-
-// ---- 今日早报（工作台行动层，GET /overview/daily-brief）----
-export type DailyBriefLevel = "red" | "amber" | "blue";
-export interface DailyBriefItem {
-  /** 人才-岗位对（talent_id:job_id），前端列表 key */
-  link_key: string;
-  talent_id: string;
-  talent_name: string;
-  job_title: string;
-  /** red=候选人在流失/结论卡人；amber=排期风险；blue=等你做决定 */
-  level: DailyBriefLevel;
-  reason: string;
-  action: string;
-}
-export interface DailyBrief {
-  items: DailyBriefItem[];
-  /** AI 一句话开场白（null=配额用完/无 Key/失败，静默降级，名单不受影响） */
-  ai_note: string | null;
-  generated_at: string;
 }
 
 export const TASK_SOURCE_LABELS: Record<string, string> = {
@@ -1250,6 +1233,23 @@ export interface MatchProfile {
   requirements: string;
   jd_raw: string;
   created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * 画像下拉/列表用的轻量结构（GET /match/profiles/lite）。
+ * 刻意不含 jd_raw / requirements / must_skills / nice_skills：
+ * 这些字段是 JD 原文与长文本，几十份画像一起返回会让下拉「转圈很久」，
+ * 而下拉只需要「选哪个」。真正要算匹配时再按 id 取完整一份（GET /match/profiles/:id）。
+ */
+export interface MatchProfileLite {
+  id: string;
+  name: string;
+  job_title: string;
+  city: string;
+  education: string;
+  /** 是否填过招聘需求（JD 原文）：只回布尔，不回原文 */
+  has_jd: boolean;
   updated_at?: string;
 }
 

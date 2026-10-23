@@ -5,6 +5,7 @@ import { api } from "../api";
 import { useDict } from "../dict";
 import { useSearchParams } from "react-router-dom";
 import { SOURCE_OPTIONS, REJECT_REASONS, EDUCATION_OPTIONS, JOB_TYPE_LABELS, CITY_OPTIONS, SKILL_OPTIONS, FeishuSettings, FeishuWebhook, FeishuNotifyMode } from "../types";
+import { fmtDateTime } from "../utils/time";
 
 /** 字典类型元信息（顺序即列表展示顺序） */
 const DICT_TYPE_META: { key: string; label: string; color: string; hint: string; fixed?: boolean }[] = [
@@ -865,7 +866,7 @@ function FeishuSettingsPanel() {
                   title: "状态", dataIndex: "enabled",
                   render: (v: number) => (v ? <Tag color="green">启用中</Tag> : <Tag>已停用</Tag>),
                 },
-                { title: "添加时间", dataIndex: "created_at", render: (v: string) => v?.slice(0, 16) },
+                { title: "添加时间", dataIndex: "created_at", render: (v: string) => fmtDateTime(v) },
                 {
                   title: "操作",
                   render: (_: unknown, row: FeishuWebhook) => (

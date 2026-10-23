@@ -10,7 +10,7 @@ import {
 } from "@ant-design/icons";
 import { api } from "../api";
 import { VERDICT_COLORS } from "../types";
-import type { MatchProfile, MatchResult, Talent } from "../types";
+import type { MatchProfile, MatchProfileLite, MatchResult, Talent } from "../types";
 import { parseResumeToTalent, parseResumeFile, recordToData } from "../utils/resumeImport";
 import type { ParsedTalent } from "../utils/resumeImport";
 import MatchResultCard from "../components/MatchResultCard";
@@ -95,7 +95,8 @@ export default function Match() {
   const brand = useIdentityProfile();
 
   // ---- 画像 ----
-  const [profiles, setProfiles] = useState<MatchProfile[]>([]);
+  // 下拉只存轻量画像（id/名称/城市/学历/有无 JD），不含 JD 原文——见 loadProfiles
+  const [profiles, setProfiles] = useState<MatchProfileLite[]>([]);
   // 从画像列表点「去匹配」跳过来时，直接用路由 state 初始化选中的画像 id
   const [profileId, setProfileId] = useState<string | undefined>(
     () => (location.state as { profileId?: string } | null)?.profileId
@@ -155,11 +156,33 @@ export default function Match() {
   const [pipelineTalentId, setPipelineTalentId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Candidate | null>(null);
 
+  // 完整画像（含 JD 原文）：/match/score 要用 jd_raw 拼 AI prompt，但下拉不需要。
+  // 只在真正点「开始匹配」时按 id 取一份，避免每次进页面都传几百 KB。
+  const [profileFull, setProfileFull] = useState<MatchProfile | null>(null);
+  const [fullLoading, setFullLoading] = useState(false);
+
   const loadProfiles = async () => {
     try {
-      setProfiles(await api.getMatchProfiles());
+      setProfiles(await api.getMatchProfilesLite());
     } catch {
       // 画像列表拉取失败不影响使用
+    }
+  };
+
+  /** 取选中画像的完整数据（已取过则复用；换画像会按 id 重新取） */
+  const ensureFullProfile = async (): Promise<MatchProfile | null> => {
+    if (!profileId) return null;
+    if (profileFull && profileFull.id === profileId) return profileFull;
+    setFullLoading(true);
+    try {
+      const full = await api.getMatchProfile(profileId);
+      setProfileFull(full);
+      return full;
+    } catch (err) {
+      message.error(`画像加载失败：${(err as Error).message}`);
+      return null;
+    } finally {
+      setFullLoading(false);
     }
   };
 
@@ -356,6 +379,9 @@ export default function Match() {
       message.warning(termFor(brand, "请先添加候选人：上传简历，或点「从人才库添加」"));
       return;
     }
+    // 完整画像在这里才取：下拉用的是轻量列表，JD 原文只在评分时才需要
+    const full = await ensureFullProfile();
+    if (!full) return;
 
     setRunning(true);
     setResults({});
@@ -379,7 +405,7 @@ export default function Match() {
         const cd = candidates[cursor++];
         setActiveKeys((prev) => [...prev, cd.key]);
         try {
-          next[cd.key] = await api.scoreCandidate(profile, {
+          next[cd.key] = await api.scoreCandidate(full, {
             text: cd.text,
             parsed: {
               name: cd.talent.name,
@@ -582,7 +608,7 @@ export default function Match() {
                       profile.job_title && `职位 ${profile.job_title}`,
                       profile.city && `城市 ${profile.city}`,
                       profile.education && `学历 ${profile.education}`,
-                      profile.jd_raw ? "已填招聘需求" : "无招聘需求",
+                      profile.has_jd ? "已填招聘需求" : "无招聘需求",
                     ].filter(Boolean).join(" · ")
                   : "从下拉列表选一个画像开始"}
               </Typography.Text>
@@ -665,8 +691,8 @@ export default function Match() {
               block
               size="large"
               icon={<ThunderboltOutlined />}
-              loading={running}
-              disabled={running || !profile || candidates.length === 0}
+              loading={running || fullLoading}
+              disabled={running || fullLoading || !profile || candidates.length === 0}
               onClick={handleMatch}
             >
               开始匹配
@@ -741,49 +767,53 @@ export default function Match() {
         )}
 
         {/* 结果概览：整体结论一眼可见（各档人数 + 最佳人选）；评估进行中只显示部分结果，不展示概览 */}
-        {!running && ranked.length > 0 && (
-          <div
-            style={{
-              display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
-              padding: "10px 14px", marginBottom: 12,
-              background: "linear-gradient(90deg,#fffbeb 0%,#fafafa 60%)",
-              border: "1px solid #f0f0f0", borderRadius: 8,
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-              <span style={{ fontSize: 13, color: "#6b7280" }}>共评估</span>
-              <span style={{ fontSize: 20, fontWeight: 700, color: "#111827" }}>{ranked.length}</span>
-              <span style={{ fontSize: 13, color: "#6b7280" }}>位</span>
+        {!running && ranked.length > 0 && (() => {
+          const top = results[ranked[0].key];
+          // 「不建议」不配皇冠：全员不达标时给「暂无达标人选」，不硬捧最佳
+          const hasPick = top.verdict !== "不建议";
+          return (
+            <div className="match-overview-bar">
+              <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 13 }}>共评估</Typography.Text>
+                <span style={{ fontSize: 20, fontWeight: 700 }}>{ranked.length}</span>
+                <Typography.Text type="secondary" style={{ fontSize: 13 }}>位</Typography.Text>
+              </div>
+              <div className="ov-divider" />
+              <Space size={[6, 6]} wrap>
+                {["强烈推荐", "推荐", "可考虑", "不建议"].map((v) => {
+                  const n = ranked.filter((c) => results[c.key].verdict === v).length;
+                  if (!n) return null;
+                  return (
+                    <Tag key={v} color={VERDICT_COLORS[v]} style={{ marginInlineEnd: 0 }}>
+                      {v} {n}
+                    </Tag>
+                  );
+                })}
+              </Space>
+              {hasPick ? (
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                  <TrophyOutlined style={{ color: "#f59e0b" }} />
+                  <Typography.Text type="secondary" style={{ fontSize: 13 }}>最佳人选</Typography.Text>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>
+                    {ranked[0].talent.name || ranked[0].fileName}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 16, fontWeight: 700,
+                      color: VERDICT_COLORS[top.verdict] || "#3b82f6",
+                    }}
+                  >
+                    {top.score} 分
+                  </span>
+                </div>
+              ) : (
+                <Typography.Text type="secondary" style={{ marginLeft: "auto", fontSize: 13 }}>
+                  暂无达标人选
+                </Typography.Text>
+              )}
             </div>
-            <div style={{ width: 1, height: 22, background: "#e5e7eb" }} />
-            <Space size={[6, 6]} wrap>
-              {["强烈推荐", "推荐", "可考虑", "不建议"].map((v) => {
-                const n = ranked.filter((c) => results[c.key].verdict === v).length;
-                if (!n) return null;
-                return (
-                  <Tag key={v} color={VERDICT_COLORS[v]} style={{ marginInlineEnd: 0 }}>
-                    {v} {n}
-                  </Tag>
-                );
-              })}
-            </Space>
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-              <TrophyOutlined style={{ color: "#f59e0b" }} />
-              <span style={{ fontSize: 13, color: "#6b7280" }}>最佳人选</span>
-              <span style={{ fontSize: 14, fontWeight: 600, color: "#111827" }}>
-                {ranked[0].talent.name || ranked[0].fileName}
-              </span>
-              <span
-                style={{
-                  fontSize: 16, fontWeight: 700,
-                  color: VERDICT_COLORS[results[ranked[0].key].verdict] || "#3b82f6",
-                }}
-              >
-                {results[ranked[0].key].score} 分
-              </span>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* 对比图：所有候选人同图对比（≥2 位才有对比意义）；评估进行中也实时增长 */}
         {compareRows.length >= 2 && <MatchCompareChart rows={compareRows} />}

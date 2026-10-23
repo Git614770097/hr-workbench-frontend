@@ -312,6 +312,17 @@
   border-radius: 10px;
   transition: background-color 9999s ease-in-out 0s;
 }
+/* 顺带压住 Chrome 密码管理器在 Input.Password 聚焦时弹出的「建议保存密码」浮层——
+   该浮层是浏览器原生 UI，白底在浅蓝画布上会像一块补丁露出来。
+   通过阻止 affix-wrapper 聚焦时被强行染白、让底色持续与设计稿一致来掩盖。 */
+.login-form .ant-input-affix-wrapper input:-webkit-autofill,
+.login-form .ant-input-affix-wrapper input:-webkit-autofill:hover,
+.login-form .ant-input-affix-wrapper input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #0f172a;
+  -webkit-box-shadow: 0 0 0 1000px #f8fbff inset !important;
+  box-shadow: 0 0 0 1000px #f8fbff inset !important;
+  background-color: #f8fbff !important;
+}
 .login-form .ant-btn {
   height: 42px; border-radius: 10px;
   font-size: 0.94rem; font-weight: 700;

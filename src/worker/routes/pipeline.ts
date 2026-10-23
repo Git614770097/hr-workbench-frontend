@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
-import { genId } from "../helpers";
+import { genId, cachedJson } from "../helpers";
 import { syncTalentStage, ensureOnboardingItems, stageLogStmt, setLinkStageStmt, hasProbationTask } from "../talentFlow";
 import { JOIN_TALENT_T, LEFT_JOIN_JOB_J, LEFT_JOIN_STAGE_LOG_L, SELECT_LINK_CTX, SELECT_LINK_OWNER } from "../sqlFragments";
 import { shiftToWorkday } from "../utils/workday";
@@ -149,7 +149,7 @@ pipeline.post("/sync-stale-tasks", async (c) => {
   }
 
   // 现存「阶段停滞」待办：普通用户只看自己的，避免误取消他人提醒
-  let tSql = "SELECT id, talent_id, content FROM talent_tasks WHERE title LIKE '阶段停滞%' AND status = 'pending'";
+  let tSql = "SELECT id, talent_id, content FROM talent_tasks WHERE task_type = 'pipeline_stall' AND status = 'pending'";
   const tParams: string[] = [];
   { const sc = ownerScope(session); tSql += sc.sql; tParams.push(...sc.params); }
   const existing = new Map<string, any>();
@@ -169,7 +169,7 @@ pipeline.post("/sync-stale-tasks", async (c) => {
     const dup = existing.get(talentId);
     if (!dup) {
       stmts.push(c.env.DB.prepare(
-        "INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source, original_due, shifted) VALUES (?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', ?, ?)"
+        "INSERT INTO talent_tasks (id, owner_id, talent_id, title, content, due_date, priority, status, source, original_due, shifted, task_type) VALUES (?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', ?, ?, 'pipeline_stall')"
       ).bind(genId(), v.owner_id, talentId, title, content, dueStr, todayStr, todayShift.shifted ? 1 : 0));
       created++;
     } else if (dup.content !== content) {
@@ -214,13 +214,18 @@ function parseSqlTime(s: string | null | undefined): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
-pipeline.get("/funnel", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
+type FunnelSession = NonNullable<Awaited<ReturnType<typeof getSession>>>;
 
-  const jobId = c.req.query("job_id");
-  const ownerId = c.req.query("owner_id");
-  const days = Number(c.req.query("days") || 0); // 0 = 全部时间
+/**
+ * 漏斗计算主体（从 handler 抽出，以便整体走 Edge Cache）。
+ * 入参已由 handler 解析校验；这里只做查询与聚合，返回纯对象。
+ */
+async function buildFunnel(
+  db: D1Database,
+  session: FunnelSession,
+  opts: { jobId?: string; ownerId?: string; days: number }
+) {
+  const { jobId, ownerId, days } = opts;
 
   // 权限：非 admin 只看自己的人才
   const conds: string[] = [];
@@ -239,7 +244,7 @@ pipeline.get("/funnel", async (c) => {
   const where = conds.length ? "WHERE " + conds.join(" AND ") : "";
 
   // 一次查出所有候选人的全部流转日志（含 join 出来的岗位/人才信息）
-  const rows = await c.env.DB.prepare(`
+  const rows = await db.prepare(`
     SELECT tj.id AS link_id, tj.stage AS current_stage, tj.created_at AS entered_at,
            t.id AS talent_id, t.name, t.created_at AS talent_created_at, t.source,
            j.id AS job_id, j.title AS job_title,
@@ -303,9 +308,23 @@ pipeline.get("/funnel", async (c) => {
   const cands = [...map.values()];
 
   // ---- 各阶段人数与转化率 ----
+  // 「曾到达」口径 + 隐含补齐：
+  // 看板允许把候选人从任意阶段拖到任意阶段（PUT /:linkId/stage 只校验阶段合法，
+  // 不校验先后），此时日志里只有 to_stage='offer'，没有 interview1/interview2。
+  // 若只按日志逐级计数，会出现「初试 0 人 → Offer 1 人」的倒挂，转化率算成 0%、
+  // 流失 0 人，注释列自相矛盾（2026-10-22 发现）。
+  // 业务上「到过 Offer」必然「到过面试」，故按最深到达阶段回填前面所有阶段：
+  // counts[i] = 最深到达级 >= i 的人数 → 天然单调递减，rate 不可能 > 100%。
+  const depthOf = (cd: Cand): number => {
+    let d = -1;
+    for (let i = 0; i < FUNNEL_ORDER.length; i++) {
+      if (cd.reached.has(FUNNEL_ORDER[i])) d = i;
+    }
+    return d;
+  };
   const counts: Record<string, number> = {};
-  for (const s of FUNNEL_ORDER) {
-    counts[s] = cands.filter((cd) => cd.reached.has(s)).length;
+  for (let i = 0; i < FUNNEL_ORDER.length; i++) {
+    counts[FUNNEL_ORDER[i]] = cands.filter((cd) => depthOf(cd) >= i).length;
   }
 
   const stages = FUNNEL_ORDER.map((s, i) => {
@@ -447,7 +466,7 @@ pipeline.get("/funnel", async (c) => {
     .map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count);
 
-  return c.json({
+  return {
     stages,
     stage_stay: FUNNEL_ORDER.map((s) => ({
       key: s,
@@ -479,7 +498,33 @@ pipeline.get("/funnel", async (c) => {
     },
     sources,
     reject_reasons,
-  });
+  };
+}
+
+// GET /api/pipeline/funnel —— 招聘漏斗聚合（工作台「招聘概览」分析层）
+// 30s Edge Cache：本接口是全量 join + JS 聚合，是工作台最重的一次 D1 查询。
+// 前端主动点「查询 / 重置」时带 ?t=时间戳 → 直接回源，保证「点了就一定是新数」；
+// 日常首屏、切模块、前后台切换则吃缓存，避免每次进页面都压一遍 D1。
+pipeline.get("/funnel", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const jobId = c.req.query("job_id") || undefined;
+  const ownerId = c.req.query("owner_id") || undefined;
+  const days = Number(c.req.query("days") || 0); // 0 = 全部时间
+  const bust = !!c.req.query("t");               // 主动刷新 → 绕过缓存
+
+  // 缓存 key 必须含数据范围：admin 看全部（ownerId 可变）；团队成员共享；个人独立
+  const scopeKey = session.role === "admin"
+    ? `admin:${ownerId || "all"}`
+    : `team:${session.teamId ?? "none"}:u:${session.userId}`;
+  const cacheKey =
+    `https://edge-cache.internal/api/pipeline/funnel?scope=${scopeKey}` +
+    `&job=${jobId || "all"}&days=${days}`;
+
+  const build = () => buildFunnel(c.env.DB, session, { jobId, ownerId, days });
+  // bust 时跳过读缓存但写回缓存：用户看到的是新数，缓存也跟着更新
+  return cachedJson(c.executionCtx, cacheKey, 30, build, { force: bust });
 });
 
 // ---- 把人才加入岗位（创建候选人关联）----
@@ -634,7 +679,7 @@ pipeline.post("/batch-stage", async (c) => {
   if (stage === "hired") {
     const talentIds = [...new Set(targets.map((r) => r.talent_id))];
     const dupRows = await c.env.DB.prepare(
-      `SELECT talent_id FROM talent_tasks WHERE status = 'pending' AND title LIKE '试用期跟进%' AND talent_id IN (${talentIds.map(() => "?").join(",")})`
+      `SELECT talent_id FROM talent_tasks WHERE status = 'pending' AND task_type = 'probation' AND talent_id IN (${talentIds.map(() => "?").join(",")})`
     ).bind(...talentIds).all<any>();
     const dupSet = new Set((dupRows.results as any[]).map((r) => r.talent_id));
 
@@ -651,7 +696,7 @@ pipeline.post("/batch-stage", async (c) => {
       ).bind(r.talent_id));
       if (!dupSet.has(r.talent_id)) {
         hiredStmts.push(c.env.DB.prepare(
-          "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, original_due, shifted) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', ?, ?)"
+          "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, original_due, shifted, task_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', ?, ?, 'probation')"
         ).bind(genId(), r.owner_id, r.talent_id, r.job_id,
           `试用期跟进：${r.talent_name}`,
           "候选人已入职，关注试用期表现与融入情况，到期前完成转正评估。",
@@ -721,7 +766,7 @@ pipeline.put("/:linkId/stage", async (c) => {
       const rawDue = `${due.getFullYear()}-${p(due.getMonth() + 1)}-${p(due.getDate())}`;
       const dueShift = shiftToWorkday(rawDue);
       await c.env.DB.prepare(
-        "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, original_due, shifted) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', ?, ?)"
+        "INSERT INTO talent_tasks (id, owner_id, talent_id, job_id, title, content, due_date, priority, status, source, original_due, shifted, task_type) VALUES (?, ?, ?, ?, ?, ?, ?, 'normal', 'pending', 'system', ?, ?, 'probation')"
       ).bind(
         genId(), link.owner_id, link.talent_id, link.job_id,
         `试用期跟进：${link.talent_name}`,

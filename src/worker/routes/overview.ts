@@ -3,9 +3,6 @@ import type { Env } from "../index";
 import { getSession } from "./auth";
 import { ownerScope } from "../scope";
 import { cachedJson } from "../helpers";
-import { deepseekJsonWithUsage } from "../ai";
-import { resolveAiKey } from "../aiKey";
-import { checkQuota, loadRecentArtifact, saveArtifact } from "../aiGuard";
 
 const overview = new Hono<{ Bindings: Env }>();
 
@@ -104,122 +101,77 @@ overview.get("/", async (c) => {
     // 上周同日（今天 -7 天），用于环比「今日面试」
     const prevWeekday = addDays(today, -7);
 
-    // 在招职位数
-    const openJobsRow = await db
-      .prepare(`SELECT COUNT(*) c FROM jobs WHERE status = 'open'${ownerAnd}`)
-      .bind(...ownerBind)
-      .first<{ c: number }>();
-    const openJobs = openJobsRow?.c ?? 0;
-
-    // 人才库总数
-    const totalTalentsRow = await db
-      .prepare(`SELECT COUNT(*) c FROM talents WHERE 1=1${ownerAnd}`)
-      .bind(...ownerBind)
-      .first<{ c: number }>();
-    const totalTalents = totalTalentsRow?.c ?? 0;
-
-    // 当前各阶段人数（talent_jobs 当前停留阶段）
-    // ⚠️ talent_jobs 没有 owner_id 列——范围必须经 JOIN talents 用 t.owner_id 判定。
-    // 曾经直接拼 `AND owner_id = ?` 到这张表上，非 admin 用户一打开工作台就 500
-    // （admin 的条件恒为空所以从未暴露），2026-10-19 修复。
+    // 带表别名的同范围条件：JOIN 到 talent_jobs / interviews / talent_tasks 时
+    // 列名不同但范围语义一致；params 与 ownerBind 相同，故 bind 时可复用 ownerBind。
     const scTJ = ownerScope(session, "t.owner_id");
-    const stageRows = await db
-      .prepare(
+    const ivOwnerAnd = scIv.sql;
+    const taskOwnerAnd = scTk.sql;
+
+    // ⚠️ 性能（2026-10-22 修）：下面 12 条查询原本逐条 `await` 串行执行，每条一次 D1
+    // 网络往返，实测累加 18~27 秒 —— 这就是「进系统一直转圈」的根因。
+    // 它们之间没有任何依赖（bind 参数全部在提交前算好），故改用 db.batch 一次往返提交，
+    // 耗时从「N × 往返」降为「1 × 往返」。序号与下方取值一一对应，改动时别错位。
+    //
+    // owner 条件统一以「 AND owner_id = ?」形式拼在已有 WHERE 之后。
+    // 不能用 `FROM jobs${ownerWhere} AND ...` 的写法 —— admin 时 ownerWhere 为空，
+    // 会拼出 `FROM jobs AND status='open'` 这种缺 WHERE 的非法 SQL 直接 500。
+    // ⚠️ talent_jobs 没有 owner_id 列——范围必须经 JOIN talents 用 t.owner_id 判定（2 号）。
+    const R = await db.batch<Record<string, unknown>>([
+      // 0 在招职位数
+      db.prepare(`SELECT COUNT(*) c FROM jobs WHERE status = 'open'${ownerAnd}`).bind(...ownerBind),
+      // 1 人才库总数
+      db.prepare(`SELECT COUNT(*) c FROM talents WHERE 1=1${ownerAnd}`).bind(...ownerBind),
+      // 2 当前各阶段人数（talent_jobs 当前停留阶段）
+      db.prepare(
         `SELECT j.stage AS stage, COUNT(*) c
          FROM talent_jobs j JOIN talents t ON t.id = j.talent_id
          WHERE 1=1${scTJ.sql} GROUP BY j.stage`
-      )
-      .bind(...scTJ.params)
-      .all<{ stage: string; c: number }>();
-    const stageCounts: Record<string, number> = {};
-    let activeCandidates = 0;
-    for (const r of stageRows.results || []) {
-      stageCounts[r.stage] = r.c;
-      if (!(TERMINAL as readonly string[]).includes(r.stage)) activeCandidates += r.c;
-    }
-
-    // 本周新增人才
-    const weekNewRow = await db
-      .prepare(`SELECT COUNT(*) c FROM talents WHERE created_at >= ?${sc.sql}`)
-      .bind(weekStart, ...ownerBind)
-      .first<{ c: number }>();
-    const weeklyNewTalents = weekNewRow?.c ?? 0;
-
-    // 上周新增人才（环比用）
-    const prevWeekNewRow = await db
-      .prepare(`SELECT COUNT(*) c FROM talents WHERE created_at >= ? AND created_at < ?${sc.sql}`)
-      .bind(prevWeekStart, weekStart, ...ownerBind)
-      .first<{ c: number }>();
-    const prevWeekNewTalents = prevWeekNewRow?.c ?? 0;
-
-    // 本周各阶段「到达」人次（job_stage_logs 的 to_stage，按 owner 隔离）
-    const weekStageRows = await db
-      .prepare(
+      ).bind(...scTJ.params),
+      // 3 本周新增人才
+      db.prepare(`SELECT COUNT(*) c FROM talents WHERE created_at >= ?${sc.sql}`).bind(weekStart, ...ownerBind),
+      // 4 上周新增人才（环比用）
+      db.prepare(`SELECT COUNT(*) c FROM talents WHERE created_at >= ? AND created_at < ?${sc.sql}`).bind(prevWeekStart, weekStart, ...ownerBind),
+      // 5 本周各阶段「到达」人次（job_stage_logs 的 to_stage，按 owner 隔离）
+      db.prepare(
         `SELECT l.to_stage AS stage, COUNT(*) c
          FROM job_stage_logs l
          JOIN talent_jobs j ON j.id = l.talent_job_id
          WHERE l.created_at >= ?${scJ.sql}
          GROUP BY l.to_stage`
-      )
-      .bind(weekStart, ...ownerBind)
-      .all<{ stage: string; c: number }>();
-    const weeklyStageReached: Record<string, number> = {};
-    for (const r of weekStageRows.results || []) weeklyStageReached[r.stage] = r.c;
-
-    // 待办汇总：pending 总数 / 逾期 / 今日到期
-    const taskRow = await db
-      .prepare(
+      ).bind(weekStart, ...ownerBind),
+      // 6 待办汇总：pending 总数 / 逾期 / 今日到期
+      db.prepare(
         `SELECT COUNT(*) total,
                 SUM(CASE WHEN due_date < ? THEN 1 ELSE 0 END) overdue,
                 SUM(CASE WHEN due_date = ? THEN 1 ELSE 0 END) today
          FROM talent_tasks WHERE status = 'pending'${sc.sql}`
-      )
-      .bind(today, today, ...ownerBind)
-      .first<{ total: number | null; overdue: number | null; today: number | null }>();
-
-    // ---- 行动层：今日面试（status=scheduled 且面试日期 = 今天）----
-    const ivOwnerAnd = scIv.sql;
-    const ivCountRow = await db
-      .prepare(
+      ).bind(today, today, ...ownerBind),
+      // 7 今日面试场次
+      // ⚠️ 口径陷阱（2026-10-22 修）：曾用 status='scheduled' 统计，导致「上周同日」
+      // 那批面试早已填完结果变成 done，prev 恒为 0 → 环比永远显示「新增」。
+      // 今日与上周同日必须同口径：都统计「非取消」场次（含已完成），才可比。
+      db.prepare(
         `SELECT COUNT(*) c FROM interviews iv
-         WHERE iv.status = 'scheduled' AND substr(iv.scheduled_at, 1, 10) = ?${ivOwnerAnd}`
-      )
-      .bind(today, ...ownerBind)
-      .first<{ c: number }>();
-    const todayInterviewCount = ivCountRow?.c ?? 0;
-
-    // 上周同日面试数（环比用）
-    const prevIvCountRow = await db
-      .prepare(
+         WHERE iv.status <> 'cancelled' AND substr(iv.scheduled_at, 1, 10) = ?${ivOwnerAnd}`
+      ).bind(today, ...ownerBind),
+      // 8 上周同日面试场次（环比用，口径同 7）
+      db.prepare(
         `SELECT COUNT(*) c FROM interviews iv
-         WHERE iv.status = 'scheduled' AND substr(iv.scheduled_at, 1, 10) = ?${ivOwnerAnd}`
-      )
-      .bind(prevWeekday, ...ownerBind)
-      .first<{ c: number }>();
-    const prevWeekdayInterviewCount = prevIvCountRow?.c ?? 0;
-
-    const ivRows = await db
-      .prepare(
+         WHERE iv.status <> 'cancelled' AND substr(iv.scheduled_at, 1, 10) = ?${ivOwnerAnd}`
+      ).bind(prevWeekday, ...ownerBind),
+      // 9 今日面试列表（与 7 同口径，否则会出现「KPI 3 场、列表 1 条」的对不上）
+      db.prepare(
         `SELECT iv.id, iv.talent_id, iv.job_id, iv.scheduled_at, iv.round, iv.mode,
-                iv.location, iv.meeting_url, iv.interviewer,
+                iv.location, iv.meeting_url, iv.interviewer, iv.status,
                 t.name AS talent_name, j.title AS job_title
          FROM interviews iv
          JOIN talents t ON iv.talent_id = t.id
          LEFT JOIN jobs j ON iv.job_id = j.id
-         WHERE iv.status = 'scheduled' AND substr(iv.scheduled_at, 1, 10) = ?${ivOwnerAnd}
+         WHERE iv.status <> 'cancelled' AND substr(iv.scheduled_at, 1, 10) = ?${ivOwnerAnd}
          ORDER BY iv.scheduled_at ASC LIMIT 20`
-      )
-      .bind(today, ...ownerBind)
-      .all<{
-        id: string; talent_id: string; job_id: string | null; scheduled_at: string | null;
-        round: string; mode: string; location: string | null; meeting_url: string | null;
-        interviewer: string | null; talent_name: string; job_title: string | null;
-      }>();
-
-    // ---- 行动层：近 3 天到期待办（含今日）----
-    const taskOwnerAnd = scTk.sql;
-    const dueRows = await db
-      .prepare(
+      ).bind(today, ...ownerBind),
+      // 10 近 3 天到期待办列表（含今日）
+      db.prepare(
         `SELECT tk.id, tk.title, tk.due_date, tk.source, tk.talent_id, tk.job_id,
                 t.name AS talent_name
          FROM talent_tasks tk
@@ -227,12 +179,55 @@ overview.get("/", async (c) => {
          WHERE tk.status = 'pending' AND tk.due_date IS NOT NULL
            AND tk.due_date >= ? AND tk.due_date <= ?${taskOwnerAnd}
          ORDER BY tk.due_date ASC LIMIT 20`
-      )
-      .bind(today, dueSoonTo, ...ownerBind)
-      .all<{
-        id: string; title: string; due_date: string; source: string;
-        talent_id: string | null; job_id: string | null; talent_name: string | null;
-      }>();
+      ).bind(today, dueSoonTo, ...ownerBind),
+      // 11 近 3 天到期待办「总数」：10 号有 LIMIT 20，前端若拿列表长度当 KPI，
+      //    团队/管理员看全部数据时超过 20 条就会被截断成 20。故单独 COUNT 一次。
+      db.prepare(
+        `SELECT COUNT(*) c FROM talent_tasks tk
+         WHERE tk.status = 'pending' AND tk.due_date IS NOT NULL
+           AND tk.due_date >= ? AND tk.due_date <= ?${taskOwnerAnd}`
+      ).bind(today, dueSoonTo, ...ownerBind),
+    ]);
+
+    /** 取第 i 条语句的首行（对应原来的 .first()） */
+    const first = <T,>(i: number): T | null =>
+      (R[i]?.results?.[0] as unknown as T | undefined) ?? null;
+    /** 取第 i 条语句的全部行（对应原来的 .all().results） */
+    const all = <T,>(i: number): T[] => (R[i]?.results ?? []) as unknown as T[];
+    const cnt = (i: number) => Number(first<{ c: number }>(i)?.c ?? 0) || 0;
+
+    type IvRow = {
+      id: string; talent_id: string; job_id: string | null; scheduled_at: string | null;
+      round: string; mode: string; location: string | null; meeting_url: string | null;
+      interviewer: string | null; status: string; talent_name: string; job_title: string | null;
+    };
+    type DueRow = {
+      id: string; title: string; due_date: string; source: string;
+      talent_id: string | null; job_id: string | null; talent_name: string | null;
+    };
+
+    const openJobs = cnt(0);
+    const totalTalents = cnt(1);
+
+    const stageCounts: Record<string, number> = {};
+    let activeCandidates = 0;
+    for (const r of all<{ stage: string; c: number }>(2)) {
+      stageCounts[r.stage] = r.c;
+      if (!(TERMINAL as readonly string[]).includes(r.stage)) activeCandidates += r.c;
+    }
+
+    const weeklyNewTalents = cnt(3);
+    const prevWeekNewTalents = cnt(4);
+
+    const weeklyStageReached: Record<string, number> = {};
+    for (const r of all<{ stage: string; c: number }>(5)) weeklyStageReached[r.stage] = r.c;
+
+    const taskRow = first<{ total: number | null; overdue: number | null; today: number | null }>(6);
+    const todayInterviewCount = cnt(7);
+    const prevWeekdayInterviewCount = cnt(8);
+    const ivRows = { results: all<IvRow>(9) };
+    const dueRows = { results: all<DueRow>(10) };
+    const dueSoonCount = cnt(11);
 
     return {
       openJobs,
@@ -256,15 +251,19 @@ overview.get("/", async (c) => {
       todayInterviews: ivRows.results || [],
       /** 近 3 天到期待办（含今日，最多 20 条） */
       dueSoonTasks: dueRows.results || [],
+      /** 近 3 天到期待办总数（不受上面 LIMIT 20 影响，KPI 用它展示） */
+      dueSoonCount,
     };
   });
 });
 
 // GET /api/overview/trend?range=4w|12w|24w
 // 工作台「趋势折线」：新增人才 / 进入面试 / 入职 的时间序列。
-// 口径：新增=talents.created_at；进入面试=曾在日志中到达 interview1；入职=到达 hired。
-// 与漏斗同源（job_stage_logs），保证「进入面试 / 入职」两线可与漏斗对齐解读。
-// 分桶在中国时区（周一对齐）；不含含筛选的岗位维度，先做整体趋势。
+// ⚠️ 口径与漏斗不同，别看成一回事（2026-10-22 注明）：
+//   本接口统计的是「日志条数」= 人次 —— 同一人才投两个岗位、或同一个岗位被拖回再推进，
+//   都会重复计数；而漏斗统计的是「去重人数」（同一人·岗位只算一次）。
+//   所以趋势某几周之和 ≥ 漏斗同期人数，这不是 bug，但前端文案必须写清「人次」。
+// 分桶在中国时区（周一对齐）；最后一个桶是「本周至今」，天然比整周矮，看图时别当断崖。
 // 统一用周粒度，三档窗口长度对称（4周看节奏 / 12周看季度 / 24周看半年）。
 overview.get("/trend", async (c) => {
   const session = await getSession(c);
@@ -353,204 +352,5 @@ overview.get("/trend", async (c) => {
   });
 });
 
-// GET /api/overview/daily-brief —— 「今日早报」：今天在等你回复与决定的人
-// 工作台行动层第一张卡（先看人，再看数）。登录即可用，不占菜单权限（与 / 同口径）。
-//
-// 两条数据来源，刻意分离：
-//  ① 名单 = 纯规则聚合（不花 AI 配额、不调 AI）：四类「等人」信号，全部来自现有表；
-//  ② ai_note = 可选的一句话开场白（打「AI 小结」标）：配额内才生成，落 ai_artifacts
-//     缓存 10 分钟；配额用完 / 无 Key / AI 超时一律静默降级——名单永远可见。
-//
-// 四类信号与配色（红=结论卡人，琥珀=排期风险，蓝=你的决定）：
-//   红  终面已过、结论待定         → 定通过与否
-//   琥珀 面试后 ≥2 天没推进       → 约下一轮或说明
-//   琥珀 面试在即（今/明/后天，含昨天未更新的）→ 确认时间并备面 / 补录结果
-//   蓝  Offer ≥1 天没跟进         → 跟进确认意向
-// 注：「简历压了 N 天没筛」一类已于 2026-10-19 按用户反馈下线——
-//     简历积压是常态而非异常，每日提示只会稀释真正卡人的信号。
-overview.get("/daily-brief", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
-
-  const db = c.env.DB;
-  // talent_jobs 无 owner_id，一律经 JOIN talents 用 t.owner_id 判定范围
-  const scT = ownerScope(session, "t.owner_id");
-  const scIv = ownerScope(session, "iv.owner_id");
-  const now = Date.now();
-  const today = todayCn();
-
-  // ① 终面已过、结论待定（红）——面试完没写 pass/fail，候选人卡在最后一关
-  const finalRows = await db
-    .prepare(
-      `SELECT iv.talent_id, iv.job_id, iv.scheduled_at, t.name AS talent_name, jb.title AS job_title
-       FROM interviews iv
-       JOIN talents t ON t.id = iv.talent_id
-       LEFT JOIN jobs jb ON jb.id = iv.job_id
-       WHERE iv.round = 'final' AND iv.status = 'done'
-         AND (iv.result IS NULL OR iv.result NOT IN ('pass', 'fail'))${scIv.sql}
-       ORDER BY iv.scheduled_at ASC LIMIT 5`
-    )
-    .bind(...scIv.params)
-    .all<{ talent_id: string; job_id: string | null; scheduled_at: string | null; talent_name: string; job_title: string | null }>();
-
-  // ② 面试后 ≥2 天没推进（琥珀）——有排期面试的不算停滞
-  const staleIvRows = await db
-    .prepare(
-      `SELECT j.talent_id, j.job_id, j.updated_at, t.name AS talent_name, jb.title AS job_title
-       FROM talent_jobs j
-       JOIN talents t ON t.id = j.talent_id
-       LEFT JOIN jobs jb ON jb.id = j.job_id
-       WHERE j.stage IN ('interview1', 'interview2')
-         AND julianday('now') - julianday(j.updated_at) >= 2
-         AND NOT EXISTS (
-           SELECT 1 FROM interviews iv2
-           WHERE iv2.talent_job_id = j.id AND iv2.status = 'scheduled'
-         )${scT.sql}
-       ORDER BY j.updated_at ASC LIMIT 5`
-    )
-    .bind(...scT.params)
-    .all<{ talent_id: string; job_id: string; updated_at: string; talent_name: string; job_title: string | null }>();
-
-  // ③ 面试在即/待更新（琥珀）：中国时区日期 ∈ [昨天, 后天]
-  //    scheduled_at 是用户本地时间串，与 overview 的「今日面试」同口径按日期前缀比较
-  const ivFrom = addDays(today, -1);
-  const ivTo = addDays(today, 2);
-  const upcomingRows = await db
-    .prepare(
-      `SELECT iv.talent_id, iv.job_id, iv.scheduled_at, t.name AS talent_name, jb.title AS job_title
-       FROM interviews iv
-       JOIN talents t ON t.id = iv.talent_id
-       LEFT JOIN jobs jb ON jb.id = iv.job_id
-       WHERE iv.status = 'scheduled'
-         AND substr(iv.scheduled_at, 1, 10) >= ? AND substr(iv.scheduled_at, 1, 10) <= ?${scIv.sql}
-       ORDER BY iv.scheduled_at ASC LIMIT 6`
-    )
-    .bind(ivFrom, ivTo, ...scIv.params)
-    .all<{ talent_id: string; job_id: string | null; scheduled_at: string | null; talent_name: string; job_title: string | null }>();
-
-  // ④ Offer ≥1 天没跟进（蓝）
-  const offerRows = await db
-    .prepare(
-      `SELECT j.talent_id, j.job_id, j.updated_at, t.name AS talent_name, jb.title AS job_title
-       FROM talent_jobs j
-       JOIN talents t ON t.id = j.talent_id
-       LEFT JOIN jobs jb ON jb.id = j.job_id
-       WHERE j.stage = 'offer'
-         AND julianday('now') - julianday(j.updated_at) >= 1${scT.sql}
-       ORDER BY j.updated_at ASC LIMIT 5`
-    )
-    .bind(...scT.params)
-    .all<{ talent_id: string; job_id: string; updated_at: string; talent_name: string; job_title: string | null }>();
-
-  // ---- 汇总：按 级别 → 等待天数 排序，最多 8 条 ----
-  interface BriefItem {
-    link_key: string;
-    talent_id: string;
-    talent_name: string;
-    job_title: string;
-    level: "red" | "amber" | "blue";
-    reason: string;
-    action: string;
-    sort_days: number;
-  }
-  const dayDiff = (t: string | null | undefined): number => {
-    const ms = parseSqlTime(t);
-    return ms == null ? 0 : Math.max(0, cnDayIndex(now) - cnDayIndex(ms));
-  };
-  const items: BriefItem[] = [];
-  const push = (
-    r: { talent_id: string; job_id: string | null; talent_name: string; job_title: string | null },
-    level: BriefItem["level"],
-    reason: string,
-    action: string,
-    sortDays: number
-  ) => {
-    items.push({
-      link_key: `${r.talent_id}:${r.job_id ?? "none"}`,
-      talent_id: r.talent_id,
-      talent_name: r.talent_name,
-      job_title: r.job_title || "未知岗位",
-      level,
-      reason,
-      action,
-      sort_days: sortDays,
-    });
-  };
-
-  for (const r of finalRows.results || []) {
-    push(r, "red", "终面已过，结论待定", "定通过与否", 99);
-  }
-  for (const r of staleIvRows.results || []) {
-    push(r, "amber", `面试后 ${dayDiff(r.updated_at)} 天没推进`, "约下一轮或说明", dayDiff(r.updated_at));
-  }
-  for (const r of upcomingRows.results || []) {
-    const day = (r.scheduled_at || "").slice(0, 10);
-    const time = (r.scheduled_at || "").slice(11, 16);
-    if (day < today) {
-      push(r, "amber", "面试已过未更新", "补录面试结果", 99);
-    } else if (day === today) {
-      push(r, "amber", time ? `今天 ${time} 有面试` : "今天有面试", "确认时间并备面", 50);
-    } else {
-      const dd = Math.round((new Date(day + "T00:00:00Z").getTime() - new Date(today + "T00:00:00Z").getTime()) / DAY_MS);
-      push(r, "amber", `${dd} 天后有面试`, "确认时间并备面", 10 - dd);
-    }
-  }
-  for (const r of offerRows.results || []) {
-    push(r, "blue", `Offer 已发 ${dayDiff(r.updated_at)} 天`, "跟进确认意向", dayDiff(r.updated_at));
-  }
-
-  const levelRank = { red: 0, amber: 1, blue: 2 } as const;
-  // 同一「人才-岗位」可能命中多条规则（如终面待定 + 面试后停滞）——
-  // 按 link_key 去重只留级别最高的一条，避免前端列表 key 重复
-  const best = new Map<string, BriefItem>();
-  for (const it of items) {
-    const prev = best.get(it.link_key);
-    if (
-      !prev ||
-      levelRank[it.level] < levelRank[prev.level] ||
-      (levelRank[it.level] === levelRank[prev.level] && it.sort_days > prev.sort_days)
-    ) {
-      best.set(it.link_key, it);
-    }
-  }
-  const deduped = [...best.values()];
-  deduped.sort((a, b) => levelRank[a.level] - levelRank[b.level] || b.sort_days - a.sort_days);
-  const top = deduped.slice(0, 8);
-
-  // ---- 可选 AI 一句话开场白（配额内；失败静默，不影响名单）----
-  let aiNote: string | null = null;
-  if (top.length > 0) {
-    const cached = await loadRecentArtifact(db, session.userId, "daily_brief", today, "");
-    const cachedNote = cached && typeof cached.note === "string" ? cached.note : "";
-    if (cachedNote) {
-      aiNote = cachedNote;
-    } else {
-      try {
-        // 自带 Key 花自己的钱，不占系统配额（与各 AI 接口同口径）
-        const { key: apiKey, own } = await resolveAiKey(c.env, session.userId);
-        const quotaOk = own || (await checkQuota(db, session.userId, session.role)).ok;
-        if (apiKey && quotaOk) {
-          const system = `你是一名高效的 HR 助理，为招聘者的「今日早报」写一句开场白。以严格的 JSON 对象返回，不要输出任何多余解释，不要用 markdown 代码块。
-字段说明：
-- note: 一句开场白（不超过 50 字），须点名等待最久的一位候选人及其等待天数，语气像贴心的同事；只依据给定名单，不编造任何信息。`;
-          const userPrompt = `【今日等待名单】\n${top
-            .map((x, i) => `${i + 1}. ${x.talent_name}（${x.job_title}）：${x.reason}`)
-            .join("\n")}\n\n请写早报开场白。`;
-          const gen = await deepseekJsonWithUsage(apiKey, system, userPrompt, { temperature: 0.4 });
-          const rawNote = gen ? (gen.data as { note?: unknown } | null)?.note : null;
-          const note = typeof rawNote === "string" ? rawNote.trim().slice(0, 80) : "";
-          if (note) {
-            aiNote = note;
-            await saveArtifact(db, session.userId, "daily_brief", today, "", { note, _usage: gen?.usage ?? null });
-          }
-        }
-      } catch {
-        // AI 点缀失败（超时/网络）→ 静默，名单照常返回
-      }
-    }
-  }
-
-  return c.json({ items: top, ai_note: aiNote, generated_at: new Date(now).toISOString() });
-});
 
 export { overview };

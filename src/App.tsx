@@ -137,20 +137,40 @@ export default function App({ theme, onChangeTheme }: AppProps) {
       return;
     }
     setLoadError(null);
+    // 首屏关键路径。实测服务端 /auth/me 已优化到 ~1s，真正的敌人是网络/TLS 层抖动
+    // （同机实测 TLS 握手 0.5~10.8s 不等）。策略：**快速失败 + 渐进超时 + 降级进入**，
+    // 让一次抖动不再把用户挡在「加载失败」页外面。
+    // 超时 8s/12s/15s：抖一下通常第二次就过，持续抖动也只等到 35s 封顶。
+    const attempts = [8000, 12000, 15000];
     try {
-      const res = await api.me();
-      // 先写缓存再 setUser：Layout 首次挂载时 useIdentityProfile 会同步读 localStorage，
-      // 顺序反了会读到旧值（品牌文案慢一拍）。
-      try { localStorage.setItem("user", JSON.stringify(res)); } catch {}
-      setUser(res);
-    } catch {
-      // request 内遇到 401 已经清 token 并跳登录；其余（含超时）说明有 token 但请求失败，
-      // 多为 D1 冷启动，留「重试」入口。
-      if (localStorage.getItem("token")) {
-        setLoadError("加载超时或网络异常，系统可能正在启动，请点击重试。");
+      for (let i = 0; i < attempts.length; i++) {
+        if (i > 0) await new Promise((r) => setTimeout(r, i * 1000));
+        try {
+          const res = await api.me(attempts[i]);
+          // 先写缓存再 setUser：Layout 首次挂载时 useIdentityProfile 会同步读 localStorage，
+          // 顺序反了会读到旧值（品牌文案慢一拍）。
+          try { localStorage.setItem("user", JSON.stringify(res)); } catch {}
+          setUser(res);
+          return;
+        } catch {
+          // request 内遇到 401 已经清 token 并跳登录；其余（含超时）继续重试。
+          if (!localStorage.getItem("token")) return;
+        }
       }
+      // 全部失败：降级用上次的用户信息进入，别把人挡在门外。
+      // 后续真实接口若真不可用，会各自报错或 401 回登录页——不会因为这一次抖动就完全进不来。
+      try {
+        const cached = localStorage.getItem("user");
+        if (cached) {
+          setUser(JSON.parse(cached));
+          message.warning("网络不稳定，已用缓存信息进入，数据可能不是最新");
+          return;
+        }
+      } catch {}
+      setLoadError("加载超时或网络异常，系统可能正在启动，请点击重试。");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {

@@ -494,16 +494,17 @@ background.post("/:id/ai-summary", async (c) => {
   if (!(await canTouch(c.env, session, row.owner_id))) return c.json({ error: "无权操作该背调记录" }, 403);
   if (row.consent_status !== "granted") return c.json({ error: "请先取得候选人授权后再生成小结" }, 403);
 
-  // 自有 Key 优先（用户配额用完时靠自己的 Key 继续用，不占系统配额）
-  const { key } = await resolveAiKey(c.env, session.userId);
-  if (!key) return c.json({ error: "未配置 AI 密钥，无法生成小结" }, 400);
+  // 自有 Key 优先（用户配额用完时靠自己的 Key 继续用，不占系统配额）；
+  // 系统级智谱 GLM 优先调用，失败回落 DeepSeek，故两者的 Key 任一存在即可用。
+  const aiKeys = await resolveAiKey(c.env, session.userId);
+  if (!aiKeys.key && !aiKeys.zhipu) return c.json({ error: "未配置 AI 密钥，无法生成小结" }, 400);
 
   const items = parseItems(row.items_json);
   const itemText = items.map((x) => `- ${x.label}：${ITEM_STATUS_LABEL[x.status] || x.status}${x.note ? `（${x.note}）` : ""}`).join("\n");
   const user = `候选人：${row.talent_name}\n授权方式：${row.consent_method || "已授权"}\n\n核验分项：\n${itemText}\n${row.summary ? `\n人工补充：${row.summary}` : ""}`;
 
   try {
-    const gen = await deepseekJsonWithUsage(key, BG_SUMMARY_SYSTEM, user, { maxTokens: 400 });
+    const gen = await deepseekJsonWithUsage(aiKeys, BG_SUMMARY_SYSTEM, user, { maxTokens: 400 });
     if (!gen) return c.json({ error: "AI 未能生成小结，请手动填写" }, 400);
     const raw = gen.data;
     const summary = typeof raw.summary === "string" ? raw.summary : "";
@@ -555,8 +556,10 @@ background.post("/:id/ai-resume-check", async (c) => {
 
   // 共享 AI 配额（系统设置→AI 配额）：超了直接挡，与其他 AI 功能口径一致。
   // 自带 Key 的用户花自己的钱，不占系统配额，直接放行。
-  const { key, own } = await resolveAiKey(c.env, session.userId);
-  if (!key) return c.json({ error: "未配置 AI 密钥，无法生成核查清单", code: "AI_NO_KEY" }, 400);
+  const aiKeys = await resolveAiKey(c.env, session.userId);
+  const { key, own } = aiKeys;
+  // 智谱 GLM 与 DeepSeek 任一有 Key 即可用（调用层自动优先/回落）
+  if (!key && !aiKeys.zhipu) return c.json({ error: "未配置 AI 密钥，无法生成核查清单", code: "AI_NO_KEY" }, 400);
   if (!own) {
     const quota = await checkQuota(c.env.DB, session.userId, session.role);
     if (!quota.ok) {
@@ -582,7 +585,7 @@ background.post("/:id/ai-resume-check", async (c) => {
 
   const user = `候选人：${row.talent_name}\n\n简历原文：\n${resumeText}`;
   try {
-    const gen = await deepseekJsonWithUsage(key, BG_RESUME_CHECK_SYSTEM, user, { maxTokens: 1400 });
+    const gen = await deepseekJsonWithUsage(aiKeys, BG_RESUME_CHECK_SYSTEM, user, { maxTokens: 1400 });
     if (!gen || !Array.isArray(gen.data.items)) return c.json({ error: "AI 未能生成核查清单，请手动整理" }, 400);
     const raw = gen.data;
     const items = (raw.items as any[]).slice(0, 8)

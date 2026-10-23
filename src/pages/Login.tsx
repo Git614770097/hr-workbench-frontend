@@ -294,11 +294,11 @@ export default function Login({ onLogin }: Props) {
                       { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
                     ]}
                   >
-                    <Input placeholder="手机号" maxLength={11} />
+                    <Input placeholder="手机号" maxLength={11} autoComplete="tel" />
                   </Form.Item>
 
                   <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
-                    <Input.Password placeholder="密码" />
+                    <Input.Password placeholder="密码" autoComplete="current-password" />
                   </Form.Item>
 
                   {/* 登录：图文验证码（避免每次登录都发短信产生费用；注册仍用短信） */}
@@ -339,11 +339,11 @@ export default function Login({ onLogin }: Props) {
                         { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
                       ]}
                     >
-                      <Input placeholder="手机号" maxLength={11} />
-                    </Form.Item>
+                      <Input placeholder="手机号" maxLength={11} autoComplete="tel" />
+                  </Form.Item>
 
                     <Form.Item name="name" rules={[{ required: true, message: "请输入姓名" }]}>
-                      <Input placeholder="姓名" maxLength={20} />
+                      <Input placeholder="姓名" maxLength={20} autoComplete="name" />
                     </Form.Item>
                   </div>
 
@@ -355,7 +355,7 @@ export default function Login({ onLogin }: Props) {
                         { min: 6, message: "密码至少 6 位" },
                       ]}
                     >
-                      <Input.Password placeholder="设置密码（至少 6 位）" />
+                      <Input.Password placeholder="设置密码（至少 6 位）" autoComplete="new-password" />
                     </Form.Item>
 
                     <Form.Item
@@ -371,7 +371,7 @@ export default function Login({ onLogin }: Props) {
                         }),
                       ]}
                     >
-                      <Input.Password placeholder="确认密码" />
+                      <Input.Password placeholder="确认密码" autoComplete="new-password" />
                     </Form.Item>
                   </div>
 
@@ -432,11 +432,11 @@ export default function Login({ onLogin }: Props) {
                       { pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" },
                     ]}
                   >
-                    <Input placeholder="手机号" maxLength={11} />
+                    <Input placeholder="手机号" maxLength={11} autoComplete="tel" />
                   </Form.Item>
 
                   <Form.Item name="name" rules={[{ required: true, message: "请输入姓名" }]}>
-                    <Input placeholder="姓名（用于核对身份）" maxLength={20} />
+                    <Input placeholder="姓名（用于核对身份）" maxLength={20} autoComplete="name" />
                   </Form.Item>
 
                   {/* 忘记密码：短信验证码（与注册一致） */}

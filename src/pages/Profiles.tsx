@@ -14,6 +14,7 @@ import type { MatchProfile } from "../types";
 import { useDict } from "../dict";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
+import { fmtDateTime } from "../utils/time";
 
 /** 画像整体薪资区间原文（如「20-35K·13薪」）→ 统一展示 */
 function profileSalaryRange(p: MatchProfile): string {
@@ -81,6 +82,8 @@ export default function Profiles() {
   const { education: educationOptions } = useDict();
   const [list, setList] = useState<MatchProfile[]>([]);
   const [loading, setLoading] = useState(false);
+  // 列表加载失败的错误信息：失败时不能走「还没有画像」空态（网络错误≠没有数据）
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [editing, setEditing] = useState<MatchProfile | null>(null);
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -100,10 +103,13 @@ export default function Profiles() {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       setList(await api.getMatchProfiles());
     } catch (err) {
-      message.error((err as Error).message);
+      const msg = (err as Error).message || "画像列表加载失败";
+      setLoadError(msg);
+      message.error(msg);
     }
     setLoading(false);
   };
@@ -351,19 +357,18 @@ export default function Profiles() {
       key: "salary",
       width: 140,
       render: (_: unknown, r: MatchProfile) =>
-        profileSalaryRange(r) ? <span className="salary-num" style={{ color: "#c0392b", fontWeight: 600 }}>{profileSalaryRange(r)}</span> : <span style={{ color: "#c2c6cc" }}>-</span>,
+        profileSalaryRange(r) ? <span className="salary-num" style={{ color: "#c0392b", fontWeight: 600 }}>{profileSalaryRange(r)}</span> : <Typography.Text type="secondary">-</Typography.Text>,
     },
-    { title: "更新时间", dataIndex: "updated_at", key: "updated_at", width: 160, render: (v: string) => v || "-" },
+    // D1 存的是 UTC（datetime('now')），裸渲染会早 8 小时，必须走 fmtDateTime
+    { title: "更新时间", dataIndex: "updated_at", key: "updated_at", width: 160, render: (v: string) => fmtDateTime(v) },
     {
       title: "操作",
-      key: "actions",
-      width: 190,
+      key: "action",
+      width: 160,
       fixed: "right" as const,
       render: (_: unknown, r: MatchProfile) => (
         <Space size={4}>
-          <Button size="small" className="ai-btn" icon={<RobotOutlined />} onClick={() => navigate("/match", { state: { profileId: r.id } })}>
-            AI匹配
-          </Button>
+          <Button type="link" size="small" onClick={() => navigate("/match", { state: { profileId: r.id } })}>AI匹配</Button>
           <Button type="link" size="small" onClick={() => openEdit(r)}>编辑</Button>
           <Popconfirm title="删除这个画像？" okText="删除" cancelText="取消" onConfirm={() => handleDelete(r)}>
             <Button type="link" size="small" danger>删除</Button>
@@ -413,7 +418,20 @@ export default function Profiles() {
           dataSource={filtered}
           columns={columns}
           scroll={{ x: 1220 }}
-          locale={{ emptyText: <Empty description="还没有画像，点左上角「新建画像」填写目标职位" /> }}
+          locale={{
+            // 加载失败 ≠ 没有画像：给可重试的错误态，而不是误导性的「还没有画像」
+            emptyText: loadError ? (
+              <div style={{ padding: "40px 0", textAlign: "center" }}>
+                <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description={<Typography.Text type="secondary">画像列表加载失败：{loadError}</Typography.Text>}
+                />
+                <Button type="primary" onClick={load} style={{ marginTop: 12 }}>重新加载</Button>
+              </div>
+            ) : (
+              <Empty description="还没有画像，点左上角「新建画像」填写目标职位" />
+            ),
+          }}
           pagination={{ pageSize: 10, showTotal: (t) => `共 ${t} 个画像` }}
         />
       </Card>

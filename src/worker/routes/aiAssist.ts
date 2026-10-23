@@ -157,8 +157,8 @@ aiAssist.post("/resume-insight", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成解读，请手动查看简历", code: "AI_NO_KEY" }, 500);
   }
 
@@ -231,8 +231,8 @@ aiAssist.post("/outreach", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成文案", code: "AI_NO_KEY" }, 500);
   }
 
@@ -307,8 +307,8 @@ aiAssist.post("/interview-questions", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成面试题", code: "AI_NO_KEY" }, 500);
   }
 
@@ -403,8 +403,8 @@ aiAssist.post("/candidate-summary", async (c) => {
     return c.json({ error: "该候选人还没有面试评价，请先在面试管理中填写", code: "AI_NO_INPUT" }, 400);
   }
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成综合评估", code: "AI_NO_KEY" }, 500);
   }
 
@@ -494,8 +494,8 @@ aiAssist.post("/job-draft", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法起草岗位，请手动填写", code: "AI_NO_KEY" }, 500);
   }
 
@@ -603,8 +603,8 @@ aiAssist.post("/onboard-checklist", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成清单", code: "AI_NO_KEY" }, 500);
   }
 
@@ -777,8 +777,8 @@ aiAssist.post("/talent-inventory", async (c) => {
   const denied = await quotaGuard(c, session.userId);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成盘点", code: "AI_NO_KEY" }, 500);
   }
 
@@ -832,8 +832,8 @@ aiAssist.post("/job-diagnosis", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成诊断", code: "AI_NO_KEY" }, 500);
   }
 
@@ -893,8 +893,8 @@ aiAssist.post("/recap-report", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成复盘", code: "AI_NO_KEY" }, 500);
   }
 
@@ -996,8 +996,8 @@ aiAssist.post("/weekly-report", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成周报", code: "AI_NO_KEY" }, 500);
   }
 
@@ -1276,8 +1276,8 @@ aiAssist.post("/candidate-compare", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成对比", code: "AI_NO_KEY" }, 500);
   }
 
@@ -1356,8 +1356,8 @@ aiAssist.post("/offer-negotiation", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成话术", code: "AI_NO_KEY" }, 500);
   }
 
@@ -1436,8 +1436,8 @@ aiAssist.post("/sourcing-copy", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成文案", code: "AI_NO_KEY" }, 500);
   }
 
@@ -1499,8 +1499,8 @@ aiAssist.post("/channel-advice", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成建议", code: "AI_NO_KEY" }, 500);
   }
 
@@ -1702,8 +1702,8 @@ aiAssist.post("/contract-review", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法审查", code: "AI_NO_KEY" }, 500);
   }
 
@@ -1777,8 +1777,8 @@ aiAssist.post("/social-reminder", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成提醒", code: "AI_NO_KEY" }, 500);
   }
 
@@ -1842,8 +1842,8 @@ aiAssist.post("/tax-plan", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成建议", code: "AI_NO_KEY" }, 500);
   }
 
@@ -1910,8 +1910,8 @@ aiAssist.post("/probation-compliance", async (c) => {
   const denied = await quotaGuard(c, session.userId, session.role);
   if (denied) return denied;
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 密钥，无法生成提醒", code: "AI_NO_KEY" }, 500);
   }
 

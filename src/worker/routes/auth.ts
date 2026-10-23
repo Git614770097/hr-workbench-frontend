@@ -450,7 +450,14 @@ auth.post("/login", async (c) => {
 auth.get("/me", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
-  const user = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token, paid_until, status, intended_role, team_id, notify_channel, feishu_open_id FROM users WHERE id = ?").bind(session.userId).first<{ id: string; phone: string; name: string; role: string; role_id: string | null; must_change_password: number; pushplus_token: string | null; paid_until: string | null; status: string | null; intended_role: string | null; team_id: string | null; notify_channel: string | null; feishu_open_id: string | null }>();
+  // 直接用 getSession 顺手查出的整行 user（见上方说明），省掉一次重复的 users 查询：
+  // 首屏关键接口的网络往返从 3 次（KV + role 查询 + users 查询）降到 2 次。
+  const user = (session as unknown as { user?: Record<string, unknown> }).user as {
+    id: string; phone: string; name: string; role: string; role_id: string | null;
+    must_change_password: number; pushplus_token: string | null; paid_until: string | null;
+    status: string | null; intended_role: string | null; team_id: string | null;
+    notify_channel: string | null; feishu_open_id: string | null;
+  } | undefined;
   if (!user) return c.json({ error: "用户不存在" }, 401);
 
   // 管理员拥有全部权限；普通用户取角色 permissions
@@ -1205,10 +1212,21 @@ export async function getSession(c: any): Promise<SessionInfo | null> {
   if (!token) return null;
   const session = await sessionGet(c.env, token);
   if (!session) return null;
-  const info = JSON.parse(session) as SessionInfo;
+  const info = JSON.parse(session) as SessionInfo & { user?: Record<string, unknown> };
   // role / team_id 会被管理员随时调整（任命/撤销/入队/移出），每次现查 DB：
   // KV 会话里的 role 是登录时的快照，不过期刷新会导致「已撤销的管理员仍然有权访问」的越权窗口。
-  const u = await c.env.DB.prepare("SELECT role, team_id FROM users WHERE id = ?").bind(info.userId).first() as { role: string; team_id: string | null } | null;
-  if (u) { info.role = u.role; info.teamId = u.team_id; } else { info.teamId = null; }
+  //
+  // ⚠️ 性能（2026-10-22）：这里顺手把整行 user 也查出来挂到 `info.user` 上。
+  // 原本 /me 等接口会再查一次同一张 users 表的同一条记录 —— D1 每次查询都是一次网络往返，
+  // 同一请求里白白多 1 次往返（/auth/me 实测偶发 11s+ 就是这么累出来的）。
+  // 现在 KV(1) + D1(1) = 2 次往返；调用方可直接用 session.user，不要再重复查 users。
+  const u = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token, paid_until, status, intended_role, team_id, notify_channel, feishu_open_id FROM users WHERE id = ?").bind(info.userId).first() as { role: string; team_id: string | null } | null;
+  if (u) {
+    info.role = u.role;
+    info.teamId = u.team_id;
+    info.user = u;
+  } else {
+    info.teamId = null;
+  }
   return info;
 }

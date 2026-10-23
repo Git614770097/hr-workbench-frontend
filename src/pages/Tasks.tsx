@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type DragEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  Card, Button, Space, Tag, Input, Select, Checkbox, Popconfirm, message,
+  Card, Button, Space, Tag, Input, Select, Segmented, Checkbox, Popconfirm, message,
   Modal, Form, DatePicker, Empty, Spin, Tooltip, Dropdown, Calendar, Alert,
 } from "antd";
 import type { CalendarProps } from "antd";
@@ -16,7 +16,7 @@ import type { MenuProps } from "antd";
 import { api } from "../api";
 import type { Task, User } from "../types";
 import { PRIORITY_LABELS, PRIORITY_COLORS, TASK_SOURCE_LABELS } from "../types";
-import { dayInfo, hasHolidayData, knownYears } from "../utils/holidays";
+import { dayInfo, shiftToNextWorkday, hasHolidayData, knownYears } from "../utils/holidays";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
 import { exportXlsx, dateStamp } from "../utils/file";
@@ -64,8 +64,28 @@ export default function Tasks() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [talents, setTalents] = useState<{ id: string; name: string }[]>([]);
   const [jobs, setJobs] = useState<{ id: string; title: string }[]>([]);
+  // 新建表单的人才下拉：远程搜索（debounce），避免一次 load 500 条
+  const [talentOptions, setTalentOptions] = useState<{ label: string; value: string }[]>([]);
+  const [talentSearching, setTalentSearching] = useState(false);
+  const talentSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onTalentSearch = (kw: string) => {
+    if (talentSearchTimer.current) clearTimeout(talentSearchTimer.current);
+    talentSearchTimer.current = setTimeout(async () => {
+      if (!kw) { setTalentOptions([]); return; }
+      setTalentSearching(true);
+      try {
+        const r = await api.getTalents({ q: kw, page: 1, limit: 30 });
+        setTalentOptions(r.items.map((t) => ({ label: `${t.name}${t.city ? ` · ${t.city}` : ""}`, value: t.id })));
+      } catch { /* ignore */ } finally { setTalentSearching(false); }
+    }, 250);
+  };
+
+  // L1 系统待办去重用 task_type（替代 title LIKE），但前端展示仍按 title 走
+  // 这里保留 jobs 一次性加载（岗位总量可控，不需要搜索）
+  useEffect(() => {
+    api.getJobOptions().then((r) => setJobs(r.map((j) => ({ id: j.id, title: j.title })))).catch(() => {});
+  }, []);
 
   // 日历状态：viewMonth 控制显示哪个月，selected 为选中日期（null = 看未指定日期）
   const [viewMonth, setViewMonth] = useState<Dayjs>(() => dayjs().startOf("month"));
@@ -80,7 +100,6 @@ export default function Tasks() {
   useEffect(() => {
     return registerOnbFill("/tasks", {
       open: () => {
-        // 仅打开空表单（带默认日期），示例数据等用户点「帮我填好表单」再写
         openCreate(dayjs().add(3, "day").format("YYYY-MM-DD"));
       },
       fill: () => {
@@ -89,18 +108,12 @@ export default function Tasks() {
     });
   }, []);
 
-  const currentUser: User | null = (() => {
-    try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
-  })();
-  const isAdmin = currentUser?.role === "admin";
-
   const fetchTasks = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.getTasks({
-        scope: "all",
-        talent_id: talentFilter || undefined,
-      });
+      const params: Record<string, string> = { scope: "all" };
+      if (talentFilter) params.talent_id = talentFilter;
+      const res = await api.getTasks(params);
       setTasks(res.items);
     } catch (err) {
       message.error((err as Error).message);
@@ -109,13 +122,6 @@ export default function Tasks() {
   }, [talentFilter]);
 
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
-
-  useEffect(() => {
-    api.getTalents({ page: 1, limit: 500 })
-      .then((r) => setTalents(r.items.map((t) => ({ id: t.id, name: t.name }))))
-      .catch(() => {});
-    api.getJobOptions().then((r) => setJobs(r.map((j) => ({ id: j.id, title: j.title })))).catch(() => {});
-  }, []);
 
   // 按到期日分组（日历格子用）；无到期日的单独放一组
   const byDate = useMemo(() => {
@@ -170,15 +176,16 @@ export default function Tasks() {
   const handleSubmit = async (values: any) => {
     const due: string | null = values.due_date ? values.due_date.format("YYYY-MM-DD") : null;
     if (!due) { await persistTask(values, null, null, 0); return; }
-    const wd = dayjs(due).day(); // 0=周日 6=周六
-    if (wd === 0 || wd === 6) {
-      const shiftedDue = dayjs(due).add(wd === 6 ? 2 : 1, "day").format("YYYY-MM-DD");
+    const { nextYmd, originalYmd, shifted } = shiftToNextWorkday(due);
+    if (shifted) {
+      const info = dayInfo(due);
+      const typeLabel = info.type === "holiday" ? `${info.name || "法定节假日"}` : "周末";
       Modal.confirm({
-        title: "该日期为周末",
-        content: `「${due}」是${wd === 6 ? "周六" : "周日"}，顺延到下一个工作日 ${shiftedDue}（周一）可避免周末无人处理。是否顺延？`,
-        okText: "顺延到周一",
-        cancelText: "保持周末",
-        onOk: () => persistTask(values, shiftedDue, due, 1),
+        title: `该日期为${typeLabel}`,
+        content: `「${due}」是${typeLabel}，顺延到下一个工作日 ${nextYmd} 可避免假期无人处理。是否顺延？`,
+        okText: `顺延到 ${nextYmd}`,
+        cancelText: `保持 ${due}`,
+        onOk: () => persistTask(values, nextYmd, originalYmd, 1),
         onCancel: () => persistTask(values, due, due, 0),
       });
       return;
@@ -234,17 +241,15 @@ export default function Tasks() {
     const t = tasks.find((x) => x.id === id);
     if (!t || !/^\d{4}-\d{2}-\d{2}$/.test(ymd) || t.due_date === ymd) return;
     try {
-      // 拖到周末 → 顺延到下一个工作日，并标注原日期
-      const wd = dayjs(ymd).day();
-      const shifted = wd === 0 || wd === 6;
-      const finalDue = shifted ? dayjs(ymd).add(wd === 6 ? 2 : 1, "day").format("YYYY-MM-DD") : ymd;
+      // 拖到节假日 / 周末 → 顺延到下一个工作日，并标注原日期
+      const { nextYmd, originalYmd, shifted } = shiftToNextWorkday(ymd);
       await api.updateTask(t.id, {
-        due_date: finalDue,
-        original_due: shifted ? ymd : null,
+        due_date: nextYmd,
+        original_due: shifted ? originalYmd : null,
         shifted: shifted ? 1 : 0,
       });
       const shortTitle = `${t.title.slice(0, 12)}${t.title.length > 12 ? "…" : ""}`;
-      message.success(`「${shortTitle}」已改期至 ${dayjs(finalDue).format("M月D日")}${shifted ? "（周末顺延）" : ""}`);
+      message.success(`「${shortTitle}」已改期至 ${dayjs(nextYmd).format("M月D日")}${shifted ? "（假期顺延）" : ""}`);
       fetchTasks();
     } catch (err) {
       message.error((err as Error).message);
@@ -404,7 +409,6 @@ export default function Tasks() {
           {t.status === "done" && <Tag color="green" style={{ marginInlineEnd: 0 }}>已完成</Tag>}
           <span style={{ color: "#c2c6cc" }}>
             {TASK_SOURCE_LABELS[t.source] || t.source}
-            {isAdmin && t.owner_name ? ` · ${t.owner_name}` : ""}
           </span>
         </div>
         {t.content && <div className="task-content">{t.content}</div>}
@@ -543,6 +547,25 @@ export default function Tasks() {
             </Space>
           }
         >
+          {/* L5：当前按 talent_id 过滤时给出 Banner 提示 + 一键清除 */}
+          {talentFilter && (
+            <Alert
+              style={{ marginBottom: 12 }}
+              type="info"
+              showIcon
+              message="当前正在按候选人过滤"
+              description={
+                <Space size={8}>
+                  <span>只看该候选人相关的待办</span>
+                  <Button type="link" size="small" onClick={() => {
+                    const np = new URLSearchParams(searchParams);
+                    np.delete("talent_id");
+                    setSearchParams(np);
+                  }}>清除过滤</Button>
+                </Space>
+              }
+            />
+          )}
           {loading ? (
             <div style={{ textAlign: "center", padding: "3rem" }}><Spin /></div>
           ) : selectedTasks.length > 0 ? (
@@ -590,9 +613,11 @@ export default function Tasks() {
 
             <Form.Item name="talent_id" label="关联人才">
               <Select
-                showSearch allowClear placeholder="可选"
-                optionFilterProp="label"
-                options={talents.map((t) => ({ label: t.name, value: t.id }))}
+                showSearch allowClear placeholder="可选（输入姓名/城市搜索）"
+                filterOption={false}
+                onSearch={onTalentSearch}
+                notFoundContent={talentSearching ? "搜索中…" : "输入关键词搜索"}
+                options={talentOptions}
               />
             </Form.Item>
             <Form.Item name="job_id" label={termFor(profile, "关联岗位")}>

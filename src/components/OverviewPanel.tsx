@@ -1,6 +1,6 @@
 import { Card, Empty, Spin, Tooltip } from "antd";
 import { ArrowRightOutlined } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import type { OverviewResponse } from "../types";
 import { PIPELINE_STAGES } from "../types";
 
@@ -22,8 +22,6 @@ export default function OverviewPanel({
   data: OverviewResponse | null;
   loading: boolean;
 }) {
-  const navigate = useNavigate();
-
   if (loading) {
     return (
       <Card className="dash-card" style={{ marginTop: 16 }}>
@@ -56,9 +54,10 @@ export default function OverviewPanel({
         </Tooltip>
       }
       extra={
-        <a onClick={() => navigate("/pipeline")}>
+        // 用 Link 而不是 <a onClick>：后者键盘不可达、也不能被浏览器当链接处理
+        <Link to="/pipeline">
           看板 <ArrowRightOutlined />
-        </a>
+        </Link>
       }
     >
       {stageArr.every((s) => s.count === 0) ? (

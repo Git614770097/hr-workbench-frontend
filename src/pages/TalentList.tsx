@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
-  Popconfirm, message, Dropdown, Alert, Modal, Empty,
+  Popconfirm, message, Dropdown, Alert, Modal, Empty, Typography,
   Checkbox, Popover, Tooltip,
 } from "antd";
 import {
@@ -134,6 +134,8 @@ export default function TalentList() {
   const [sortField, setSortField] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<"ascend" | "descend" | "">("");
   const [loading, setLoading] = useState(true);
+  // 列表加载失败：不能静默（否则用户只看到空表，不知道是网络问题）
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS);
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
   const [expanded, setExpanded] = useState(false);
@@ -238,6 +240,7 @@ export default function TalentList() {
 
   const fetchTalents = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const params: Record<string, string | number> = {
         page,
@@ -253,6 +256,9 @@ export default function TalentList() {
       setTotal(res.total);
     } catch (err) {
       console.error(err);
+      const msg = (err as Error).message || "人才列表加载失败，请重试";
+      setLoadError(msg);
+      message.error(msg);
     }
     setLoading(false);
   }, [page, pageSize, sortField, sortOrder, applied]);
@@ -823,13 +829,22 @@ export default function TalentList() {
           onChange={handleTableChange}
           scroll={{ x: scrollX }}
           locale={{
-          // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」
-          emptyText: (
+          // 加载失败 ≠ 空库：给可重试的错误态；正常空库才显示录入引导
+          emptyText: loadError ? (
+            <div style={{ padding: "40px 0", textAlign: "center" }}>
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={<Typography.Text type="secondary">人才列表加载失败：{loadError}</Typography.Text>}
+              />
+              <Button type="primary" onClick={fetchTalents} style={{ marginTop: 12 }}>重新加载</Button>
+            </div>
+          ) : (
+            // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」
             <div style={{ padding: "40px 0", textAlign: "center" }}>
               <Empty description={termFor(profile, "人才库还是空的")} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
-              <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 {termFor(profile, "点左上角「新增人才」或「导入」开始录入真实数据")}
-              </div>
+              </Typography.Text>
             </div>
           ),
           }}

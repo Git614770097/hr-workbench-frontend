@@ -194,7 +194,9 @@ export default function FunnelChartView({ stages, stageStay = [], dark = false, 
               rate: s.rate,
               drop: s.drop,
               avgDays: stayMap[s.key]?.avg_days ?? null,
-              itemStyle: { color: gradientOf(i, levels) },
+              // 形状值仍是线性递减（保证倒三角），但 0 人的层级压暗——
+              // 否则「0 人」还占着满格宽度，视觉上像有人（2026-10-22 修）
+              itemStyle: { color: gradientOf(i, levels), opacity: s.count === 0 ? 0.35 : 1 },
               // 每级独立文字色：与该级同色系的深色（暗色模式为白色）
               label: { color: levelAt(i, levels).text },
             })),
@@ -284,4 +286,110 @@ export default function FunnelChartView({ stages, stageStay = [], dark = false, 
       </div>
     </div>
   );
+}
+
+// ============================================================
+// PNG 导出（带左右注释列）
+// ============================================================
+// 页面上的阶段名列与转化率列是 HTML 叠加层，不在 ECharts canvas 内。
+// 直接 getDataURL 导出的图只有色块和人数，贴进汇报没人看得懂。
+// 这里用离屏 canvas 把三部分合成一张：ECharts 图 + 左列阶段名 + 右列转化/流失/停留。
+// 不引入 html2canvas：绘制逻辑完全可控，也不必为一张图加 50KB 依赖。
+//
+// 行中心与 ECharts 漏斗层中心的换算见文件头注释（等分 flex 的偏差 <1px）。
+// 导出统一白底 + 深色字：给 PPT 用，与当前明暗主题无关。
+
+const PNG_FONT = '"PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif';
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("图表图片加载失败"));
+    img.src = src;
+  });
+}
+
+/**
+ * 合成带注释列的漏斗 PNG。
+ * @returns dataURL（调用方负责下载）；图表未就绪或合成失败时返回 null。
+ */
+export async function exportFunnelPng(
+  inst: echarts.ECharts | null,
+  stages: FunnelStageItem[],
+  stageStay: FunnelStayItem[] = []
+): Promise<string | null> {
+  if (!inst || stages.length === 0) return null;
+  const DPR = 2;
+  // 白底 + 当前色板：暗色主题下导出的图仍然是白底深字，避免贴到白 PPT 上发黑
+  const dataUrl = inst.getDataURL({ type: "png", pixelRatio: DPR, backgroundColor: "#ffffff" });
+  const img = await loadImage(dataUrl);
+
+  const cv = document.createElement("canvas");
+  cv.width = img.width;
+  cv.height = img.height;
+  const ctx = cv.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(img, 0, 0);
+
+  // 之后所有坐标都按 CSS 像素书写，由 scale 统一放大到导出分辨率
+  ctx.scale(DPR, DPR);
+  const W = img.width / DPR;
+  const H = img.height / DPR;
+
+  const n = stages.length;
+  const rowH = (H - TOP - BOTTOM) / n;
+  const centerY = (i: number) => TOP + rowH * (i + 0.5);
+  const stayMap = Object.fromEntries(stageStay.map((x) => [x.key, x])) as Record<string, FunnelStayItem>;
+
+  ctx.textBaseline = "middle";
+
+  // ---- 左列：阶段名（与页面一致：13px / 500 / 右对齐，右侧留 10px） ----
+  ctx.textAlign = "right";
+  ctx.font = `500 13px ${PNG_FONT}`;
+  ctx.fillStyle = "#374151";
+  stages.forEach((s, i) => {
+    ctx.fillText(s.label, LABELS_W - 10, centerY(i));
+  });
+
+  // ---- 右列：转化率 + 流失 + 平均停留（右对齐到画布右缘） ----
+  const rightX = W - 4;
+  stages.forEach((s, i) => {
+    const st = stayMap[s.key];
+    const hasSub = st && st.avg_days != null;
+    const mainY = hasSub ? centerY(i) - 8 : centerY(i);
+
+    if (i === 0) {
+      ctx.textAlign = "right";
+      ctx.font = `500 12px ${PNG_FONT}`;
+      ctx.fillStyle = "#6b7280";
+      ctx.fillText("漏斗顶层", rightX, mainY);
+    } else {
+      // 「流失 N」在右，转化率在其左（两段分色，与页面同一信息层级）
+      const dropText = s.drop > 0 ? `流失 ${s.drop}` : "";
+      let dropW = 0;
+      if (dropText) {
+        ctx.font = `400 11px ${PNG_FONT}`;
+        dropW = ctx.measureText(dropText).width + 6;
+      }
+      ctx.textAlign = "right";
+      ctx.font = `500 12px ${PNG_FONT}`;
+      ctx.fillStyle = s.rate < 0.5 ? "#b45309" : "#374151";
+      ctx.fillText(pct(s.rate), rightX - dropW, mainY);
+      if (dropText) {
+        ctx.font = `400 11px ${PNG_FONT}`;
+        ctx.fillStyle = "#9ca3af";
+        ctx.fillText(dropText, rightX, mainY);
+      }
+    }
+
+    if (hasSub) {
+      ctx.textAlign = "right";
+      ctx.font = `400 11px ${PNG_FONT}`;
+      ctx.fillStyle = (st.avg_days as number) >= 7 ? "#b45309" : "#9ca3af";
+      ctx.fillText(`停留 ${st.avg_days} 天`, rightX, centerY(i) + 9);
+    }
+  });
+
+  return cv.toDataURL("image/png");
 }
