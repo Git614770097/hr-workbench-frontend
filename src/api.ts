@@ -529,14 +529,14 @@ export const api = {
 
   // AI 背调小结（需授权）：基于已核验分项生成 summary + risks
   bgAiSummary: (id: string) =>
-    request<BgSummary>(`/background/${id}/ai-summary`, { method: "POST" }, 60000),
+    request<BgSummary>(`/background/${id}/ai-summary`, { method: "POST" }, 90000),
 
   // AI 简历核查清单（需授权）：喂简历文本，生成待核查建议（HR 线下/第三方核验）
   bgAiResumeCheck: (id: string, resumeText: string) =>
     request<BgResumeCheckResult>(
       `/background/${id}/ai-resume-check`,
       { method: "POST", body: JSON.stringify({ resume_text: resumeText }) },
-      60000
+      90000
     ),
 
   // 通过并推进入职（需授权 + 结论为通过）：流转到 hired + 生成入职清单
@@ -589,7 +589,7 @@ export const api = {
     request<{ jd: string }>(
       "/match/generate-jd",
       { method: "POST", body: JSON.stringify({ job_title: jobTitle, city }) },
-      60000
+      90000
     ),
 
   generateMatchProfile: (jd: string) =>
@@ -599,7 +599,7 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ jd }),
       },
-      60000
+      90000
     ),
 
   getMatchProfiles: () => request<MatchProfile[]>("/match/profiles"),
@@ -626,7 +626,7 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ profile, candidate }),
       },
-      60000
+      90000
     ),
 
   // Doc templates
@@ -811,7 +811,7 @@ export const api = {
       suggested_result: string;
       _ai_fallback?: boolean;
       _usage?: AiUsage | null;
-    }>(`/interviews/${id}/ai-summary`, { method: "POST" }, 60000),
+    }>(`/interviews/${id}/ai-summary`, { method: "POST" }, 90000),
 
   // AI 提效：简历深度解读（详情页传 talent_id，导入核对弹窗传 fields）
   // text 为前端抽取的简历原文（PDF/Word），不传则仅按字段解读
@@ -822,7 +822,7 @@ export const api = {
     pre_key?: string | null;
     fields?: Record<string, unknown> | null;
   }) =>
-    request<AiResumeInsight>("/ai/resume-insight", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiResumeInsight>("/ai/resume-insight", { method: "POST", body: JSON.stringify(data) }, 90000),
 
   // AI 提效：沟通文案（邀约 / 婉拒 / 跟进）。婉拒信默认温暖挽留型
   aiOutreach: (data: {
@@ -831,14 +831,14 @@ export const api = {
     scene: AiOutreachScene;
     tone?: AiRejectTone;
   }) =>
-    request<AiOutreach>("/ai/outreach", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiOutreach>("/ai/outreach", { method: "POST", body: JSON.stringify(data) }, 90000),
 
   // AI 提效：针对该候选人与岗位生成面试问题清单
   aiInterviewQuestions: (talentId: string, jobId?: string | null) =>
     request<AiInterviewQuestions>(
       "/ai/interview-questions",
       { method: "POST", body: JSON.stringify({ talent_id: talentId, job_id: jobId ?? null }) },
-      60000
+      90000
     ),
 
   // AI 提效：多轮面试评价汇总成候选人综合评估
@@ -846,7 +846,7 @@ export const api = {
     request<AiCandidateSummary>(
       "/ai/candidate-summary",
       { method: "POST", body: JSON.stringify({ talent_id: talentId, job_id: jobId ?? null }) },
-      60000
+      90000
     ),
 
   // AI 读取已生成结果（GET，不重算、不扣配额）：下次进入页面直接展示历史产出。
@@ -874,30 +874,30 @@ export const api = {
       salary_range: string;
       education: string;
       experience: string;
-    }>("/ai/job-draft", { method: "POST", body: JSON.stringify(data) }, 60000),
+    }>("/ai/job-draft", { method: "POST", body: JSON.stringify(data) }, 90000),
 
   // AI 招聘复盘报告：概览分析层聚合数据（漏斗/周期/渠道/淘汰/停留/诊断）→ 叙述性复盘。
   // 纯聚合数字无 PII；scope（筛选组合）作 10 分钟缓存键。
   aiRecapReport: (data: { scope: string; report: Record<string, unknown> }) =>
-    request<AiRecapReport>("/ai/recap-report", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiRecapReport>("/ai/recap-report", { method: "POST", body: JSON.stringify(data) }, 90000),
 
   // AI 岗位诊断：岗位详情聚合数据（漏斗/停留/画像）→「为什么招人慢」的判断与建议。
   // scope = job_id 作 10 分钟缓存键。
   aiJobDiagnosis: (data: { scope: string; report: Record<string, unknown> }) =>
-    request<AiJobDiagnosis>("/ai/job-diagnosis", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiJobDiagnosis>("/ai/job-diagnosis", { method: "POST", body: JSON.stringify(data) }, 90000),
 
   // AI 入职清单：按候选人入职上下文生成材料初稿；后端自查归属，10 分钟缓存。前端预览勾选后入库。
   aiOnboardChecklist: (talentId: string) =>
-    request<AiOnboardChecklist>("/ai/onboard-checklist", { method: "POST", body: JSON.stringify({ talent_id: talentId }) }, 60000),
+    request<AiOnboardChecklist>("/ai/onboard-checklist", { method: "POST", body: JSON.stringify({ talent_id: talentId }) }, 90000),
 
   // AI 人才储备盘点：按筛选口径聚合人才结构后讲结论；后端自查聚合，10 分钟缓存。
   aiTalentInventory: (params: Record<string, string | number>) =>
-    request<AiTalentInventory>("/ai/talent-inventory", { method: "POST", body: JSON.stringify(params) }, 60000),
+    request<AiTalentInventory>("/ai/talent-inventory", { method: "POST", body: JSON.stringify(params) }, 90000),
 
   // AI 招聘周报：后端按 owner 隔离自查一周真实数据（入库/流转/面试/产出/岗位/待办），
   // 讲成一份可直接发出去的完整周报。三个旋钮组合决定缓存键：range / tone / focus。
   aiWeeklyReport: (params: { range: "this_week" | "last_week"; tone: "report" | "brief"; focus: "all" | "progress" | "risk" }) =>
-    request<AiWeeklyReport>("/ai/weekly-report", { method: "POST", body: JSON.stringify(params) }, 60000),
+    request<AiWeeklyReport>("/ai/weekly-report", { method: "POST", body: JSON.stringify(params) }, 90000),
   // 读同参数组合下上次生成的周报（不扣配额），用于重进页面时恢复展示
   getAiWeeklyReport: (params: { range: "this_week" | "last_week"; tone: "report" | "brief"; focus: "all" | "progress" | "risk" }) => {
     const qs = new URLSearchParams(params).toString();
@@ -907,14 +907,14 @@ export const api = {
   // AI 候选人对比：选 2-3 个候选人并排对比，给出推荐。
   // scope = 排序后 id 串，10 分钟缓存复用；每名候选人单独校验归属（后端 menuGuard 已按 talents 分流）。
   aiCandidateCompare: (data: { talent_ids: string[]; job_id?: string | null }) =>
-    request<AiCandidateCompare>("/ai/candidate-compare", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiCandidateCompare>("/ai/candidate-compare", { method: "POST", body: JSON.stringify(data) }, 90000),
   aiCandidateCompareGet: (talentIds: string[]) =>
     request<{ data: AiCandidateCompare | null }>(`/ai/candidate-compare?talent_ids=${encodeURIComponent(talentIds.join(","))}`),
 
   // AI Offer 谈判话术：基于候选人、岗位与双方薪资预期生成谈判方案。
   // scene = job_id（换岗位即换缓存）；可选填我方 Offer 薪资 / 候选人期望 / 顾虑。
   aiOfferNegotiation: (data: { talent_id: string; job_id?: string | null; offered_salary?: string; expected_salary?: string; concerns?: string }) =>
-    request<AiOfferNegotiation>("/ai/offer-negotiation", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiOfferNegotiation>("/ai/offer-negotiation", { method: "POST", body: JSON.stringify(data) }, 90000),
   aiOfferNegotiationGet: (talentId: string, jobId?: string | null) =>
     request<{ data: AiOfferNegotiation | null }>(
       `/ai/offer-negotiation?talent_id=${encodeURIComponent(talentId)}${jobId ? `&job_id=${encodeURIComponent(jobId)}` : ""}`
@@ -922,7 +922,7 @@ export const api = {
 
   // AI 被动人才触达文案：面向在职/观望候选人的挖角文案（区别于通用跟进话术）。
   aiSourcingCopy: (data: { talent_id: string; job_id?: string | null }) =>
-    request<AiSourcingCopy>("/ai/sourcing-copy", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiSourcingCopy>("/ai/sourcing-copy", { method: "POST", body: JSON.stringify(data) }, 90000),
   aiSourcingCopyGet: (talentId: string, jobId?: string | null) =>
     request<{ data: AiSourcingCopy | null }>(
       `/ai/sourcing-copy?talent_id=${encodeURIComponent(talentId)}${jobId ? `&job_id=${encodeURIComponent(jobId)}` : ""}`
@@ -930,19 +930,19 @@ export const api = {
 
   // AI 招聘渠道建议：针对单个岗位推荐投放渠道与优先级。后端自查岗位并校验归属。
   aiChannelAdvice: (data: { job_id: string }) =>
-    request<AiChannelAdvice>("/ai/channel-advice", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiChannelAdvice>("/ai/channel-advice", { method: "POST", body: JSON.stringify(data) }, 90000),
   aiChannelAdviceGet: (jobId: string) =>
     request<{ data: AiChannelAdvice | null }>(`/ai/channel-advice?job_id=${encodeURIComponent(jobId)}`),
 
   // AI 合同风险审查：粘贴合同文本，AI 标风险点/缺失条款/健康度评分。需关联候选人（合同主体）。
   aiContractReview: (data: { talent_id: string; text: string }) =>
-    request<AiContractReview>("/ai/contract-review", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiContractReview>("/ai/contract-review", { method: "POST", body: JSON.stringify(data) }, 90000),
   aiContractReviewGet: (talentId: string) =>
     request<{ data: AiContractReview | null }>(`/ai/contract-review?talent_id=${encodeURIComponent(talentId)}`),
 
   // AI 社保增减员提醒：基于事件（增员/减员）、日期与城市生成操作提醒。需关联候选人。
   aiSocialReminder: (data: { talent_id: string; event: "add" | "remove"; date: string; city: string }) =>
-    request<AiSocialReminder>("/ai/social-reminder", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiSocialReminder>("/ai/social-reminder", { method: "POST", body: JSON.stringify(data) }, 90000),
   aiSocialReminderGet: (talentId: string, event: "add" | "remove", city: string) =>
     request<{ data: AiSocialReminder | null }>(
       `/ai/social-reminder?talent_id=${encodeURIComponent(talentId)}&event=${encodeURIComponent(event)}&city=${encodeURIComponent(city)}`
@@ -950,7 +950,7 @@ export const api = {
 
   // AI 个税筹划建议：基于税前薪资构成与城市给出到手估算与合规节税建议。需关联候选人。
   aiTaxPlan: (data: { talent_id: string; base: string; bonus: string; city: string }) =>
-    request<AiTaxPlan>("/ai/tax-plan", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiTaxPlan>("/ai/tax-plan", { method: "POST", body: JSON.stringify(data) }, 90000),
   aiTaxPlanGet: (talentId: string, city: string) =>
     request<{ data: AiTaxPlan | null }>(
       `/ai/tax-plan?talent_id=${encodeURIComponent(talentId)}&city=${encodeURIComponent(city)}`
@@ -958,7 +958,7 @@ export const api = {
 
   // AI 试用期合规提醒：基于合同起始日与试用期月数推算节点与话术。需关联候选人。
   aiProbationCompliance: (data: { talent_id: string; start: string; months: string }) =>
-    request<AiProbationCompliance>("/ai/probation-compliance", { method: "POST", body: JSON.stringify(data) }, 60000),
+    request<AiProbationCompliance>("/ai/probation-compliance", { method: "POST", body: JSON.stringify(data) }, 90000),
   aiProbationComplianceGet: (talentId: string, start: string, months: string) =>
     request<{ data: AiProbationCompliance | null }>(
       `/ai/probation-compliance?talent_id=${encodeURIComponent(talentId)}&start=${encodeURIComponent(start)}&months=${encodeURIComponent(months)}`
