@@ -14,8 +14,8 @@ import type { MatchProfile, MatchProfileLite, MatchResult, Talent } from "../typ
 import { parseResumeToTalent, parseResumeFile, recordToData } from "../utils/resumeImport";
 import type { ParsedTalent } from "../utils/resumeImport";
 import MatchResultCard from "../components/MatchResultCard";
-import MatchCompareChart from "../components/MatchCompareChart";
-import type { CompareRow } from "../components/MatchCompareChart";
+import MatchCompareMatrix from "../components/MatchCompareMatrix";
+import type { MatrixCol } from "../utils/matchMatrix";
 import TalentPickerModal from "../components/TalentPickerModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import { useIdentityProfile } from "../useIdentity";
@@ -61,6 +61,7 @@ function talentToParsed(t: Talent, key: string, brand: IdentityProfile): ParsedT
     skills: (t.skills || []).join(", "),
     status: t.status || "active",
     notes: t.notes || "",
+    expected_salary: t.expected_salary || "",
     fileName: termFor(brand, "人才库记录"),
     file: null,
   };
@@ -518,20 +519,36 @@ export default function Match() {
     .filter((c) => results[c.key])
     .sort((a, b) => results[b.key].score - results[a.key].score);
 
-  // 对比图数据：与 ranked 同序（分数从高到低），评估进行中也实时增长
-  const compareRows: CompareRow[] = ranked.map((cd, i) => {
+  // 对比矩阵数据：与 ranked 同序（分数从高到低），评估进行中也实时增长。
+  // 硬性条件的「实际值」优先取人才档案里的字段（那是候选人自己填的），
+  // 档案没填才回落到 AI 判定时带回来的 actual。
+  const matrixCols: MatrixCol[] = ranked.map((cd) => {
     const r = results[cd.key];
-    const skillHit = r.hard?.must_skills?.hit.length ?? 0;
-    const skillTotal = skillHit + (r.hard?.must_skills?.miss.length ?? 0);
+    const mustHit = r.hard?.must_skills?.hit ?? [];
+    const mustMiss = r.hard?.must_skills?.miss ?? [];
     return {
       key: cd.key,
-      rank: i + 1,
       name: cd.talent.name || cd.fileName || "未识别",
+      sub: [cd.talent.current_company, cd.talent.current_title].filter(Boolean).join(" · ") || "—",
       score: r.score,
       verdict: r.verdict,
-      skillHit,
-      skillTotal,
-      hard: r.hard,
+      skillHit: mustHit.length,
+      skillTotal: mustHit.length + mustMiss.length,
+      mustHit,
+      mustMiss,
+      niceHit: r.hard?.nice_skills?.hit ?? [],
+      edu: { ok: r.hard?.education?.ok ?? null, actual: cd.talent.education || r.hard?.education?.actual || "" },
+      years: {
+        ok: r.hard?.years?.ok ?? null,
+        actual: cd.talent.years_experience ?? r.hard?.years?.actual ?? null,
+        over: r.hard?.years?.over,
+      },
+      city: { ok: r.hard?.city?.ok ?? null, actual: cd.talent.city || r.hard?.city?.actual || "" },
+      salary: cd.talent.expected_salary || "",
+      reasons: r.reasons ?? [],
+      gaps: r.gaps ?? [],
+      risks: r.risks ?? [],
+      questions: r.questions ?? [],
     };
   });
 
@@ -815,8 +832,13 @@ export default function Match() {
           );
         })()}
 
-        {/* 对比图：所有候选人同图对比（≥2 位才有对比意义）；评估进行中也实时增长 */}
-        {compareRows.length >= 2 && <MatchCompareChart rows={compareRows} />}
+        {/* 对比矩阵：维度做行、候选人做列（≥2 位才有对比意义）；评估进行中也实时增长 */}
+        {matrixCols.length >= 2 && (
+          <MatchCompareMatrix
+            cols={matrixCols}
+            title={profile?.job_title || profile?.name || "未命名画像"}
+          />
+        )}
 
         {ranked.map((cd, i) => (
           <MatchResultCard

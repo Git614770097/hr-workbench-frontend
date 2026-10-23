@@ -42,6 +42,8 @@ export interface ParsedTalent {
   skills: string;
   status: string;
   notes: string;
+  /** 期望薪资：只有「从人才库添加」的候选人有（简历解析不抽这个字段），对比矩阵的「价格」行用它 */
+  expected_salary?: string;
   fileName: string;
   file: File | null;
   /** 解析来源：true=AI 解析，false=本地规则回退 */

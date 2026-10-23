@@ -1442,54 +1442,65 @@ html[data-theme-mode="dark"] .match-overview-bar {
 }
 html[data-theme-mode="dark"] .match-overview-bar .ov-divider { background: #434343; }
 
-/* ===== 结果对比图：所有候选人同图对比 ===== */
-.match-compare {
-  border: 1px solid #f0f0f0; border-radius: 10px;
-  padding: 12px 14px 10px; margin-bottom: 12px; background: #fff;
+/* ---- 候选人对比矩阵（维度做行、候选人做列，类似手机参数对比表）---- */
+.mm { border: 1px solid #eef0f3; border-radius: 10px; padding: 12px 14px; background: #fff; margin-bottom: 16px; }
+.mm-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.mm-title { font-size: 13px; font-weight: 600; color: #374151; }
+.mm-hint { font-size: 11px; color: #9ca3af; }
+.mm-scroll { overflow-x: auto; }
+.mm-grid {
+  display: grid; gap: 1px; background: #eef0f3;
+  border: 1px solid #eef0f3; border-radius: 8px; overflow: hidden; min-width: 520px;
 }
-.match-compare-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.match-compare-title { font-size: 13px; font-weight: 600; color: #374151; }
-.match-compare-hint { font-size: 11px; color: #9ca3af; }
-.match-compare-avg { margin-left: auto; font-size: 11px; color: #6b7280; white-space: nowrap; }
-
-.match-cmp-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
-.match-cmp-row + .match-cmp-row { border-top: 1px dashed #f3f4f6; }
-/* 姓名列定宽，长名省略号；结论文字紧跟姓名，颜色即档位 */
-.match-cmp-name { width: 148px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; min-width: 0; }
-.match-cmp-rank {
-  width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
-  background: #f3f4f6; color: #6b7280; font-size: 11px; font-weight: 700;
-  display: flex; align-items: center; justify-content: center;
+.mm-corner { background: #f7f8fa; }
+.mm-colhead { background: #f7f8fa; padding: 9px 12px; min-width: 0; }
+.mm-colhead-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.mm-rank {
+  width: 20px; height: 20px; border-radius: 50%; background: #e6f1fb; color: #185fa5;
+  font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
-.match-cmp-nm {
-  font-size: 13px; font-weight: 500; color: #262626; min-width: 0;
+.mm-rank.is-top { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: #fff; }
+.mm-colname {
+  font-size: 13px; font-weight: 600; color: #1f2329;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.match-cmp-verdict { font-size: 11px; flex-shrink: 0; }
-
-.match-cmp-bars { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.match-cmp-bar { display: flex; align-items: center; gap: 8px; }
-.match-cmp-track { position: relative; flex: 1; min-width: 0; height: 10px; background: #f0f0f0; border-radius: 5px; }
-.match-cmp-bar.is-skill .match-cmp-track { height: 6px; border-radius: 3px; }
-.match-cmp-fill { height: 100%; border-radius: inherit; transition: width 0.4s ease; }
-/* 均值参考线：每行同一 x 位置，纵向看连成一条虚线 */
-.match-cmp-avgline { position: absolute; top: -2px; bottom: -2px; border-left: 1px dashed #9ca3af; pointer-events: none; }
-.match-cmp-val {
-  width: 30px; flex-shrink: 0; text-align: right;
-  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+.mm-colsub {
+  font-size: 11px; color: #9ca3af; margin-top: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.match-cmp-val.is-sm { font-size: 11px; font-weight: 600; color: #8c8c8c; }
-
-/* 硬性条件状态点：hover 出 tooltip */
-.match-cmp-hard { display: flex; gap: 4px; flex-shrink: 0; }
-.match-cmp-dot {
-  width: 18px; height: 18px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center; font-size: 11px;
+.mm-label {
+  background: #f7f8fa; padding: 9px 10px; font-size: 12px; color: #6b7280;
+  display: flex; align-items: flex-start; gap: 4px;
 }
-.match-cmp-dot.is-ok { color: #059669; background: #ecfdf5; }
-.match-cmp-dot.is-no { color: #dc2626; background: #fef2f2; }
-.match-cmp-dot.is-over { color: #d97706; background: #fffbeb; }
-.match-cmp-dot.is-null { color: #9ca3af; background: #fafafa; }
+.mm-label.is-sortable { cursor: pointer; user-select: none; }
+.mm-label.is-sortable:hover { background: #eef2f7; color: #374151; }
+.mm-label.is-active { color: #1677ff; }
+.mm-sorticon { font-size: 10px; opacity: 0.55; }
+.mm-cell {
+  background: #fff; padding: 9px 12px; font-size: 13px; color: #1f2329;
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.mm-cell.is-ok { background: #eaf3de; color: #27500a; }
+.mm-cell.is-warn { background: #faeeda; color: #633806; }
+.mm-cell.is-bad { background: #fcebeb; color: #791f1f; }
+.mm-main { word-break: break-word; }
+.mm-cell.is-big .mm-main { font-size: 20px; font-weight: 600; line-height: 1.15; }
+.mm-sub { font-size: 11px; opacity: 0.78; word-break: break-word; }
+.mm-more { font-size: 11px; color: #9ca3af; margin-top: 8px; }
+
+html[data-theme-mode="dark"] .mm { border-color: #303030; background: #1a1a1a; }
+html[data-theme-mode="dark"] .mm-title { color: #e5e7eb; }
+html[data-theme-mode="dark"] .mm-grid { background: #303030; border-color: #303030; }
+html[data-theme-mode="dark"] .mm-corner,
+html[data-theme-mode="dark"] .mm-colhead,
+html[data-theme-mode="dark"] .mm-label { background: #202020; }
+html[data-theme-mode="dark"] .mm-colname { color: #e5e7eb; }
+html[data-theme-mode="dark"] .mm-label.is-sortable:hover { background: #262626; color: #d1d5db; }
+html[data-theme-mode="dark"] .mm-cell { background: #141414; color: #e5e7eb; }
+html[data-theme-mode="dark"] .mm-cell.is-ok { background: #1d2a17; color: #c0dd97; }
+html[data-theme-mode="dark"] .mm-cell.is-warn { background: #2b2415; color: #fac775; }
+html[data-theme-mode="dark"] .mm-cell.is-bad { background: #2b1717; color: #f7c1c1; }
 
 html[data-theme-mode="dark"] .match-parse { border-color: #1f3a5f; background: #16202e; }
 html[data-theme-mode="dark"] .match-parse-name { color: #e5e7eb; }
@@ -1502,20 +1513,6 @@ html[data-theme-mode="dark"] .match-cand-list { border-top-color: #303030; }
 html[data-theme-mode="dark"] .match-cand { border-bottom-color: #2a2a2a; }
 html[data-theme-mode="dark"] .match-cand-name { color: #e5e7eb; }
 
-html[data-theme-mode="dark"] .match-compare { border-color: #303030; background: #1a1a1a; }
-html[data-theme-mode="dark"] .match-compare-title { color: #e5e7eb; }
-html[data-theme-mode="dark"] .match-compare-hint { color: #6b7280; }
-html[data-theme-mode="dark"] .match-compare-avg { color: #9ca3af; }
-html[data-theme-mode="dark"] .match-cmp-row + .match-cmp-row { border-top-color: #2a2a2a; }
-html[data-theme-mode="dark"] .match-cmp-rank { background: #2a2a2a; color: #9ca3af; }
-html[data-theme-mode="dark"] .match-cmp-nm { color: #e5e7eb; }
-html[data-theme-mode="dark"] .match-cmp-track { background: #2a2a2a; }
-html[data-theme-mode="dark"] .match-cmp-avgline { border-left-color: #6b7280; }
-html[data-theme-mode="dark"] .match-cmp-val.is-sm { color: #9ca3af; }
-html[data-theme-mode="dark"] .match-cmp-dot.is-ok { color: #34d399; background: rgba(16, 185, 129, 0.12); }
-html[data-theme-mode="dark"] .match-cmp-dot.is-no { color: #f87171; background: rgba(239, 68, 68, 0.12); }
-html[data-theme-mode="dark"] .match-cmp-dot.is-over { color: #fbbf24; background: rgba(245, 158, 11, 0.12); }
-html[data-theme-mode="dark"] .match-cmp-dot.is-null { color: #6b7280; background: #2a2a2a; }
 
 @media (max-width: 1280px) {
   .match-layout { grid-template-columns: minmax(0, 1fr); }
