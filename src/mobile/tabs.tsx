@@ -9,13 +9,13 @@
  * （如猎头版「人才库」→「候选人库」），菜单文案保持单一真源。
  */
 import type { ReactNode } from "react";
-import {
-  CalendarOutlined,
-  DeploymentUnitOutlined,
-  TeamOutlined,
-  FunnelPlotOutlined,
-  ScheduleOutlined,
-} from "@ant-design/icons";
+// ⚠️ 本文件被 MobileLayout 静态引用（在首屏闭包里），图标必须走深路径，
+//    别用 `from "@ant-design/icons"`——桶文件会把全部 831 个图标拖进来。
+import CalendarOutlined from "@ant-design/icons/es/icons/CalendarOutlined";
+import DeploymentUnitOutlined from "@ant-design/icons/es/icons/DeploymentUnitOutlined";
+import TeamOutlined from "@ant-design/icons/es/icons/TeamOutlined";
+import FunnelPlotOutlined from "@ant-design/icons/es/icons/FunnelPlotOutlined";
+import ScheduleOutlined from "@ant-design/icons/es/icons/ScheduleOutlined";
 import type { User } from "../types";
 
 export interface MobileTab {

@@ -5,7 +5,10 @@ import Button from "antd/es/button";
 import Typography from "antd/es/typography";
 import message from "antd/es/message";
 import Spin from "antd/es/spin";
-import { EllipsisOutlined, DesktopOutlined, LogoutOutlined } from "@ant-design/icons";
+// ⚠️ 深路径导入，别用 `from "@ant-design/icons"`（桶文件会拖入全部 831 个图标）。
+import EllipsisOutlined from "@ant-design/icons/es/icons/EllipsisOutlined";
+import DesktopOutlined from "@ant-design/icons/es/icons/DesktopOutlined";
+import LogoutOutlined from "@ant-design/icons/es/icons/LogoutOutlined";
 import type { User } from "../types";
 import { setDeviceOverride } from "../utils/device";
 import { profileOf, navLabelFor, termFor } from "../identityProfiles";

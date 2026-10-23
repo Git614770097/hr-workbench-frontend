@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { prefetchPage } from "../routePages";
 import Avatar from "antd/es/avatar";
 import Button from "antd/es/button";
 import Tag from "antd/es/tag";
@@ -9,45 +10,49 @@ import Popover from "antd/es/popover";
 import Alert from "antd/es/alert";
 import Badge from "antd/es/badge";
 import message from "antd/es/message";
-import {
-  LogoutOutlined,
-  MobileOutlined,
-  TeamOutlined,
-  FileTextOutlined,
-  UserOutlined,
-  MenuFoldOutlined,
-  MenuUnfoldOutlined,
-  BgColorsOutlined,
-  CheckOutlined,
-  SafetyOutlined,
-  DeploymentUnitOutlined,
-  FunnelPlotOutlined,
-  SolutionOutlined,
-  FileAddOutlined,
-  CarryOutOutlined,
-  CalendarOutlined,
-  AuditOutlined,
-  UserSwitchOutlined,
-  FileProtectOutlined,
-  SafetyCertificateOutlined,
-  SunOutlined,
-  MoonOutlined,
-  BellOutlined,
-  LockOutlined,
-  CrownOutlined,
-  GiftOutlined,
-  KeyOutlined,
-  SettingOutlined,
-  RocketOutlined,
-  AppstoreOutlined,
-  ProfileOutlined,
-  BarChartOutlined,
-  ToolOutlined,
-  RobotOutlined,
-  FileSearchOutlined,
-  ThunderboltOutlined,
-} from "@ant-design/icons";
-import { QuestionCircleOutlined, PlayCircleOutlined } from "@ant-design/icons";
+// ⚠️ 图标一律走深路径 `@ant-design/icons/es/icons/Xxx`，**不要** `from "@ant-design/icons"`。
+//    那个包的 es/index.js 是桶文件，静态 re-export 全部 831 个图标；它一旦进入首屏
+//    模块图，832 个图标文件就全被拖进来（Rollup 能 tree-shake 掉没用的图标，所以
+//    gzip 看不出差别，但模块图会从 739 暴涨到 2297——而 vite.config.ts 的分包规则
+//    正是按「首屏可达性」判断的，模块图一旦失真，分包就全错）。
+import LogoutOutlined from "@ant-design/icons/es/icons/LogoutOutlined";
+import MobileOutlined from "@ant-design/icons/es/icons/MobileOutlined";
+import TeamOutlined from "@ant-design/icons/es/icons/TeamOutlined";
+import FileTextOutlined from "@ant-design/icons/es/icons/FileTextOutlined";
+import UserOutlined from "@ant-design/icons/es/icons/UserOutlined";
+import MenuFoldOutlined from "@ant-design/icons/es/icons/MenuFoldOutlined";
+import MenuUnfoldOutlined from "@ant-design/icons/es/icons/MenuUnfoldOutlined";
+import BgColorsOutlined from "@ant-design/icons/es/icons/BgColorsOutlined";
+import CheckOutlined from "@ant-design/icons/es/icons/CheckOutlined";
+import SafetyOutlined from "@ant-design/icons/es/icons/SafetyOutlined";
+import DeploymentUnitOutlined from "@ant-design/icons/es/icons/DeploymentUnitOutlined";
+import FunnelPlotOutlined from "@ant-design/icons/es/icons/FunnelPlotOutlined";
+import SolutionOutlined from "@ant-design/icons/es/icons/SolutionOutlined";
+import FileAddOutlined from "@ant-design/icons/es/icons/FileAddOutlined";
+import CarryOutOutlined from "@ant-design/icons/es/icons/CarryOutOutlined";
+import CalendarOutlined from "@ant-design/icons/es/icons/CalendarOutlined";
+import AuditOutlined from "@ant-design/icons/es/icons/AuditOutlined";
+import UserSwitchOutlined from "@ant-design/icons/es/icons/UserSwitchOutlined";
+import FileProtectOutlined from "@ant-design/icons/es/icons/FileProtectOutlined";
+import SafetyCertificateOutlined from "@ant-design/icons/es/icons/SafetyCertificateOutlined";
+import SunOutlined from "@ant-design/icons/es/icons/SunOutlined";
+import MoonOutlined from "@ant-design/icons/es/icons/MoonOutlined";
+import BellOutlined from "@ant-design/icons/es/icons/BellOutlined";
+import LockOutlined from "@ant-design/icons/es/icons/LockOutlined";
+import CrownOutlined from "@ant-design/icons/es/icons/CrownOutlined";
+import GiftOutlined from "@ant-design/icons/es/icons/GiftOutlined";
+import KeyOutlined from "@ant-design/icons/es/icons/KeyOutlined";
+import SettingOutlined from "@ant-design/icons/es/icons/SettingOutlined";
+import RocketOutlined from "@ant-design/icons/es/icons/RocketOutlined";
+import AppstoreOutlined from "@ant-design/icons/es/icons/AppstoreOutlined";
+import ProfileOutlined from "@ant-design/icons/es/icons/ProfileOutlined";
+import BarChartOutlined from "@ant-design/icons/es/icons/BarChartOutlined";
+import ToolOutlined from "@ant-design/icons/es/icons/ToolOutlined";
+import RobotOutlined from "@ant-design/icons/es/icons/RobotOutlined";
+import FileSearchOutlined from "@ant-design/icons/es/icons/FileSearchOutlined";
+import ThunderboltOutlined from "@ant-design/icons/es/icons/ThunderboltOutlined";
+import QuestionCircleOutlined from "@ant-design/icons/es/icons/QuestionCircleOutlined";
+import PlayCircleOutlined from "@ant-design/icons/es/icons/PlayCircleOutlined";
 import type { User } from "../types";
 import { ROLE_LABELS } from "../types";
 import { api } from "../api";
@@ -413,6 +418,41 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
     }
   }, []);
 
+  // 空闲批量预取：进系统后错峰把菜单各页的 chunk 拉下来。
+  // 配合 lazyPage（非挂起懒加载），首次进某页不再「URL 变了、旧页面赖着不走」。
+  // 只预取当前账号可见的菜单，序列化逐个下载避免抢占首屏带宽。
+  useEffect(() => {
+    const paths: string[] = [];
+    for (const node of NAV_TREE) {
+      if ("children" in node) {
+        for (const c of node.children) {
+          if (c.managerOnly ? user.role === "manager" : c.adminOnly ? user.role === "admin" : canSee(c.perm)) paths.push(c.to);
+        }
+      } else if (node.managerOnly ? user.role === "manager" : node.adminOnly ? user.role === "admin" : canSee(node.perm)) {
+        paths.push(node.to);
+      }
+    }
+    // 详情页跟随人才库一起预取
+    if (paths.includes("/talents")) paths.push("/talents/detail");
+    let i = 0;
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled || i >= paths.length) return;
+      prefetchPage(paths[i++]);
+      setTimeout(tick, 400);
+    };
+    // 首屏稳定后再开跑（requestIdleCallback 不可用时退化为 2s）
+    const ric = (window as any).requestIdleCallback as ((cb: () => void, opts?: { timeout: number }) => number) | undefined;
+    const handle = ric ? ric(tick, { timeout: 3000 }) : (setTimeout(tick, 2000) as unknown as number);
+    return () => {
+      cancelled = true;
+      if (ric) (window as any).cancelIdleCallback?.(handle);
+      else clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+    };
+    // canSee 依赖 user/permFingerprint，登录后只跑一次即可（后续权限热变更少见，hover 预取兜底）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const toggleCollapsed = () => {
     setCollapsed((c) => {
       const next = !c;
@@ -676,6 +716,8 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
         data-onb={leaf.to}
         className={({ isActive }) => (isActive ? "active" : "")}
         title={navCollapsed ? leaf.label : undefined}
+        onMouseEnter={() => prefetchPage(leaf.to)}
+        onFocus={() => prefetchPage(leaf.to)}
         onClick={() => setMobileNavOpen(false)}
       >
         <span className="nav-icon" style={{ background: leaf.color + "1a", color: leaf.color }}>
@@ -713,6 +755,8 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
                   to={child.to}
                   data-onb={child.to}
                   className={({ isActive }) => "nav-pop-item" + (isActive ? " active" : "")}
+                  onMouseEnter={() => prefetchPage(child.to)}
+                  onFocus={() => prefetchPage(child.to)}
                   onClick={() => setMobileNavOpen(false)}
                 >
                   <span className="nav-icon" style={{ background: child.color + "1a", color: child.color }}>

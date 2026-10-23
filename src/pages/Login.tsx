@@ -6,7 +6,9 @@ import Alert from "antd/es/alert";
 import ConfigProvider from "antd/es/config-provider";
 import antdTheme from "antd/es/theme";
 import Radio from "antd/es/radio";
-import { ReloadOutlined } from "@ant-design/icons";
+// ⚠️ 深路径导入，别用 `from "@ant-design/icons"`（桶文件会拖入全部 831 个图标，
+//    Login 是未登录用户真正要渲染的页面，它的 chunk 体积直接决定登录页首屏时间）。
+import ReloadOutlined from "@ant-design/icons/es/icons/ReloadOutlined";
 import { api } from "../api";
 import { INTENDED_ROLES } from "../types";
 import { IDENTITY_PROFILES, DEFAULT_PROFILE, type IdentityProfile } from "../identityProfiles";

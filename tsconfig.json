@@ -10,7 +10,15 @@
     "forceConsistentCasingInFileNames": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["@cloudflare/workers-types"],
-    "noEmit": true
+    "noEmit": true,
+    // 首屏文件用深路径导入图标：`@ant-design/icons/es/icons/Xxx`。
+    // 但 icons 包只给 `lib/icons/` 生成了 .d.ts，`es/icons/` 下 832 个图标全是裸 .js，
+    // 于是 tsc 报 TS7016（隐式 any）。这里把 es 的类型解析指向 lib 的同名声明——
+    // 只影响类型，运行时仍由 Vite 走 es（ESM，可 tree-shake）。
+    "baseUrl": ".",
+    "paths": {
+      "@ant-design/icons/es/icons/*": ["./node_modules/@ant-design/icons/lib/icons/*"]
+    }
   },
   "include": ["src/**/*", "vite.config.ts"]
 }

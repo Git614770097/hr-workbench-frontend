@@ -6,7 +6,8 @@ import Alert from "antd/es/alert";
 import Avatar from "antd/es/avatar";
 import Spin from "antd/es/spin";
 import Typography from "antd/es/typography";
-import { ExclamationCircleOutlined } from "@ant-design/icons";
+// ⚠️ 深路径导入，别用 `from "@ant-design/icons"`（桶文件会拖入全部 831 个图标）。
+import ExclamationCircleOutlined from "@ant-design/icons/es/icons/ExclamationCircleOutlined";
 import { api } from "../api";
 
 interface Props {

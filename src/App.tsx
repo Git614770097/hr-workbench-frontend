@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
-import { useState, useEffect, useCallback, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Spin from "antd/es/spin";
 import Button from "antd/es/button";
 import Alert from "antd/es/alert";
@@ -8,8 +8,9 @@ import type { User } from "./types";
 import type { ThemeState } from "./theme";
 import { api } from "./api";
 import { DictProvider } from "./dict";
-// 登录页与落地页保持同步加载（未登录时的首屏，避免白屏闪烁）
-import Login from "./pages/Login";
+// 落地页保持同步加载（未登录时的首屏，避免白屏闪烁）；
+// 登录页是懒加载的：antd Form / Radio 与 rc-field-form 整棵树只有它用，
+// 拆出去后落地页首屏不再背这部分。落地页空闲时会把 /login 预取回来，点「登录」仍是秒开。
 import Landing from "./pages/Landing";
 import Layout from "./components/Layout";
 import FeishuBindConfirmModal from "./components/FeishuBindConfirmModal";
@@ -32,48 +33,45 @@ import ChangelogModal from "./components/ChangelogModal";
 // 使用埋点：桌面与移动两棵树各挂一份，不渲染任何 UI
 import UsageTracker from "./components/UsageTracker";
 
-// 其余页面按路由懒加载：把 Quill 富文本编辑器、pdfjs 等重依赖
-// 推迟到真正访问对应页面时才下载，降低首屏体积。
-const TalentList = lazy(() => import("./pages/TalentList"));
-const TalentDetail = lazy(() => import("./pages/TalentDetail"));
-// 人才AI匹配：从人才库工具栏进入，页面内含 pdfjs/mammoth 等重依赖，按需加载
-const Match = lazy(() => import("./pages/Match"));
-// 人才画像：独立的画像分级管理页
-const Profiles = lazy(() => import("./pages/Profiles"));
-const Pipeline = lazy(() => import("./pages/Pipeline"));
-const Interviews = lazy(() => import("./pages/Interviews"));
-const Approvals = lazy(() => import("./pages/Approvals"));
-const Onboarding = lazy(() => import("./pages/Onboarding"));
-const Background = lazy(() => import("./pages/Background"));
-const Funnel = lazy(() => import("./pages/Funnel"));
-const Jobs = lazy(() => import("./pages/Jobs"));
-const Requisitions = lazy(() => import("./pages/Requisitions"));
-const Tasks = lazy(() => import("./pages/Tasks"));
-// 合同管理：人才档案的合同/试用期字段集中视图，复用 talents 权限
-const Contracts = lazy(() => import("./pages/Contracts"));
-// 社保公积金台账：参保状态/基数/比例 + 增减员待办联动，复用 talents 权限
-const Social = lazy(() => import("./pages/Social"));
-const Users = lazy(() => import("./pages/Users"));
-const Roles = lazy(() => import("./pages/Roles"));
-const Settings = lazy(() => import("./pages/Settings"));
-// 日志管理：模块使用热度（管理员专属），含 ECharts，按需加载
-const Logs = lazy(() => import("./pages/Logs"));
-// 操作审计：admin 专属（仅管理员可见），同样按需加载
-const AuditLogs = lazy(() => import("./pages/AuditLogs"));
-// 团队管理：仅管理员（manager）与超管可见
-const Team = lazy(() => import("./pages/Team"));
-const MTasks = lazy(() => import("./mobile/MTasks"));
-const MInterviews = lazy(() => import("./mobile/MInterviews"));
-const MPipeline = lazy(() => import("./mobile/MPipeline"));
-const MTalents = lazy(() => import("./mobile/MTalents"));
-const MFunnel = lazy(() => import("./mobile/MFunnel"));
-const TemplateLibrary = lazy(() => import("./pages/TemplateLibrary"));
-// AI 助手：AI 能力集中入口（写 JD / 改简历 / 跟进话术），所属「工具中心」分组
-const AiAssistant = lazy(() => import("./pages/AiAssistant"));
-// 帮助中心：轻量 FAQ 页，从顶栏问号进入，不占侧栏菜单
-const Help = lazy(() => import("./pages/Help"));
+// 页面组件统一走 routePages（非挂起式懒加载）：react-router v7 的 navigate 包在
+// startTransition 里，用 React.lazy 时 chunk 未就绪会 suspend → React 继续渲染旧页面
+// （URL 已变、页面不动）。lazyPage 改为挂载即显示加载占位，旧页面立刻被替换。
+// 预取（菜单 hover / 空闲批量）与渲染共用同一 loader，见 src/routePages.tsx。
+import {
+  Login,
+  TalentList,
+  TalentDetail,
+  Match,
+  Profiles,
+  Pipeline,
+  Interviews,
+  Approvals,
+  Onboarding,
+  Background,
+  Funnel,
+  Jobs,
+  Requisitions,
+  Tasks,
+  Contracts,
+  Social,
+  Users,
+  Roles,
+  Settings,
+  Logs,
+  AuditLogs,
+  Team,
+  MTasks,
+  MInterviews,
+  MPipeline,
+  MTalents,
+  MFunnel,
+  TemplateLibrary,
+  AiAssistant,
+  Help,
+} from "./routePages";
+import { prefetchPage } from "./routePages";
 
-// 页面切换时的加载占位
+// 页面切换时的加载占位（Suspense 仍保留给 Layout 内的弹窗懒加载）
 const pageFallback = (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 240 }}>
     <Spin size="large" />
@@ -231,6 +229,23 @@ export default function App({ theme, onChangeTheme }: AppProps) {
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [hasUser]);
+
+  // 未登录时：空闲预取登录页 chunk。
+  // 登录页是懒加载的（它独占 antd Form/Input/Radio，拆出去后落地页首屏少背 40KB+ gzip），
+  // 代价是点「登录」时可能要多等一次下载——这里在空闲时段提前拉回来，把等待藏掉。
+  // 只预取 /login：登录后的落地页是 /funnel，它会拉 echarts（186KB gzip），
+  // 对还没登录的访客来说太重，等登录后由 Layout 的空闲批量预取接手。
+  useEffect(() => {
+    if (hasUser) return;
+    const ric = (window as any).requestIdleCallback as ((cb: () => void, opts?: { timeout: number }) => number) | undefined;
+    const handle = ric
+      ? ric(() => prefetchPage("/login"), { timeout: 4000 })
+      : (setTimeout(() => prefetchPage("/login"), 1500) as unknown as number);
+    return () => {
+      if (ric) (window as any).cancelIdleCallback?.(handle);
+      else clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
+    };
   }, [hasUser]);
 
   const location = useLocation();
