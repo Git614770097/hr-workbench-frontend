@@ -1,0 +1,26 @@
+# 静态资源响应头规则（Cloudflare Workers Static Assets）
+# ⚠️ 生效前提：wrangler.jsonc 的 assets.run_worker_first 必须是 ["/api/*"]。
+#    若改回 true，所有请求都经 worker 转发，本文件的规则对它们**完全不生效**。
+#
+# 默认头是 `Cache-Control: public, max-age=0, must-revalidate`：每次访问都要回源校验。
+# 对文件名带内容 hash 的构建产物（Vite 输出到 /assets/）来说这纯属浪费——
+# 内容一变文件名就变，旧文件名永远不会指向新内容，可以放心强缓存一年。
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 文件名固定、内容可能被替换的资源（图标 / PWA 清单）：给一天缓存，
+# 既不每次回源，改了也能在一天内生效。
+/manifest.webmanifest
+  Cache-Control: public, max-age=86400
+
+/*.png
+  Cache-Control: public, max-age=86400
+
+/*.ico
+  Cache-Control: public, max-age=86400
+
+/*.svg
+  Cache-Control: public, max-age=86400
+
+# index.html 不设规则 = 保持默认的每次校验，保证发版后用户立刻拿到新的入口 hash。

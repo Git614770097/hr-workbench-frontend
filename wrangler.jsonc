@@ -11,6 +11,10 @@
     "directory": "./dist/client",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
+    // 只有 /api/* 才先进 worker，静态资源由资产层直出。
+    // 写成 true 会让每个 JS/CSS/图片都先跑一遍 worker 再转发（多一层开销、日志噪音），
+    // 而且 _headers 里的规则**只对资产层直出的响应生效**——worker 转发的响应不吃 _headers，
+    // 所以这条和 public/_headers 是配套的，不能只改一个。
     "run_worker_first": ["/api/*"]
   },
   "routes": [
