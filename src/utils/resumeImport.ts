@@ -2,7 +2,7 @@ import { api } from "../api";
 import {
   extractName, extractPhone, extractEmail, extractAge, extractGender,
   extractTitle, extractCompany, extractSchool, extractMajor, extractCity, extractSkills,
-  extractYearsExperience, extractPdfLines, normalizeEducation,
+  extractYearsExperience, normalizeEducation,
 } from "./resumeParser";
 import { sanitizeField, sanitizeSkills } from "./fieldSanity";
 
@@ -11,46 +11,17 @@ import { sanitizeField, sanitizeSkills } from "./fieldSanity";
 // 因此抽成公共模块——两边共用同一套解析、同一套兜底策略，
 // 避免同一份简历在导入页和匹配页解析出两套结果。
 
-// PDF.js 本地打包 + 按需动态加载：
-// 1) 不再依赖 CDN，避免国内网络下 jsdelivr 不稳定导致"PDF.js 加载失败"
-// 2) 动态 import 让 pdfjs 单独分包，只在解析简历时才下载，不影响首屏速度
-let pdfjsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
-
-function loadPdfjs() {
-  if (!pdfjsPromise) {
-    pdfjsPromise = Promise.all([
-      import("pdfjs-dist"),
-      import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-    ]).then(([lib, worker]) => {
-      lib.GlobalWorkerOptions.workerSrc = worker.default;
-      return lib;
-    });
-  }
-  return pdfjsPromise;
-}
-
-/** 简历文件 → 纯文本（PDF 用 pdfjs 按坐标还原行，Word 用 mammoth 提取） */
+/**
+ * 简历文件 → 纯文本。
+ *
+ * 抽文本放在服务端（POST /api/parse-resume/file）：浏览器端解析要先下载
+ * pdfjs 引擎（worker 1.4MB + 主库 0.8MB），弱网下要几分钟才出结果；上传
+ * 简历本身（通常几百 KB）快一个数量级。服务端还统一做了 NFKC 归一化
+ * （修复 pdfjs 抽出的康熙部首「⽉/⾼/⼯」）和扫描件检测。
+ */
 export async function parseResumeFile(file: File): Promise<string> {
-  const name = file.name.toLowerCase();
-  if (name.endsWith(".pdf")) {
-    const pdfjsLib = await loadPdfjs();
-    const data = new Uint8Array(await file.arrayBuffer());
-    const pdf = await pdfjsLib.getDocument({ data }).promise;
-    let text = "";
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      text += extractPdfLines(content).join("\n") + "\n";
-    }
-    return text;
-  }
-  if (name.endsWith(".docx")) {
-    // mammoth 动态加载：约 350KB，只在解析 Word 简历时才下载，不进首屏链
-    const mammoth = await import("mammoth");
-    const result = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-    return result.value;
-  }
-  throw new Error(`不支持的文件格式：${file.name}，请上传 PDF 或 Word（.docx）文件`);
+  const r = await api.parseResumeFile(file, false);
+  return r.text;
 }
 
 /** 一份简历的解析结果（核对弹窗 / 匹配候选人的基础数据结构） */
@@ -110,7 +81,7 @@ export function extractTalentLocal(
 
 // AI 解析结果 → ParsedTalent（AI 优先，缺失字段用本地规则兜底）
 export function extractTalentWithAI(
-  ai: Awaited<ReturnType<typeof api.parseResume>>,
+  ai: Awaited<ReturnType<typeof api.parseResumeFile>>,
   local: ParsedTalent
 ): ParsedTalent {
   const skills = ai.skills?.length ? ai.skills.join(", ") : local.skills;
@@ -133,33 +104,24 @@ export function extractTalentWithAI(
   };
 }
 
-/** AI 解析超时时间：超过就回退本地规则，不让用户干等 */
-const AI_TIMEOUT_MS = 20000;
-
 /**
- * 解析一份简历文件：抽文本 → 本地规则兜底 → 尝试 AI（失败/超时静默回退）。
- * 返回解析结果 + 简历全文（全文供人才AI匹配做语义比对，不再二次解析）。
+ * 解析一份简历文件：一次请求完成「上传 → 服务端抽文本 → AI 解析」。
+ *
+ * 服务端已内置降级：AI 不可用（无 Key / 超时 / 上游失败）时返回 `_ai_fallback`，
+ * 这里只需决定用哪套字段——AI 成功则以 AI 为准、缺失用本地规则补；降级则全用
+ * 本地规则（文本已在服务端归一化，正则命中率比浏览器端更高）。
+ *
+ * 文件本身解析失败（扫描件 / 格式不支持 / 文件损坏）会抛出带具体原因的错误，
+ * 由调用方提示用户，不再静默返回空结果。
  */
 export async function parseResumeToTalent(
   file: File,
   key: string
 ): Promise<{ talent: ParsedTalent; text: string }> {
-  const text = await parseResumeFile(file);
+  const r = await api.parseResumeFile(file, true);
+  const text = r.text;
   const local = extractTalentLocal(text, key, file.name, file);
-  let talent = local;
-  try {
-    const ai = await Promise.race([
-      api.parseResume(text),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("AI 解析超时")), AI_TIMEOUT_MS)
-      ),
-    ]);
-    talent = extractTalentWithAI(ai, local);
-  } catch (err) {
-    // AI 失败（无 key/超时/网络/解析异常）静默回退本地规则
-    console.warn(`AI 解析失败，回退本地规则：${file.name}`, err);
-    talent._ai = false;
-  }
+  const talent = r._ai_fallback ? { ...local, _ai: false } : extractTalentWithAI(r, local);
   return { talent, text };
 }
 

@@ -36,7 +36,7 @@ export default function ImportPreviewModal({
   const { education: educationOptions } = useDict();
   const profile = useIdentityProfile();
   const [pdfUrl, setPdfUrl] = useState("");
-  const [docHtml, setDocHtml] = useState("");
+  const [docText, setDocText] = useState("");
   const [docLoading, setDocLoading] = useState(false);
   const [docError, setDocError] = useState("");
 
@@ -48,7 +48,7 @@ export default function ImportPreviewModal({
   // 换到下一份时重置预览并按格式重新渲染
   useEffect(() => {
     setPdfUrl("");
-    setDocHtml("");
+    setDocText("");
     setDocError("");
     if (!file) return;
     if (isPdf) {
@@ -61,10 +61,10 @@ export default function ImportPreviewModal({
       setDocLoading(true);
       (async () => {
         try {
-          // mammoth 动态加载：约 350KB，只有导入 Word 简历时才下载
-          const mammoth = await import("mammoth");
-          const result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
-          if (!cancelled) setDocHtml(result.value);
+          // Word 预览走服务端抽文本（浏览器不再下载 mammoth 350KB）。
+          // 纯文本展示：核对看的是内容，格式简化可接受。
+          const r = await api.parseResumeFile(file, false);
+          if (!cancelled) setDocText(r.text);
         } catch (e) {
           if (!cancelled) setDocError((e as Error).message || "Word 解析失败");
         }
@@ -146,9 +146,13 @@ export default function ImportPreviewModal({
               ) : (
                 <div
                   className="resume-doc-preview"
-                  style={{ height: "66vh" }}
-                  dangerouslySetInnerHTML={{ __html: docHtml }}
-                />
+                  style={{
+                    height: "66vh", overflow: "auto", padding: 12,
+                    whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.7,
+                  }}
+                >
+                  {docText}
+                </div>
               )
             ) : (
               <Alert type="warning" showIcon message={`暂不支持预览 ${fname || "该格式"} 文件`} />

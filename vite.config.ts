@@ -35,15 +35,8 @@ export default defineConfig({
           ) {
             return "echarts-vendor";
           }
-          // 重依赖强制独立 chunk：mammoth/pdfjs 已被多处动态 import，
-          // rollup 默认会把「多懒加载 chunk 共享」的模块提到入口 chunk，
-          // 显式规则才能让它们真正按需下载。
-          if (
-            id.includes("node_modules/mammoth/") ||
-            id.includes("node_modules/pdfjs-dist/")
-          ) {
-            return "doc-vendor";
-          }
+          // 简历解析已搬到服务端（pdfjs/mammoth 不再进前端包），此处原 doc-vendor
+          // 规则随之删除：浏览器不再需要下载解析引擎，首屏与解析都省下约 2.2MB。
         },
       },
     },

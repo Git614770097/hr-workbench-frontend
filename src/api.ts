@@ -277,6 +277,36 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // 简历文件直传解析：文件交给服务端抽文本（浏览器不再下载 pdfjs/mammoth 引擎）。
+  // withAi=false 只取原文；true 时顺带返回 AI 解析出的结构化字段。
+  // 超时给到 120s：弱网上传几百 KB 本身就要几十秒，加上服务端解析与 AI。
+  parseResumeFile: (file: File, withAi = true) =>
+    request<{
+      text: string;
+      name?: string;
+      phone?: string;
+      email?: string;
+      age?: number | null;
+      gender?: string;
+      education?: string;
+      school?: string;
+      major?: string;
+      current_company?: string;
+      current_title?: string;
+      years_experience?: number | null;
+      city?: string;
+      skills?: string[];
+      _ai_fallback?: boolean;
+    }>(
+      `/parse-resume/file?name=${encodeURIComponent(file.name)}&ai=${withAi ? 1 : 0}`,
+      {
+        method: "POST",
+        body: file,
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      },
+      120_000
+    ),
+
   // AI 简历解析（后端代理，调用 DeepSeek）
   parseResume: (text: string) =>
     request<{

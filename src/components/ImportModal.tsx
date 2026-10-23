@@ -73,10 +73,25 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setParsing(true);
     try {
       const parsed: ParsedTalent[] = [];
+      // 逐份容错：扫描件 / 损坏文件只跳过它自己，不能连累同批其余简历
+      const failed: string[] = [];
       for (const file of files) {
-        // 抽文本 + 本地规则兜底 + AI 解析（失败/超时自动回退），与人才AI匹配页共用同一套解析
-        const { talent } = await parseResumeToTalent(file, nextKey());
-        parsed.push(talent);
+        // 上传到服务端抽文本 + AI 解析（AI 不可用时服务端已降级为本地规则）
+        try {
+          const { talent } = await parseResumeToTalent(file, nextKey());
+          parsed.push(talent);
+        } catch (e) {
+          failed.push(`「${file.name}」${(e as Error).message}`);
+        }
+      }
+      if (failed.length > 0) {
+        if (parsed.length === 0) {
+          setError(failed.join("；"));
+          setParsing(false);
+          parsingRef.current = false;
+          return;
+        }
+        message.warning(`${failed.length} 份未能解析：${failed.join("；")}`, 6);
       }
       setRecords((prev) => [...prev, ...parsed]);
       // 简历模式下解析完自动进入逐份核对（从第一份开始）

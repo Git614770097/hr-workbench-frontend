@@ -5,7 +5,9 @@ import { sanitizeField, sanitizeSkills } from "../../utils/fieldSanity";
 import { normalizeEducation, normalizeGender } from "../../utils/resumeParser";
 
 import { deepseekJsonSafe } from "../ai";
+import type { AiKeyInput } from "../ai";
 import { resolveAiKey } from "../aiKey";
+import { extractDocText, DocError } from "../docText";
 
 // AI 简历解析接口
 // 前端把简历文本（或文件 base64）发到这里，后端用 DEEPSEEK_API_KEY 调 DeepSeek，
@@ -63,7 +65,7 @@ function normSkills(v: unknown): string[] {
 }
 
 // 调用 DeepSeek chat/completions，把简历文本解析为结构化字段
-async function callDeepSeek(apiKey: string, resumeText: string): Promise<Record<string, unknown> | null> {
+async function callDeepSeek(apiKey: AiKeyInput, resumeText: string): Promise<Record<string, unknown> | null> {
   const systemPrompt = `你是一名专业的简历信息提取助手。请从用户提供的简历文本中，精准提取以下字段，并以严格的 JSON 对象返回（不要输出任何多余解释，不要用 markdown 代码块）。
 
 字段说明：
@@ -127,8 +129,8 @@ aiParse.post("/", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
 
-  const apiKey = (await resolveAiKey(c.env, session.userId)).key;
-  if (!apiKey) {
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
     return c.json({ error: "未配置 AI 解析密钥" }, 500);
   }
 
@@ -148,6 +150,60 @@ aiParse.post("/", async (c) => {
     return c.json({ ...EMPTY, _ai_fallback: true });
   }
   return c.json(normalizeAiResult(raw));
+});
+
+/**
+ * 文件直传解析：前端把简历文件二进制 POST 上来，Worker 抽文本（+ 可选 AI 解析）。
+ *
+ * 为什么要这个接口：浏览器端解析必须先下载 pdfjs 引擎（1.4MB worker + 0.8MB 主库），
+ * 弱网下要几分钟；上传简历本身（几百 KB）快一个数量级。
+ *
+ * query:
+ *   name  文件名（带扩展名，用于判断 pdf/docx；前端已 encodeURIComponent）
+ *   ai=0  只抽文本不跑 AI（人才库简历预览用），默认跑
+ */
+const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+aiParse.post("/file", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+
+  const fileName = c.req.query("name") || "";
+  const wantAi = c.req.query("ai") !== "0";
+
+  // 先用声明的长度挡掉超大文件，避免把几十 MB 全读进内存
+  const declared = Number(c.req.header("content-length") || 0);
+  if (declared > MAX_FILE_BYTES) {
+    return c.json({ error: "文件超过 20MB，请压缩后再上传" }, 413);
+  }
+
+  const ab = await c.req.arrayBuffer();
+  if (ab.byteLength === 0) return c.json({ error: "文件内容为空" }, 400);
+  if (ab.byteLength > MAX_FILE_BYTES) {
+    return c.json({ error: "文件超过 20MB，请压缩后再上传" }, 413);
+  }
+
+  let text: string;
+  try {
+    ({ text } = await extractDocText(new Uint8Array(ab), fileName));
+  } catch (e) {
+    // code 透传给前端：scanned（扫描件）/ unsupported（格式）/ corrupt（损坏）文案不同
+    if (e instanceof DocError) return c.json({ error: e.message, code: e.code }, 422);
+    console.log(`[ai] 文件解析异常 ${fileName}: ${(e as Error)?.message}`);
+    return c.json({ error: "文件解析失败，请稍后重试" }, 500);
+  }
+
+  if (!wantAi) return c.json({ text });
+
+  const apiKey = await resolveAiKey(c.env, session.userId);
+  if (!apiKey.key && !apiKey.zhipu) {
+    // 没配 Key 也把文本返回：前端用本地正则规则兜底，至少不丢内容
+    return c.json({ ...EMPTY, text, _ai_fallback: true });
+  }
+
+  const raw = await callDeepSeek(apiKey, text);
+  if (!raw) return c.json({ ...EMPTY, text, _ai_fallback: true });
+  return c.json({ ...normalizeAiResult(raw), text });
 });
 
 export default aiParse;

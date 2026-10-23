@@ -19,7 +19,7 @@ function getExt(resumeUrl: string | null): string {
 // - PDF：iframe 原生渲染，完整保留原始排版
 // - Word(.docx)：前端拉取文件后用 mammoth 转成 HTML 直接在线查看，不触发下载
 export default function ResumePreviewModal({ talent, onClose }: Props) {
-  const [docHtml, setDocHtml] = useState("");
+  const [docText, setDocText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [pdfUrl, setPdfUrl] = useState("");
@@ -31,7 +31,7 @@ export default function ResumePreviewModal({ talent, onClose }: Props) {
     if (!talent) return;
     let cancelled = false;
     setError("");
-    setDocHtml("");
+    setDocText("");
     setPdfUrl("");
     (async () => {
       try {
@@ -56,10 +56,13 @@ export default function ResumePreviewModal({ talent, onClose }: Props) {
           clearTimeout(timer);
           if (!res.ok) throw new Error(`简历文件加载失败（${res.status}）`);
           const buf = await res.arrayBuffer();
-          // mammoth 动态加载：约 350KB，只有预览 Word 简历时才下载
-          const mammoth = await import("mammoth");
-          const result = await mammoth.convertToHtml({ arrayBuffer: buf });
-          if (!cancelled) setDocHtml(result.value);
+          // Word 预览走服务端抽文本（浏览器不再下载 mammoth 350KB）。
+          // 纯文本展示：核对看的是内容，格式简化可接受。
+          const docFile = new File([buf], `resume.${ext || "docx"}`, {
+            type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          });
+          const r = await api.parseResumeFile(docFile, false);
+          if (!cancelled) setDocText(r.text);
         } else {
           if (!cancelled) setPdfUrl(url);
         }
@@ -91,7 +94,12 @@ export default function ResumePreviewModal({ talent, onClose }: Props) {
             <div style={{ marginTop: 12, color: "#888" }}>正在解析 Word 简历…</div>
           </div>
         ) : (
-          <div className="resume-doc-preview" dangerouslySetInnerHTML={{ __html: docHtml }} />
+          <div
+            className="resume-doc-preview"
+            style={{ whiteSpace: "pre-wrap", fontSize: 13, lineHeight: 1.7, padding: 12, maxHeight: "80vh", overflow: "auto" }}
+          >
+            {docText}
+          </div>
         )
       ) : (
         pdfUrl ? (
