@@ -1,6 +1,9 @@
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect, useCallback, lazy, Suspense } from "react";
-import { Spin, Button, Alert, message } from "antd";
+import Spin from "antd/es/spin";
+import Button from "antd/es/button";
+import Alert from "antd/es/alert";
+import message from "antd/es/message";
 import type { User } from "./types";
 import type { ThemeState } from "./theme";
 import { api } from "./api";

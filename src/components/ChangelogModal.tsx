@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Modal, Button, Typography } from "antd";
+import Modal from "antd/es/modal";
+import Button from "antd/es/button";
+import Typography from "antd/es/typography";
 import { api } from "../api";
 
 // 本地已读版本号：与 site_settings 里的 changelog.version 比对，不同则弹窗

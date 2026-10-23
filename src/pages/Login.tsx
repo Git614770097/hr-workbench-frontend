@@ -1,5 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Form, Input, Button, Alert, ConfigProvider, theme as antdTheme, Radio } from "antd";
+import Form from "antd/es/form";
+import Input from "antd/es/input";
+import Button from "antd/es/button";
+import Alert from "antd/es/alert";
+import ConfigProvider from "antd/es/config-provider";
+import antdTheme from "antd/es/theme";
+import Radio from "antd/es/radio";
 import { ReloadOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { INTENDED_ROLES } from "../types";

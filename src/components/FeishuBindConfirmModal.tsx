@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { Modal, Button, Space, Alert, Avatar, Spin, Typography } from "antd";
+import Modal from "antd/es/modal";
+import Button from "antd/es/button";
+import Space from "antd/es/space";
+import Alert from "antd/es/alert";
+import Avatar from "antd/es/avatar";
+import Spin from "antd/es/spin";
+import Typography from "antd/es/typography";
 import { ExclamationCircleOutlined } from "@ant-design/icons";
 import { api } from "../api";
 

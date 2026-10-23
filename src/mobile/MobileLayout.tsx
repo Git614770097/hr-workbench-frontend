@@ -1,6 +1,10 @@
 import { Suspense, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Drawer, Button, Typography, message, Spin } from "antd";
+import Drawer from "antd/es/drawer";
+import Button from "antd/es/button";
+import Typography from "antd/es/typography";
+import message from "antd/es/message";
+import Spin from "antd/es/spin";
 import { EllipsisOutlined, DesktopOutlined, LogoutOutlined } from "@ant-design/icons";
 import type { User } from "../types";
 import { setDeviceOverride } from "../utils/device";

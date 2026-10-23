@@ -5,7 +5,15 @@ import ReactDOM from "react-dom/client";
 // React 19 下静默失败——点击后什么都不渲染，表现为「点了没反应」。
 import "@ant-design/v5-patch-for-react-19";
 import { BrowserRouter } from "react-router-dom";
-import { ConfigProvider, theme as antdTheme } from "antd";
+// ⚠️ 首屏链路一律走「深路径导入」，不要写 `from "antd"`。
+// 桶文件 antd/es/index.js 会静态 re-export 全部 78 个组件，一旦它进入首屏模块图，
+// 无论 tree-shaking 怎么优化，所有被页面用到的组件都会被拖进首屏 chunk
+// （实测：首屏只需要 19 个组件，却被迫加载 54 个、1233KB）。
+// 判断标准：被 main.tsx 静态可达的文件（本文件、App、api、Login、Layout、
+// MobileLayout、ChangelogModal、FeishuBindConfirmModal）必须用深路径。
+// 懒加载页面用 `from "antd"` 无妨，它们本来就不在首屏。
+import ConfigProvider from "antd/es/config-provider";
+import antdTheme from "antd/es/theme";
 import zhCN from "antd/locale/zh_CN";
 import dayjs from "dayjs";
 // 日期组件中文化必须显式引入 dayjs 的 zh-cn 语言包并设为默认：
