@@ -328,9 +328,17 @@ talents.get("/", async (c) => {
   const countResult = await c.env.DB.prepare(`SELECT COUNT(*) as total FROM talents t ${where}`).bind(...params).first<{ total: number }>();
   const rows = await c.env.DB.prepare(`SELECT t.*, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`).bind(...params, limit, offset).all();
 
-  const items = rows.results.map((r: any) => ({
-    ...r, skills: r.skills ? JSON.parse(r.skills) : [], tags: r.tags ? JSON.parse(r.tags) : [],
-  }));
+  const items = rows.results.map((r: any) => {
+    // 列表不返回简历全文：单条最长 20000 字，20 条能把响应撑到几百 KB，
+    // 而列表只需要知道「有没有简历」。全文由详情接口 GET /:id 返回。
+    const { resume_text, ...rest } = r;
+    return {
+      ...rest,
+      has_resume: !!(resume_text && String(resume_text).trim()),
+      skills: r.skills ? JSON.parse(r.skills) : [],
+      tags: r.tags ? JSON.parse(r.tags) : [],
+    };
+  });
 
   return c.json({ items, total: countResult?.total || 0, page, limit, pages: Math.ceil((countResult?.total || 0) / limit) });
 });
@@ -951,8 +959,8 @@ talents.post("/", async (c) => {
   const id = genId();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
   const tags = body.tags ? JSON.stringify(body.tags) : null;
-  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, major, current_company, current_title, years_experience, city, skills, tags, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, hire_date, next_follow_at, entry_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(id, session.userId, name, cleanText(body.phone, 30), cleanText(body.email, 120), body.age ?? null, cleanText(body.gender, 10), cleanText(body.education, 30), cleanText(body.school, 80), cleanText(body.major, 60), cleanText(body.current_company, 80), cleanText(body.current_title, 60), body.years_experience || null, cleanText(body.city, 40), skills, tags, cleanText(body.industry, 40), cleanText(body.expected_salary, 40), cleanText(body.expected_city, 40), cleanText(body.status, 20) || "active", cleanText(body.source, 30), cleanText(body.resume_url, 500), cleanText(body.notes, 2000), dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), dateOrNull(body.next_follow_at), normalizeEntryType(body.entry_type)).run();
+  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, major, current_company, current_title, years_experience, city, skills, tags, industry, expected_salary, expected_city, status, source, resume_url, resume_text, notes, birth_date, contract_end, probation_end, resignation_date, hire_date, next_follow_at, entry_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(id, session.userId, name, cleanText(body.phone, 30), cleanText(body.email, 120), body.age ?? null, cleanText(body.gender, 10), cleanText(body.education, 30), cleanText(body.school, 80), cleanText(body.major, 60), cleanText(body.current_company, 80), cleanText(body.current_title, 60), body.years_experience || null, cleanText(body.city, 40), skills, tags, cleanText(body.industry, 40), cleanText(body.expected_salary, 40), cleanText(body.expected_city, 40), cleanText(body.status, 20) || "active", cleanText(body.source, 30), cleanText(body.resume_url, 500), cleanText(body.resume_text, 20000), cleanText(body.notes, 2000), dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), dateOrNull(body.next_follow_at), normalizeEntryType(body.entry_type)).run();
 
   return c.json({ id, ...body, name });
 });
@@ -987,9 +995,9 @@ talents.put("/:id", async (c) => {
     cleanText(body.name, 50), cleanText(body.phone, 30), cleanText(body.email, 120), body.age, cleanText(body.gender, 10), cleanText(body.education, 30),
     cleanText(body.school, 80), cleanText(body.major, 60), cleanText(body.current_company, 80), cleanText(body.current_title, 60), body.years_experience,
     cleanText(body.city, 40), skills, body.tags ? JSON.stringify(body.tags) : null, cleanText(body.industry, 40), cleanText(body.expected_salary, 40), cleanText(body.expected_city, 40),
-    cleanText(body.status, 20), cleanText(body.source, 30), cleanText(body.resume_url, 500), cleanText(body.notes, 2000),
+    cleanText(body.status, 20), cleanText(body.source, 30), cleanText(body.resume_url, 500), cleanText(body.resume_text, 20000), cleanText(body.notes, 2000),
   ].map((v) => (v === undefined ? null : v));
-  await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), major = COALESCE(?, major), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), tags = COALESCE(?, tags), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), source = COALESCE(?, source), resume_url = COALESCE(?, resume_url), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
+  await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), major = COALESCE(?, major), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), tags = COALESCE(?, tags), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), source = COALESCE(?, source), resume_url = COALESCE(?, resume_url), resume_text = COALESCE(?, resume_text), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
     .bind(...scalars, ...dateParams, id).run();
 
   // 合同/试用期日期有变更（含清空）→ 立即同步到期提醒待办

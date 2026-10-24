@@ -141,6 +141,8 @@ export interface Talent {
   expected_city: string | null;
   status: string;
   resume_url: string | null;
+  resume_text?: string | null; // 简历原文（招聘平台同步/粘贴录入），与 resume_url 文件并存
+  has_resume?: boolean;        // 仅列表接口返回：是否存有简历原文（列表不返回全文）
   notes: string | null;
   stage: string | null;      // 全局招聘阶段
   source: string | null;     // 来源渠道

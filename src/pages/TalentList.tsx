@@ -565,7 +565,14 @@ export default function TalentList() {
       sorter: true,
       sortOrder: sortField === "name" ? sortOrder || undefined : null,
       render: (text: string, record: Talent) => (
-        <Link to={`/talents/${record.id}`} style={{ fontWeight: 600 }}>{text}</Link>
+        <Space size={4}>
+          <Link to={`/talents/${record.id}`} style={{ fontWeight: 600 }}>{text}</Link>
+          {record.has_resume && (
+            <Tooltip title="已存简历原文，点开查看">
+              <Tag color="blue" style={{ margin: 0, fontSize: 11, lineHeight: "16px", padding: "0 5px" }}>简历</Tag>
+            </Tooltip>
+          )}
+        </Space>
       ),
     },
     current_title: { title: "职位", dataIndex: "current_title", key: "current_title", width: 150, render: (v: string) => v || "-" },

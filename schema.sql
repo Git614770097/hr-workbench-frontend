@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS talents (
   expected_city TEXT,
   status TEXT DEFAULT 'active',  -- active / passive / placed / do_not_contact
   resume_url TEXT,
+  resume_text TEXT,   -- 简历原文（平台同步/粘贴录入，与 resume_url 文件互不替代）
   notes TEXT,
   stage TEXT DEFAULT 'new', -- 全局招聘阶段: new/screening/interview/offer/hired/archived
   source TEXT,              -- 来源渠道: boss/liepin/51job/zhaopin/referral/campus/...

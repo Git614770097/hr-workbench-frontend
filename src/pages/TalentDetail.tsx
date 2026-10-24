@@ -54,6 +54,8 @@ function CopyBtn({ text, label }: { text: string; label: string }) {
  * 任何一步失败都返回 null：后端会退化为「仅按字段解读」，不让解读功能被文件问题卡死。
  */
 async function readResumeText(t: TalentDetailData): Promise<string | null> {
+  // 平台同步来的简历原文优先：已经躺在库里，不需要再拉文件解析一次
+  if (t.resume_text && t.resume_text.trim()) return t.resume_text;
   if (!t.resume_url) return null;
   try {
     const url = await api.getResumeUrl(t.id);
@@ -229,6 +231,35 @@ export default function TalentDetail() {
               </Descriptions.Item>
             </Descriptions>
           </Card>
+
+          {/* 简历原文：平台同步/粘贴录入的全文。与 resume_url 文件并存——
+              文件用于原始排版预览，文本用于全文检索与 AI 解读 */}
+          {talent.resume_text && (
+            <Card
+              title="简历原文"
+              style={{ marginBottom: 16 }}
+              extra={
+                <Tag color="blue">
+                  {talent.entry_type === "sync" ? "招聘平台同步" : "已录入"}
+                </Tag>
+              }
+            >
+              <div
+                style={{
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  fontSize: 13,
+                  lineHeight: 1.9,
+                  color: "#334155",
+                  maxHeight: 520,
+                  overflowY: "auto",
+                  paddingRight: 4,
+                }}
+              >
+                {talent.resume_text}
+              </div>
+            </Card>
+          )}
 
           {/* AI 简历解读：亮点/风险/与岗位匹配度。有简历文件时先抽取原文，失败则仅按字段 */}
           <AiResultCard
