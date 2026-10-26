@@ -1145,41 +1145,49 @@ export default function Funnel() {
             modules.push({ key: "stay", h: 340, node: <OverviewPanel data={overview} loading={ovLoading} /> });
           }
 
-          // 淘汰原因分布
-          if (!isHidden("reject") && s && data!.reject_reasons.length > 0) {
+          // 淘汰原因分布（空数据时也占位显示空态——模块勾选了就该看见卡片，不该静默消失）
+          if (!isHidden("reject") && s) {
+            const rejectRows = data!.reject_reasons;
             modules.push({
               key: "reject",
-              h: 130 + Math.min(8, data!.reject_reasons.length) * 52, // 卡头 + 紧凑条行
+              h: rejectRows.length > 0 ? 130 + Math.min(8, rejectRows.length) * 52 : 180, // 卡头 + 紧凑条行 / 空态
               node: (
                 <Card
                   title="淘汰原因分布"
                   styles={{ body: { padding: "14px 18px" } }}
                   extra={
                     <Tooltip title="看板把候选人拖入「已淘汰」时选择的标准原因，自动按流转日志汇总；高频原因可用于修正 JD 与画像">
-                      <span style={{ fontSize: 12, color: "#8c8c8c" }}>说明</span>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>说明</Typography.Text>
                     </Tooltip>
                   }
                 >
-                  {data!.reject_reasons.slice(0, 8).map((r, i) => (
-                    <div className="wb-reject-row" key={r.reason}>
-                      <div className="wb-reject-top">
-                        <span>{r.reason}</span>
-                        <b>{r.count} 人</b>
+                  {rejectRows.length === 0 ? (
+                    <Empty
+                      image={Empty.PRESENTED_IMAGE_SIMPLE}
+                      description="暂无淘汰记录。看板把候选人拖入「已淘汰」并选择原因后，这里会自动汇总"
+                    />
+                  ) : (
+                    rejectRows.slice(0, 8).map((r, i) => (
+                      <div className="wb-reject-row" key={r.reason}>
+                        <div className="wb-reject-top">
+                          <span>{r.reason}</span>
+                          <b>{r.count} 人</b>
+                        </div>
+                        <div className="funnel-analysis-bar">
+                          <div
+                            className="funnel-analysis-fill"
+                            style={{
+                              width: `${Math.max(3, (r.count / rejectRows[0].count) * 100)}%`,
+                              background: "#ef4444",
+                            }}
+                          />
+                        </div>
+                        {i === 7 && rejectRows.length > 8 && (
+                          <div className="wb-reject-more">另有 {rejectRows.length - 8} 类原因（见导出）</div>
+                        )}
                       </div>
-                      <div className="funnel-analysis-bar">
-                        <div
-                          className="funnel-analysis-fill"
-                          style={{
-                            width: `${Math.max(3, (r.count / data!.reject_reasons[0].count) * 100)}%`,
-                            background: "#ef4444",
-                          }}
-                        />
-                      </div>
-                      {i === 7 && data!.reject_reasons.length > 8 && (
-                        <div className="wb-reject-more">另有 {data!.reject_reasons.length - 8} 类原因（见导出）</div>
-                      )}
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </Card>
               ),
             });

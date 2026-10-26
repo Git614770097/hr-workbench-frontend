@@ -1,5 +1,5 @@
 import message from "antd/es/message";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageOverview, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuWebhook, FeishuNotifyMode, BackgroundCheck, BgItem, BgSummary, BgResumeCheckResult, AuditLogRow, AuditLogsResponse, AuditActionStat } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuWebhook, FeishuNotifyMode, AuditLogRow, AuditLogsResponse } from "./types";
 
 const BASE = "/api";
 
@@ -80,7 +80,7 @@ export const api = {
 
   // 自助注册（注册后为 pending 状态，需管理员审批）
   // ref 为选填邀请码：非法码后端静默忽略，不影响注册结果
-  // intended_role 为自报身份（hr/headhunter），仅作审批参考，不授予权限
+  // intended_role 为自报身份（现仅 hr），仅作审批参考，不授予权限
   // sms_code 为短信验证码（注册用短信校验替代图形验证码）
   register: (data: { phone: string; name: string; password: string; sms_code: string; ref?: string; intended_role?: string }) =>
     request<{ ok: boolean; message: string }>("/auth/register", {
@@ -195,9 +195,6 @@ export const api = {
     request(`/auth/users/${id}/reject`, { method: "PUT" }),
   updateUserRole: (id: string, role_id: string | null) =>
     request(`/auth/users/${id}/role`, { method: "PUT", body: JSON.stringify({ role_id }) }),
-  // 修改用户「身份」（hr/headhunter/team/other）—— 只影响品牌文案，不影响权限
-  updateUserIntendedRole: (id: string, intended_role: string | null) =>
-    request(`/auth/users/${id}/intended-role`, { method: "PUT", body: JSON.stringify({ intended_role }) }),
   resetUserPassword: (id: string, password: string) =>
     request(`/auth/users/${id}/password`, { method: "PUT", body: JSON.stringify({ password }) }),
   deleteUser: (id: string) =>
@@ -448,110 +445,6 @@ export const api = {
 
   deleteContractFile: (fileId: string) =>
     request(`/talents/contracts/files/${fileId}`, { method: "DELETE" }),
-
-  // ---- 候选人背调中心 ----
-  // 列表：status / consent / talent_id / q 均为可选过滤条件
-  getBackgroundChecks: (q?: { status?: string; consent?: string; talent_id?: string; q?: string }) => {
-    const params = new URLSearchParams();
-    if (q?.status) params.set("status", q.status);
-    if (q?.consent) params.set("consent", q.consent);
-    if (q?.talent_id) params.set("talent_id", q.talent_id);
-    if (q?.q) params.set("q", q.q);
-    const qs = params.toString();
-    return request<{ items: BackgroundCheck[] }>(`/background${qs ? `?${qs}` : ""}`);
-  },
-
-  getBackgroundCheck: (id: string) =>
-    request<{ bg: BackgroundCheck }>(`/background/${id}`),
-
-  // 发起背调（新建草稿）：高敏项由 high_risk 触发后端加入
-  createBackgroundCheck: (data: { talent_id: string; talent_job_id?: string; provider?: string; high_risk?: boolean }) =>
-    request<{ bg: BackgroundCheck }>("/background", { method: "POST", body: JSON.stringify(data) }),
-
-  // 更新基础字段 / 结论 / 状态（敏感字段需已授权，后端强制校验）
-  updateBackgroundCheck: (id: string, data: Partial<{ provider: string; high_risk: boolean; summary: string; result: string; status: string }>) =>
-    request<{ ok: boolean; bg: BackgroundCheck | null }>(`/background/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-
-  // 授权闸门：request 发请求 / grant 标记已授权（高敏需 confirm_high_risk）/ decline 候选人拒绝
-  bgConsent: (id: string, data: { action: "request" | "grant" | "decline"; method?: string; confirm_high_risk?: boolean }) =>
-    request<{ ok: boolean; consent_status?: string }>(`/background/${id}/consent`, { method: "POST", body: JSON.stringify(data) }),
-
-  // 分项核验更新（需授权；仅更新已有项的状态与备注）
-  bgUpdateItems: (id: string, items: BgItem[]) =>
-    request<{ ok: boolean; items: BgItem[] }>(`/background/${id}/items`, { method: "POST", body: JSON.stringify({ items }) }),
-
-  // 上传报告原件（multipart，需授权，存 KV bgcheck: 前缀）
-  bgUploadReport: (id: string, file: File) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 60000);
-    return fetch(`${BASE}/background/${id}/report`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${getToken()}` },
-      body: formData,
-      signal: ctrl.signal,
-    }).then(async (res) => {
-      clearTimeout(timer);
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({ error: "上传失败" }))) as { error?: string };
-        throw new Error(err.error || "上传失败");
-      }
-      return res.json() as Promise<{ ok: boolean; bg: BackgroundCheck | null }>;
-    }, (e) => {
-      clearTimeout(timer);
-      throw e;
-    });
-  },
-
-  // 报告原件读取：必须走 fetch 带 Authorization 头。
-  // ⚠️ 不能用 `?token=` 拼 URL 给 <a href> / iframe：菜单守卫与路由都只认 cookie / Bearer，
-  //    浏览器直开链接既不带 cookie 也不带头，必然 401。这里统一取 blob，再交给本地 URL 预览/下载。
-  bgFetchReport: async (id: string): Promise<{ blob: Blob; name: string }> => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 30000);
-    try {
-      const res = await fetch(`${BASE}/background/${id}/report`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
-        signal: ctrl.signal,
-      });
-      if (!res.ok) {
-        const err = (await res.json().catch(() => ({ error: "报告读取失败" }))) as { error?: string };
-        throw new Error(err.error || "报告读取失败");
-      }
-      const m = (res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/);
-      return { blob: await res.blob(), name: m ? decodeURIComponent(m[1]) : "" };
-    } finally {
-      clearTimeout(timer);
-    }
-  },
-
-  deleteBackgroundReport: (id: string) =>
-    request(`/background/${id}/report`, { method: "DELETE" }),
-
-  // AI 背调小结（需授权）：基于已核验分项生成 summary + risks
-  bgAiSummary: (id: string) =>
-    request<BgSummary>(`/background/${id}/ai-summary`, { method: "POST" }, 90000),
-
-  // AI 简历核查清单（需授权）：喂简历文本，生成待核查建议（HR 线下/第三方核验）
-  bgAiResumeCheck: (id: string, resumeText: string) =>
-    request<BgResumeCheckResult>(
-      `/background/${id}/ai-resume-check`,
-      { method: "POST", body: JSON.stringify({ resume_text: resumeText }) },
-      90000
-    ),
-
-  // 通过并推进入职（需授权 + 结论为通过）：流转到 hired + 生成入职清单
-  bgPass: (id: string) =>
-    request<{ ok: boolean; status: string; downstream: string[] }>(`/background/${id}/pass`, { method: "POST" }),
-
-  // 取消背调
-  bgCancel: (id: string) =>
-    request<{ ok: boolean }>(`/background/${id}/cancel`, { method: "POST" }),
-
-  // 删除背调（硬删除，含报告原件；已通过并入职的记录不可删）
-  deleteBackgroundCheck: (id: string) =>
-    request<{ ok: boolean }>(`/background/${id}`, { method: "DELETE" }),
 
   // ---- 社保公积金台账 ----
   // talent_id：入职办理等页内入口带人参跳转时精确筛选
@@ -1043,15 +936,7 @@ export const api = {
     request<{ ok: boolean }>(`/onboarding/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteOnboardingItem: (id: string) => request<{ ok: boolean }>(`/onboarding/${id}`, { method: "DELETE" }),
 
-  // 使用日志（模块点击率）——仅管理员可查询
-  getUsageOverview: (params: { days?: number; menu?: string } = {}) => {
-    const qs = Object.entries(params)
-      .filter(([, v]) => v !== undefined && v !== null && v !== "")
-      .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`)
-      .join("&");
-    return request<UsageOverview>(`/logs/overview${qs ? `?${qs}` : ""}`);
-  },
-  // 操作审计日志——仅管理员可查询
+  // 日志管理（上报明细 + 操作审计）——仅管理员可查询
   getAuditLogs: (params: { days?: number; action?: string; target_type?: string; q?: string; page?: number; limit?: number } = {}) => {
     const qs = Object.entries(params)
       .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -1059,8 +944,6 @@ export const api = {
       .join("&");
     return request<AuditLogsResponse>(`/audit${qs ? `?${qs}` : ""}`);
   },
-  getAuditActionStats: (days = 30) =>
-    request<{ items: AuditActionStat[] }>(`/audit/actions?days=${days}`),
   // 上传/导出等「服务端无写操作」的动作由前端上报留痕
   reportAudit: (data: { action: string; targetType: string; targetId?: string | null; targetName?: string | null; detail?: unknown }) =>
     request<{ ok: boolean }>("/audit/client", { method: "POST", body: JSON.stringify(data) }),
@@ -1071,13 +954,4 @@ export const api = {
       .join("&");
     return request<UsageEventsResponse>(`/logs/events${qs ? `?${qs}` : ""}`);
   },
-  // AI 功能使用统计（数据源 ai_artifacts，仅管理员）
-  getAiUsage: (days = 7) =>
-    request<{
-      days: number; from: string; to: string;
-      total: { calls: number; users: number };
-      by_type: { biz_type: string; label: string; calls: number; users: number }[];
-      by_day: { d: string; calls: number }[];
-      by_user: { user_id: string; user_name: string; calls: number }[];
-    }>(`/logs/ai-usage?days=${days}`),
 };

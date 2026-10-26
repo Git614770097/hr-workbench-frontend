@@ -145,7 +145,7 @@ function PaySettings() {
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={3}
-          placeholder="例如：年费 ¥49.9，扫码付款后联系管理员开通"
+          placeholder="例如：年费 ¥19.9，扫码付款后联系管理员开通"
         />
       </div>
 

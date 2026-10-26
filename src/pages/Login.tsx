@@ -5,13 +5,11 @@ import Button from "antd/es/button";
 import Alert from "antd/es/alert";
 import ConfigProvider from "antd/es/config-provider";
 import antdTheme from "antd/es/theme";
-import Radio from "antd/es/radio";
 // ⚠️ 深路径导入，别用 `from "@ant-design/icons"`（桶文件会拖入全部 831 个图标，
 //    Login 是未登录用户真正要渲染的页面，它的 chunk 体积直接决定登录页首屏时间）。
 import ReloadOutlined from "@ant-design/icons/es/icons/ReloadOutlined";
 import { api } from "../api";
-import { INTENDED_ROLES } from "../types";
-import { IDENTITY_PROFILES, DEFAULT_PROFILE, type IdentityProfile } from "../identityProfiles";
+import { DEFAULT_PROFILE } from "../identityProfiles";
 import "../styles/login.css";
 
 interface Props {
@@ -31,12 +29,7 @@ function refCodeFromUrl() {
   return new URLSearchParams(window.location.search).get("r")?.trim().toUpperCase() || "";
 }
 
-// 身份分版本：未登录时读不到用户身份，用链接参数 ?for=headhunter 指定版本。
-// 落地页的「登录 / 注册」入口会带上它，注册表单据此预选「我的身份」。
-function profileFromUrl(): IdentityProfile | null {
-  const key = new URLSearchParams(window.location.search).get("for")?.trim() || "";
-  return IDENTITY_PROFILES[key] || null;
-}
+// 猎头版已下线（2026-10-24）：登录页固定 HR 品牌（原 ?for=headhunter 分版本机制已移除）。
 
 // 图形验证码有效期（与后端 SESSIONS.put(`captcha:${id}`, code, { expirationTtl: 60 }) 保持一致）
 const CAPTCHA_TTL = 60;
@@ -44,15 +37,13 @@ const CAPTCHA_TTL = 60;
 const CAPTCHA_WARN_AT = 10;
 
 export default function Login({ onLogin }: Props) {
-  // 品牌档案：带 ?for=xxx 时用指定版本，否则用默认（HR）版本。
-  // 惰性 state 在挂载时读一次 URL，保证「落地页切版本 → 点登录/注册」能拿到正确版本。
-  const [brand] = useState<IdentityProfile>(() => profileFromUrl() || DEFAULT_PROFILE);
-  // 邀请码：同样在挂载时读一次
+  const brand = DEFAULT_PROFILE;
+  // 邀请码：挂载时读一次
   const [refCode] = useState(refCodeFromUrl);
-  // 浏览器标签页标题跟随品牌（猎头版不该是「招聘全生命周期管理系统」）
+  // 浏览器标签页标题跟随品牌
   useEffect(() => {
     document.title = `${brand.name} · ${brand.tagline}`;
-  }, [brand.name, brand.tagline]);
+  }, []);
   const [mode, setMode] = useState<Mode>("login");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -150,7 +141,7 @@ export default function Login({ onLogin }: Props) {
   };
 
   const handleRegister = async (values: {
-    phone: string; name: string; password: string; confirm: string; sms_code: string; ref?: string; intended_role?: string;
+    phone: string; name: string; password: string; confirm: string; sms_code: string; ref?: string;
   }) => {
     setError("");
     setSuccess("");
@@ -162,7 +153,8 @@ export default function Login({ onLogin }: Props) {
         password: values.password,
         sms_code: values.sms_code,
         ref: (values.ref || "").trim(),
-        intended_role: values.intended_role || "hr",
+        // 猎头身份已下线，统一自报 HR（字段保留是兼容历史数据/审批提示）
+        intended_role: "hr",
       });
       setSuccess("注册成功，审核通过后用同一手机号登录即可");
       registerForm.resetFields();
@@ -322,22 +314,6 @@ export default function Login({ onLogin }: Props) {
 
               {mode === "register" && (
                 <Form form={registerForm} onFinish={handleRegister} layout="vertical">
-                  <Form.Item
-                    name="intended_role"
-                    label="我的身份"
-                    initialValue={brand.key}
-                    rules={[{ required: true, message: "请选择身份" }]}
-                  >
-                    <Radio.Group className="reg-role-group">
-                      {INTENDED_ROLES.map((r) => (
-                        <Radio.Button key={r.key} value={r.key} className="reg-role-item">
-                          <span className="reg-role-label">{r.label}</span>
-                          <span className="reg-role-desc">{r.desc}</span>
-                        </Radio.Button>
-                      ))}
-                    </Radio.Group>
-                  </Form.Item>
-
                   {/* 两列并排：注册字段多，纵向堆叠会把卡片撑到需要滚动（窄屏自动回落单列） */}
                   <div className="reg-2col">
                     <Form.Item

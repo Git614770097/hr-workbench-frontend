@@ -33,7 +33,6 @@ const ROUTE_MENU: RouteMenu[] = [
   { prefix: "/match", menu: "match" },
   { prefix: "/contracts", menu: "contracts" },
   { prefix: "/social", menu: "social" },
-  { prefix: "/background", menu: "background" },
   { prefix: "/templates", menu: "templates" },
   { prefix: "/ai-assistant", menu: "tools" },
   { prefix: "/roles", menu: "roles" },
@@ -56,7 +55,6 @@ export const MENU_LABELS: Record<string, string> = {
   match: "人才AI匹配",
   contracts: "合同管理",
   social: "社保公积金",
-  background: "背调中心",
   templates: "模板库管理",
   tools: "AI 助手",
   roles: "角色管理",
@@ -65,29 +63,6 @@ export const MENU_LABELS: Record<string, string> = {
   settings: "系统设置",
   logs: "日志管理",
   help: "帮助中心",
-};
-
-/** 菜单主题色（与侧栏 icon 配色一致，图表里保持同一个模块同一种颜色） */
-export const MENU_COLORS: Record<string, string> = {
-  tasks: "#f97316",
-  jobs: "#6366f1",
-  pipeline: "#0ea5e9",
-  interviews: "#8b5cf6",
-  funnel: "#14b8a6",
-  talents: "#3b82f6",
-  profiles: "#10b981",
-  match: "#6366f1",
-  contracts: "#d97706",
-  social: "#0d9488",
-  background: "#ef4444",
-  templates: "#8b5cf6",
-  tools: "#7c3aed",
-  roles: "#f59e0b",
-  users: "#f59e0b",
-  team: "#f59e0b",
-  settings: "#64748b",
-  logs: "#64748b",
-  help: "#94a3b8",
 };
 
 /** 是否为移动版路径。必须与 App.tsx 的判定一致，不能写 startsWith("/m")——"/match" 也以 /m 开头。 */

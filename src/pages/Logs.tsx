@@ -1,45 +1,45 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Card, Select, Space, Button, Table, Empty, Spin, Tag, Tooltip, message } from "antd";
-import {
-  ReloadOutlined, SearchOutlined, BarChartOutlined, LineChartOutlined,
-  AppstoreOutlined, TeamOutlined, ThunderboltOutlined, ProfileOutlined, RobotOutlined,
-} from "@ant-design/icons";
+import { useState, useEffect, useCallback } from "react";
+import { Card, Select, Space, Button, Table, Tag, Tooltip, Input, Segmented, Typography, message } from "antd";
+import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
-import * as echarts from "echarts/core";
-import { BarChart, LineChart } from "echarts/charts";
-import { GridComponent, TooltipComponent } from "echarts/components";
-import { CanvasRenderer } from "echarts/renderers";
 import { api } from "../api";
-import type { UsageOverview, UsageEventRow } from "../types";
-import { MENU_COLORS, MENU_LABELS, menuLabel } from "../usageMeta";
-import AnimatedNumber from "../components/AnimatedNumber";
-
-echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
+import type { UsageEventRow, AuditLogRow } from "../types";
+import { MENU_LABELS, menuLabel } from "../usageMeta";
+import { parseDbTime } from "../utils/time";
 
 /**
- * 日志管理 —— 各模块的点击率（使用热度）。
+ * 日志管理 —— 双列表（仅管理员）。
  *
- * 数据来自前端埋点（components/UsageTracker）：用户在会话内按菜单聚合，
- * 每 30 秒批量上报一次，后端 UPSERT 进 usage_daily。因此这里的「访问次数」
- * 是合并后的 PV，不是逐次点击流水；「明细」是按上报批次落的一条记录。
+ * 「上报明细」：前端埋点（components/UsageTracker）每 30 秒批量上报的原始记录，
+ *   一行 = 一个批次（某模块的访问次数 + 停留时长），usage_events 滚动保留 30 天。
+ * 「操作审计」：谁、何时、对什么数据、做了什么（新增/修改/删除/预览/下载/导出），
+ *   写操作由后端自动留痕，导出等无写操作的动作由前端显式上报，用于事故追溯与合规。
  *
- * 口径说明（页面上也要显示，避免误读）：
- * - 访问次数（PV）：同一菜单被打开的累计次数，来回切会重复计。
- * - 使用人数（UV）：去重后的账号数。
- * - 停留时长：前台可见状态下的累计时间，切到后台不计。
+ * 2026-10-24 精简：统计卡/热度排行/活跃趋势/用户×模块矩阵/AI 使用/操作分布已删除
+ * （连同后端 GET /logs/overview、/logs/ai-usage、/audit/actions）。埋点采集链路
+ * （POST /logs/report）与审计写入（writeAudit）保留——两张表的数据源。
+ *
+ * 时间口径：audit_logs.ts 是 datetime('now') 落的 UTC，usage_events.ts 是 ISO 带 Z，
+ * 两者都必须经 parseDbTime 解析后再格式化，直接 dayjs(ts) 会把审计时间差出 8 小时。
  */
 
-const TIME_RANGES = [
+// 上报明细只留 30 天（purgeOldUsage 滚动清理），给 90 天选项查出来也是空的
+const EVENT_DAYS = [
   { label: "近 7 天", value: 7 },
   { label: "近 30 天", value: 30 },
-  { label: "近 90 天", value: 90 },
+];
+
+const AUDIT_DAYS = [
+  { label: "近 7 天", value: "7" },
+  { label: "近 30 天", value: "30" },
+  { label: "近 90 天", value: "90" },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "管理员",
   user: "普通用户",
   hr: "HR",
-  headhunter: "猎头",
 };
 
 /** 秒级可读的停留时长 */
@@ -52,8 +52,8 @@ function dwellText(ms: number): string {
   return `${Math.floor(m / 60)} 小时 ${m % 60} 分`;
 }
 
-/** 把明细里的 JSON 摘要渲染成人话 */
-function detailText(raw: string | null): string {
+/** 上报明细里的 JSON 摘要渲染成人话 */
+function usageDetailText(raw: string | null): string {
   if (!raw) return "—";
   try {
     const d = JSON.parse(raw) as { views?: number; dwell_ms?: number };
@@ -66,330 +66,114 @@ function detailText(raw: string | null): string {
   }
 }
 
-/** ECharts 通用容器：只在 option 变化时重绘，卸载时释放实例 */
-function Chart({ option, height }: { option: any; height: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const inst = useRef<echarts.ECharts | null>(null);
+// 操作类型的展示名 + 颜色（同一种 action 在不同页面语义一致）
+const ACTION_META: Record<string, { label: string; color: string }> = {
+  create: { label: "新增", color: "green" },
+  update: { label: "修改", color: "blue" },
+  delete: { label: "删除", color: "red" },
+  view: { label: "查看", color: "default" },
+  export: { label: "导出", color: "orange" },
+  client_error: { label: "前端报错", color: "volcano" },
+};
 
-  useEffect(() => {
-    if (!ref.current) return;
-    inst.current = echarts.init(ref.current);
-    const onResize = () => inst.current?.resize();
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      inst.current?.dispose();
-      inst.current = null;
-    };
-  }, []);
+const TARGET_META: Record<string, string> = {
+  system: "系统",
+  talent: "人才",
+  resume: "简历原件",
+  contract: "合同原件",
+  bgcheck: "背调报告",
+  job: "岗位",
+  pipeline: "招聘流程",
+  interview: "面试",
+  approval: "审批",
+  onboarding: "入职办理",
+  requisition: "招聘需求",
+  template: "模板",
+  user: "用户",
+  role: "角色",
+  team: "团队",
+  task: "待办",
+  auth: "账号认证",
+};
 
-  useEffect(() => {
-    if (inst.current && option) inst.current.setOption(option, true);
-  }, [option]);
-
-  return <div ref={ref} style={{ width: "100%", height }} />;
+function actionTag(a: string) {
+  const m = ACTION_META[a];
+  return m ? <Tag color={m.color}>{m.label}</Tag> : <Tag>{a}</Tag>;
 }
 
-export default function Logs() {
-  const [data, setData] = useState<UsageOverview | null>(null);
-  const [loading, setLoading] = useState(true);
+function targetLabel(t: string) {
+  return TARGET_META[t] || t;
+}
 
-  // 已应用条件 / 草稿条件（点「查询」才生效）
-  const [days, setDays] = useState(7);
-  const [menuFilter, setMenuFilter] = useState("");
+/** 审计 detail 是 JSON 串，转成人话 */
+function auditDetailText(raw: string | null): string {
+  if (!raw) return "—";
+  try {
+    const d = JSON.parse(raw) as Record<string, unknown>;
+    const parts: string[] = [];
+    if (typeof d.path === "string") parts.push(d.path);
+    if (typeof d.method === "string") parts.push(d.method);
+    if (typeof d.rows === "number") parts.push(`${d.rows} 条`);
+    if (typeof d.selected === "boolean" && d.selected) parts.push("勾选导出");
+    if (typeof d.download === "boolean") parts.push(d.download ? "下载" : "在线预览");
+    if (typeof d.high_risk === "number" && d.high_risk === 1) parts.push("含高敏项");
+    return parts.join(" · ") || JSON.stringify(d);
+  } catch {
+    return raw;
+  }
+}
+
+/** 统一的时间显示：数据库时间先 parseDbTime 再格式化（审计 ts 是 UTC） */
+function tsText(v: string, withSeconds = false): string {
+  const d = parseDbTime(v);
+  if (Number.isNaN(d.getTime())) return "—";
+  return dayjs(d).format(withSeconds ? "MM-DD HH:mm:ss" : "MM-DD HH:mm");
+}
+
+// ---------------------------------------------------------------- 上报明细
+
+function UsageEventsView() {
   const [draftDays, setDraftDays] = useState(7);
   const [draftMenu, setDraftMenu] = useState("");
+  const [days, setDays] = useState(7);
+  const [menuFilter, setMenuFilter] = useState("");
 
   const [events, setEvents] = useState<UsageEventRow[]>([]);
-  const [eventTotal, setEventTotal] = useState(0);
-  const [eventPage, setEventPage] = useState(1);
-  const [eventLoading, setEventLoading] = useState(false);
-
-  // AI 功能使用（ai_artifacts 聚合）
-  const [aiUsage, setAiUsage] = useState<{
-    total: { calls: number; users: number };
-    by_type: { biz_type: string; label: string; calls: number; users: number }[];
-    by_user: { user_id: string; user_name: string; calls: number }[];
-  } | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-
-  // 跟随全局主题（ECharts 的文字/网格色需要显式给，否则暗色下看不清）
-  const [isDark, setIsDark] = useState(
-    () => document.documentElement.getAttribute("data-theme-mode") === "dark"
-  );
-  useEffect(() => {
-    const el = document.documentElement;
-    const sync = () => setIsDark(el.getAttribute("data-theme-mode") === "dark");
-    sync();
-    const mo = new MutationObserver(sync);
-    mo.observe(el, { attributes: true, attributeFilter: ["data-theme-mode"] });
-    return () => mo.disconnect();
-  }, []);
-
-  const axisColor = isDark ? "#9ca3af" : "#6b7280";
-  const splitColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
-
-  const fetchOverview = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await api.getUsageOverview({ days, menu: menuFilter || undefined });
-      setData(res);
-    } catch (err) {
-      message.error((err as Error).message);
-    }
-    setLoading(false);
-  }, [days, menuFilter]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
 
   const fetchEvents = useCallback(
-    async (page: number) => {
-      setEventLoading(true);
+    async (p: number) => {
+      setLoading(true);
       try {
         const res = await api.getUsageEvents({
           days,
           menu: menuFilter || undefined,
-          page,
+          page: p,
           page_size: 10,
         });
         setEvents(res.items);
-        setEventTotal(res.total);
+        setTotal(res.total);
       } catch (err) {
         message.error((err as Error).message);
       }
-      setEventLoading(false);
+      setLoading(false);
     },
     [days, menuFilter]
   );
 
-  useEffect(() => { fetchOverview(); }, [fetchOverview]);
   useEffect(() => {
-    setEventPage(1);
+    setPage(1);
     fetchEvents(1);
   }, [fetchEvents]);
 
-  // AI 使用统计跟随同一周期；失败静默（不影响主统计区）
-  useEffect(() => {
-    let cancelled = false;
-    setAiLoading(true);
-    api
-      .getAiUsage(days)
-      .then((res) => { if (!cancelled) setAiUsage(res); })
-      .catch(() => { if (!cancelled) setAiUsage(null); })
-      .finally(() => { if (!cancelled) setAiLoading(false); });
-    return () => { cancelled = true; };
-  }, [days]);
-
-  const handleSearch = () => {
-    setDays(draftDays);
-    setMenuFilter(draftMenu);
-  };
-  const handleReset = () => {
-    setDraftDays(7);
-    setDraftMenu("");
-    setDays(7);
-    setMenuFilter("");
-  };
-
-  // ---- 热度排行：横向条形，最大的排最上（ECharts 横向条第一个在最下方，故倒序） ----
-  const rankOption = useMemo(() => {
-    const rows = [...(data?.ranking || [])].slice(0, 12).reverse();
-    return {
-      grid: { left: 8, right: 48, top: 8, bottom: 8, containLabel: true },
-      tooltip: {
-        trigger: "axis",
-        axisPointer: { type: "shadow" },
-        formatter: (ps: any[]) => {
-          const p = ps[0];
-          const row = rows[p.dataIndex];
-          return `${p.name}<br/>访问 ${row?.views || 0} 次 · ${row?.uv || 0} 人`;
-        },
-      },
-      xAxis: {
-        type: "value",
-        axisLine: { show: false },
-        axisTick: { show: false },
-        axisLabel: { color: axisColor, fontSize: 11 },
-        splitLine: { lineStyle: { color: splitColor } },
-      },
-      yAxis: {
-        type: "category",
-        data: rows.map((r) => menuLabel(r.menu)),
-        axisLine: { show: false },
-        axisTick: { show: false },
-        axisLabel: { color: axisColor, fontSize: 12 },
-      },
-      series: [
-        {
-          type: "bar",
-          data: rows.map((r) => ({
-            value: r.views,
-            itemStyle: {
-              color: MENU_COLORS[r.menu] || "#64748b",
-              borderRadius: [0, 4, 4, 0],
-            },
-          })),
-          barMaxWidth: 18,
-          label: {
-            show: true,
-            position: "right",
-            color: axisColor,
-            fontSize: 11,
-            formatter: "{c}",
-          },
-        },
-      ],
-    };
-  }, [data?.ranking, axisColor, splitColor]);
-
-  // ---- 趋势：按天补齐（后端只返回有数据的天，缺的天要补 0 否则折线会跳） ----
-  const trendOption = useMemo(() => {
-    if (!data) return null;
-    const map = new Map(data.trend.map((t) => [t.day, t]));
-    const xs: string[] = [];
-    const views: number[] = [];
-    const uv: number[] = [];
-    let cur = dayjs(data.range.from);
-    const end = dayjs(data.range.to);
-    // 防御：范围异常时直接退出，避免死循环
-    for (let i = 0; i < 400 && !cur.isAfter(end); i += 1) {
-      const key = cur.format("YYYY-MM-DD");
-      const hit = map.get(key);
-      xs.push(cur.format("MM-DD"));
-      views.push(hit?.views || 0);
-      uv.push(hit?.uv || 0);
-      cur = cur.add(1, "day");
-    }
-    return {
-      grid: { left: 8, right: 16, top: 32, bottom: 8, containLabel: true },
-      legend: { show: true, top: 0, textStyle: { color: axisColor, fontSize: 11 } },
-      tooltip: { trigger: "axis" },
-      xAxis: {
-        type: "category",
-        boundaryGap: false,
-        data: xs,
-        axisLine: { lineStyle: { color: splitColor } },
-        axisTick: { show: false },
-        axisLabel: { color: axisColor, fontSize: 11 },
-      },
-      yAxis: {
-        type: "value",
-        axisLine: { show: false },
-        axisTick: { show: false },
-        axisLabel: { color: axisColor, fontSize: 11 },
-        splitLine: { lineStyle: { color: splitColor } },
-      },
-      series: [
-        {
-          name: "访问次数",
-          type: "line",
-          smooth: true,
-          showSymbol: false,
-          data: views,
-          lineStyle: { width: 2, color: "#3b82f6" },
-          itemStyle: { color: "#3b82f6" },
-          areaStyle: { color: isDark ? "rgba(59,130,246,0.18)" : "rgba(59,130,246,0.10)" },
-        },
-        {
-          name: "使用人数",
-          type: "line",
-          smooth: true,
-          showSymbol: false,
-          data: uv,
-          lineStyle: { width: 2, color: "#10b981" },
-          itemStyle: { color: "#10b981" },
-        },
-      ],
-    };
-  }, [data, axisColor, splitColor, isDark]);
-
-  // ---- 用户 × 模块矩阵 ----
-  const matrixMax = useMemo(() => {
-    let max = 0;
-    for (const u of data?.users || []) {
-      for (const v of Object.values(u.menus)) if (v > max) max = v;
-    }
-    return max || 1;
-  }, [data?.users]);
-
-  const matrixColumns = useMemo(() => {
-    const menus = (data?.menus || []).slice(0, 12);
-    return [
-      {
-        title: "用户",
-        key: "user",
-        fixed: "left" as const,
-        width: 160,
-        render: (_: unknown, r: UsageOverview["users"][number]) => (
-          <Space size={6}>
-            <span>{r.name}</span>
-            <Tag style={{ marginInlineEnd: 0 }}>{ROLE_LABELS[r.role] || r.role}</Tag>
-          </Space>
-        ),
-      },
-      ...menus.map((m) => ({
-        title: <Tooltip title={menuLabel(m)}>{menuLabel(m)}</Tooltip>,
-        key: m,
-        width: 96,
-        align: "center" as const,
-        render: (_: unknown, r: UsageOverview["users"][number]) => {
-          const v = r.menus[m] || 0;
-          if (!v) return <span style={{ color: isDark ? "#4b5563" : "#d1d5db" }}>-</span>;
-          // 色深按相对热度线性映射（0.10~0.75），既看得出深浅又不至于糊成一片
-          const alpha = 0.1 + 0.65 * (v / matrixMax);
-          return (
-            <span
-              style={{
-                display: "inline-block",
-                minWidth: 40,
-                padding: "1px 6px",
-                borderRadius: 4,
-                background: `rgba(59, 130, 246, ${alpha.toFixed(2)})`,
-                color: alpha > 0.45 ? "#fff" : undefined,
-              }}
-            >
-              {v}
-            </span>
-          );
-        },
-      })),
-      {
-        title: "合计",
-        key: "total",
-        fixed: "right" as const,
-        width: 80,
-        align: "center" as const,
-        sorter: (a: UsageOverview["users"][number], b: UsageOverview["users"][number]) => a.total - b.total,
-        defaultSortOrder: "descend" as const,
-        render: (_: unknown, r: UsageOverview["users"][number]) => <b>{r.total}</b>,
-      },
-    ];
-  }, [data?.menus, matrixMax, isDark]);
-
-  const aiColumns = [
-    { title: "AI 功能", dataIndex: "label", width: 160 },
-    {
-      title: "生成次数",
-      dataIndex: "calls",
-      width: 100,
-      sorter: (a: { calls: number }, b: { calls: number }) => a.calls - b.calls,
-      defaultSortOrder: "descend" as const,
-      render: (v: number) => <b>{v}</b>,
-    },
-    { title: "使用人数", dataIndex: "users", width: 100 },
-    {
-      title: "人均",
-      dataIndex: "calls",
-      width: 90,
-      render: (_: unknown, r: { calls: number; users: number }) =>
-        r.users ? (r.calls / r.users).toFixed(1) : "—",
-    },
-  ];
-
-  const eventColumns = [
+  const columns = [
     {
       title: "时间",
       dataIndex: "ts",
       width: 150,
-      render: (v: string) => dayjs(v).format("MM-DD HH:mm"),
+      render: (v: string) => tsText(v),
     },
     {
       title: "用户",
@@ -409,66 +193,18 @@ export default function Logs() {
       width: 80,
       render: (v: string | null) => (v === "mobile" ? "手机" : "电脑"),
     },
-    { title: "动态", dataIndex: "detail", render: (v: string | null) => detailText(v) },
+    { title: "动态", dataIndex: "detail", render: (v: string | null) => usageDetailText(v) },
   ];
 
-  const cards = data?.cards;
-  const hasData = !!data && (data.ranking.length > 0 || data.users.some((u) => u.total > 0));
-
   return (
-    <div className="page-fill logs-page">
-      {/* 统计区：只能用 page-stats / stat / stat-icon / stat-num / stat-label 这套既定结构 */}
-      <div className="page-stats" style={{ marginBottom: 16 }}>
-        <div className="stat">
-          <span className="stat-icon is-neutral"><TeamOutlined /></span>
-          <span className="stat-body">
-            <span className="stat-num is-neutral">
-              <AnimatedNumber value={cards?.activeUsers || 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} />
-            </span>
-            <span className="stat-label">今日活跃账号</span>
-          </span>
-        </div>
-        <div className="stat">
-          <span className="stat-icon is-warn"><ThunderboltOutlined /></span>
-          <span className="stat-body">
-            <span className="stat-num is-warn">
-              <AnimatedNumber value={cards?.totalViews || 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} />
-            </span>
-            <span className="stat-label">今日总访问</span>
-          </span>
-        </div>
-        <div className="stat">
-          <span className="stat-icon is-good"><BarChartOutlined /></span>
-          <span className="stat-body">
-            {/* 模块名是文字不能做数字滚动，直接渲染 */}
-            <span className="stat-num is-good" style={{ fontSize: 22 }}>
-              {cards?.topMenu ? menuLabel(cards.topMenu) : "—"}
-            </span>
-            <span className="stat-label">今日最热模块</span>
-          </span>
-        </div>
-        <div className="stat">
-          <span className="stat-icon is-neutral"><AppstoreOutlined /></span>
-          <span className="stat-body">
-            <span className="stat-num is-neutral">
-              <AnimatedNumber value={cards?.avgMenus || 0} format={(n) => n.toFixed(1)} />
-            </span>
-            <span className="stat-label">今日人均模块数</span>
-          </span>
-        </div>
-      </div>
-
+    <>
       {/* 搜索区（约定：只放搜索字段） */}
       <Card className="search-card" style={{ marginBottom: 16 }}>
         <div className="search-grid">
           <div className="search-field">
             <span className="search-label">统计周期</span>
             <div className="search-control">
-              <Select
-                value={draftDays}
-                onChange={setDraftDays}
-                options={TIME_RANGES}
-              />
+              <Select value={draftDays} onChange={setDraftDays} options={EVENT_DAYS} />
             </div>
           </div>
           <div className="search-field">
@@ -490,122 +226,255 @@ export default function Logs() {
         {/* 工具行：左说明，右侧重置 / 查询（查询最右） */}
         <div className="toolbar">
           <Space size={4} wrap>
-            <BarChartOutlined />
-            <span style={{ fontSize: 13 }}>模块点击率</span>
-            <Tooltip title="访问次数=同一模块被打开的累计次数（来回切会重复计）；使用人数为去重账号数；停留时长只计页面在前台的时间。数据由前端每 30 秒批量上报一次，最新一次操作最长延迟 30 秒可见">
-              <span className="logs-sec-tip">统计口径</span>
+            <span style={{ fontSize: 13 }}>上报明细</span>
+            <Tooltip title="一行 = 一个上报批次（某模块的访问次数 + 停留时长），由前端每 30 秒批量上报一次，最新一次操作最长延迟 30 秒可见；明细滚动保留 30 天">
+              <span className="logs-sec-tip">说明</span>
             </Tooltip>
           </Space>
           <Space>
-            <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => { setDraftDays(7); setDraftMenu(""); setDays(7); setMenuFilter(""); }}
+            >
+              重置
+            </Button>
+            <Button type="primary" icon={<SearchOutlined />} onClick={() => { setDays(draftDays); setMenuFilter(draftMenu); }}>
+              查询
+            </Button>
           </Space>
         </div>
 
-        {loading ? (
-          <div style={{ textAlign: "center", padding: "4rem" }}><Spin size="large" /></div>
-        ) : !hasData ? (
-          <Empty
-            description={
-              days > 7
-                ? "该周期内还没有使用记录，或所选模块无人访问"
-                : "还没有采集到使用数据。打开几个菜单后，最长 30 秒就会出现记录"
-            }
-          />
-        ) : (
-          <>
-            {/* 模块热度排行 */}
-            <div className="logs-section">
-              <div className="logs-sec-head">
-                <span className="logs-sec-title">模块热度排行</span>
-                <span className="logs-sec-tip">近 {days} 天访问次数（含未启用模块则不计）</span>
-              </div>
-              {(data?.ranking.length || 0) > 0 ? (
-                <Chart option={rankOption} height={Math.max(200, Math.min(data!.ranking.length, 12) * 34 + 24)} />
-              ) : (
-                <Empty description="该周期内没有模块访问" />
-              )}
-            </div>
-
-            {/* 活跃趋势 */}
-            <div className="logs-section">
-              <div className="logs-sec-head">
-                <span className="logs-sec-title">
-                  <LineChartOutlined /> 活跃趋势
-                </span>
-                <span className="logs-sec-tip">近 {days} 天每日访问次数与使用人数</span>
-              </div>
-              {trendOption ? <Chart option={trendOption} height={240} /> : <Empty />}
-            </div>
-
-            {/* 用户 × 模块矩阵 */}
-            <div className="logs-section">
-              <div className="logs-sec-head">
-                <span className="logs-sec-title">
-                  <ProfileOutlined /> 用户使用分布
-                </span>
-                <span className="logs-sec-tip">颜色越深用得越多；「—」表示该周期内没打开过该模块</span>
-              </div>
-              <Table
-                rowKey="id"
-                size="small"
-                columns={matrixColumns as any}
-                dataSource={data?.users || []}
-                pagination={false}
-                scroll={{ x: 160 + Math.min(data?.menus.length || 0, 12) * 96 + 80 }}
-              />
-            </div>
-
-            {/* AI 功能使用：数据源 ai_artifacts（每次真实生成落一行，命中缓存不落行） */}
-            <div className="logs-section">
-              <div className="logs-sec-head">
-                <span className="logs-sec-title">
-                  <RobotOutlined /> AI 功能使用
-                </span>
-                <span className="logs-sec-tip">近 {days} 天实际生成次数（命中缓存不计）；每用户每日上限 10 次</span>
-              </div>
-              <Table
-                rowKey="biz_type"
-                size="small"
-                loading={aiLoading}
-                columns={aiColumns}
-                dataSource={aiUsage?.by_type || []}
-                pagination={false}
-                locale={{ emptyText: "该周期内还没有 AI 生成记录" }}
-              />
-              {aiUsage && aiUsage.by_user.length > 0 && (
-                <div style={{ marginTop: 10, fontSize: 12, color: "#8c8c8c" }}>
-                  {`共 ${aiUsage.total.calls} 次生成、${aiUsage.total.users} 人使用：`}
-                  {aiUsage.by_user.map((u) => `${u.user_name} ${u.calls} 次`).join("，")}
-                </div>
-              )}
-            </div>
-
-            {/* 行为明细 */}
-            <div className="logs-section">
-              <div className="logs-sec-head">
-                <span className="logs-sec-title">上报明细</span>
-                <span className="logs-sec-tip">按上报批次记录，保留 30 天</span>
-              </div>
-              <Table<UsageEventRow>
-                rowKey="id"
-                size="small"
-                loading={eventLoading}
-                columns={eventColumns}
-                dataSource={events}
-                pagination={{
-                  current: eventPage,
-                  total: eventTotal,
-                  pageSize: 10,
-                  showSizeChanger: false,
-                  onChange: (p) => { setEventPage(p); fetchEvents(p); },
-                }}
-                scroll={{ x: 760 }}
-              />
-            </div>
-          </>
-        )}
+        <Table<UsageEventRow>
+          rowKey="id"
+          size="small"
+          loading={loading}
+          columns={columns}
+          dataSource={events}
+          pagination={{
+            current: page,
+            total,
+            pageSize: 10,
+            showSizeChanger: false,
+            showTotal: (t) => `共 ${t} 条`,
+            onChange: (p) => { setPage(p); fetchEvents(p); },
+          }}
+          locale={{ emptyText: "该条件下没有上报记录" }}
+          scroll={{ x: 760 }}
+        />
       </Card>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- 操作审计
+
+function AuditLogView() {
+  const [draftDays, setDraftDays] = useState("30");
+  const [draftAction, setDraftAction] = useState<string | undefined>();
+  const [draftTarget, setDraftTarget] = useState<string | undefined>();
+  const [draftQ, setDraftQ] = useState("");
+
+  const [days, setDays] = useState("30");
+  const [action, setAction] = useState<string | undefined>();
+  const [targetType, setTargetType] = useState<string | undefined>();
+  const [q, setQ] = useState("");
+
+  const [rows, setRows] = useState<AuditLogRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+
+  const fetchRows = useCallback(
+    async (p: number) => {
+      setLoading(true);
+      try {
+        const r = await api.getAuditLogs({
+          days: Number(days),
+          action,
+          target_type: targetType,
+          q,
+          page: p,
+          limit: 50,
+        });
+        setRows(r.items);
+        setTotal(r.total);
+      } catch (e) {
+        message.error((e as Error).message);
+      }
+      setLoading(false);
+    },
+    [days, action, targetType, q]
+  );
+
+  useEffect(() => {
+    setPage(1);
+    fetchRows(1);
+  }, [fetchRows]);
+
+  const columns = [
+    {
+      title: "时间",
+      dataIndex: "ts",
+      width: 165,
+      render: (v: string) => (
+        <Tooltip title={v}>
+          <span>{tsText(v, true)}</span>
+        </Tooltip>
+      ),
+    },
+    { title: "操作", dataIndex: "action", width: 84, render: actionTag },
+    { title: "对象", dataIndex: "target_type", width: 110, render: (v: string) => targetLabel(v) },
+    {
+      title: "对象名称",
+      dataIndex: "target_name",
+      render: (v: string | null) => v || <Typography.Text type="secondary">-</Typography.Text>,
+    },
+    {
+      title: "详情",
+      dataIndex: "detail",
+      render: (v: string | null) => <Typography.Text type="secondary">{auditDetailText(v)}</Typography.Text>,
+    },
+    {
+      title: "操作人",
+      dataIndex: "user_name",
+      width: 120,
+      render: (v: string | null, r: AuditLogRow) => (
+        <Space size={4}>
+          <span>{v || "匿名"}</span>
+          {r.role === "admin" && <Tag color="gold" style={{ marginInlineEnd: 0 }}>管理员</Tag>}
+        </Space>
+      ),
+    },
+    {
+      title: "IP",
+      dataIndex: "ip",
+      width: 130,
+      render: (v: string | null) => v || <Typography.Text type="secondary">-</Typography.Text>,
+    },
+  ];
+
+  return (
+    <>
+      {/* 搜索区（约定：只放搜索字段） */}
+      <Card className="search-card" style={{ marginBottom: 16 }}>
+        <div className="search-grid">
+          <div className="search-field">
+            <span className="search-label">时间范围</span>
+            <div className="search-control">
+              <Select value={draftDays} onChange={setDraftDays} options={AUDIT_DAYS} />
+            </div>
+          </div>
+          <div className="search-field">
+            <span className="search-label">操作类型</span>
+            <div className="search-control">
+              <Select
+                allowClear
+                placeholder="全部"
+                value={draftAction}
+                onChange={setDraftAction}
+                options={Object.entries(ACTION_META).map(([k, v]) => ({ label: v.label, value: k }))}
+              />
+            </div>
+          </div>
+          <div className="search-field">
+            <span className="search-label">对象类型</span>
+            <div className="search-control">
+              <Select
+                allowClear
+                placeholder="全部"
+                value={draftTarget}
+                onChange={setDraftTarget}
+                options={Object.entries(TARGET_META).map(([k, v]) => ({ label: v, value: k }))}
+              />
+            </div>
+          </div>
+          <div className="search-field">
+            <span className="search-label">关键词</span>
+            <div className="search-control">
+              <Input
+                allowClear
+                placeholder="对象名 / 操作人 / 详情"
+                value={draftQ}
+                onChange={(e) => setDraftQ(e.target.value)}
+                onPressEnter={() => { setDays(draftDays); setAction(draftAction); setTargetType(draftTarget); setQ(draftQ.trim()); }}
+              />
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="list-card">
+        {/* 工具行：左说明，右侧重置 / 查询（查询最右） */}
+        <div className="toolbar">
+          <Space size={4} wrap>
+            <span style={{ fontSize: 13 }}>操作审计</span>
+            <Tooltip title="写操作（新增/修改/删除）由后端自动留痕；简历/合同的预览与下载、浏览器内导出为前端显式上报。用于事故追溯与个人信息合规">
+              <span className="logs-sec-tip">说明</span>
+            </Tooltip>
+          </Space>
+          <Space>
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={() => {
+                setDraftDays("30"); setDraftAction(undefined); setDraftTarget(undefined); setDraftQ("");
+                setDays("30"); setAction(undefined); setTargetType(undefined); setQ("");
+              }}
+            >
+              重置
+            </Button>
+            <Button
+              type="primary"
+              icon={<SearchOutlined />}
+              onClick={() => { setDays(draftDays); setAction(draftAction); setTargetType(draftTarget); setQ(draftQ.trim()); }}
+            >
+              查询
+            </Button>
+          </Space>
+        </div>
+
+        <Table<AuditLogRow>
+          rowKey="id"
+          size="small"
+          loading={loading}
+          dataSource={rows}
+          columns={columns}
+          pagination={{
+            current: page,
+            total,
+            pageSize: 50,
+            showSizeChanger: false,
+            showTotal: (t) => `共 ${t} 条`,
+            onChange: (p) => { setPage(p); fetchRows(p); },
+          }}
+          locale={{ emptyText: "该条件下没有操作记录" }}
+          scroll={{ x: 900 }}
+        />
+      </Card>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------- 页面容器
+
+export default function Logs() {
+  // ?tab=audit 直达操作审计（/audit 旧地址重定向到这里）；切换时同步 URL，刷新不丢 Tab
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get("tab") === "audit" ? "audit" : "events";
+
+  return (
+    <div className="page-fill logs-page">
+      <div style={{ marginBottom: 16 }}>
+        <Segmented
+          value={tab}
+          onChange={(v) => setSearchParams({ tab: String(v) }, { replace: true })}
+          options={[
+            { label: "上报明细", value: "events" },
+            { label: "操作审计", value: "audit" },
+          ]}
+        />
+      </div>
+      {/* 条件渲染而非 Tabs：antd Tabs 只隐藏不卸载，会把两张表的请求一次性都发出去 */}
+      {tab === "events" ? <UsageEventsView /> : <AuditLogView />}
     </div>
   );
 }

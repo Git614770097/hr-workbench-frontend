@@ -19,7 +19,6 @@ import aiAssistRoutes from "./routes/aiAssist";
 import teamRoutes from "./routes/team";
 import { overview } from "./routes/overview";
 import logsRoutes, { purgeOldUsage } from "./routes/logs";
-import { backgroundRoutes } from "./routes/background";
 import { auditRoutes } from "./routes/audit";
 import { feishuRoutes } from "./routes/feishu";
 import { writeAudit } from "./audit";
@@ -96,8 +95,8 @@ app.use("/api/*", async (c, next) => {
 
 // ---- 操作审计中间件 ----
 // 自动记录所有影响业务数据的写操作（POST/PUT/PATCH/DELETE，仅 2xx 入账），
-// targetType 由路径推导；敏感**读**操作（简历/合同/背调报告预览、批量导出）
-// 无法由中间件识别，在各自路由内显式调用 writeAudit（见 talents.ts / background.ts）。
+// targetType 由路径推导；敏感**读**操作（简历/合同原件预览、批量导出）
+// 无法由中间件识别，在各自路由内显式调用 writeAudit（见 talents.ts）。
 // 跳过：埋点上报、验证码/AI 生成（量大且与数据安全无关）、以及失败请求（避免灌爆日志）。
 const AUDIT_SKIP = [/^\/api\/logs/, /^\/api\/ai\//, /^\/api\/auth\/captcha/, /^\/api\/feishu\/event/, /^\/api\/feishu\/oauth/, /^\/api\/feishu\/test/];
 const AUDIT_ACTION_BY_METHOD: Record<string, string> = { POST: "create", PUT: "update", PATCH: "update", DELETE: "delete" };
@@ -234,19 +233,6 @@ for (const p of ["/api/requisitions", "/api/approvals", "/api/onboarding"]) {
   });
 }
 
-// 候选人背调中心：独立菜单权限（background）
-for (const p of ["/api/background"]) {
-  app.use(`${p}/*`, async (c, next) => {
-    const blocked = await menuGuard(c, "background");
-    if (blocked) return blocked;
-    return next();
-  });
-  app.use(p, async (c, next) => {
-    const blocked = await menuGuard(c, "background");
-    if (blocked) return blocked;
-    return next();
-  });
-}
 // 招聘漏斗：与「招聘看板」同源数据，但页面是独立菜单。
 // 只统计、不修改数据，因此不额外要求 funnel 权限 ——
 // 有 pipeline 权限即可查看（避免存量角色看不到数据）。
@@ -364,7 +350,6 @@ app.route("/api/overview", overview);
 // POST /report 任何登录用户可上报（否则统计只覆盖管理员），GET 查询仅 admin。
 // 因此这里**不能**挂 menuGuard：那会把普通用户的上报一并拦掉。
 app.route("/api/logs", logsRoutes);
-app.route("/api/background", backgroundRoutes);
 // 操作审计：仅管理员（路由内部再校验 role）——数据合规的追溯面，不对外放开
 app.route("/api/audit", auditRoutes);
 // 飞书集成（BYOK）：鉴权在各路由内部按需分流——settings 仅 admin、oauth/test 需登录、

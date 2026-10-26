@@ -52,7 +52,7 @@ function InterviewQuestionsPanel({ talentId, jobId }: { talentId?: string; jobId
               <li key={i} style={{ marginBottom: 8 }}>
                 <div>{x.q}</div>
                 {x.focus ? (
-                  <div style={{ fontSize: 12, color: "#8c8c8c" }}>考察：{x.focus}</div>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>考察：{x.focus}</Typography.Text>
                 ) : null}
               </li>
             ))}
@@ -408,7 +408,9 @@ export default function Interviews() {
     }
     const timeTxt = String(r.scheduled_at).slice(11, 16);
     // 时长跟在时间后展示（此前该字段填了但无处可见）
-    const durationTxt = r.duration ? <span style={{ color: "#9aa0aa", fontSize: 12 }}> {r.duration}分钟</span> : null;
+    const durationTxt = r.duration ? (
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}> · {r.duration}分钟</Typography.Text>
+    ) : null;
     if (r.is_today) {
       return (
         <Space size={6}>
@@ -456,7 +458,7 @@ export default function Interviews() {
     {
       title: "面试时间",
       key: "time",
-      width: 185,
+      width: 200,
       render: (_: unknown, r: Interview) => timeCell(r),
     },
     {
@@ -532,7 +534,7 @@ export default function Interviews() {
     {
       title: "评价",
       key: "result",
-      width: 180,
+      width: 200,
       render: (_: unknown, r: Interview) => (
         <Space direction="vertical" size={4} style={{ lineHeight: 1.4 }}>
           <Space size={4} wrap>
@@ -722,8 +724,10 @@ export default function Interviews() {
                   style={{ marginBottom: 16 }}
                 />
                 <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>安排面试</Button>
-                <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-                  {termFor(profile, "面试需挂在一条投递上：请先在「招聘看板」把候选人推进到面试阶段，再回到这里安排")}
+                <div style={{ marginTop: 12 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {termFor(profile, "面试需挂在一条投递上：请先在「招聘看板」把候选人推进到面试阶段，再回到这里安排")}
+                  </Typography.Text>
                 </div>
               </div>
             ),

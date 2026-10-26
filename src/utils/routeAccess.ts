@@ -22,7 +22,6 @@ const DESKTOP_ROUTES: { path: string; perm: string }[] = [
   { path: "/funnel", perm: "funnel" },
   { path: "/contracts", perm: "contracts" },
   { path: "/social", perm: "social" },
-  { path: "/background", perm: "background" },
   { path: "/profiles", perm: "profiles" },
   { path: "/talents", perm: "talents" },
   { path: "/templates", perm: "templates" },

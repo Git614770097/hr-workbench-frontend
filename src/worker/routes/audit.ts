@@ -72,17 +72,4 @@ audit.post("/client", async (c) => {
   return c.json({ ok: true });
 });
 
-// 操作类型的分布统计（漏斗/占比图用），同样受 days 范围约束。
-audit.get("/actions", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
-  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可查看" }, 403);
-
-  const days = Math.min(365, Math.max(1, parseInt(c.req.query("days") || "30", 10) || 30));
-  const rows = await c.env.DB.prepare(
-    `SELECT action, COUNT(*) AS n FROM audit_logs WHERE ts >= datetime('now', ?) GROUP BY action ORDER BY n DESC`
-  ).bind(`-${days} days`).all<{ action: string; n: number }>();
-  return c.json({ items: rows.results || [] });
-});
-
 export { audit as auditRoutes };

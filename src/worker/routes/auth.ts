@@ -226,10 +226,9 @@ function smsCheckErrorStatus(msg: string): 400 | 502 {
 //       又保证未经审批的人进不来。
 //
 // 身份（intended_role）只是「我是谁」的意向标记，用于审批时提示管理员该给什么角色；
-// 它本身不授予任何权限 —— 权限永远由 roles.permissions 决定。用户可自选，
-// 也允许留空（老版本前端、或从其它入口提交），此时回落「hr」。
-// 当前仅开放 hr（HR 人事）/ headhunter（猎头顾问）两档，团队与其他已下架。
-const INTENDED_ROLES = ["hr", "headhunter"] as const;
+// 它本身不授予任何权限 —— 权限永远由 roles.permissions 决定。
+// 猎头身份已下线（2026-10-24），现在只有 hr 一档；历史 headhunter 数据展示层一律按 HR 处理。
+const INTENDED_ROLES = ["hr"] as const;
 
 auth.post("/register", async (c) => {
   const { phone, name, password, sms_code, ref, intended_role } = await c.req.json<{
@@ -841,32 +840,6 @@ auth.put("/users/:id/manager", async (c) => {
     await c.env.DB.prepare("UPDATE users SET role = 'user', team_id = NULL WHERE id = ?").bind(id).run();
   }
   return c.json({ ok: true, manager: !!manager });
-});
-
-// ---- 管理员：修改用户身份（intended_role）----
-// 身份只驱动品牌文案（产品名/菜单显示名/登录页话术），**不参与鉴权** ——
-// 能看到哪些功能永远由 role_id → roles.permissions 决定。
-// 之所以需要这个接口：注册时的自报身份可能填错，落地页带进来的身份也可能需要纠正，
-// 没有入口就只能改库。管理员不套用业务身份（前端 profileOf 硬走 HR 默认档），故禁止修改。
-auth.put("/users/:id/intended-role", async (c) => {
-  const session = await getSession(c);
-  if (!session) return c.json({ error: "未登录" }, 401);
-  if (session.role !== "admin") return c.json({ error: "无权限，仅管理员可操作" }, 403);
-
-  const id = c.req.param("id");
-  const { intended_role } = await c.req.json<{ intended_role?: string | null }>();
-
-  const target = await c.env.DB.prepare("SELECT role FROM users WHERE id = ?").bind(id).first<{ role: string }>();
-  if (!target) return c.json({ error: "用户不存在" }, 404);
-  if (target.role === "admin") return c.json({ error: "管理员不套用业务身份" }, 400);
-
-  // 非法值一律回落 "hr"，不报错（与注册接口一致，防新旧前端取值不一致导致失败）
-  const next = (INTENDED_ROLES as readonly string[]).includes(intended_role || "")
-    ? (intended_role as string)
-    : "hr";
-
-  await c.env.DB.prepare("UPDATE users SET intended_role = ? WHERE id = ?").bind(next, id).run();
-  return c.json({ ok: true, intended_role: next });
 });
 
 // ---- 管理员：重置用户密码 ----

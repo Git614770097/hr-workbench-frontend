@@ -782,7 +782,8 @@ html[data-theme-mode="dark"] .task-cal-dnd .ant-picker-cell.task-drop-target { o
 .task-cal-dot.is-closed { background: transparent; box-shadow: inset 0 0 0 1px #bfbfbf; }
 
 .task-legend {
-  display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #8c8c8c;
+  display: inline-flex; align-items: center; gap: 4px; font-size: 12px;
+  /* 颜色由外层 Typography.Text secondary 决定（暗色自适应），这里不再写死灰色 */
 }
 
 /* 日历卡片左上角：新建按钮，柔和化（不再用生硬蓝色文字链接） */
@@ -1675,7 +1676,7 @@ html[data-theme-mode="dark"] .match-cand-name { color: #e5e7eb; }
 /* ===== 招聘概览：各阶段当前停留（已并入招聘漏斗页顶部）=====
    ⚠️ 原独立概览首页的 KPI 行 / 本周转化 / 待办汇总已按需求删除，
       对应样式（.dash-head/.dash-title/.dash-date/.dash-kpis/.dash-stat/
-      .dash-week-*/.dash-task-*）一并清掉，只保留下面这段条形图。 */
+      .dash-week-* / .dash-task-*）一并清掉，只保留下面这段条形图。 */
 
 .dash-card { border: 1px solid #eef0f3; }
 .dash-card .ant-card-head { border-bottom-color: #f0f2f5; }
@@ -2116,3 +2117,71 @@ html[data-theme-mode="dark"] .ai-btn:disabled {
   border-color: #303030 !important;
   background: rgba(255, 255, 255, 0.06) !important;
 }
+
+/* ---- 顶层错误边界兜底（ErrorBoundary）：全屏居中一张卡，颜色走主题变量 ---- */
+.error-boundary-fallback {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--color-background-secondary);
+}
+.ebf-card {
+  max-width: 420px;
+  width: 100%;
+  padding: 32px 28px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border-secondary);
+  background: #fff;
+  text-align: center;
+}
+html[data-theme-mode="dark"] .ebf-card { background: #1f1f1f; }
+.ebf-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-bottom: 8px;
+}
+.ebf-desc {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+}
+.ebf-detail {
+  font-size: 12px;
+  font-family: var(--font-mono, monospace);
+  color: var(--color-text-secondary);
+  background: var(--color-background-secondary);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 16px;
+  max-height: 72px;
+  overflow: auto;
+  text-align: left;
+  word-break: break-all;
+}
+.ebf-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.ebf-btn {
+  appearance: none;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-secondary);
+  background: transparent;
+  color: var(--color-text-primary);
+}
+.ebf-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.ebf-btn-primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.ebf-btn-primary:hover { color: #fff; opacity: 0.9; }

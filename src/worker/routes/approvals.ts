@@ -5,8 +5,89 @@ import { ownerScope, scopeConds, scopeParams, canTouch } from "../scope";
 import { genId } from "../helpers";
 import { moveStageForward, ensureOnboardingItems } from "../talentFlow";
 import { JOIN_TALENT_T, LEFT_JOIN_JOB_J } from "../sqlFragments";
+import { notifyUser } from "../reminders";
 
 const approvals = new Hono<{ Bindings: Env }>();
+
+// ---- 审批通知（2026-10-24 补）：此前零通知，审批人只能登后台肉眼扫 ----
+// 都走 waitUntil fire-and-forget：通知失败不阻塞、不回滚审批本身。
+
+function sceneLabel(scene: string): string {
+  return scene === "offer" ? "Offer" : scene === "onboard" ? "入职" : scene;
+}
+
+/** 把「有审批待处理」推给能处理的人：指定审批人 > 团队管理员 + 全局超管（发起人自己除外）。 */
+function notifyApprovalPending(
+  env: Env,
+  opts: {
+    ctx: { waitUntil: (p: Promise<unknown>) => void };
+    instanceId: string;
+    title: string;
+    scene: string;
+    ownerName: string;
+    ownerId: string;
+    teamId: string | null;
+    approverId?: string | null;
+  }
+): void {
+  opts.ctx.waitUntil((async () => {
+    const body = [
+      `<b>有一条${sceneLabel(opts.scene)}审批待处理</b>`,
+      `事项：${opts.title}`,
+      `发起人：${opts.ownerName}`,
+      `时间：${new Intl.DateTimeFormat("zh-CN", {
+        timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hour12: false,
+      }).format(new Date())}`,
+      "<br>",
+      "处理入口：登录后台 → 审批中心 → 待我处理。",
+    ].join("<br>");
+
+    let targets: string[] = [];
+    if (opts.approverId) {
+      targets = [opts.approverId];
+    } else {
+      const rows = await env.DB.prepare(
+        `SELECT id FROM users
+         WHERE status = 'active' AND role = 'admin'
+           AND (id = ? OR team_id IS NULL OR team_id = ?)`
+      ).bind(opts.teamId, opts.teamId).all<{ id: string }>();
+      targets = (rows.results || []).map((r) => r.id);
+    }
+    await Promise.all(
+      targets
+        .filter((uid) => uid !== opts.ownerId)
+        .map((uid) => notifyUser(env, uid, `${sceneLabel(opts.scene)}审批待处理`, body).catch(() => null))
+    );
+  })());
+}
+
+/** 把审批结果推给发起人（自己审自己的自动通过场景在调用处已排除）。 */
+function notifyApprovalResult(
+  env: Env,
+  opts: {
+    ctx: { waitUntil: (p: Promise<unknown>) => void };
+    ownerId: string;
+    actorName: string;
+    title: string;
+    scene: string;
+    decision: "approved" | "rejected";
+    comment?: string | null;
+  }
+): void {
+  opts.ctx.waitUntil((async () => {
+    const verdict = opts.decision === "approved" ? "已通过" : "被驳回";
+    const body = [
+      `<b>你发起的${sceneLabel(opts.scene)}审批${verdict}</b>`,
+      `事项：${opts.title}`,
+      `处理人：${opts.actorName}`,
+      ...(opts.comment ? [`意见：${opts.comment}`] : []),
+      "<br>",
+      "详情见：登录后台 → 审批中心。",
+    ].join("<br>");
+    await notifyUser(env, opts.ownerId, `${sceneLabel(opts.scene)}审批${verdict}`, body).catch(() => null);
+  })());
+}
 
 const INSTANCE_STATUS_LABEL: Record<string, string> = {
   pending: "审批中",
@@ -238,6 +319,18 @@ approvals.post("/instances", async (c) => {
     return c.json({ ok: true, id, auto_passed: true, status: "approved", total_steps: steps.length, ...downstream });
   }
 
+  // 有审批人可处理（团队子用户提交的 pending）→ 推送提醒
+  notifyApprovalPending(c.env, {
+    ctx: c.executionCtx,
+    instanceId: id,
+    title,
+    scene: b.scene || "offer",
+    ownerName: session.name || "未知",
+    ownerId: session.userId,
+    teamId: session.teamId ?? null,
+    approverId: steps[0].approver_id || null,
+  });
+
   return c.json({ ok: true, id, auto_passed: false, status: "pending", total_steps: steps.length });
 });
 
@@ -323,6 +416,15 @@ approvals.post("/instances/:id/decide", async (c) => {
     await c.env.DB.prepare(
       "UPDATE approval_instances SET status='rejected', updated_at=datetime('now') WHERE id=?"
     ).bind(id).run();
+    notifyApprovalResult(c.env, {
+      ctx: c.executionCtx,
+      ownerId: inst.owner_id,
+      actorName: session.name || "未知",
+      title: inst.title || "审批",
+      scene: inst.scene || "offer",
+      decision: "rejected",
+      comment: b.comment || null,
+    });
     return c.json({ ok: true, status: "rejected" });
   }
 
@@ -345,11 +447,31 @@ approvals.post("/instances/:id/decide", async (c) => {
     await c.env.DB.prepare(
       "INSERT INTO approval_steps (id, instance_id, step_index, step_name, approver_id) VALUES (?, ?, ?, ?, ?)"
     ).bind(genId(), id, nextIndex, steps[nextIndex]?.name || "审批", steps[nextIndex]?.approver_id || null).run();
+    // 进入下一步 → 提醒下一位处理人
+    notifyApprovalPending(c.env, {
+      ctx: c.executionCtx,
+      instanceId: id,
+      title: inst.title || "审批",
+      scene: inst.scene || "offer",
+      ownerName: session.name || "未知",
+      ownerId: inst.owner_id,
+      teamId: session.teamId ?? null,
+      approverId: steps[nextIndex]?.approver_id || null,
+    });
     return c.json({ ok: true, status: "pending", step: nextIndex + 1, total: totalSteps });
   }
 
   // 最后一步通过 → 整个流程通过
   const downstream = await finalizeApproval(c.env, inst, session.userId, b.comment || "通过");
+  notifyApprovalResult(c.env, {
+    ctx: c.executionCtx,
+    ownerId: inst.owner_id,
+    actorName: session.name || "未知",
+    title: inst.title || "审批",
+    scene: inst.scene || "offer",
+    decision: "approved",
+    comment: b.comment || null,
+  });
   return c.json({ ok: true, status: "approved", ...downstream });
 });
 

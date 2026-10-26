@@ -92,99 +92,9 @@ const HR_PROFILE: IdentityProfile = {
   navLabels: {},
 };
 
-/** 猎头 / 招聘顾问 */
-const HEADHUNTER_PROFILE: IdentityProfile = {
-  key: "headhunter",
-  mark: "AI",
-  name: "Ai 招聘工作台 · 猎头版",
-  tagline: "候选人寻访与职位交付管理",
-  loginLead: "职位、候选人、推进进度一站式管理，寻访交付全流程一眼看清。",
-  loginHeroTail: "跑通交付全流程",
-  loginPoints: [
-    "AI 寻访助手 · 一键生成 JD 与画像",
-    "推进管道 · 交付转化用数据说话",
-    "合同材料 · 到期自动提醒",
-  ],
-  loginFooterTail: "AI 驱动的招聘交付管理系统",
-  heroTitle: "一个人，也能接",
-  heroHighlight: "更多职位委托",
-  heroLead: "从候选人入库、AI 解析、推进管道到交付转化分析，把寻访与交付的全流程收进一个工作台。不用装软件，打开就能用。",
-  eyebrow: "职位 · 候选人 · 交付，一个工作台",
-  footerDesc: "让独立顾问和小团队，用一份预算管好所有职位委托。",
-  templateKpiLabel: "交付模板",
-  navLabels: {
-    jobs: "职位管理",
-    pipeline: "推进管道",
-    funnel: "业绩概览",
-    talents: "候选人库",
-    profiles: "候选人画像",
-    // 匹配菜单默认名「人才AI匹配」含「人才」，猎头身份下统一叫「候选人」
-    match: "候选人AI匹配",
-  },
-  // 只换叙述角度，功能本身与 HR 版一致；不得写系统里没有的模块。
-  featureCopy: {
-    0: {
-      title: "候选人库",
-      desc: "简历批量入库、AI 智能解析，候选人一档可投多岗，寻访资源沉淀复用。",
-      tags: ["批量导入", "一人多岗"],
-    },
-    1: {
-      title: "职位交付看板",
-      desc: "多个职位并行推进，每个候选人卡在哪一轮、停了几天，一眼看清。",
-      tags: ["多职位并行", "拖拽流转"],
-    },
-    2: {
-      title: "交付转化分析",
-      desc: "来源渠道、转化率与交付周期自动统计，哪个渠道出人快，用数据说话。",
-      tags: ["渠道效果", "交付周期"],
-    },
-    3: {
-      title: "入职材料归档",
-      desc: "候选人的合同与入职材料集中归档，到期节点自动提醒，交付不烂尾。",
-      tags: ["材料归档", "到期提醒"],
-    },
-    4: {
-      title: "任务待办与模板",
-      desc: "跟进待办自动生成，简历筛选、面试邀约等常用文档随时调用。",
-      tags: ["跟进待办", "文档模板"],
-    },
-    5: {
-      title: "AI 招聘助手",
-      desc: "一键生成职位 JD 与候选人画像，批量简历快速打分排序。",
-      tags: ["AI 生成", "简历打分"],
-    },
-  },
-  flowCopy: {
-    title: "从接单到交付，一条线走到底",
-    desc: "寻访不是零散动作，而是一条连续的交付流程。每一步都有对应的模块兜底。",
-    steps: {
-      0: { title: "录入职位", desc: "AI 辅助生成 JD" },
-      1: { title: "积累候选人", desc: "批量导入并解析" },
-      2: { title: "推进寻访", desc: "看板拖拽流转" },
-      3: { title: "推荐到岗", desc: "阶段记录留痕" },
-      4: { title: "入职跟进", desc: "试用期待办提醒" },
-      5: { title: "材料归档", desc: "交付成果沉淀" },
-    },
-  },
-  // 新手指引覆盖：去掉社保台账步骤（猎头不办社保），并把雇主口径的合同话术改成交付口径。
-  // 其余步骤文案由 termFor 统一替换（岗位→职位、人才→候选人、招聘看板→推进管道、招聘概览→业绩概览）。
-  // 下标随 onboardingSteps.ts 的 BASE_STEPS 顺序：3=待办、6=合同、7=社保(跳过)。
-  onboardingCopy: {
-    3: {
-      desc: "「待办日历」→ 点左上角「新建待办」，选日期写内容。合同/试用到期会自动落进来。",
-    },
-    6: {
-      title: "合同材料：别漏签",
-      desc: "候选人状态改「已入职」→ 合同提醒自动来。上传原件，AI 识别签订/到期日，交付不烂尾。",
-    },
-    7: { skip: true },
-  },
-};
-
 /** 其他 / 未选择 —— 回落默认档案（HR），不再作为可选身份暴露 */
 export const IDENTITY_PROFILES: Record<string, IdentityProfile> = {
   hr: HR_PROFILE,
-  headhunter: HEADHUNTER_PROFILE,
 };
 
 export const DEFAULT_PROFILE = HR_PROFILE;
@@ -215,16 +125,7 @@ export function navLabelFor(profile: IdentityProfile, to: string, fallback: stri
  * 词表必须与 navLabels 对齐（菜单叫什么，页面内就跟着叫），未收录的词原样返回。
  */
 const TERM_LABELS: Record<string, Record<string, string>> = {
-  headhunter: {
-    // 长词在前，避免「招聘看板」等被更短的规则先拆掉；
-    // termFor 内部会再按词长降序排一次，这里书写顺序仅为可读性。
-    招聘漏斗: "业绩概览",
-    招聘概览: "业绩概览",
-    招聘看板: "推进管道",
-    人才: "候选人",
-    岗位: "职位",
-  },
-  // 团队版已下架，无对应身份分支。
+  // 猎头版已下线（2026-10-24）；HR 档案不做术语替换。
 };
 
 export function termFor(profile: IdentityProfile, text: string): string {

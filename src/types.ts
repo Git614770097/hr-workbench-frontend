@@ -17,7 +17,7 @@ export interface User {
   paid_until?: string | null;
   /** 账号状态：active=正常 / frozen=已冻结(只读，到期未续费) / pending / rejected / disabled */
   status?: string | null;
-  /** 注册时自报身份（hr/headhunter/team/other）—— 只驱动品牌文案，不参与鉴权 */
+  /** 注册时自报身份（现仅 hr；历史 headhunter 数据按 HR 处理）—— 仅作审批参考，不参与鉴权 */
   intended_role?: string | null;
   /** 团队标识：NULL=个人；manager=自己的 id；团队成员=所属管理员 id */
   team_id?: string | null;
@@ -60,32 +60,16 @@ export interface UserRow {
   must_change_password: number;
   /** 会员有效期（NULL=未开通；时间串=已过期/有效） */
   paid_until: string | null;
-  /** 注册时自报身份（hr/headhunter/team/other），仅作审批参考，不参与鉴权 */
+  /** 注册时自报身份（现仅 hr；历史数据可能有 headhunter，展示层一律按 HR 处理），仅作审批参考，不参与鉴权 */
   intended_role?: string | null;
   /** 团队标识（管理员=自己的 id；子用户=管理员 id；NULL=个人） */
   team_id?: string | null;
 }
 
-/**
- * 注册时可选的身份。**只是意向标记，不授予任何权限** ——
- * 真正能看到什么菜单由管理员审批时分配的角色决定。
- * 目前仅 HR 人事 / 猎头顾问 两档，文案口径不同、功能一致。
- */
-// desc 刻意控制在 ~12 字内：注册页身份选项为两列卡片，过长会换行撑高表单
-export const INTENDED_ROLES: { key: string; label: string; desc: string }[] = [
-  { key: "hr", label: "HR 人事", desc: "企业内部招聘与人才管理" },
-  { key: "headhunter", label: "猎头 / 顾问", desc: "为多家客户寻访并交付" },
-];
-
-/** 身份 key → 中文标签（列表与提示复用） */
-export const INTENDED_ROLE_LABELS: Record<string, string> = Object.fromEntries(
-  INTENDED_ROLES.map((r) => [r.key, r.label])
-);
-
 // 菜单权限 key（与后端 src/worker/permissions.ts 保持一致）
 export type MenuKey =
   | "talents" | "contracts" | "social"
-  | "pipeline" | "interviews" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "tools" | "users" | "background";
+  | "pipeline" | "interviews" | "funnel" | "jobs" | "tasks" | "templates" | "profiles" | "tools" | "users";
 
 export const MENU_PERMISSIONS: { key: MenuKey; label: string; hint?: string }[] = [
   { key: "tasks", label: "待办日历" },
@@ -100,9 +84,6 @@ export const MENU_PERMISSIONS: { key: MenuKey; label: string; hint?: string }[] 
   // 接口层也需要 talents 权限才能读到人才列表，故需一并勾选。
   { key: "contracts", label: "合同管理", hint: "需同时勾选「人才库管理」" },
   { key: "social", label: "社保公积金", hint: "需同时勾选「人才库管理」" },
-  // 背调中心：独立于招聘看板的敏感合规模块，单独权限便于按角色开关。
-  // 主体数据仍取自 talents 表，故提示一并勾选「人才库管理」。
-  { key: "background", label: "背调中心", hint: "需同时勾选「人才库管理」" },
   { key: "profiles", label: "人才画像" },
   { key: "templates", label: "模板库管理" },
   { key: "tools", label: "工具中心", hint: "AI 助手；页内各功能按其领域权限展示" },
@@ -757,11 +738,13 @@ export interface AiRecapReport {
   _usage?: AiUsage | null;
 }
 
-/** AI 调用的 token 用量（DeepSeek usage 字段，后端原样透传） */
+/** AI 调用的 token 用量（后端原样透传，含实际供应商） */
 export interface AiUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  /** 实际出内容的供应商；智谱 GLM 免费档成本为 0 */
+  provider?: "zhipu" | "deepseek";
 }
 
 // AI 岗位诊断（/ai/job-diagnosis）：单岗位「为什么招人慢」
@@ -1001,90 +984,6 @@ export interface ContractUploadResult {
   warning: string | null;
 }
 
-// ---- 候选人背调中心（独立模块，逻辑挂在 Offer→入职之间）----
-export type BgStatus = "pending" | "processing" | "completed" | "passed" | "failed" | "cancelled";
-export type BgConsent = "none" | "requested" | "granted" | "declined";
-export type BgItemStatus = "pending" | "pass" | "fail";
-
-export const BG_STATUS_LABELS: Record<string, string> = {
-  pending: "待发起",
-  processing: "核验中",
-  completed: "已出报告",
-  passed: "已通过",
-  failed: "未通过",
-  cancelled: "已取消",
-};
-
-export const BG_CONSENT_LABELS: Record<string, string> = {
-  none: "未授权",
-  requested: "已发授权请求",
-  granted: "已授权",
-  declined: "候选人拒绝",
-};
-
-export const BG_ITEM_STATUS_LABELS: Record<string, string> = {
-  pending: "待核验",
-  pass: "一致",
-  fail: "异常",
-};
-
-export interface BgItem {
-  type: string;
-  label: string;
-  status: BgItemStatus;
-  note: string;
-}
-
-export interface BackgroundCheck {
-  id: string;
-  owner_id: string;
-  talent_id: string;
-  talent_job_id: string | null;
-  status: BgStatus;
-  consent_status: BgConsent;
-  consent_at: string | null;
-  consent_method: string | null;
-  provider: string;
-  high_risk: boolean;
-  items: BgItem[];
-  item_count?: number;
-  has_report: boolean;
-  report_name: string | null;
-  summary: string | null;
-  result: "pass" | "fail" | null;
-  started_at: string | null;
-  completed_at: string | null;
-  created_at: string;
-  updated_at: string;
-  // 联表带出
-  talent_name: string;
-  talent_phone: string | null;
-  job_title: string | null;
-  owner_name: string;
-  status_label: string;
-  consent_label: string;
-}
-
-/** AI 背调小结（/background/:id/ai-summary） */
-export interface BgSummary {
-  summary: string;
-  risks: string[];
-}
-
-/** AI 简历核查清单（/background/:id/ai-resume-check）：基于简历文本生成待核查建议 */
-export interface BgResumeCheckItem {
-  category: string;     // 学历 / 工作履历 / 竞业限制 / 身份 / 其他
-  item: string;         // 具体核查事项
-  channel: string;      // 建议核查渠道（学信网 / 前雇主 HR / 社保系统…）
-  material: string;     // 需收集的证明材料
-  priority: "high" | "medium" | "low";
-}
-export interface BgResumeCheckResult {
-  items: BgResumeCheckItem[];
-  gaps: string[];       // 简历缺失/含糊、需候选人补充确认的点
-  notes: string;        // 整体建议
-}
-
 // ---- 待办日历 ----
 export type TaskStatus = "pending" | "done" | "cancelled";
 
@@ -1291,32 +1190,7 @@ export const SOURCE_OPTIONS = [
   "官网投递", "猎头推荐", "社交平台", "其他",
 ];
 
-// ---- 使用日志（模块点击率）----
-export interface UsageOverview {
-  days: number;
-  range: { from: string; to: string };
-  cards: {
-    activeUsers: number;
-    totalViews: number;
-    /** 今日访问最多的模块 key，空串表示今天还没有数据 */
-    topMenu: string;
-    /** 今日人均使用的模块数 */
-    avgMenus: number;
-  };
-  ranking: { menu: string; views: number; uv: number }[];
-  trend: { day: string; views: number; uv: number }[];
-  /** 本期出现过的菜单 key（矩阵列顺序） */
-  menus: string[];
-  users: {
-    id: string;
-    name: string;
-    role: string;
-    status: string;
-    total: number;
-    menus: Record<string, number>;
-  }[];
-}
-
+// ---- 日志管理（上报明细）----
 export interface UsageEventRow {
   id: string;
   ts: string;
@@ -1409,9 +1283,4 @@ export interface AuditLogsResponse {
   page: number;
   limit: number;
   pages: number;
-}
-
-export interface AuditActionStat {
-  action: string;
-  n: number;
 }

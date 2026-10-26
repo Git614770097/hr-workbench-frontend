@@ -110,15 +110,15 @@ function FlowSettings() {
           },
           {
             title: "操作",
-            key: "act",
+            key: "action",
             width: 90,
-            align: "center",
+            fixed: "right" as const,
             render: (_: unknown, r: ApprovalFlow) => (
               <Popconfirm title="删除该流程？" description="已发起的审批不受影响。" onConfirm={async () => {
                 try { await api.deleteApprovalFlow(r.id); message.success("已删除"); load(); }
                 catch (e) { message.error((e as Error).message); }
               }} okText="删除" cancelText="取消">
-                <Button type="link" size="small" danger style={{ paddingInline: 0 }}>删除</Button>
+                <Button type="link" size="small" danger>删除</Button>
               </Popconfirm>
             ),
           },
@@ -297,15 +297,15 @@ function InstanceList() {
           },
           {
             title: "操作",
-            key: "act",
+            key: "action",
             width: 150,
-            align: "center",
+            fixed: "right" as const,
             render: (_: unknown, r: ApprovalInstance) =>
               r.status === "pending" ? (
-                <Space size={12}>
+                <Space size={4}>
                   {/* 团队子用户不能审自己的单（后端同规则 403），这里直接不展示入口 */}
                   {!(isTeamMember && r.owner_id === currentUser?.id) && (
-                    <Button type="link" size="small" style={{ paddingInline: 0 }}
+                    <Button type="link" size="small"
                       onClick={() => { setDecideTarget(r); setDecision("approve"); }}>
                       处理
                     </Button>
@@ -317,7 +317,7 @@ function InstanceList() {
                     okText="撤回"
                     cancelText="取消"
                   >
-                    <Button type="link" size="small" danger style={{ paddingInline: 0 }}>撤回</Button>
+                    <Button type="link" size="small" danger>撤回</Button>
                   </Popconfirm>
                 </Space>
               ) : (

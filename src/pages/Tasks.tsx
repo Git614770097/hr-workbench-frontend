@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, type DragEvent } fro
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Card, Button, Space, Tag, Input, Select, Segmented, Checkbox, Popconfirm, message,
-  Modal, Form, DatePicker, Empty, Spin, Tooltip, Dropdown, Calendar, Alert,
+  Modal, Form, DatePicker, Empty, Spin, Tooltip, Dropdown, Calendar, Alert, Typography,
 } from "antd";
 import type { CalendarProps } from "antd";
 import {
@@ -17,6 +17,7 @@ import { api } from "../api";
 import type { Task, User } from "../types";
 import { PRIORITY_LABELS, PRIORITY_COLORS, TASK_SOURCE_LABELS } from "../types";
 import { dayInfo, shiftToNextWorkday, hasHolidayData, knownYears } from "../utils/holidays";
+import { fmtDate, fmtDateTime } from "../utils/time";
 import { useIdentityProfile } from "../useIdentity";
 import { termFor } from "../identityProfiles";
 import { exportXlsx, dateStamp } from "../utils/file";
@@ -269,7 +270,18 @@ export default function Tasks() {
 
   const onMoreClick = async (t: Task, key: string) => {
     if (key === "edit") return openEdit(t);
-    if (key === "delete") return handleDelete(t);
+    if (key === "delete") {
+      // 误触即删会丢数据——统一走二次确认（菜单项里放 Popconfirm 不可靠）
+      Modal.confirm({
+        title: "删除待办",
+        content: `确定删除「${t.title}」？删除后无法恢复。`,
+        okText: "删除",
+        okType: "danger",
+        cancelText: "取消",
+        onOk: () => handleDelete(t),
+      });
+      return;
+    }
     if (key === "cancel") {
       try {
         await api.updateTaskStatus(t.id, t.status === "cancelled" ? "pending" : "cancelled");
@@ -297,10 +309,11 @@ export default function Tasks() {
     return "#8c8c8c";
   };
 
-  // 日历格子内容：antd 会把返回值放进日期数字下方的内容区，
-  // 这里只返回标记本身，不能再带上 info.originNode（否则日期数字会渲染两遍）。
+  // 日历格子内容：antd 会把返回值放进日期数字（/月份名）下方的内容区，
+  // 这里只返回标记本身，不能带 info.originNode（否则日期数字会渲染两遍）。
+  // 年视图的月份同理：antd 已在 date-value 渲染「N月」，再回 originNode 会出两份月份名。
   const cellRender: CalendarProps<Dayjs>["cellRender"] = (current, info) => {
-    if (info.type !== "date") return info.originNode;
+    if (info.type !== "date") return null;
     const ymd = current.format("YYYY-MM-DD");
     const k = dayKind(ymd);
     const list = byDate[ymd] || [];
@@ -407,9 +420,9 @@ export default function Tasks() {
           ) : null}
           {t.status === "cancelled" && <Tag style={{ marginInlineEnd: 0 }}>已取消</Tag>}
           {t.status === "done" && <Tag color="green" style={{ marginInlineEnd: 0 }}>已完成</Tag>}
-          <span style={{ color: "#c2c6cc" }}>
+          <Typography.Text type="secondary">
             {TASK_SOURCE_LABELS[t.source] || t.source}
-          </span>
+          </Typography.Text>
         </div>
         {t.content && <div className="task-content">{t.content}</div>}
       </div>
@@ -450,16 +463,18 @@ export default function Tasks() {
             </Space>
           }
           extra={
-            <Space size={12} wrap style={{ fontSize: 12, color: "#8c8c8c" }}>
+            <Space size={12} wrap style={{ fontSize: 12 }}>
               <Space size={4}>
                 <span className="task-cal-badge is-today">今</span>
                 <span className="task-cal-badge is-holiday">休</span>
                 <span className="task-cal-badge is-makeup">班</span>
               </Space>
               <Space size={8}>
-                <span className="task-legend"><i className="task-cal-dot p-high" />高</span>
-                <span className="task-legend"><i className="task-cal-dot p-normal" />中</span>
-                <span className="task-legend"><i className="task-cal-dot p-low" />低</span>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  <span className="task-legend"><i className="task-cal-dot p-high" />高</span>
+                  <span className="task-legend"><i className="task-cal-dot p-normal" />中</span>
+                  <span className="task-legend"><i className="task-cal-dot p-low" />低</span>
+                </Typography.Text>
               </Space>
               <Button
                 size="small"
@@ -486,8 +501,8 @@ export default function Tasks() {
                       priority: PRIORITY_LABELS[t.priority] || t.priority,
                       status: t.status === "done" ? "已完成" : "待处理",
                       source: TASK_SOURCE_LABELS[t.source] || t.source,
-                      done_at: t.done_at || "",
-                      created_at: (t.created_at || "").slice(0, 10),
+                      done_at: t.done_at ? fmtDateTime(t.done_at) : "",
+                      created_at: t.created_at ? fmtDate(t.created_at) : "",
                     })),
                   }]);
                 }}

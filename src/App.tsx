@@ -47,7 +47,6 @@ import {
   Interviews,
   Approvals,
   Onboarding,
-  Background,
   Funnel,
   Jobs,
   Requisitions,
@@ -58,7 +57,6 @@ import {
   Roles,
   Settings,
   Logs,
-  AuditLogs,
   Team,
   MTasks,
   MInterviews,
@@ -351,6 +349,8 @@ export default function App({ theme, onChangeTheme }: AppProps) {
     <Layout user={user} onLogout={logout} theme={theme} onChangeTheme={onChangeTheme} onUserChange={setUser}>
       <Suspense fallback={pageFallback}>
         <Routes>
+          {/* 登录成功后直达待办日历（登录态下再访问 /login 也回这里）；无 tasks 权限者由 RequirePerm 兜底 */}
+          <Route path="/login" element={<Navigate to="/tasks" replace />} />
           {/* 首页 = 招聘漏斗（已并入概览速览）。无 funnel 权限者由 RequirePerm 自动落到 /talents */}
           <Route path="/" element={<Navigate to="/funnel" replace />} />
           <Route path="/talents" element={<RequirePerm user={user} perm="talents"><TalentList /></RequirePerm>} />
@@ -362,8 +362,6 @@ export default function App({ theme, onChangeTheme }: AppProps) {
           {/* 审批中心 / 入职办理：权限跟随招聘看板 */}
           <Route path="/approvals" element={<RequirePerm user={user} perm="pipeline"><Approvals /></RequirePerm>} />
           <Route path="/onboarding" element={<RequirePerm user={user} perm="pipeline"><Onboarding /></RequirePerm>} />
-          {/* 背调中心：独立权限（background），挂在 Offer→入职之间 */}
-          <Route path="/background" element={<RequirePerm user={user} perm="background"><Background /></RequirePerm>} />
           <Route path="/funnel" element={<RequirePerm user={user} perm="funnel"><Funnel /></RequirePerm>} />
           <Route path="/jobs" element={<RequirePerm user={user} perm="jobs"><Jobs /></RequirePerm>} />
           <Route path="/requisitions" element={<RequirePerm user={user} perm="jobs"><Requisitions /></RequirePerm>} />
@@ -377,10 +375,10 @@ export default function App({ theme, onChangeTheme }: AppProps) {
           {(user.role === "admin" || user.role === "manager") && <Route path="/team" element={<Team />} />}
           {/* 系统设置：收款码/数据字典等全局配置，仅管理员；权限走 admin 硬放行，不占菜单权限 key */}
           {user.role === "admin" && <Route path="/settings" element={<Settings />} />}
-          {/* 日志管理：模块点击率统计，仅管理员；同上走 admin 硬放行 */}
+          {/* 日志管理：上报明细 + 操作审计双列表，仅管理员；同上走 admin 硬放行 */}
           {user.role === "admin" && <Route path="/logs" element={<Logs />} />}
-          {/* 操作审计：谁/何时/对什么数据/做了什么，仅管理员；同样不占菜单权限 key */}
-          {user.role === "admin" && <Route path="/audit" element={<AuditLogs />} />}
+          {/* 旧地址 /audit 重定向到日志管理的操作审计 Tab，防止收藏/旧链接 404 */}
+          {user.role === "admin" && <Route path="/audit" element={<Navigate to="/logs?tab=audit" replace />} />}
           {/* 帮助中心：所有登录用户可看，不做权限控制 */}
           <Route path="/help" element={<Help />} />
           <Route path="*" element={<Navigate to="/" replace />} />

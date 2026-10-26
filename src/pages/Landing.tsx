@@ -1,17 +1,10 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import { IDENTITY_PROFILES, DEFAULT_PROFILE } from "../identityProfiles";
+import { DEFAULT_PROFILE } from "../identityProfiles";
 import "../styles/landing.css";
 
-/**
- * 落地页分版本：用 ?for=headhunter 切换猎头版卖点（默认 HR 版）。
- * 未带参数时是默认（HR）版。这样同一个链接可以按投放渠道给不同人群，
- * 而不用维护两套落地页代码。
- */
-function profileFromUrl() {
-  const key = new URLSearchParams(window.location.search).get("for")?.trim() || "";
-  return IDENTITY_PROFILES[key] || DEFAULT_PROFILE;
-}
+// 猎头版已下线（2026-10-24）：落地页固定为 HR 版（原 ?for=headhunter 的版本切换已移除）。
+const brand = DEFAULT_PROFILE;
 
 /* 招聘漏斗演示数据（首屏可视化，等宽数字） */
 const FUNNEL = [
@@ -105,25 +98,17 @@ const SECURITY = [
   { idx: "03", title: "隐私合规", desc: "简历等个人信息处理遵循《个人信息保护法》，加密存储。" },
 ];
 
-// 定价说明（2026-09-28 调整）：软件本身不赚钱，只作获客入口；
-// 真实收益来自「按你的流程改造系统」的定制开发，所以不做功能分级——
+// 定价说明（2026-10-24 调整为一口价）：¥19.9/年一口价、不做功能分级——
 // 试用和付费用户看到的功能完全一样，避免把潜在定制客户挡在门外。
+// 软件本身不赚钱只作获客入口，真实收益来自「按你的流程改造系统」的定制开发。
 const PLANS = [
   {
-    name: "体验版", kind: "plan",
-    symbol: "¥", price: "9.9", period: "首月 · 含账号开通",
-    desc: "先用起来，不合适不续费",
-    feats: ["全部功能开放", "不限在招岗位", "简历导入与解析", "AI 生成 JD 与画像"],
+    name: "会员", kind: "plan",
+    symbol: "¥", price: "19.9", period: "每年 · 一口价",
+    desc: "全部功能开放，到期未续费转为只读",
+    feats: ["全部招聘模块", "不限在招岗位", "简历导入与解析", "AI 生成 JD 与画像", "合同与到期台账", "待办与到期提醒", "招聘漏斗分析"],
     featured: true,
-    cta: "开始体验",
-  },
-  {
-    name: "会员续费", kind: "plan",
-    symbol: "¥", price: "49.9", period: "每年",
-    desc: "到期未续费转为只读，续费即恢复全功能",
-    feats: ["全部招聘模块", "合同与到期台账", "待办与到期提醒", "招聘漏斗分析", "不限在招岗位"],
-    featured: false,
-    cta: "立即续费",
+    cta: "立即开通",
   },
   {
     name: "定制开发", kind: "custom",
@@ -148,8 +133,6 @@ const CUSTOM_ITEMS = [
 const CONTACT = { email: "", wechat: "" };
 
 export default function Landing() {
-  // 品牌档案：?for=xxx 指定版本，否则默认（HR）
-  const [brand, setBrand] = useState(profileFromUrl);
   // 滚动 reveal：进入视口后加 .in 触发淡入上浮
   useEffect(() => {
     const els = document.querySelectorAll(".land-reveal");
@@ -172,24 +155,12 @@ export default function Landing() {
     return () => io.disconnect();
   }, []);
 
-  // 页面标题跟随当前版本（含首屏直接带 ?for= 进入的情况）
+  // 页面标题
   useEffect(() => {
     document.title = `${brand.name} · ${brand.tagline}`;
-  }, [brand.name, brand.tagline]);
+  }, []);
 
-  // 版本切换：改 URL 参数但不刷新页面（保持滚动位置与动画状态）
-  const switchVersion = (key: string) => {
-    const url = new URL(window.location.href);
-    if (key === "hr") url.searchParams.delete("for");
-    else url.searchParams.set("for", key);
-    window.history.replaceState({}, "", url.toString());
-    setBrand(key === "hr" ? DEFAULT_PROFILE : IDENTITY_PROFILES[key] || DEFAULT_PROFILE);
-  };
-
-  // 所有「登录 / 注册」入口都带上当前版本的 ?for=：
-  // 登录页按它决定品牌文案，注册表单按它预选「我的身份」。
-  // 不带这一段，猎头版落地页点进注册会退回 HR 版（曾经的真实断链）。
-  const loginTo = brand.key === "hr" ? "/login" : `/login?for=${brand.key}`;
+  const loginTo = "/login";
 
   return (
     <div className="land">
@@ -201,24 +172,6 @@ export default function Landing() {
             <span>{brand.name}</span>
             <span className="land-logo-sub land-nav-sub">{brand.tagline}</span>
           </Link>
-          {/* 版本切换：同一套落地页，按人群切卖点（不刷新页面） */}
-          <div className="land-version-switch" role="tablist" aria-label="选择你的身份">
-            {[
-              { key: "hr", label: "我是 HR" },
-              { key: "headhunter", label: "我是猎头" },
-            ].map((v) => (
-              <button
-                key={v.key}
-                type="button"
-                role="tab"
-                aria-selected={brand.key === v.key}
-                className={"land-version-tab" + (brand.key === v.key ? " on" : "")}
-                onClick={() => switchVersion(v.key)}
-              >
-                {v.label}
-              </button>
-            ))}
-          </div>
           <div className="land-nav-actions">
             <Link to={loginTo} className="land-nav-link">登录</Link>
             <Link to={loginTo} className="land-btn land-btn-primary land-btn-sm">免费试用</Link>
@@ -288,16 +241,9 @@ export default function Landing() {
               <p className="land-section-desc">
                 不是一个"简历表格"，而是一套把招人这件事从"凭感觉"变成"有数据"的完整工作台。
               </p>
-              {brand.key === "headhunter" && (
-                <p className="land-section-desc" style={{ marginTop: 6 }}>
-                  对独立顾问来说，它是你一个人的交付中枢。
-                </p>
-              )}
-              {brand.key === "hr" && (
-                <p className="land-section-desc" style={{ marginTop: 6 }}>
-                  对企业 HR 来说，它是把招聘全流程收进一个工作台。
-                </p>
-              )}
+              <p className="land-section-desc" style={{ marginTop: 6 }}>
+                对企业 HR 来说，它是把招聘全流程收进一个工作台。
+              </p>
             </div>
             <div className="land-features-grid">
               {FEATURES.map((f, i) => {
@@ -421,7 +367,7 @@ export default function Landing() {
               ))}
             </div>
             <p className="land-plan-footnote">
-              首月体验 ¥9.9 含账号开通，之后每年 ¥49.9；到期未续费账户转为只读，续费后即刻恢复全功能。定制开发按需求单独评估报价。
+              ¥19.9/年一口价，全部功能开放，不做功能分级；到期未续费账户转为只读，续费后即刻恢复全功能。定制开发按需求单独评估报价。
             </p>
           </div>
         </section>

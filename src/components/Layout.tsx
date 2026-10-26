@@ -49,7 +49,6 @@ import ProfileOutlined from "@ant-design/icons/es/icons/ProfileOutlined";
 import BarChartOutlined from "@ant-design/icons/es/icons/BarChartOutlined";
 import ToolOutlined from "@ant-design/icons/es/icons/ToolOutlined";
 import RobotOutlined from "@ant-design/icons/es/icons/RobotOutlined";
-import FileSearchOutlined from "@ant-design/icons/es/icons/FileSearchOutlined";
 import ThunderboltOutlined from "@ant-design/icons/es/icons/ThunderboltOutlined";
 import QuestionCircleOutlined from "@ant-design/icons/es/icons/QuestionCircleOutlined";
 import PlayCircleOutlined from "@ant-design/icons/es/icons/PlayCircleOutlined";
@@ -165,8 +164,6 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
       // 审批中心 / 入职办理：权限跟随 pipeline，不新增菜单 key
       { to: "/approvals", label: "审批中心", icon: <AuditOutlined />, color: "#d97706", perm: "pipeline" },
       { to: "/onboarding", label: "入职办理", icon: <SolutionOutlined />, color: "#059669", perm: "pipeline" },
-      // 背调中心：独立权限（background），挂在「Offer → 入职」之间，不占看板列
-      { to: "/background", label: "背调中心", icon: <SafetyOutlined />, color: "#ef4444", perm: "background" },
     ],
   },
 
@@ -226,10 +223,8 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
       { to: "/users", label: "用户管理", icon: <UserOutlined />, color: "#f59e0b", perm: "users", adminOnly: true },
       { to: "/team", label: "团队管理", icon: <TeamOutlined />, color: "#f59e0b", perm: "team", managerOnly: true },
       { to: "/settings", label: "系统设置", icon: <SettingOutlined />, color: "#64748b", perm: "settings", adminOnly: true },
-      // 日志管理：模块使用热度（埋点数据），同为管理员专属，同样不占菜单权限 key
+      // 日志管理：上报明细 + 操作审计（合一页双列表），管理员专属，不占菜单权限 key
       { to: "/logs", label: "日志管理", icon: <BarChartOutlined />, color: "#64748b", perm: "logs", adminOnly: true },
-      // 操作审计：写操作 + 敏感读操作的留痕（合规追溯），仅管理员
-      { to: "/audit", label: "操作审计", icon: <FileSearchOutlined />, color: "#64748b", perm: "audit", adminOnly: true },
     ],
   },
 ];

@@ -396,8 +396,9 @@ export default function Onboarding() {
                   },
                   {
                     title: "操作",
-                    key: "act",
+                    key: "action",
                     width: 70,
+                    fixed: "right" as const,
                     render: (_: unknown, r: OnboardingItem) => (
                       <Popconfirm title="删除该项？" onConfirm={async () => {
                         try { await api.deleteOnboardingItem(r.id); load(); } catch (e) { message.error((e as Error).message); }

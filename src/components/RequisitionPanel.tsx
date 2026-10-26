@@ -205,7 +205,7 @@ export default function RequisitionPanel({
         loading={loading}
         size="middle"
         scroll={{ x: 1100 }}
-        locale={{ emptyText: <Empty description="还没有招聘需求" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+        locale={{ emptyText: <Empty description={statusFilter === "pending" ? "没有待处理的需求" : statusFilter === "approved" ? "还没有已转岗的需求" : statusFilter === "closed" ? "没有已作废的需求" : "还没有招聘需求"} image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
         columns={[
           { title: "需求部门", dataIndex: "department", key: "department", width: 110 },
           { title: "岗位名称", dataIndex: "title", key: "title", width: 150 },

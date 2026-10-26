@@ -117,6 +117,56 @@ export interface AdminNotifyResult {
   note: string;
 }
 
+// ================= 定向通知统一入口 =================
+// 之前每个场景各写一遍「查 token → sendPushPlus」，导致只绑飞书的用户
+// 在定时提醒/审批等场景被整段漏掉（与测试消息的承诺不符）。
+// 统一走 sendViaUserChannel / notifyUser：按 users.notify_channel 分流飞书/PushPlus。
+
+export interface UserChannelRow {
+  id: string;
+  name: string;
+  team_id?: string | null;
+  pushplus_token: string | null;
+  feishu_open_id: string | null;
+  notify_channel: string | null;
+}
+
+/**
+ * 按用户自己的推送通道发一条消息：
+ * notify_channel='feishu' 且绑定/配置齐全 → 飞书私信；否则 PushPlus；
+ * 声明了飞书但绑定或配置不齐 → 显式失败（不静默降级到对方没配的 PushPlus）。
+ */
+export async function sendViaUserChannel(
+  env: Env,
+  u: UserChannelRow,
+  title: string,
+  content: string
+): Promise<{ ok: boolean; message: string }> {
+  if (u.notify_channel === "feishu" && u.feishu_open_id) {
+    const cfg = await resolveFeishuApp(env.DB, u.team_id ?? null, env.AI_KEY_SECRET);
+    if (cfg) return sendFeishuText(env.SESSIONS, cfg, u.feishu_open_id, htmlToPlain(content));
+    return { ok: false, message: "飞书配置不完整，未推送（可在设置里改用 PushPlus）" };
+  }
+  if (u.pushplus_token && u.pushplus_token.trim()) {
+    return sendPushPlus(u.pushplus_token, title, content);
+  }
+  return { ok: false, message: "未配置任何推送通道（飞书未绑定且无 PushPlus token）" };
+}
+
+/** 按 userId 定向推送（自动查通道并分流）。审批、提醒等场景的统一入口。 */
+export async function notifyUser(
+  env: Env,
+  userId: string,
+  title: string,
+  content: string
+): Promise<{ ok: boolean; message: string }> {
+  const u = await env.DB.prepare(
+    "SELECT id, name, team_id, pushplus_token, feishu_open_id, notify_channel FROM users WHERE id = ?"
+  ).bind(userId).first<UserChannelRow>();
+  if (!u) return { ok: false, message: "用户不存在" };
+  return sendViaUserChannel(env, u, title, content);
+}
+
 // 推给所有「管用户」的人：status='active' 且配了 token 的管理员
 // （role='admin'，或所在角色的 permissions 含 users 菜单权限）。
 // 兜底：一个都没配 token 时退回全局 PUSHPLUS_TOKEN（兼容单人部署）。
@@ -229,11 +279,9 @@ export async function notifyNewRegistration(
   info: { name: string; phone: string; referrerName?: string; intendedRole?: string }
 ): Promise<AdminNotifyResult> {
   // 身份只作提示，帮助管理员判断该给什么角色；取值非法/缺失时不显示该行
+  // 猎头身份已下线（2026-10-24），现在只有 hr 一档
   const INTENDED_LABELS: Record<string, string> = {
     hr: "HR 人事",
-    headhunter: "猎头",
-    team: "团队负责人",
-    other: "其他",
   };
   const intended = info.intendedRole ? INTENDED_LABELS[info.intendedRole] : "";
   const lines = [
@@ -327,7 +375,7 @@ export interface ReminderResult {
   interviewCount: number;
   /** 成功推送给几个人 */
   pushedTo: number;
-  /** 因负责人未配置 token 而没能推送的待办条数 */
+  /** 因负责人未配置任何推送通道（飞书/PushPlus）而没能推送的待办条数 */
   skippedNoToken: number;
   message: string;
 }
@@ -446,36 +494,40 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
     interviewsByOwner.get(iv.owner_id)!.push(line);
   }
 
-  // 所有 active 且配了 token 的用户（这些是「可接收」的人）
+  // 所有 active 且配了任一推送通道的用户（飞书私信或 PushPlus，只配飞书的不再漏掉）
   const activeUsers = await env.DB.prepare(
-    `SELECT id, name, pushplus_token FROM users
-     WHERE status = 'active' AND pushplus_token IS NOT NULL AND pushplus_token != ''`
-  ).all<{ id: string; name: string; pushplus_token: string }>();
+    `SELECT id, name, team_id, pushplus_token, feishu_open_id, notify_channel FROM users
+     WHERE status = 'active'
+       AND ( (pushplus_token IS NOT NULL AND pushplus_token != '')
+             OR (notify_channel = 'feishu' AND feishu_open_id IS NOT NULL AND feishu_open_id != '') )`
+  ).all<UserChannelRow>();
   const users = activeUsers.results || [];
+  const byId = new Map(users.map((u) => [u.id, u]));
 
   // 以 userId 为 key 聚合每个人的消息
-  const recipientMap = new Map<string, { name: string; token: string; lines: string[] }>();
-  const ensure = (id: string, name: string, token: string) => {
-    if (!recipientMap.has(id)) recipientMap.set(id, { name, token, lines: [] });
+  const recipientMap = new Map<string, { user: UserChannelRow; lines: string[] }>();
+  const ensure = (id: string) => {
+    const u = byId.get(id);
+    if (!u) return null; // 负责人没配任何通道 → 调用方按「跳过」处理
+    if (!recipientMap.has(id)) recipientMap.set(id, { user: u, lines: [] });
     return recipientMap.get(id)!;
   };
 
   // ① 全员收「合同/试用期」全局内容
   for (const u of users) {
-    const r = ensure(u.id, u.name, u.pushplus_token);
-    if (globalHtml) r.lines.push(globalHtml);
+    const r = ensure(u.id);
+    if (r && globalHtml) r.lines.push(globalHtml);
   }
 
   // ② 负责人收自己的「待办」
   let skippedNoToken = 0;
   for (const [ownerId, grp] of tasksByOwner) {
-    const u = users.find((x) => x.id === ownerId);
-    if (!u) {
-      // 负责人没配 token → 这条待办无人接收，计入跳过
+    const r = ensure(ownerId);
+    if (!r) {
+      // 负责人没配推送通道 → 这条待办无人接收，计入跳过
       skippedNoToken += grp.items.length;
       continue;
     }
-    const r = ensure(ownerId, u.name, u.pushplus_token);
     const taskLines = [`<b>待办提醒（${grp.items.length} 条）</b>`];
     for (const it of grp.items) taskLines.push(`&nbsp;&nbsp;· ${it.title} — ${dueLabel(it.due_date, today)}`);
     r.lines = [...taskLines, ...r.lines];
@@ -483,9 +535,8 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
 
   // ③ 负责人收自己的「面试安排」（最紧急的放最前面，今天/明天的面试最容易被漏掉）
   for (const [ownerId, items] of interviewsByOwner) {
-    const u = users.find((x) => x.id === ownerId);
-    if (!u) continue; // 负责人没配 token：面试是个人事项，静默跳过
-    const r = ensure(ownerId, u.name, u.pushplus_token);
+    const r = ensure(ownerId);
+    if (!r) continue; // 负责人没配通道：面试是个人事项，静默跳过
     const ivLines = [`<b>面试安排（${items.length} 场）</b>`];
     for (const it of items) ivLines.push(`&nbsp;&nbsp;· ${it}`);
     r.lines = [...ivLines, ...r.lines];
@@ -516,14 +567,14 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
     };
   }
 
-  // 逐人推送
+  // 逐人推送（按各自通道：飞书私信或 PushPlus）
   let pushedTo = 0;
   const failures: string[] = [];
   for (const [, r] of recipientMap) {
     if (r.lines.length === 0) continue;
-    const res = await sendPushPlus(r.token, "待办到期提醒", r.lines.join("<br>"));
+    const res = await sendViaUserChannel(env, r.user, "待办到期提醒", r.lines.join("<br>"));
     if (res.ok) pushedTo++;
-    else failures.push(`${r.name}：${res.message}`);
+    else failures.push(`${r.user.name}：${res.message}`);
   }
 
   return {

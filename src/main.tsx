@@ -38,11 +38,16 @@ import "dayjs/locale/zh-cn";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/700.css";
 import App from "./App";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { installGlobalErrorHandlers } from "./utils/clientError";
 import { getThemeState, applyTheme, getColorDef, saveThemeState, type ThemeState } from "./theme";
 import "./styles/global.css";
 import "./styles/mobile.css";
 
 dayjs.locale("zh-cn");
+
+// 全局兜底：未捕获异常 / 未处理 Promise 拒绝也上报留痕（渲染崩溃由 ErrorBoundary 报）
+installGlobalErrorHandlers();
 
 // 等价于 @ant-design/v5-patch-for-react-19 的实现（该包内容就是这 15 行）。
 // 之所以自己写而不用那个包：它内部 import 的是 antd 桶文件，会把首屏拖成 522KB。
@@ -90,7 +95,10 @@ function Root() {
       }}
     >
       <BrowserRouter>
-        <App theme={theme} onChangeTheme={changeTheme} />
+        {/* 错误边界包在最外层：任何页面渲染崩溃显示兜底卡而非白屏，并上报留痕 */}
+        <ErrorBoundary>
+          <App theme={theme} onChangeTheme={changeTheme} />
+        </ErrorBoundary>
       </BrowserRouter>
     </ConfigProvider>
   );

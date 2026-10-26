@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Button, Space, Tag, Input, Select, Popconfirm, message, Tooltip,
-  Progress, Modal, Empty, Spin, Badge,
+  Progress, Modal, Empty, Spin, Badge, Typography, Dropdown,
 } from "antd";
 import {
   PlusOutlined, SearchOutlined, ReloadOutlined,
@@ -269,15 +269,11 @@ export default function Jobs() {
       render: (v: string) => v || "-",
     }] : []),
     {
-      title: "操作", key: "action", width: 260, fixed: "right" as const,
+      // 操作列窄化（2026-10-24）：行内只留高频「编辑/删除」，添加候选人/匹配人才
+      // 收进「更多」——4 个纯文字按钮实测要 260px+ 占屏太宽；添加入口在招聘看板也有一份。
+      title: "操作", key: "action", width: 175, fixed: "right" as const,
       render: (_: any, r: Job) => (
         <Space size={4}>
-          <Button type="link" size="small" onClick={() => { setPresetJobId(r.id); setAddOpen(true); }}>
-            添加候选人
-          </Button>
-          {canProfiles && (
-            <Button className="ai-btn" size="small" icon={<RobotOutlined />} onClick={() => goMatchForJob(r)}>匹配人才</Button>
-          )}
           <Button type="link" size="small" onClick={() => { setEditingId(r.id); setFormOpen(true); }}>编辑</Button>
           <Popconfirm
             title={termFor(profile, "确认删除该岗位？")}
@@ -286,6 +282,21 @@ export default function Jobs() {
           >
             <Button type="link" size="small" danger>删除</Button>
           </Popconfirm>
+          <Dropdown
+            trigger={["click"]}
+            menu={{
+              items: [
+                { key: "add", label: "添加候选人" },
+                ...(canProfiles ? [{ key: "match", label: "匹配人才" }] : []),
+              ],
+              onClick: ({ key }) => {
+                if (key === "add") { setPresetJobId(r.id); setAddOpen(true); }
+                if (key === "match") goMatchForJob(r);
+              },
+            }}
+          >
+            <Button type="link" size="small">更多</Button>
+          </Dropdown>
         </Space>
       ),
     },
@@ -404,8 +415,8 @@ export default function Jobs() {
             emptyText: (
               <div style={{ padding: "40px 0", textAlign: "center" }}>
                 <Empty description={termFor(profile, "还没有岗位")} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
-                <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-                  {termFor(profile, "点「新增岗位」创建第一个岗位")}
+                <div style={{ marginTop: 12 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>{termFor(profile, "点「新增岗位」创建第一个岗位")}</Typography.Text>
                 </div>
               </div>
             ),
@@ -500,7 +511,7 @@ export default function Jobs() {
                     <b><TypeText text={diag.data.verdict} /></b>
                   </div>
                   {diag.data.reasons.map((r, i) => (
-                    <div key={i} style={{ fontSize: 12, color: "#666", lineHeight: 1.7 }}>· <TypeText text={r} /></div>
+                    <div key={i} style={{ fontSize: 12, lineHeight: 1.7 }}><Typography.Text type="secondary">· <TypeText text={r} /></Typography.Text></div>
                   ))}
                   <div style={{ marginTop: 6 }}>
                     {diag.data.actions.map((a, i) => (

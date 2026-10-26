@@ -6,7 +6,7 @@ import {
 } from "antd";
 import {
   EditOutlined, DeleteOutlined, ArrowLeftOutlined, FilePdfOutlined, UploadOutlined,
-  CopyOutlined, CalendarOutlined, RobotOutlined, SolutionOutlined, SafetyOutlined,
+  CopyOutlined, CalendarOutlined, RobotOutlined, SolutionOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import type { Task, TalentDetailData, TalentStageLog, User, AiResumeInsight } from "../types";
@@ -184,15 +184,10 @@ export default function TalentDetail() {
               </Button>
             </Tooltip>
           )}
-          {/* 入职办理 / 背调中心：带本人才预选跳转，不用到目标页再找一遍人 */}
+          {/* 入职办理：带本人才预选跳转，不用到目标页再找一遍人 */}
           {canP("pipeline") && (
             <Link to={`/onboarding?talent_id=${talent.id}`}>
               <Button icon={<SolutionOutlined />}>入职办理</Button>
-            </Link>
-          )}
-          {canP("background") && (
-            <Link to={`/background?talent_id=${talent.id}`}>
-              <Button icon={<SafetyOutlined />}>背调中心</Button>
             </Link>
           )}
           <Popconfirm title="确认删除？所有关联数据将被清除。" onConfirm={handleDeleteTalent}>

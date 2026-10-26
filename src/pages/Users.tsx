@@ -7,29 +7,17 @@ import {
   ClockCircleOutlined, LockOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
-import { ROLE_LABELS, INTENDED_ROLE_LABELS, INTENDED_ROLES } from "../types";
+import { ROLE_LABELS } from "../types";
 import type { Role, UserRow } from "../types";
 import { fmtDateTime, fmtDate } from "../utils/time";
 
-/** 身份标签（注册时自报，仅作审批参考） */
-function intendedTag(key: string | null | undefined) {
-  const label = key ? INTENDED_ROLE_LABELS[key] : "";
-  if (!label) return null;
-  return <Tag color={key === "hr" ? "blue" : key === "headhunter" ? "purple" : key === "team" ? "cyan" : "default"}>{label}</Tag>;
-}
-
-/** 审批弹窗的角色预选：按自报身份猜一个最贴近的角色（名字匹配），找不到就留空由管理员选 */
+/**
+ * 审批弹窗的角色预选：按自报身份猜一个最贴近的角色（名字匹配），找不到就留空由管理员选。
+ * 猎头身份已下线，现只有 hr 一档；历史 headhunter 数据不预选。
+ */
 function guessRoleId(intended: string | null | undefined, roles: Role[]): string | undefined {
-  if (!intended) return undefined;
-  const patterns: Record<string, RegExp> = {
-    hr: /HR|人事|招聘/i,
-    headhunter: /猎头|顾问|寻访/i,
-    team: /负责|主管|经理|团队/i,
-    other: /其他|通用/i,
-  };
-  const re = patterns[intended];
-  if (!re) return undefined;
-  return roles.find((r) => re.test(r.name))?.id;
+  if (intended !== "hr") return undefined;
+  return roles.find((r) => /HR|人事|招聘/i.test(r.name))?.id;
 }
 
 /** 账号状态展示元数据：审批通过的用户不展示状态列内容，保持表格干净 */
@@ -82,13 +70,10 @@ export default function Users() {
   const [assigning, setAssigning] = useState<UserRow | null>(null);
   const [approving, setApproving] = useState<UserRow | null>(null);
   const [resolving, setResolving] = useState<UserRow | null>(null);
-  // 修改身份（intended_role）：只影响品牌文案，不影响权限
-  const [intending, setIntending] = useState<UserRow | null>(null);
   const [resetForm] = Form.useForm();
   const [assignForm] = Form.useForm();
   const [approveForm] = Form.useForm();
   const [resolveForm] = Form.useForm();
-  const [intendForm] = Form.useForm();
   // ---- 会员开通 / 续期 ----
   const [membering, setMembering] = useState<UserRow | null>(null);
   const [memberMonths, setMemberMonths] = useState(12);
@@ -283,25 +268,6 @@ export default function Users() {
     }
   };
 
-  /**
-   * 修改用户身份（hr/headhunter/team/other）。
-   * 身份只驱动品牌文案（产品名、菜单显示名、登录页话术），**不改变权限** ——
-   * 能看到哪些功能仍由「分配角色」决定。改完需对方重新登录（或切回页面触发静默刷新）才生效。
-   */
-  const handleSetIntended = async (values: { intended_role: string }) => {
-    if (!intending) return;
-    const name = intending.name;
-    try {
-      await api.updateUserIntendedRole(intending.id, values.intended_role);
-      setIntending(null);
-      intendForm.resetFields();
-      message.success({ content: `已更新「${name}」的身份。该用户重新登录后界面即会切换。`, duration: 6 });
-      fetchUsers();
-    } catch (err) {
-      message.error((err as Error).message);
-    }
-  };
-
   /** 待审批区块的行内操作：通过 / 拒绝 */
   const pendingActions = (record: UserRow) => (
     <Space size={4}>
@@ -335,13 +301,6 @@ export default function Users() {
       render: (text: string) => <strong>{text}</strong>,
     },
     { title: "手机号", dataIndex: "phone", key: "phone", width: 140, render: (v: string | null) => v || "-" },
-    {
-      title: "身份",
-      dataIndex: "intended_role",
-      key: "intended_role",
-      width: 110,
-      render: (v: string | null) => intendedTag(v) || <Typography.Text type="secondary">未填</Typography.Text>,
-    },
     {
       title: "申请时间",
       dataIndex: "created_at",
@@ -436,14 +395,6 @@ export default function Users() {
       ),
     },
     {
-      title: "身份",
-      dataIndex: "intended_role",
-      key: "intended_role",
-      width: 110,
-      render: (v: string | null, record: UserRow) =>
-        record.role === "admin" ? <Typography.Text type="secondary">-</Typography.Text> : (intendedTag(v) || <Typography.Text type="secondary">未填</Typography.Text>),
-    },
-    {
       title: "创建时间",
       dataIndex: "created_at",
       key: "created_at",
@@ -504,7 +455,6 @@ export default function Users() {
                 <Button type="link" size="small">{record.role === "manager" ? "撤销管理员" : "设为管理员"}</Button>
               </Popconfirm>
               <Button type="link" size="small" onClick={() => { setAssigning(record); assignForm.setFieldsValue({ role_id: record.role_id }); }}>分配角色</Button>
-              <Button type="link" size="small" onClick={() => { setIntending(record); intendForm.setFieldsValue({ intended_role: record.intended_role || "other" }); }}>身份</Button>
               <Popconfirm title="确认删除？该用户的所有数据将被清除。" onConfirm={() => handleDelete(record.id, record.name)}>
                 <Button type="link" size="small" danger>删除</Button>
               </Popconfirm>
@@ -669,16 +619,6 @@ export default function Users() {
               <span>{approving.name}（{approving.phone}）</span>
             </Form.Item>
           )}
-          {approving && approving.intended_role && (
-            <Form.Item label="自报身份">
-              <Space size={6}>
-                {intendedTag(approving.intended_role)}
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  仅作参考，请确认下方角色
-                </Typography.Text>
-              </Space>
-            </Form.Item>
-          )}
           <Form.Item name="role_id" label="分配角色">
             <Select
               allowClear
@@ -768,32 +708,6 @@ export default function Users() {
           <Form.Item style={{ marginBottom: 0 }}>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Button onClick={() => setAssigning(null)}>取消</Button>
-              <Button type="primary" htmlType="submit">保存</Button>
-            </div>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* 修改身份弹窗 —— 身份只影响品牌文案，不影响权限 */}
-      <Modal
-        title={`修改身份 — ${intending?.name || ""}`}
-        open={!!intending}
-        onCancel={() => setIntending(null)}
-        footer={null}
-      >
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="身份只决定该用户看到的产品名与文案口径（如猎头版「招聘概览」显示为「业绩概览」），不改变他能访问哪些功能——功能由「角色」决定。保存后需该用户重新登录才会生效。"
-        />
-        <Form form={intendForm} layout="horizontal" className="form-horizontal" labelCol={{ flex: "88px" }} onFinish={handleSetIntended}>
-          <Form.Item name="intended_role" label="身份" rules={[{ required: true, message: "请选择身份" }]}>
-            <Select options={INTENDED_ROLES.map((r) => ({ value: r.key, label: r.label }))} />
-          </Form.Item>
-          <Form.Item style={{ marginBottom: 0 }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-              <Button onClick={() => setIntending(null)}>取消</Button>
               <Button type="primary" htmlType="submit">保存</Button>
             </div>
           </Form.Item>

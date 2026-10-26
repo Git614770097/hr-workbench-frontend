@@ -42,6 +42,8 @@ export interface AiUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  /** 实际出内容的供应商（智谱免费档成本为 0，前端据此计价） */
+  provider?: "zhipu" | "deepseek";
 }
 
 /** 一次 AI 调用所用的 Key 集合：DeepSeek 优先，智谱兜底 */
@@ -187,6 +189,7 @@ async function callProvider(
             prompt_tokens: Number(u.prompt_tokens) || 0,
             completion_tokens: Number(u.completion_tokens) || 0,
             total_tokens: Number(u.total_tokens) || 0,
+            provider,
           }
         : null;
     return { ok: true, content, usage };
