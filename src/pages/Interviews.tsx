@@ -21,8 +21,6 @@ import {
 import AnimatedNumber from "../components/AnimatedNumber";
 import AiResultCard from "../components/AiResultCard";
 import { useDismissible } from "../hooks/useDismissible";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
 
 /** AI 面试问题清单（面试前准备）：问题 + 考察点，可整单复制 */
 function InterviewQuestionsPanel({ talentId, jobId }: { talentId?: string; jobId?: string | null }) {
@@ -127,7 +125,6 @@ function CandidateSummaryPanel({ talentId, jobId }: { talentId?: string; jobId?:
 
 /** 面试安排 + 面试评价（挂在招聘看板的面试阶段上） */
 export default function Interviews() {
-  const profile = useIdentityProfile();
   const [items, setItems] = useState<Interview[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -632,7 +629,7 @@ export default function Interviews() {
           showIcon
           closable
           style={{ marginBottom: 16 }}
-          message={termFor(profile, "面试安排与评价：线上面试填会议链接、线下面试填地点；面试结束后在「编辑/评价」里分别补录「面试评价」与「用人部门评价」（结果+评分+评语）。当面试评价与用人部门评价都填「通过」时，候选人会自动推进到下一阶段（初试→复试→Offer），无需再去拖看板卡片。")}
+          message={"面试安排与评价：线上面试填会议链接、线下面试填地点；面试结束后在「编辑/评价」里分别补录「面试评价」与「用人部门评价」（结果+评分+评语）。当面试评价与用人部门评价都填「通过」时，候选人会自动推进到下一阶段（初试→复试→Offer），无需再去拖看板卡片。"}
           onClose={intro.dismiss}
         />
       )}
@@ -719,14 +716,14 @@ export default function Interviews() {
             emptyText: (
               <div style={{ padding: "40px 0", textAlign: "center" }}>
                 <Empty
-                  description={termFor(profile, "还没有面试安排")}
+                  description={"还没有面试安排"}
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   style={{ marginBottom: 16 }}
                 />
                 <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>安排面试</Button>
                 <div style={{ marginTop: 12 }}>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {termFor(profile, "面试需挂在一条投递上：请先在「招聘看板」把候选人推进到面试阶段，再回到这里安排")}
+                    {"面试需挂在一条投递上：请先在「招聘看板」把候选人推进到面试阶段，再回到这里安排"}
                   </Typography.Text>
                 </div>
               </div>

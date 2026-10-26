@@ -4,8 +4,6 @@ import { DownloadOutlined, SendOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import type { Talent, TalentDetailData } from "../types";
 import { ENTRY_TYPE_LABELS, ENTRY_TYPE_COLORS, ENTRY_TYPE_OPTIONS, STAGE_META } from "../types";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
 
 // 手机上不做页码，改成「加载更多」累加，滚动更顺
 const PAGE_SIZE = 20;
@@ -18,8 +16,6 @@ export default function MTalents() {
   const [entryType, setEntryType] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const profile = useIdentityProfile();
-
   const [detail, setDetail] = useState<TalentDetailData | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -119,7 +115,7 @@ export default function MTalents() {
           <Spin />
         </div>
       ) : items.length === 0 ? (
-        <div className="m-empty">{termFor(profile, "没有找到匹配的人才")}</div>
+        <div className="m-empty">{"没有找到匹配的人才"}</div>
       ) : (
         <>
           <div className="m-total-hint">共 {total} 人</div>
@@ -254,9 +250,9 @@ export default function MTalents() {
             <div className="m-actions">
               {joinOpen ? (
                 <>
-                  <div className="m-field-label">{termFor(profile, "选择岗位")}</div>
+                  <div className="m-field-label">{"选择岗位"}</div>
                   <Select
-                    placeholder={termFor(profile, "选择要加入的岗位")}
+                    placeholder={"选择要加入的岗位"}
                     value={joinJobId || undefined}
                     onChange={setJoinJobId}
                     options={jobs.map((j) => ({ value: j.id, label: j.title }))}

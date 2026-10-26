@@ -18,10 +18,7 @@ import MatchCompareMatrix from "../components/MatchCompareMatrix";
 import type { MatrixCol } from "../utils/matchMatrix";
 import TalentPickerModal from "../components/TalentPickerModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor, type IdentityProfile } from "../identityProfiles";
-
-const { Dragger } = Upload;
+const { Dragger } = Upload;
 
 /** 评估阶段轮换文案：每位候选人的评估都包含这三步，按时间片旋转，
  *  让用户感知到等待时间花在了哪里（单次评分是一次 AI 调用，无法拿到真实子阶段） */
@@ -43,7 +40,7 @@ interface Candidate {
 }
 
 // 库内人才 → 候选人字段：用库里已核对过的字段
-function talentToParsed(t: Talent, key: string, brand: IdentityProfile): ParsedTalent {
+function talentToParsed(t: Talent, key: string): ParsedTalent {
   return {
     key,
     name: t.name || "",
@@ -62,13 +59,13 @@ function talentToParsed(t: Talent, key: string, brand: IdentityProfile): ParsedT
     status: t.status || "active",
     notes: t.notes || "",
     expected_salary: t.expected_salary || "",
-    fileName: termFor(brand, "人才库记录"),
+    fileName: "人才库记录",
     file: null,
   };
 }
 
 // 没存简历原文时，用已录入字段拼一份"简历"给 AI 评判
-function talentToText(t: Talent, brand: IdentityProfile): string {
+function talentToText(t: Talent): string {
   const lines = [
     `姓名：${t.name}`,
     t.current_title ? `当前职位：${t.current_title}` : "",
@@ -84,7 +81,7 @@ function talentToText(t: Talent, brand: IdentityProfile): string {
     t.notes ? `备注：${t.notes}` : "",
   ].filter(Boolean);
   lines.push("");
-  lines.push(termFor(brand, "（说明：该候选人来自人才库，未存简历原文，以上内容仅为系统中已录入的字段信息，信息量有限）"));
+  lines.push("（说明：该候选人来自人才库，未存简历原文，以上内容仅为系统中已录入的字段信息，信息量有限）");
   return lines.join("\n");
 }
 
@@ -92,10 +89,7 @@ function talentToText(t: Talent, brand: IdentityProfile): string {
 export default function Match() {
   const navigate = useNavigate();
   const location = useLocation();
-  // 身份档案（用于文案）；本页另有 `profile` = 选中的职位画像，别混用
-  const brand = useIdentityProfile();
-
-  // ---- 画像 ----
+  // 身份档案（用于文案）；本页另有 `profile` = 选中的职位画像，别混用  // ---- 画像 ----
   // 下拉只存轻量画像（id/名称/城市/学历/有无 JD），不含 JD 原文——见 loadProfiles
   const [profiles, setProfiles] = useState<MatchProfileLite[]>([]);
   // 从画像列表点「去匹配」跳过来时，直接用路由 state 初始化选中的画像 id
@@ -293,7 +287,7 @@ export default function Match() {
         // 读取或解析失败不中断：退化为字段文本
       }
       if (text.trim().length < 10) {
-        text = talentToText(t, brand);
+        text = talentToText(t);
         weakCount++;
       }
       const key = `lib-${t.id}`;
@@ -302,7 +296,7 @@ export default function Match() {
         fileName: t.name,
         file: null,
         text,
-        talent: talentToParsed(t, key, brand),
+        talent: talentToParsed(t, key),
         source: "library",
         talentId: t.id,
       };
@@ -373,11 +367,11 @@ export default function Match() {
   // ---- 逐份评分（串行 + 进度）----
   const handleMatch = async () => {
     if (!profile) {
-      message.warning(termFor(brand, "请先选择一个画像（没有可在「人才画像」菜单里新建）"));
+      message.warning("请先选择一个画像（没有可在「人才画像」菜单里新建）");
       return;
     }
     if (candidates.length === 0) {
-      message.warning(termFor(brand, "请先添加候选人：上传简历，或点「从人才库添加」"));
+      message.warning("请先添加候选人：上传简历，或点「从人才库添加」");
       return;
     }
     // 完整画像在这里才取：下拉用的是轻量列表，JD 原文只在评分时才需要
@@ -450,7 +444,7 @@ export default function Match() {
   // ---- 录入人才库 ----
   const handleImport = async (cd: Candidate) => {
     if (!cd.talent.name.trim()) {
-      message.error(termFor(brand, "这份简历没识别出姓名，请先到人才库「导入」里逐份核对后录入"));
+      message.error("这份简历没识别出姓名，请先到人才库「导入」里逐份核对后录入");
       return;
     }
     setImportingKey(cd.key);
@@ -462,11 +456,11 @@ export default function Match() {
         try {
           await api.uploadResume(created.id, cd.file);
         } catch {
-          message.warning(termFor(brand, "简历文件保存失败，可稍后在人才详情页重新上传"));
+          message.warning("简历文件保存失败，可稍后在人才详情页重新上传");
         }
       }
       setSavedIds((prev) => ({ ...prev, [cd.key]: created.id }));
-      message.success(termFor(brand, `「${cd.talent.name}」已录入人才库`));
+      message.success(`「${cd.talent.name}」已录入人才库`);
     } catch (err) {
       message.error(`录入失败：${(err as Error).message}`);
     }
@@ -476,7 +470,7 @@ export default function Match() {
   const handleAddToPipeline = (cd: Candidate) => {
     const id = savedIds[cd.key];
     if (!id) {
-      message.info(termFor(brand, "请先「录入人才库」，再加入招聘看板"));
+      message.info("请先「录入人才库」，再加入招聘看板");
       return;
     }
     setPipelineTalentId(id);
@@ -486,7 +480,7 @@ export default function Match() {
   const handleCreateTask = async (cd: Candidate) => {
     const talentId = savedIds[cd.key];
     if (!talentId) {
-      message.info(termFor(brand, "请先「录入人才库」，再生成面试待办"));
+      message.info("请先「录入人才库」，再生成面试待办");
       return;
     }
     const r = results[cd.key];
@@ -557,7 +551,7 @@ export default function Match() {
   const stepHint: string | null = !profile
     ? "第 1 步：在左侧「① 选择画像」里选中一个职位画像"
     : candidates.length === 0
-      ? `第 2 步：添加候选人 —— 点「② 候选人」右上角的「从${termFor(brand, "人才库")}添加」一键加入，或直接拖拽简历文件上传（就绪后点左下角「开始匹配」）`
+      ? `第 2 步：添加候选人 —— 点「② 候选人」右上角的「从${"人才库"}添加」一键加入，或直接拖拽简历文件上传（就绪后点左下角「开始匹配」）`
       : running
         ? "正在评估中，请稍候…"
         : ranked.length === 0
@@ -575,7 +569,7 @@ export default function Match() {
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
         {hasSource && (
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(-1)}>
-            {termFor(brand, backToTalents ? "返回人才库" : "返回上一步")}
+            {backToTalents ? "返回人才库" : "返回上一步"}
           </Button>
         )}
         <Typography.Title level={4} style={{ margin: 0 }}>人才AI匹配</Typography.Title>
@@ -640,7 +634,7 @@ export default function Match() {
             style={{ marginBottom: 12 }}
             extra={
               <Button size="small" icon={<DatabaseOutlined />} onClick={() => setPickerOpen(true)}>
-                从{termFor(brand, "人才库")}添加
+                从{"人才库"}添加
               </Button>
             }
           >
@@ -689,7 +683,7 @@ export default function Match() {
                       {[r.talent.years_experience != null ? `${r.talent.years_experience} 年` : "", r.talent.city].filter(Boolean).join(" · ")}
                     </span>
                     {r.source === "library"
-                      ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>{termFor(brand, "库")}</Tag>
+                      ? <Tag color="blue" style={{ marginInlineEnd: 0 }}>{"库"}</Tag>
                       : <Tag style={{ marginInlineEnd: 0 }}>新</Tag>}
                     <Popconfirm title="移除这份简历？" okText="移除" cancelText="取消" onConfirm={() => removeCandidate(r.key)}>
                       <Button type="text" size="small" danger icon={<CloseOutlined />} />
@@ -778,7 +772,7 @@ export default function Match() {
         {ranked.length === 0 && !running && (
           <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
             {!profile || candidates.length === 0
-              ? termFor(brand, "先按左侧操作台补齐画像和候选人，这里就能开始匹配了")
+              ? "先按左侧操作台补齐画像和候选人，这里就能开始匹配了"
               : "点左侧「开始匹配」开始评估，结果会按匹配度从高到低排列。"}
           </Typography.Paragraph>
         )}
@@ -903,7 +897,7 @@ export default function Match() {
         open={!!pipelineTalentId}
         presetTalentId={pipelineTalentId}
         onClose={() => setPipelineTalentId(null)}
-        onSuccess={() => message.success(termFor(brand, "已加入招聘看板"))}
+        onSuccess={() => message.success("已加入招聘看板")}
       />
     </div>
   );

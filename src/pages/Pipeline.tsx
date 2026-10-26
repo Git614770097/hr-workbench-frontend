@@ -23,9 +23,7 @@ import { useDict } from "../dict";
 import { fmtDate } from "../utils/time";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import AnimatedNumber from "../components/AnimatedNumber";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
-import { dateStamp, exportXlsx } from "../utils/file";
+import { dateStamp, exportXlsx } from "../utils/file";
 import { copyText as copyToClipboard } from "../utils/clipboard";
 import OfferModal from "../components/OfferModal";
 
@@ -41,9 +39,7 @@ const copyText = async (text: string, label: string) => {
   else message.error("复制失败，请手动复制");
 };
 
-export default function Pipeline() {
-  const profile = useIdentityProfile();
-  const { rejectReasons } = useDict();
+export default function Pipeline() {  const { rejectReasons } = useDict();
   const navigate = useNavigate();
   const [columns, setColumns] = useState<Record<string, PipelineCard[]>>(EMPTY_COLUMNS);
   const [stats, setStats] = useState({ total: 0, active: 0, hired: 0, rejected: 0 });
@@ -181,7 +177,7 @@ export default function Pipeline() {
       const res = await api.updateStage(linkId, toStage);
       if (toStage === "hired") {
         message.success(
-          `「${talentName}」已入职，${termFor(profile, "人才状态")}已同步为「已入职」${res.task_created ? "，并生成试用期跟进待办" : ""}`
+          `「${talentName}」已入职，${"人才状态"}已同步为「已入职」${res.task_created ? "，并生成试用期跟进待办" : ""}`
         );
       } else {
         message.success(`「${talentName}」已流转到「${STAGE_META[toStage].label}」`);
@@ -216,15 +212,15 @@ export default function Pipeline() {
 
   const handleRemove = (card: PipelineCard) => {
     Modal.confirm({
-      title: termFor(profile, `确认将「${card.name}」移出该岗位？`),
-      content: termFor(profile, "人才档案本身不会删除，仅解除与本岗位的招聘看板关联。"),
+      title: `确认将「${card.name}」移出该岗位？`,
+      content: "人才档案本身不会删除，仅解除与本岗位的招聘看板关联。",
       okText: "移出",
       okButtonProps: { danger: true },
       cancelText: "取消",
       onOk: async () => {
         try {
           await api.removeFromPipeline(card.link_id);
-          message.success(termFor(profile, "已移出招聘看板"));
+          message.success("已移出招聘看板");
           fetchPipeline();
         } catch (err) {
           message.error((err as Error).message);
@@ -307,7 +303,7 @@ export default function Pipeline() {
     items.push({ type: "divider" });
     items.push({ key: "detail", label: "查看详情", icon: <EyeOutlined /> });
     items.push({ key: "logs", label: "查看流转记录", icon: <HistoryOutlined /> });
-    items.push({ key: "remove", label: termFor(profile, "移出该岗位"), icon: <DeleteOutlined />, danger: true });
+    items.push({ key: "remove", label: "移出该岗位", icon: <DeleteOutlined />, danger: true });
     return items;
   };
 
@@ -350,22 +346,22 @@ export default function Pipeline() {
 
     setExporting(true);
     try {
-      await exportXlsx(`${termFor(profile, "招聘看板")}_${dateStamp()}.xlsx`, [
+      await exportXlsx(`${"招聘看板"}_${dateStamp()}.xlsx`, [
         {
-          name: view === "active" ? termFor(profile, "进行中") : termFor(profile, "全部阶段"),
+          name: view === "active" ? "进行中" : "全部阶段",
           columns: [
-            { header: termFor(profile, "候选人"), key: "name", width: 12 },
-            { header: termFor(profile, "当前阶段"), key: "stage", width: 12 },
-            { header: termFor(profile, "岗位"), key: "job", width: 22 },
-            { header: termFor(profile, "评分"), key: "rating", width: 8 },
-            { header: termFor(profile, "当前职位"), key: "title", width: 18 },
-            { header: termFor(profile, "当前公司"), key: "company", width: 22 },
-            { header: termFor(profile, "年限"), key: "years", width: 8 },
-            { header: termFor(profile, "学历"), key: "edu", width: 10 },
-            { header: termFor(profile, "城市"), key: "city", width: 12 },
-            { header: termFor(profile, "来源渠道"), key: "source", width: 12 },
-            { header: termFor(profile, "阶段停留(天)"), key: "days", width: 13 },
-            { header: termFor(profile, "联系电话"), key: "phone", width: 14 },
+            { header: "候选人", key: "name", width: 12 },
+            { header: "当前阶段", key: "stage", width: 12 },
+            { header: "岗位", key: "job", width: 22 },
+            { header: "评分", key: "rating", width: 8 },
+            { header: "当前职位", key: "title", width: 18 },
+            { header: "当前公司", key: "company", width: 22 },
+            { header: "年限", key: "years", width: 8 },
+            { header: "学历", key: "edu", width: 10 },
+            { header: "城市", key: "city", width: 12 },
+            { header: "来源渠道", key: "source", width: 12 },
+            { header: "阶段停留(天)", key: "days", width: 13 },
+            { header: "联系电话", key: "phone", width: 14 },
           ],
           rows,
         },
@@ -424,7 +420,7 @@ export default function Pipeline() {
           <Button icon={<ReloadOutlined />} onClick={fetchPipeline} loading={loading}>刷新</Button>
           <Button icon={<DownloadOutlined />} onClick={exportPipeline} loading={exporting}>导出</Button>
           <Button type="primary" icon={<UserAddOutlined />} onClick={() => setAddOpen(true)}>
-            {termFor(profile, "加入招聘看板")}
+            {"加入招聘看板"}
           </Button>
         </Space>
       </div>
@@ -433,10 +429,10 @@ export default function Pipeline() {
       <Card className="search-card" style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
         <div className="search-grid">
           <div className="search-field">
-            <span className="search-label">{termFor(profile, "岗位")}</span>
+            <span className="search-label">{"岗位"}</span>
             <div className="search-control">
             <Select
-              style={{ width: "100%" }} allowClear placeholder={termFor(profile, "全部岗位")}
+              style={{ width: "100%" }} allowClear placeholder={"全部岗位"}
               value={jobFilter || undefined}
               onChange={(v) => setJobFilter(v || "")}
               options={jobs.map((j) => ({
@@ -519,7 +515,7 @@ export default function Pipeline() {
             description={
               filtered
                 ? "当前筛选条件下没有候选人"
-                : termFor(profile, "招聘看板还是空的，点右上角把人才挂到岗位上")
+                : "招聘看板还是空的，点右上角把人才挂到岗位上"
             }
           />
         </Card>
@@ -600,7 +596,7 @@ export default function Pipeline() {
                             />
                             {/* 点姓名开详情抽屉：不离开看板即可查看/操作；完整档案在抽屉底部入口。
                                 Tooltip 即时提示（原生 title 延迟大，很多人发现不了这个入口） */}
-                            <Tooltip title={termFor(profile, "点击姓名查看详情")}>
+                            <Tooltip title={"点击姓名查看详情"}>
                               <a
                                 className="pipe-card-name"
                                 onClick={() => openDrawer(card)}
@@ -625,7 +621,7 @@ export default function Pipeline() {
 
                         <div className="pipe-card-tags">
                           {card.job_title && (
-                            <Tooltip title={termFor(profile, "点击聚焦该岗位的候选人")}>
+                            <Tooltip title={"点击聚焦该岗位的候选人"}>
                               <Tag
                                 color="blue"
                                 style={{ fontSize: 11, marginInlineEnd: 0, cursor: "pointer" }}
@@ -767,7 +763,7 @@ export default function Pipeline() {
           drawer.card ? (
             <div style={{ textAlign: "center" }}>
               <Button type="link" icon={<UserOutlined />} onClick={() => navigate(`/talents/${drawer.card!.talent_id}`)}>
-                {termFor(profile, "查看完整档案")}
+                {"查看完整档案"}
               </Button>
             </div>
           ) : null

@@ -18,9 +18,7 @@ import type { Task, User } from "../types";
 import { PRIORITY_LABELS, PRIORITY_COLORS, TASK_SOURCE_LABELS } from "../types";
 import { dayInfo, shiftToNextWorkday, hasHolidayData, knownYears } from "../utils/holidays";
 import { fmtDate, fmtDateTime } from "../utils/time";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
-import { exportXlsx, dateStamp } from "../utils/file";
+import { exportXlsx, dateStamp } from "../utils/file";
 import { registerOnbFill, notifyOnbSaved } from "../components/onboardingAutoFill";
 
 const todayYmd = () => dayjs().format("YYYY-MM-DD");
@@ -58,9 +56,7 @@ const CAL_LINE_MAX = 2;
 /** 优先级归一化：后端是自由字符串，非预期值一律按「中」处理 */
 const prioOf = (p: string) => (p === "high" ? "high" : p === "low" ? "low" : "normal");
 
-export default function Tasks() {
-  const profile = useIdentityProfile();
-  const [searchParams, setSearchParams] = useSearchParams();
+export default function Tasks() {  const [searchParams, setSearchParams] = useSearchParams();
   const talentFilter = searchParams.get("talent_id") || "";
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -635,7 +631,7 @@ export default function Tasks() {
                 options={talentOptions}
               />
             </Form.Item>
-            <Form.Item name="job_id" label={termFor(profile, "关联岗位")}>
+            <Form.Item name="job_id" label={"关联岗位"}>
               <Select
                 showSearch allowClear placeholder="可选"
                 optionFilterProp="label"

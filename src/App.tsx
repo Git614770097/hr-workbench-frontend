@@ -19,6 +19,7 @@ import MobileLayout from "./mobile/MobileLayout";
 import { mobileTabsFor } from "./mobile/tabs";
 import { isMobileDevice } from "./utils/device";
 import { firstAccessiblePath } from "./utils/routeAccess";
+import { notifyIdentityChanged } from "./useIdentity";
 
 /**
  * 是否属于移动版路由。
@@ -28,7 +29,7 @@ import { firstAccessiblePath } from "./utils/routeAccess";
 function isMobilePath(pathname: string): boolean {
   return pathname === "/m" || pathname.startsWith("/m/");
 }
-import { notifyIdentityChanged } from "./useIdentity";
+
 import ChangelogModal from "./components/ChangelogModal";
 // 使用埋点：桌面与移动两棵树各挂一份，不渲染任何 UI
 import UsageTracker from "./components/UsageTracker";
@@ -146,7 +147,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
         if (i > 0) await new Promise((r) => setTimeout(r, i * 1000));
         try {
           const res = await api.me(attempts[i]);
-          // 先写缓存再 setUser：Layout 首次挂载时 useIdentityProfile 会同步读 localStorage，
+          // 先写缓存再 setUser：Layout 首次挂载时会同步读 localStorage，
           // 顺序反了会读到旧值（品牌文案慢一拍）。
           try { localStorage.setItem("user", JSON.stringify(res)); } catch {}
           setUser(res);

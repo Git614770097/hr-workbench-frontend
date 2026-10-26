@@ -5,8 +5,6 @@ import { api } from "../api";
 import type { PipelineCard, PipelineResponse, Stage, StageLog } from "../types";
 import { PIPELINE_STAGES } from "../types";
 import { useDict } from "../dict";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
 
 // 手机上横向多列看板放不下，改成「一次看一个阶段」的横向 Tab
 const VISIBLE_STAGES = PIPELINE_STAGES.filter(
@@ -15,7 +13,6 @@ const VISIBLE_STAGES = PIPELINE_STAGES.filter(
 
 export default function MPipeline() {
   const { rejectReasons } = useDict();
-  const profile = useIdentityProfile();
   const [data, setData] = useState<PipelineResponse | null>(null);
   const [jobs, setJobs] = useState<{ id: string; title: string }[]>([]);
   const [jobFilter, setJobFilter] = useState<string>("");
@@ -105,7 +102,7 @@ export default function MPipeline() {
     <div>
       <div className="m-filter">
         <Input.Search
-          placeholder={termFor(profile, "搜索姓名 / 岗位")}
+          placeholder={"搜索姓名 / 岗位"}
           allowClear
           onSearch={(v) => setQ(v.trim())}
           style={{ flex: 1 }}
@@ -113,7 +110,7 @@ export default function MPipeline() {
       </div>
       <div className="m-filter">
         <Select
-          placeholder={termFor(profile, "全部岗位")}
+          placeholder={"全部岗位"}
           allowClear
           value={jobFilter || undefined}
           onChange={(v) => setJobFilter(v || "")}
@@ -153,7 +150,7 @@ export default function MPipeline() {
                 </span>
               ) : null}
             </div>
-            <div className="m-card-meta">{c.job_title || termFor(profile, "未关联岗位")}</div>
+            <div className="m-card-meta">{c.job_title || "未关联岗位"}</div>
             <div className="m-card-meta">
               停留 {c.days_in_stage} 天
               {c.next_follow ? ` · 下次跟进 ${c.next_follow.slice(0, 10)}` : ""}
@@ -175,7 +172,7 @@ export default function MPipeline() {
           <div>
             <div className="m-sheet-title">{card.name}</div>
             <div className="m-sheet-sub">
-              {card.job_title || termFor(profile, "未关联岗位")}
+              {card.job_title || "未关联岗位"}
               {card.phone ? ` · ${card.phone}` : ""}
             </div>
             {card.rating ? <Rate disabled value={card.rating} style={{ fontSize: 16 }} /> : null}

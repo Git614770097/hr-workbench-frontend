@@ -22,16 +22,12 @@ import {
 import JobFormModal from "../components/JobFormModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
 import { useDict } from "../dict";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
-import { downloadBlob, dateStamp, csvCell } from "../utils/file";
+import { downloadBlob, dateStamp, csvCell } from "../utils/file";
 import { registerOnbFill } from "../components/onboardingAutoFill";
 
 const PAGE_SIZE = 10;
 
-export default function Jobs() {
-  const profile = useIdentityProfile();
-  const navigate = useNavigate();
+export default function Jobs() {  const navigate = useNavigate();
   const { jobTypeLabels } = useDict();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
@@ -210,7 +206,7 @@ export default function Jobs() {
 
   const columns = [
     {
-      title: termFor(profile, "岗位名称"),
+      title: "岗位名称",
       dataIndex: "title",
       key: "title",
       width: 200,
@@ -276,8 +272,8 @@ export default function Jobs() {
         <Space size={4}>
           <Button type="link" size="small" onClick={() => { setEditingId(r.id); setFormOpen(true); }}>编辑</Button>
           <Popconfirm
-            title={termFor(profile, "确认删除该岗位？")}
-            description={termFor(profile, "岗位下的候选人关联会被清除，人才档案保留。")}
+            title={"确认删除该岗位？"}
+            description={"岗位下的候选人关联会被清除，人才档案保留。"}
             onConfirm={() => handleDelete(r)}
           >
             <Button type="link" size="small" danger>删除</Button>
@@ -304,16 +300,16 @@ export default function Jobs() {
 
   /** 导出当前筛选下的岗位列表为 CSV（含招聘进度等聚合字段） */
   const exportJobs = () => {
-    if (!jobs.length) { message.warning(termFor(profile, "当前没有可导出的岗位")); return; }
+    if (!jobs.length) { message.warning("当前没有可导出的岗位"); return; }
     const rows: string[] = [];
     const statusLabel = draftStatus ? (JOB_STATUS_LABELS[draftStatus] || draftStatus) : "全部状态";
     const priorityLabel = draftPriority ? (PRIORITY_LABELS[draftPriority] || draftPriority) : "全部紧急度";
 
-    rows.push(termFor(profile, "岗位列表导出"));
+    rows.push("岗位列表导出");
     rows.push([`状态：${statusLabel}`, `紧急度：${priorityLabel}`, `导出时间：${new Date().toLocaleString("zh-CN")}`].map(csvCell).join(","));
     rows.push("");
 
-    rows.push(termFor(profile, "岗位名称,部门,城市,类型,招聘进度,流程中,紧急度,状态,薪资,学历,经验,创建人,创建时间"));
+    rows.push("岗位名称,部门,城市,类型,招聘进度,流程中,紧急度,状态,薪资,学历,经验,创建人,创建时间");
     for (const j of jobs) {
       rows.push([
         j.title,
@@ -333,8 +329,8 @@ export default function Jobs() {
     }
 
     const blob = new Blob(["\ufeff" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" });
-    downloadBlob(blob, `${termFor(profile, "岗位列表")}_${dateStamp()}.csv`);
-    message.success(termFor(profile, `已导出 ${jobs.length} 个岗位`));
+    downloadBlob(blob, `${"岗位列表"}_${dateStamp()}.csv`);
+    message.success(`已导出 ${jobs.length} 个岗位`);
   };
 
   // 岗位列表区：搜索卡 + 列表卡 + 岗位相关弹窗（招聘需求已独立成页，见 /requisitions）
@@ -344,9 +340,9 @@ export default function Jobs() {
         {/* 布局约定（全站统一）：搜索 Card 只放字段（label 左 / 控件右，一行 4 个）；
             筛选条件超过 4 个时自动换行，不另起按钮行。 */}
         <div className="search-grid">
-          <Field label={termFor(profile, "岗位")}>
+          <Field label={"岗位"}>
             <Input
-              placeholder={termFor(profile, "岗位名称 / 部门 / 职责")} value={draftQ}
+              placeholder={"岗位名称 / 部门 / 职责"} value={draftQ}
               onChange={(e) => setDraftQ(e.target.value)} onPressEnter={handleSearch} allowClear
             />
           </Field>
@@ -386,14 +382,14 @@ export default function Jobs() {
               data-onb-action="new-job"
               onClick={() => { setEditingId(null); setJobPrefill(undefined); setFormOpen(true); }}
             >
-              {termFor(profile, "新增岗位")}
+              {"新增岗位"}
             </Button>
             <Link to="/requisitions" className="btn-as-link">
               <PlusOutlined /> 提交招聘需求
             </Link>
             {/* 不要 <Link><Button/></Link>：<a> 内嵌 <button> 是非法 HTML，点击易被外层吞掉。 */}
             <Link to="/pipeline" className="btn-as-link">
-              <TeamOutlined /> {termFor(profile, "查看招聘看板")}
+              <TeamOutlined /> {"查看招聘看板"}
             </Link>
             <Button icon={<DownloadOutlined />} onClick={exportJobs}>导出</Button>
           </Space>
@@ -414,9 +410,9 @@ export default function Jobs() {
             // 空库引导：新企业第一次进来，给一个一键看效果的入口
             emptyText: (
               <div style={{ padding: "40px 0", textAlign: "center" }}>
-                <Empty description={termFor(profile, "还没有岗位")} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
+                <Empty description={"还没有岗位"} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
                 <div style={{ marginTop: 12 }}>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>{termFor(profile, "点「新增岗位」创建第一个岗位")}</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>{"点「新增岗位」创建第一个岗位"}</Typography.Text>
                 </div>
               </div>
             ),
@@ -426,7 +422,7 @@ export default function Jobs() {
             total,
             pageSize: PAGE_SIZE,
             onChange: (p) => setPage(p),
-            showTotal: (t) => termFor(profile, `共 ${t} 个岗位`),
+            showTotal: (t) => `共 ${t} 个岗位`,
           }}
         />
       </Card>
@@ -451,7 +447,7 @@ export default function Jobs() {
 
       {/* 岗位详情：候选人列表 */}
       <Modal
-        title={detail ? `${detail.title} · 候选人` : termFor(profile, "岗位候选人")}
+        title={detail ? `${detail.title} · 候选人` : "岗位候选人"}
         open={!!detail}
         onCancel={() => setDetail(null)}
         footer={<Button onClick={() => setDetail(null)}>关闭</Button>}
@@ -492,7 +488,7 @@ export default function Jobs() {
             {(detail.description || detail.requirements) && (
               <div className="job-meta" style={{ marginBottom: 16 }}>
                 {detail.description && (
-                  <div><b>{termFor(profile, "岗位职责：")}</b>{detail.description}</div>
+                  <div><b>{"岗位职责："}</b>{detail.description}</div>
                 )}
                 {detail.requirements && (
                   <div style={{ marginTop: 6 }}><b>任职要求：</b>{detail.requirements}</div>
@@ -546,7 +542,7 @@ export default function Jobs() {
             </div>
 
             {detail.candidates.length === 0 ? (
-              <Empty description={termFor(profile, "该岗位还没有候选人")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty description={"该岗位还没有候选人"} image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ) : (
               <Table
                 rowKey="link_id"

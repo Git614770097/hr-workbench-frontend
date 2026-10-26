@@ -18,8 +18,6 @@ import AiInsightView, { insightToText } from "../components/AiInsightView";
 import AiOutreachModal from "../components/AiOutreachModal";
 import { copyText } from "../utils/clipboard";
 import { parseResumeFile } from "../utils/resumeImport";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
 
 /** 后端 datetime('now') 是 UTC 且无时区后缀，解析时补 T+Z（全站统一做法） */
 function fmtUtc(s: string): Date {
@@ -71,7 +69,6 @@ async function readResumeText(t: TalentDetailData): Promise<string | null> {
 }
 
 export default function TalentDetail() {
-  const profile = useIdentityProfile();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [talent, setTalent] = useState<TalentDetailData | null>(null);
@@ -157,7 +154,7 @@ export default function TalentDetail() {
   };
 
   if (loading) return <div style={{ textAlign: "center", padding: "3rem" }}><Spin size="large" /></div>;
-  if (!talent) return <Empty description={termFor(profile, "人才不存在")} />;
+  if (!talent) return <Empty description={"人才不存在"} />;
 
   const tasks = talent.tasks || [];
   const pipeline = talent.pipeline || [];
@@ -381,7 +378,7 @@ export default function TalentDetail() {
           {/* 投递进程：每个岗位一条，含当前阶段与流转时间线 */}
           <Card title={`投递进程${pipeline.length > 0 ? `（${pipeline.length}）` : ""}`}>
             {pipeline.length === 0 ? (
-              <Empty description={termFor(profile, "尚未进入招聘看板")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              <Empty description={"尚未进入招聘看板"} image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ) : (
               pipeline.map((p, idx) => {
                 const meta = STAGE_META[p.stage];

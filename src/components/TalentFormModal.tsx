@@ -7,8 +7,7 @@ import dayjs from "dayjs";
 import { api } from "../api";
 import { STATUS_LABELS } from "../types";
 import { useDict } from "../dict";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
+
 import { notifyOnbSaved } from "./onboardingAutoFill";
 
 interface Props {
@@ -24,7 +23,6 @@ interface Props {
 
 export default function TalentFormModal({ open, talentId, prefill, fillToken, onClose, onSuccess }: Props) {
   const { sources, education: educationOptions } = useDict();
-  const profile = useIdentityProfile();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -93,7 +91,7 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
         message.success("修改已保存");
       } else {
         result = await api.createTalent(data);
-        message.success(termFor(profile, "人才已创建"));
+        message.success("人才已创建");
         notifyOnbSaved();
       }
       // 上传简历文件
@@ -117,7 +115,7 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
 
   return (
     <Modal
-      title={termFor(profile, isEdit ? "编辑人才" : "新增人才")}
+      title={isEdit ? "编辑人才" : "新增人才"}
       open={open}
       onCancel={onClose}
       width={880}
@@ -207,7 +205,7 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <Button onClick={onClose}>取消</Button>
             <Button type="primary" htmlType="submit" loading={saving}>
-              {termFor(profile, isEdit ? "保存修改" : "创建人才")}
+              {isEdit ? "保存修改" : "创建人才"}
             </Button>
           </div>
         </Form>

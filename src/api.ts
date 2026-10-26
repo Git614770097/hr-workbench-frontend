@@ -306,28 +306,6 @@ export const api = {
       120_000
     ),
 
-  // AI 简历解析（后端代理，调用 DeepSeek）
-  parseResume: (text: string) =>
-    request<{
-      name: string;
-      phone: string;
-      email: string;
-      age: number | null;
-      gender: string;
-      education: string;
-      school: string;
-      major: string;
-      current_company: string;
-      current_title: string;
-      years_experience: number | null;
-      city: string;
-      skills: string[];
-      birth_date: string;
-    }>("/parse-resume", {
-      method: "POST",
-      body: JSON.stringify({ text }),
-    }),
-
   // Resume file upload and preview
   // 读取人才库里已存的简历文件（人才AI匹配勾选库内人选时，重新抽取原文做语义比对）
   // 返回 null 表示这条人才没存简历文件，调用方需回退到「用已录入字段拼文本」
@@ -634,14 +612,6 @@ export const api = {
       "/pipeline/batch-stage",
       { method: "POST", body: JSON.stringify(data) }
     ),
-
-  // 人才库批量操作（收人才 id，与看板批量流转区分路由）
-  batchTags: (data: { ids: string[]; tags: string[]; mode?: "replace" | "add" }) =>
-    request<{ updated: number; skipped: number }>("/talents/batch/tags", { method: "POST", body: JSON.stringify(data) }),
-  batchStageTalents: (data: { ids: string[]; stage: string }) =>
-    request<{ updated: number; skipped: number }>("/talents/batch/stage", { method: "POST", body: JSON.stringify(data) }),
-  batchDeleteTalents: (data: { ids: string[] }) =>
-    request<{ deleted: number }>("/talents/batch/delete", { method: "POST", body: JSON.stringify(data) }),
 
   // ---- 招聘漏斗 ----
   // t 只在用户主动点「查询 / 重置」时传（时间戳），后端见到 t 就绕过 Edge Cache，

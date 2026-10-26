@@ -29,9 +29,7 @@ import AiUsageFoot from "../components/AiUsageFoot";
 import WorkbenchTrendChart from "../components/WorkbenchTrendChart";
 import WorkbenchModulesModal from "../components/WorkbenchModulesModal";
 import AnimatedNumber from "../components/AnimatedNumber";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
-import { loadWorkbenchConfig, saveWorkbenchConfig } from "../workbenchPrefs";
+import { loadWorkbenchConfig, saveWorkbenchConfig } from "../workbenchPrefs";
 import { FUNNEL_PALETTES, DEFAULT_FUNNEL_PALETTE, loadFunnelPalette, saveFunnelPalette } from "../funnelPalette";
 
 // 周期表行（精简版：不再用 4 张大数值卡，改为紧凑表格）
@@ -73,9 +71,7 @@ function wowText(curr: number, prev: number): { text: string; tone: "up" | "down
 
 /** 客户端中国时区今天 YYYY-MM-DD */
 
-export default function Funnel() {
-  const profile = useIdentityProfile();
-  const [data, setData] = useState<FunnelResponse | null>(null);
+export default function Funnel() {  const [data, setData] = useState<FunnelResponse | null>(null);
   const [jobs, setJobs] = useState<Pick<Job, "id" | "title" | "status">[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -247,8 +243,8 @@ export default function Funnel() {
   // 岗位名兜底：选了已删除的岗位时不能悄悄显示成「全部岗位」——那会让导出报告的口径撒谎
   const jobLabelOf = () =>
     jobFilter
-      ? jobs.find((j) => j.id === jobFilter)?.title ?? termFor(profile, "已删除岗位")
-      : termFor(profile, "全部岗位");
+      ? jobs.find((j) => j.id === jobFilter)?.title ?? "已删除岗位"
+      : "全部岗位";
 
   // 耗时构成三段
   const segRaw = data ? [data.cycles.segments.s1, data.cycles.segments.s2, data.cycles.segments.s3] : [];
@@ -383,7 +379,7 @@ export default function Funnel() {
       if (!url) { message.warning("图表尚未就绪，请稍后再试"); return; }
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${termFor(profile, "招聘漏斗")}_${dateStamp()}.png`;
+      a.download = `${"招聘漏斗"}_${dateStamp()}.png`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -400,8 +396,8 @@ export default function Funnel() {
     const timeLabel = TIME_RANGES.find((t) => t.value === daysFilter)?.label || "全部时间";
     const jobLabel = jobLabelOf();
 
-    rows.push(termFor(profile, "招聘漏斗数据导出"));
-    rows.push([termFor(profile, `岗位：${jobLabel}`), `时间范围：${timeLabel}`, `导出时间：${new Date().toLocaleString("zh-CN")}`].map(csvCell).join(","));
+    rows.push("招聘漏斗数据导出");
+    rows.push([`岗位：${jobLabel}`, `时间范围：${timeLabel}`, `导出时间：${new Date().toLocaleString("zh-CN")}`].map(csvCell).join(","));
     rows.push("");
 
     rows.push("【漏斗概览】");
@@ -425,7 +421,7 @@ export default function Funnel() {
     }
     rows.push("");
 
-    rows.push(termFor(profile, "【渠道效果】（人·岗位口径：同一人才多岗位分别计）"));
+    rows.push("【渠道效果】（人·岗位口径：同一人才多岗位分别计）");
     rows.push("来源渠道,进入流程,进行中,已入职,已淘汰,已放弃,入职转化率,平均周期(天)");
     for (const src of data.sources || []) {
       rows.push([
@@ -455,8 +451,8 @@ export default function Funnel() {
     }
 
     const blob = new Blob(["\ufeff" + rows.join("\r\n")], { type: "text/csv;charset=utf-8" });
-    downloadBlob(blob, `${termFor(profile, "招聘漏斗")}_${dateStamp()}.csv`);
-    message.success(termFor(profile, "已导出招聘漏斗数据"));
+    downloadBlob(blob, `${"招聘漏斗"}_${dateStamp()}.csv`);
+    message.success("已导出招聘漏斗数据");
   };
 
   /** 导出「汇报 Excel」：KPI / 趋势 / 漏斗 / 渠道 / 周期 / 停留 / 淘汰 多 sheet */
@@ -619,14 +615,14 @@ export default function Funnel() {
                     <span className="stat-icon is-neutral"><AimOutlined /></span>
                     <span className="stat-body">
                       <span className="stat-num is-neutral"><AnimatedNumber value={overview.openJobs ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                      <span className="stat-label">{termFor(profile, "在招岗位")}</span>
+                      <span className="stat-label">{"在招岗位"}</span>
                     </span>
                   </div>
                   <div className="stat">
                     <span className="stat-icon is-neutral"><TeamOutlined /></span>
                     <span className="stat-body">
                       <span className="stat-num"><AnimatedNumber value={overview.activeCandidates ?? 0} format={(n) => Math.round(n).toLocaleString("zh-CN")} /></span>
-                      <span className="stat-label">{termFor(profile, "待推进")}</span>
+                      <span className="stat-label">{"待推进"}</span>
                     </span>
                   </div>
                   <div className="stat">
@@ -691,7 +687,7 @@ export default function Funnel() {
 
       {/* ===== 分析层：招聘概览 ===== */}
       <div className="wb-section-head">
-        <span className="wb-section-title"><FunnelPlotOutlined /> {termFor(profile, "招聘概览")}</span>
+        <span className="wb-section-title"><FunnelPlotOutlined /> {"招聘概览"}</span>
         <Space wrap size={8}>
           {!isHidden("trend") && (
             <Segmented
@@ -733,10 +729,10 @@ export default function Funnel() {
       <Card className="search-card" style={{ marginBottom: 16 }} styles={{ body: { padding: 16 } }}>
         <div className="search-grid">
           <div className="search-field">
-            <span className="search-label">{termFor(profile, "岗位")}</span>
+            <span className="search-label">{"岗位"}</span>
             <div className="search-control">
             <Select
-              style={{ width: "100%" }} allowClear placeholder={termFor(profile, "全部岗位")}
+              style={{ width: "100%" }} allowClear placeholder={"全部岗位"}
               value={draftJob || undefined}
               onChange={(v) => setDraftJob(v || "")}
               options={jobs.map((j) => ({
@@ -845,17 +841,17 @@ export default function Funnel() {
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={
               filtered
-                ? termFor(profile, "当前筛选条件下没有数据，试试放宽岗位或时间范围")
-                : termFor(profile, "还没有人才进入招聘看板，先去把人挂到岗位上，这里就会有数据了")
+                ? "当前筛选条件下没有数据，试试放宽岗位或时间范围"
+                : "还没有人才进入招聘看板，先去把人挂到岗位上，这里就会有数据了"
             }
           >
             {!filtered && (
               <>
                 <Link to="/pipeline" className="btn-as-primary">
-                  {termFor(profile, "去招聘看板录入")}
+                  {"去招聘看板录入"}
                 </Link>
                 <div style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
-                  {termFor(profile, "在看板把候选人推进到面试阶段后，这里会自动汇总漏斗、周期与渠道数据")}
+                  {"在看板把候选人推进到面试阶段后，这里会自动汇总漏斗、周期与渠道数据"}
                 </div>
               </>
             )}
@@ -970,7 +966,7 @@ export default function Funnel() {
                       <b style={{ color: "#94a3b8", marginLeft: 6 }}>{s.withdrawn}</b> 人
                     </div>
                     <span className="funnel-branch-tip">
-                      {termFor(profile, "（终态分支不计入漏斗主线，人才可能在任何一级进入终态）")}
+                      {"（终态分支不计入漏斗主线，人才可能在任何一级进入终态）"}
                     </span>
                   </div>
 
@@ -1080,7 +1076,7 @@ export default function Funnel() {
                   title={<Space><TeamOutlined />渠道效果</Space>}
                   styles={{ body: { padding: "16px 18px" } }}
                   extra={
-                    <Tooltip title={termFor(profile, "按人才来源统计各阶段分布与入职转化、平均招聘周期；同一人才投多个岗位按投递记录分别计入，与漏斗口径一致。来源在人才库「来源渠道」字段或导入简历时维护。")}>
+                    <Tooltip title={"按人才来源统计各阶段分布与入职转化、平均招聘周期；同一人才投多个岗位按投递记录分别计入，与漏斗口径一致。来源在人才库「来源渠道」字段或导入简历时维护。"}>
                       <span style={{ fontSize: 12, color: "#8c8c8c" }}>口径说明</span>
                     </Tooltip>
                   }
@@ -1094,7 +1090,7 @@ export default function Funnel() {
                         type="warning"
                         showIcon
                         style={{ marginBottom: 12 }}
-                        message={termFor(profile, `有 ${unknown.entered} 条候选人未记录来源（占 ${pct(unknown.entered / total)}），统计可能失真。新导入可在「导入简历」时选择本批来源，存量可在人才库编辑补录`)}
+                        message={`有 ${unknown.entered} 条候选人未记录来源（占 ${pct(unknown.entered / total)}），统计可能失真。新导入可在「导入简历」时选择本批来源，存量可在人才库编辑补录`}
                       />
                     );
                   })()}

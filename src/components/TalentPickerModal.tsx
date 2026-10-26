@@ -3,8 +3,6 @@ import { Modal, Input, Table, Button, Tag, Space, Typography, Tooltip, message }
 import { LoadingOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import type { Talent } from "../types";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
 
 interface Props {
   open: boolean;
@@ -40,8 +38,6 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
   /** 输入框右侧的小转圈：输入即查时出现 */
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<Talent[]>([]);
-  const profile = useIdentityProfile();
-
   /** 请求序号：只有最后一次发出的请求才有权写入结果 */
   const seqRef = useRef(0);
   const timerRef = useRef<number | null>(null);
@@ -129,7 +125,7 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
 
   return (
     <Modal
-      title={termFor(profile, "从人才库添加人选")}
+      title={"从人才库添加人选"}
       open={open}
       onCancel={onCancel}
       width={1080}

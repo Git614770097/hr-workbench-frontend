@@ -9,8 +9,7 @@ import antdTheme from "antd/es/theme";
 //    Login 是未登录用户真正要渲染的页面，它的 chunk 体积直接决定登录页首屏时间）。
 import ReloadOutlined from "@ant-design/icons/es/icons/ReloadOutlined";
 import { api } from "../api";
-import { DEFAULT_PROFILE } from "../identityProfiles";
-import "../styles/login.css";
+import { BRAND } from "../brand";import "../styles/login.css";
 
 interface Props {
   onLogin: () => void;
@@ -37,7 +36,7 @@ const CAPTCHA_TTL = 60;
 const CAPTCHA_WARN_AT = 10;
 
 export default function Login({ onLogin }: Props) {
-  const brand = DEFAULT_PROFILE;
+  const brand = BRAND;
   // 邀请码：挂载时读一次
   const [refCode] = useState(refCodeFromUrl);
   // 浏览器标签页标题跟随品牌

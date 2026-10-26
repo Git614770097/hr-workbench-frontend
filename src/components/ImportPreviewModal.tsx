@@ -5,8 +5,7 @@ import {
 import { STATUS_LABELS } from "../types";
 import { useDict } from "../dict";
 import type { ParsedTalent } from "../utils/resumeImport";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
+
 import { api } from "../api";
 import AiResultCard from "./AiResultCard";
 import AiInsightView, { insightToText } from "./AiInsightView";
@@ -34,7 +33,6 @@ export default function ImportPreviewModal({
   record, index, total, saving, batchProgress, onChange, onSave, onConfirmAll, onSkip, onClose,
 }: Props) {
   const { education: educationOptions } = useDict();
-  const profile = useIdentityProfile();
   const [pdfUrl, setPdfUrl] = useState("");
   const [docText, setDocText] = useState("");
   const [docLoading, setDocLoading] = useState(false);
@@ -95,7 +93,7 @@ export default function ImportPreviewModal({
       footer={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            确认无误点「保存并录入」即写入{termFor(profile, "人才库")}{file ? "并保存原始简历" : ""}；不想要的点「移除」。
+            确认无误点「保存并录入」即写入{"人才库"}{file ? "并保存原始简历" : ""}；不想要的点「移除」。
           </Typography.Text>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             <Button onClick={onClose}>关闭</Button>

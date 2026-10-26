@@ -35,8 +35,10 @@ import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
 // JetBrains Mono 本地打包：不再走 jsdelivr CDN（国内不稳定，且字体 render-blocking）。
 // 与 global.css 的 --font-mono 配合，仅加载用到的 400/700 两个字重。
-import "@fontsource/jetbrains-mono/400.css";
-import "@fontsource/jetbrains-mono/700.css";
+// 只取 latin 子集：产品是中文界面，等宽场景几乎只有 ASCII（SQL/代码/数字），
+// latin-ext + cyrillic 字重文件纯属白背（每字重约 20KB+）。
+import "@fontsource/jetbrains-mono/latin-400.css";
+import "@fontsource/jetbrains-mono/latin-700.css";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { installGlobalErrorHandlers } from "./utils/clientError";

@@ -155,19 +155,6 @@ CREATE TABLE IF NOT EXISTS talent_tasks (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
--- 标签表
--- 沟通记录表
-CREATE TABLE IF NOT EXISTS communications (
-  id TEXT PRIMARY KEY,
-  talent_id TEXT NOT NULL REFERENCES talents(id),
-  user_id TEXT NOT NULL REFERENCES users(id),
-  type TEXT,            -- call / wechat / interview / email / other
-  content TEXT,
-  rating INTEGER,      -- 1-5 评分
-  follow_up_date TEXT,  -- 跟进提醒日期
-  created_at TEXT DEFAULT (datetime('now'))
-);
-
 -- 文档模板表（模板库全员共享可读；创建者或管理员可改/删，内置模板 owner_id='system'）
 CREATE TABLE IF NOT EXISTS doc_templates (
   id TEXT PRIMARY KEY,
@@ -367,42 +354,11 @@ CREATE TABLE IF NOT EXISTS referrals (
   note                  TEXT
 );
 
--- ---- 背景调查（候选人背调）：独立于招聘看板的轻量模块，逻辑挂在「Offer → 入职」之间 ----
--- 合规硬性前置：必须候选人单独明示授权（consent_status='granted'）才能发起核验 /
--- 查看敏感结论 / 上传报告 / 推进入职（后端强制闸门）。
--- 核验仅采集「最小必要」信息：身份 / 学历 / 工作履历 / 竞业限制；
--- 犯罪记录 / 征信属高敏数据（high_risk=1），授权时需二次明示确认。
--- 报告原件存 KV（bgcheck: 前缀），元数据存此处。
-CREATE TABLE IF NOT EXISTS background_checks (
-  id TEXT PRIMARY KEY,
-  owner_id TEXT NOT NULL REFERENCES users(id),
-  talent_id TEXT NOT NULL REFERENCES talents(id),
-  talent_job_id TEXT REFERENCES talent_jobs(id) ON DELETE CASCADE,
-  -- pending 待发起 / processing 核验中 / completed 已出报告待判定 / passed 已通过并入职 / failed 未通过 / cancelled 已取消
-  status TEXT NOT NULL DEFAULT 'pending',
-  -- none 未授权 / requested 已发授权请求 / granted 已授权 / declined 候选人拒绝
-  consent_status TEXT NOT NULL DEFAULT 'none',
-  consent_at TEXT,
-  consent_method TEXT,
-  provider TEXT NOT NULL DEFAULT 'manual',  -- manual 内部人工 / 第三方机构名
-  high_risk INTEGER NOT NULL DEFAULT 0,     -- 是否涉及犯罪/征信等高敏项（需二次确认）
-  items_json TEXT,                         -- 分项核验结果 JSON：[{type,label,status,note}]
-  report_kv_key TEXT,                      -- 报告原件 KV key（bgcheck: 前缀）
-  report_name TEXT,
-  summary TEXT,
-  result TEXT,                             -- pass 建议通过 / fail 建议不通过
-  started_at TEXT,
-  completed_at TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
-
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_talents_owner ON talents(owner_id);
 CREATE INDEX IF NOT EXISTS idx_talent_social_talent ON talent_social(talent_id);
 CREATE INDEX IF NOT EXISTS idx_talent_social_owner ON talent_social(owner_id);
 CREATE INDEX IF NOT EXISTS idx_talents_status ON talents(status);
-CREATE INDEX IF NOT EXISTS idx_communications_talent ON communications(talent_id);
 CREATE INDEX IF NOT EXISTS idx_doc_templates_category ON doc_templates(category);
 CREATE INDEX IF NOT EXISTS idx_jobs_owner ON jobs(owner_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
@@ -419,10 +375,6 @@ CREATE INDEX IF NOT EXISTS idx_interviews_owner ON interviews(owner_id);
 CREATE INDEX IF NOT EXISTS idx_interviews_scheduled ON interviews(scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_ai_artifacts_lookup ON ai_artifacts(owner_id, biz_type, biz_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_ai_artifacts_quota ON ai_artifacts(owner_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_bgcheck_owner ON background_checks(owner_id);
-CREATE INDEX IF NOT EXISTS idx_bgcheck_talent ON background_checks(talent_id);
-CREATE INDEX IF NOT EXISTS idx_bgcheck_job ON background_checks(talent_job_id);
-CREATE INDEX IF NOT EXISTS idx_bgcheck_status ON background_checks(status);
 
 -- ---- 社保费率模板（按城市保存五险一金比例，社保计算器一键套用）----
 CREATE TABLE IF NOT EXISTS social_rate_templates (

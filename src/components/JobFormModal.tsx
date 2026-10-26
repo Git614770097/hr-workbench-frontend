@@ -8,8 +8,7 @@ import { api } from "../api";
 import type { Job } from "../types";
 import { PRIORITY_LABELS } from "../types";
 import { useDict } from "../dict";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
+
 import { notifyOnbSaved } from "./onboardingAutoFill";
 
 interface Props {
@@ -29,7 +28,6 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
   const [aiFilling, setAiFilling] = useState(false);
   const [departments, setDepartments] = useState<string[]>([]);
   const { education: educationOptions, jobTypeLabels } = useDict();
-  const profile = useIdentityProfile();
   const isEdit = !!jobId;
 
   useEffect(() => {
@@ -72,10 +70,10 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
       };
       if (isEdit && jobId) {
         await api.updateJob(jobId, data);
-        message.success(termFor(profile, "岗位已更新"));
+        message.success("岗位已更新");
       } else {
         await api.createJob(data);
-        message.success(termFor(profile, "岗位已创建"));
+        message.success("岗位已创建");
         notifyOnbSaved();
       }
       form.resetFields();
@@ -93,7 +91,7 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
     const vals = form.getFieldsValue();
     const title = (vals.title || "").trim();
     if (!title) {
-      message.warning(termFor(profile, "请先填写岗位名称，再点 AI 一键起草"));
+      message.warning("请先填写岗位名称，再点 AI 一键起草");
       return;
     }
     setAiFilling(true);
@@ -127,9 +125,9 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
       }
       form.setFieldsValue(patch);
       if (filled.length) {
-        message.success(termFor(profile, `AI 已起草 ${filled.length} 项，请核对修改后保存`));
+        message.success(`AI 已起草 ${filled.length} 项，请核对修改后保存`);
       } else {
-        message.info(termFor(profile, "这些字段都已填写，AI 未覆盖。如需重填请先清空对应字段"));
+        message.info("这些字段都已填写，AI 未覆盖。如需重填请先清空对应字段");
       }
     } catch (err) {
       message.error((err as Error).message);
@@ -146,7 +144,7 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
     const desc = (vals.description || "").trim();
     const req = (vals.requirements || "").trim();
     if (!title || (!desc && !req)) {
-      message.warning(termFor(profile, "请先填写岗位名称和职责/要求，再点 AI 优化文案"));
+      message.warning("请先填写岗位名称和职责/要求，再点 AI 优化文案");
       return;
     }
     setAiFilling(true);
@@ -164,9 +162,9 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
       if (r.requirements) patch.requirements = r.requirements;
       if (Object.keys(patch).length) {
         form.setFieldsValue(patch);
-        message.success(termFor(profile, "AI 已优化职责与要求，请核对修改后保存"));
+        message.success("AI 已优化职责与要求，请核对修改后保存");
       } else {
-        message.info(termFor(profile, "AI 未产生改动，可稍后重试"));
+        message.info("AI 未产生改动，可稍后重试");
       }
     } catch (err) {
       message.error((err as Error).message);
@@ -177,12 +175,12 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
 
   return (
     <Modal
-      title={termFor(profile, isEdit ? "编辑岗位" : "新增岗位")}
+      title={isEdit ? "编辑岗位" : "新增岗位"}
       open={open}
       onCancel={onClose}
       width={720}
       destroyOnClose
-      okText={termFor(profile, isEdit ? "保存修改" : "创建岗位")}
+      okText={isEdit ? "保存修改" : "创建岗位"}
       cancelText="取消"
       confirmLoading={saving}
       onOk={() => form.submit()}
@@ -193,7 +191,7 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
            所以无论 Input / Select / DatePicker / InputNumber，右侧边界都对齐、宽度完全一致。 */}
         <div className="form-grid">
           <Form.Item
-            name="title" label={termFor(profile, "岗位名称")} rules={[{ required: true, message: termFor(profile, "请输入岗位名称") }]}
+            name="title" label={"岗位名称"} rules={[{ required: true, message: "请输入岗位名称" }]}
           >
             <Input placeholder="如 高级前端工程师" />
           </Form.Item>
@@ -252,22 +250,22 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
         </div>
 
         <Divider orientation="left" orientationMargin={0} style={{ fontSize: 13, color: "#8c8c8c", margin: "4px 0 16px" }}>
-          {termFor(profile, "岗位说明")}
+          {"岗位说明"}
         </Divider>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12.5, color: "#8c8c8c" }}>
-            {termFor(profile, "职责 / 要求可 AI 起草；已有文案可 AI 优化，生成后请核对")}
+            {"职责 / 要求可 AI 起草；已有文案可 AI 优化，生成后请核对"}
           </span>
           <Button className="ai-btn" icon={<RobotOutlined />} loading={aiFilling} onClick={handleAiFill}>
-            {termFor(profile, "AI 一键起草")}
+            {"AI 一键起草"}
           </Button>
           <Button className="ai-btn" icon={<RobotOutlined />} loading={aiFilling} disabled={aiFilling} onClick={handleAiOptimize} style={{ marginInlineStart: 8 }}>
-            {termFor(profile, "AI 优化文案")}
+            {"AI 优化文案"}
           </Button>
         </div>
 
-        <Form.Item name="description" label={termFor(profile, "岗位职责")} labelCol={{ flex: "88px" }}>
+        <Form.Item name="description" label={"岗位职责"} labelCol={{ flex: "88px" }}>
           <Input.TextArea rows={3} placeholder="一行一条，或用编号书写…" />
         </Form.Item>
 
@@ -280,7 +278,7 @@ export default function JobFormModal({ open, jobId, prefill, fillToken, onClose,
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message={termFor(profile, "关闭岗位时系统会自动记录关闭日期；重新开放会自动清空。")}
+            message={"关闭岗位时系统会自动记录关闭日期；重新开放会自动清空。"}
           />
         )}
       </Form>

@@ -1,10 +1,9 @@
 import { useEffect, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
-import { DEFAULT_PROFILE } from "../identityProfiles";
-import "../styles/landing.css";
+import { BRAND } from "../brand";import "../styles/landing.css";
 
 // 猎头版已下线（2026-10-24）：落地页固定为 HR 版（原 ?for=headhunter 的版本切换已移除）。
-const brand = DEFAULT_PROFILE;
+const brand = BRAND;
 
 /* 招聘漏斗演示数据（首屏可视化，等宽数字） */
 const FUNNEL = [
@@ -247,23 +246,19 @@ export default function Landing() {
             </div>
             <div className="land-features-grid">
               {FEATURES.map((f, i) => {
-                const ov = brand.featureCopy?.[i];
-                const title = ov?.title ?? f.title;
-                const desc = ov?.desc ?? f.desc;
-                const tags = ov?.tags ?? f.tags;
                 return (
                 <div
                   className="land-feature land-reveal"
-                  key={title}
+                  key={f.title}
                   style={{ "--feat-c1": f.c1, "--feat-c2": f.c2, "--feat-i": i } as CSSProperties}
                 >
                   <span className="land-feature-glow" aria-hidden="true" />
                   <div className="land-feature-icon" aria-hidden="true">{f.icon}</div>
                   <span className="land-feature-idx">{String(i + 1).padStart(2, "0")}</span>
-                  <h3>{title}</h3>
-                  <p>{desc}</p>
+                  <h3>{f.title}</h3>
+                  <p>{f.desc}</p>
                   <div className="land-feature-tags">
-                    {tags.map((t) => <span className="land-feature-tag" key={t}>{t}</span>)}
+                    {f.tags.map((t) => <span className="land-feature-tag" key={t}>{t}</span>)}
                   </div>
                 </div>
                 );
@@ -277,21 +272,19 @@ export default function Landing() {
           <div className="land-wrap">
             <div className="land-section-head land-reveal">
               <span className="land-section-kicker">工作流</span>
-              <h2 className="land-section-title">{brand.flowCopy?.title ?? "从招人到离职，一条线走到底"}</h2>
+              <h2 className="land-section-title">从招人到离职，一条线走到底</h2>
               <p className="land-section-desc">
-                {brand.flowCopy?.desc ?? "招聘不是割裂的动作，而是一条连续的生命周期。每一步都有对应的模块兜底。"}
+                招聘不是割裂的动作，而是一条连续的生命周期。每一步都有对应的模块兜底。
               </p>
             </div>
             <div className="land-flow-track">
               {FLOW.map((s, i) => {
-                const ov = brand.flowCopy?.steps?.[i];
-                const title = ov?.title ?? s.title;
                 return (
-                <div className="land-flow-step land-reveal" key={title}>
+                <div className="land-flow-step land-reveal" key={s.title}>
                   <span className="land-flow-dot" />
                   <span className="land-flow-num">STEP {String(i + 1).padStart(2, "0")}</span>
-                  <h3>{title}</h3>
-                  <p>{ov?.desc ?? s.desc}</p>
+                  <h3>{s.title}</h3>
+                  <p>{s.desc}</p>
                 </div>
                 );
               })}

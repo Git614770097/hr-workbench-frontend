@@ -32,10 +32,8 @@ async function deleteTalentCascade(db: D1Database, talentId: string): Promise<vo
     db.prepare("DELETE FROM approval_steps WHERE instance_id IN (SELECT id FROM approval_instances WHERE talent_id = ?)").bind(talentId),
     db.prepare("DELETE FROM interviews WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM approval_instances WHERE talent_id = ?").bind(talentId),
-    db.prepare("DELETE FROM background_checks WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(talentId),
     db.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(talentId),
-    db.prepare("DELETE FROM communications WHERE talent_id = ?").bind(talentId),
     // 待办属于用户，不静默删除，只解除与人才的关联
     db.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(talentId),
@@ -1045,7 +1043,7 @@ talents.delete("/:id", async (c) => {
   // 先清所有关联数据，再删人才本体。
   // talents 被多张表外键引用，顺序反了（或漏清某张表）会触发外键约束直接 500。
   // 这里显式清理所有可能引用 talents 的子表（含 approval_steps / interviews /
-  // approval_instances / background_checks），不依赖 ON DELETE CASCADE，
+  // approval_instances），不依赖 ON DELETE CASCADE，
   // 即使这些行的 talent_job_id 为空也能安全删除。
   try {
     await deleteTalentCascade(c.env.DB, id);

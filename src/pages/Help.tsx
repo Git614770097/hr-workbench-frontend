@@ -1,5 +1,5 @@
 import { Card, Collapse, Divider, Typography } from "antd";
-import { cloneElement, Fragment, isValidElement, type ReactElement, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   RocketOutlined,
   DatabaseOutlined,
@@ -8,8 +8,7 @@ import {
   FileProtectOutlined,
   SafetyCertificateOutlined,
 } from "@ant-design/icons";
-import { useCurrentUser, useIdentityProfile } from "../useIdentity";
-import { termFor, type IdentityProfile } from "../identityProfiles";
+import { useCurrentUser } from "../useIdentity";
 import { canAccessPath } from "../utils/routeAccess";
 
 const { Title, Paragraph, Text } = Typography;
@@ -17,13 +16,9 @@ const { Title, Paragraph, Text } = Typography;
 /**
  * 帮助中心：分类手风琴 FAQ。
  * 内容基于系统真实功能与使用中沉淀的说明（如漏斗「曾到达」口径、
- * 渠道来源依赖、扫描件日期降级手填等），帮助新用户快速建立正确预期。
+ * 渠道来源依赖、扫描件日期降级手填等），帮助新用户建立正确预期。
  *
- * 身份适配（两层，都不改鉴权）：
- * 1. 分类级：visibleWhen 声明该分类需要哪个菜单权限，无权限整块隐藏
- *    —— 猎头看不到「合同与社保」的 FAQ，也不会读到与己无关的模块说明；
- * 2. 文案级：所有文本经 termFor 按身份替换（人才→候选人、岗位→职位…），
- *    与菜单、页面内术语保持一致。
+ * 分类级：visibleWhen 声明该分类需要哪个菜单权限，无权限整块隐藏。
  */
 
 interface QA {
@@ -366,26 +361,7 @@ function IfPerm({ any, children }: { any: string[]; children: ReactNode }) {
   return ok ? <>{children}</> : null;
 }
 
-/**
- * 递归把 React 树里的字符串文本过一遍 termFor。
- * FAQ 答案是 JSX（含列表、加粗），无法对整块做字符串替换，
- * 因此渲染时遍历到文本叶子逐个替换 —— 内容是静态的，克隆安全。
- */
-function termify(node: ReactNode, profile: IdentityProfile): ReactNode {
-  if (typeof node === "string") return termFor(profile, node);
-  if (Array.isArray(node)) {
-    return node.map((child, i) => <Fragment key={i}>{termify(child, profile)}</Fragment>);
-  }
-  if (isValidElement(node)) {
-    const el = node as ReactElement<{ children?: ReactNode }>;
-    if (el.props.children === undefined) return el;
-    return cloneElement(el, undefined, termify(el.props.children, profile));
-  }
-  return node;
-}
-
 export default function Help() {
-  const brand = useIdentityProfile();
   const user = useCurrentUser();
 
   // 按权限隐藏整块分类：无权访问的模块，其 FAQ 对用户只会造成困扰
@@ -409,7 +385,7 @@ export default function Help() {
             label: (
               <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                 {cat.icon}
-                <span style={{ fontWeight: 600 }}>{termFor(brand, cat.label)}</span>
+                <span style={{ fontWeight: 600 }}>{cat.label}</span>
                 <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
                   {cat.items.length} 个问题
                 </Text>
@@ -418,9 +394,9 @@ export default function Help() {
             children: cat.items.map((qa, i) => (
               <div key={i}>
                 <Paragraph strong style={{ marginBottom: 6 }}>
-                  {termFor(brand, qa.q)}
+                  {qa.q}
                 </Paragraph>
-                <div>{termify(qa.a, brand)}</div>
+                <div>{qa.a}</div>
                 {i < cat.items.length - 1 && <Divider style={{ margin: "16px 0" }} />}
               </div>
             )),

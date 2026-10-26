@@ -118,11 +118,8 @@ const DEFAULT_VISIBLE_COLS = ["current_title", "years_experience", "education", 
 const COLS_STORAGE_KEY = "talent_list_visible_cols";
 
 import { escapeHtml, downloadBlob, dateStamp, exportXlsx } from "../utils/file";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
 
 export default function TalentList() {
-  const profile = useIdentityProfile();
   const navigate = useNavigate();
   const { education: educationOptions } = useDict();
   const [talents, setTalents] = useState<Talent[]>([]);
@@ -388,7 +385,7 @@ export default function TalentList() {
       return `<tr>${tds}</tr>`;
     }).join("");
     return `<!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="utf-8"><title>${termFor(profile, "人才库导出")}</title>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>${"人才库导出"}</title>
 <style>
   body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; margin: 24px; color: #333; }
   h1 { font-size: 20px; margin-bottom: 4px; }
@@ -398,7 +395,7 @@ export default function TalentList() {
   th { background: #f5f5f5; font-weight: 600; }
   tr:nth-child(even) td { background: #fafafa; }
 </style></head><body>
-<h1>${termFor(profile, "人才库导出")}</h1>
+<h1>${"人才库导出"}</h1>
 <div class="sub">共 ${rows.length} 人 · 导出时间 ${new Date().toLocaleString("zh-CN")}</div>
 <table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>
 </body></html>`;
@@ -412,9 +409,9 @@ export default function TalentList() {
       if (rows.length === 0) { message.warning(selectedKeys.length > 0 ? "未选中可导出的数据" : "暂无数据可导出"); return; }
       const html = buildExportHtml(rows, columns);
       const blob = new Blob(["\ufeff" + html], { type: "application/msword;charset=utf-8" });
-      downloadBlob(blob, `${termFor(profile, "人才库导出")}_${dateStamp()}.doc`);
+      downloadBlob(blob, `${"人才库导出"}_${dateStamp()}.doc`);
       const label = selectedKeys.length > 0 ? `已导出选中的 ${rows.length} 条` : `已导出 ${rows.length} 条人才`;
-      message.success(termFor(profile, `${label}（Word）`));
+      message.success(`${label}（Word）`);
     } catch (err) {
       message.error((err as Error).message || "导出失败");
     } finally {
@@ -459,9 +456,9 @@ export default function TalentList() {
       setExporting(true);
       const { rows, columns } = await getExportData();
       if (rows.length === 0) { message.warning(selectedKeys.length > 0 ? "未选中可导出的数据" : "暂无数据可导出"); return; }
-      await exportXlsx(`${termFor(profile, "人才库导出")}_${dateStamp()}.xlsx`, [
+      await exportXlsx(`${"人才库导出"}_${dateStamp()}.xlsx`, [
         {
-          name: termFor(profile, "人才库"),
+          name: "人才库",
           columns: columns.map((c) => ({
             header: c.title,
             key: c.key,
@@ -478,7 +475,7 @@ export default function TalentList() {
         detail: { rows: rows.length, selected: selectedKeys.length > 0 },
       });
       const label = selectedKeys.length > 0 ? `已导出选中的 ${rows.length} 条` : `已导出 ${rows.length} 条人才`;
-      message.success(termFor(profile, `${label}（Excel）`));
+      message.success(`${label}（Excel）`);
     } catch (err) {
       message.error((err as Error).message || "导出失败");
     } finally {
@@ -488,7 +485,7 @@ export default function TalentList() {
 
   // 导出单份简历：根据 resume_url 扩展名判断原文件格式，PDF 导出 PDF、Word 导出 Word
   const handleExportResume = async (record: Talent) => {
-    if (!record.resume_url) { message.warning(termFor(profile, "该人才暂无简历文件")); return; }
+    if (!record.resume_url) { message.warning("该人才暂无简历文件"); return; }
     const ext = (record.resume_url.match(/\.([a-z0-9]+)$/i)?.[1] || "").toLowerCase();
     const isWord = ext === "docx" || ext === "doc";
     const isPdf = ext === "pdf";
@@ -502,7 +499,7 @@ export default function TalentList() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      message.success(termFor(profile, `正在导出 ${record.name} 的${typeLabel}简历`));
+      message.success(`正在导出 ${record.name} 的${typeLabel}简历`);
     } catch (e) {
       message.error((e as Error).message || "导出失败");
     }
@@ -765,7 +762,7 @@ export default function TalentList() {
               data-onb-action="new-talent"
               onClick={() => { setEditId(null); setTalentPrefill(undefined); setAddOpen(true); }}
             >
-              {termFor(profile, "新增人才")}
+              {"新增人才"}
             </Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
             {/* 人才AI匹配入口：从「挑人」场景顺手进匹配页（页内自选画像）。
@@ -848,9 +845,9 @@ export default function TalentList() {
           ) : (
             // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」
             <div style={{ padding: "40px 0", textAlign: "center" }}>
-              <Empty description={termFor(profile, "人才库还是空的")} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
+              <Empty description={"人才库还是空的"} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {termFor(profile, "点左上角「新增人才」或「导入」开始录入真实数据")}
+                {"点左上角「新增人才」或「导入」开始录入真实数据"}
               </Typography.Text>
             </div>
           ),
@@ -861,7 +858,7 @@ export default function TalentList() {
             pageSize,
             showSizeChanger: true,
             pageSizeOptions: [10, 20, 50, 100],
-            showTotal: (t) => termFor(profile, `共 ${t} 位人才`),
+            showTotal: (t) => `共 ${t} 位人才`,
           }}
         />
       </Card>

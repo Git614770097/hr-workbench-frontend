@@ -12,8 +12,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import type { MatchProfile } from "../types";
 import { useDict } from "../dict";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
+
 import { fmtDateTime } from "../utils/time";
 
 /** 画像整体薪资区间原文（如「20-35K·13薪」）→ 统一展示 */
@@ -77,7 +76,6 @@ function fieldsFromProfile(p: MatchProfile): ProfileFields {
 
 /** 列表页：管理「职位画像」——每个画像 = 目标职位 + 招聘需求 + AI 提炼的整体要求字段 */
 export default function Profiles() {
-  const profile = useIdentityProfile();
   const navigate = useNavigate();
   const { education: educationOptions } = useDict();
   const [list, setList] = useState<MatchProfile[]>([]);
@@ -129,13 +127,13 @@ export default function Profiles() {
       setJd("");
       setGenJd(false);
       setJobTitleState(job.title || "");
-      setJdHint({ type: "info", text: termFor(profile, `已带入岗位「${job.title}」${job.city ? `（${job.city}）` : ""}，可点「AI 生成 JD」起草，也可直接粘贴 JD`) });
+      setJdHint({ type: "info", text: `已带入岗位「${job.title}」${job.city ? `（${job.city}）` : ""}，可点「AI 生成 JD」起草，也可直接粘贴 JD` });
       setFields({ ...EMPTY_FIELDS, city: job.city || "" });
       form.resetFields();
       form.setFieldsValue({ job_title: job.title || "" });
       setOpen(true);
     }).catch(() => {
-      message.warning(termFor(profile, "未找到该岗位，已按普通新建画像打开"));
+      message.warning("未找到该岗位，已按普通新建画像打开");
       openCreate();
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

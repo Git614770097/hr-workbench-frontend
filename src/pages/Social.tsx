@@ -14,9 +14,7 @@ import type { SocialItem, SocialRateTemplate } from "../types";
 import { SI_STATUS_LABELS, SI_STATUS_COLORS, SI_STATUS_OPTIONS } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
 import { useDismissible } from "../hooks/useDismissible";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
-import { exportXlsx, dateStamp } from "../utils/file";
+import { exportXlsx, dateStamp } from "../utils/file";
 
 /** 待办动作推导（与后端 socialTaskStmts 同口径）：onboarded=已入职、si=参保状态 */
 function deriveAction(r: SocialItem): "add" | "stop" | null {
@@ -312,9 +310,7 @@ function SocialEditModal({
   rates: SocialRateTemplate[];
   onClose: () => void;
   onSaved: () => void;
-}) {
-  const profile = useIdentityProfile();
-  const [form] = Form.useForm();
+}) {  const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [tplHint, setTplHint] = useState<SocialRateTemplate | null>(null);
 
@@ -395,7 +391,7 @@ function SocialEditModal({
           style={{ marginBottom: 16 }}
           message={
             item.hire_date
-              ? termFor(profile, `${item.name} 入职日期：${item.hire_date}（在「编辑人才」中可改）`)
+              ? `${item.name} 入职日期：${item.hire_date}（在「编辑人才」中可改）`
               : `${item.name} 尚未填入职日期，标记「已入职」或补填入职日期后才会生成社保增员待办`
           }
         />
@@ -442,9 +438,7 @@ function SocialEditModal({
   );
 }
 
-export default function Social() {
-  const profile = useIdentityProfile();
-  const [items, setItems] = useState<SocialItem[]>([]);
+export default function Social() {  const [items, setItems] = useState<SocialItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [appliedQ, setAppliedQ] = useState("");
@@ -665,7 +659,7 @@ export default function Social() {
       {!intro.dismissed && (
         <Alert
           type="info" showIcon closable style={{ marginBottom: 16 }}
-          message={termFor(profile, "标记「已入职」或填了入职日期、但未参保的人才 → 自动生成「社保增员」待办；填了离职日期且仍在缴 → 生成「社保减员」待办。基数与比例由你按参保地政策填写，系统不维护费率规则库；「个人月缴 / 单位月缴」由基数 × 对应比例自动算出（社保 + 公积金）。")}
+          message={"标记「已入职」或填了入职日期、但未参保的人才 → 自动生成「社保增员」待办；填了离职日期且仍在缴 → 生成「社保减员」待办。基数与比例由你按参保地政策填写，系统不维护费率规则库；「个人月缴 / 单位月缴」由基数 × 对应比例自动算出（社保 + 公积金）。"}
           onClose={intro.dismiss}
         />
       )}

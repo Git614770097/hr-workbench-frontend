@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { prefetchPage } from "../routePages";
+import { BRAND } from "../brand";
 import Avatar from "antd/es/avatar";
 import Button from "antd/es/button";
 import Tag from "antd/es/tag";
@@ -59,10 +60,7 @@ import { THEME_COLORS, type ThemeState } from "../theme";
 import { onboardingStepsFor } from "./onboardingSteps";
 import FeishuLogo from "./FeishuLogo";
 import { isTouchDevice, setDeviceOverride } from "../utils/device";
-import { useIdentityProfile } from "../useIdentity";
-import { navLabelFor } from "../identityProfiles";
-
-// 以下弹窗原来都是静态引入，会被无条件打进首屏 chunk —— 后果不只是多几 KB：
+// 以下弹窗原来都是静态引入，会被无条件打进首屏 chunk —— 后果不只是多几 KB：
 // ReferralModal 里用了 antd 的 Table，而它是首屏静态闭包里**唯一**引 Table 的文件，
 // 于是一个冷门的「邀请」弹窗把 Table(118KB) 连带 rc-table / rc-pagination /
 // rc-virtual-list 一起拖进了首屏。Pushplus / FeishuBind / AiKey 三个又各引了
@@ -132,7 +130,7 @@ interface NavLeaf {
 interface NavGroup {
   /** 分组 id：仅作展开状态的 key，不参与路由 */
   id: string;
-  /** 身份化显示名的查找键（不是路由）。写进 identityProfiles.navLabels 即可按身份改名 */
+  /** 菜单显示名查找键（不是路由） */
   labelKey: string;
   label: string;
   icon: React.ReactNode;
@@ -269,14 +267,12 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   const navigate = useNavigate();
   // 当前路由：用于「自动展开所在的一级分组」（见下方 isGroupOpen）
   const location = useLocation();
-  // 品牌档案：按当前用户身份取（猎头/团队版会换品牌名与部分菜单名）
-  const brand = useIdentityProfile();
-  // 新手指引按身份 + 实际权限生成（文案过 termFor，并按权限剔除无权访问的步骤），
+  // 品牌档案：按当前用户身份取（猎头/团队版会换品牌名与部分菜单名）  // 新手指引按身份 + 实际权限生成（文案过 termFor，并按权限剔除无权访问的步骤），
   // 用 useMemo 固定引用，避免每次 render 生成新数组导致引导弹窗重置。
   // 依赖用「权限指纹」字符串而非 user 对象：静默刷新会换 user 引用，
   // 直接依赖 user 会在用户切回窗口时把引导重置回第一步。
   const permFingerprint = `${user.role}|${(user.permissions || []).join(",")}`;
-  const onbSteps = useMemo(() => onboardingStepsFor(brand, user), [brand.key, permFingerprint]);
+  const onbSteps = useMemo(() => onboardingStepsFor(user), ["hr", permFingerprint]);
   // 侧栏待办角标（逾期 + 今日到期），失败静默
   const [taskBadge, setTaskBadge] = useState(0);
   // 侧栏折叠状态，记住用户偏好
@@ -479,7 +475,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
   const visibleNav = useMemo<(NavGroup | NavLeaf)[]>(() => {
     const decorate = (leaf: NavLeaf): NavLeaf => ({
       ...leaf,
-      label: navLabelFor(brand, leaf.to, leaf.label),
+      label: leaf.label,
       badge: leaf.to === "/tasks" ? taskBadge : undefined,
     });
     const out: (NavGroup | NavLeaf)[] = [];
@@ -494,7 +490,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
           ...node,
           // 一级标题也走身份化：labelKey 不是路由，只作 navLabels 的查找键，
           // 两档身份都未收录时回落到原 label（显示与改造前一致）
-          label: navLabelFor(brand, node.labelKey, node.label),
+          label: node.label,
           badge: kids.reduce((n, k) => n + (k.badge || 0), 0) || undefined,
           children: kids,
         });
@@ -505,7 +501,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
     }
     return out;
     // permFingerprint 已含 role + permissions 指纹，等价于依赖 canSee 的结果
-  }, [brand.key, permFingerprint, taskBadge]);
+  }, ["hr", permFingerprint, taskBadge]);
 
   // ===== 一级分组展开状态 =====
   // 两个来源合并，避免「路由自动展开」把用户偏好污染进 localStorage：
@@ -562,8 +558,8 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
 
   // 浏览器标签页标题跟随品牌（猎头版不该显示 HR 工作台）
   useEffect(() => {
-    document.title = `${brand.name} · ${brand.tagline}`;
-  }, [brand.name, brand.tagline]);
+    document.title = `${BRAND.name} · ${BRAND.tagline}`;
+  }, [BRAND.name, BRAND.tagline]);
 
   // 退出后的跳转交给 App.logout（整页跳 /login），避免与「清空用户态」抢时序
   const handleLogout = () => {
@@ -798,7 +794,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
       <div className="app-nav-mask" onClick={() => setMobileNavOpen(false)} />
       <aside className={`sidebar${navCollapsed ? " collapsed" : ""}${mobileNavOpen ? " nav-open" : ""}`}>
         <div className="sidebar-logo">
-          <span className="logo-text">{brand.name}</span>
+          <span className="logo-text">{BRAND.name}</span>
         </div>
 
         <nav className="sidebar-nav">

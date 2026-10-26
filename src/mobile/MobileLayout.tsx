@@ -11,7 +11,6 @@ import DesktopOutlined from "@ant-design/icons/es/icons/DesktopOutlined";
 import LogoutOutlined from "@ant-design/icons/es/icons/LogoutOutlined";
 import type { User } from "../types";
 import { setDeviceOverride } from "../utils/device";
-import { profileOf, navLabelFor, termFor } from "../identityProfiles";
 import { mobileTabsFor } from "./tabs";
 import { firstAccessiblePath } from "../utils/routeAccess";
 
@@ -26,10 +25,9 @@ export default function MobileLayout({ user, onLogout }: Props) {
   const [moreOpen, setMoreOpen] = useState(false);
   // Tab 可见性 = 权限（与桌面菜单同一口径）；显示名走 navLabels（与桌面同一真源，
   // 例如猎头版「人才库」→「候选人库」），不再各自维护一份文案映射。
-  const profile = profileOf(user);
   const TABS = mobileTabsFor(user).map((t) => ({
     ...t,
-    label: navLabelFor(profile, t.navPath, t.label),
+    label: t.label,
   }));
 
   const active = TABS.find((t) => loc.pathname.startsWith(t.path));
@@ -113,7 +111,7 @@ export default function MobileLayout({ user, onLogout }: Props) {
         </div>
         <div style={{ marginTop: 14, textAlign: "center" }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            {termFor(profile, "岗位、合同、模板库等模块仍用完整版操作")}
+            {"岗位、合同、模板库等模块仍用完整版操作"}
           </Typography.Text>
         </div>
       </Drawer>

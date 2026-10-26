@@ -870,8 +870,6 @@ auth.delete("/users/:id", async (c) => {
   if (id === session.userId) return c.json({ error: "不能删除自己" }, 400);
 
   // 删除该用户的数据
-  await c.env.DB.prepare("DELETE FROM communications WHERE talent_id IN (SELECT id FROM talents WHERE owner_id = ?)").bind(id).run();
-  await c.env.DB.prepare("DELETE FROM communications WHERE user_id = ?").bind(id).run();
   await c.env.DB.prepare("DELETE FROM talents WHERE owner_id = ?").bind(id).run();
   await c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
 

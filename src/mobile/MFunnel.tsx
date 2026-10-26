@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { Select, Spin, message } from "antd";
 import { api } from "../api";
 import type { FunnelResponse } from "../types";
-import { useIdentityProfile } from "../useIdentity";
-import { termFor } from "../identityProfiles";
 
 const TIME_RANGES = [
   { label: "全部时间", value: 0 },
@@ -24,8 +22,6 @@ export default function MFunnel() {
   const [jobFilter, setJobFilter] = useState("");
   const [daysFilter, setDaysFilter] = useState(0);
   const [loading, setLoading] = useState(true);
-  const profile = useIdentityProfile();
-
   const load = async () => {
     setLoading(true);
     try {
@@ -64,7 +60,7 @@ export default function MFunnel() {
     <div>
       <div className="m-filter">
         <Select
-          placeholder={termFor(profile, "全部岗位")}
+          placeholder={"全部岗位"}
           allowClear
           value={jobFilter || undefined}
           onChange={(v) => setJobFilter(v || "")}
