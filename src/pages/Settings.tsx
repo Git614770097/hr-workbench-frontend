@@ -537,6 +537,14 @@ function ChangelogSettings() {
   const [updatedAt, setUpdatedAt] = useState("");
   const [itemsText, setItemsText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [history, setHistory] = useState<{ version: string; title: string; updated_at: string; items: string[] }[]>([]);
+
+  const loadHistory = () => {
+    api
+      .getChangelogHistory()
+      .then((r) => setHistory(r.items || []))
+      .catch(() => {});
+  };
 
   useEffect(() => {
     api
@@ -548,6 +556,7 @@ function ChangelogSettings() {
         setItemsText((c.items || []).join("\n"));
       })
       .catch(() => {});
+    loadHistory();
   }, []);
 
   const handleSave = async () => {
@@ -564,6 +573,7 @@ function ChangelogSettings() {
         items: itemsText.split("\n").map((s) => s.trim()).filter(Boolean),
       });
       message.success("更新公告已保存，用户下次打开即会弹窗");
+      loadHistory();
     } catch (e) {
       message.error((e as Error).message);
     } finally {
@@ -577,7 +587,7 @@ function ChangelogSettings() {
         type="info"
         showIcon
         style={{ marginBottom: 20 }}
-        message="修改版本号并保存后，所有用户下次打开系统会弹出此公告（仅弹一次，直到版本号再次变化）。"
+        message="修改版本号并保存后，所有用户下次打开系统会弹出此公告（仅弹一次，直到版本号再次变化）。历史公告自动归档，不会丢失。"
       />
       <div style={{ marginBottom: 16 }}>
         <FieldLabel>版本号</FieldLabel>
@@ -603,6 +613,25 @@ function ChangelogSettings() {
       <Button type="primary" loading={saving} onClick={handleSave}>
         保存
       </Button>
+
+      {history.length > 0 && (
+        <div style={{ marginTop: 32 }}>
+          <FieldLabel extra="新→旧，保存时自动归档">历史公告</FieldLabel>
+          <Collapse
+            items={history.map((h) => ({
+              key: h.version,
+              label: `${h.version || "未编号"}${h.title ? ` · ${h.title}` : ""}${h.updated_at ? `（${h.updated_at}）` : ""}`,
+              children: (
+                <ul style={{ margin: 0, paddingLeft: 20 }}>
+                  {(h.items || []).map((it, i) => (
+                    <li key={i}>{it}</li>
+                  ))}
+                </ul>
+              ),
+            }))}
+          />
+        </div>
+      )}
     </div>
   );
 }

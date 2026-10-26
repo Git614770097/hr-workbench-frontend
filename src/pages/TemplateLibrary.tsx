@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card, Input, Select, Button, Tag, Typography, Modal, Form,
-  message, Popconfirm, Tooltip, Table, Tabs, Alert, Progress,
+  message, Popconfirm, Tooltip, Table, Tabs, Alert, Progress, Drawer, List, Space, Empty,
 } from "antd";
 import {
   PlusOutlined, SearchOutlined, FileTextOutlined, ReloadOutlined, ThunderboltOutlined,
-  UploadOutlined, DownloadOutlined,
+  UploadOutlined, DownloadOutlined, HistoryOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
-import type { DocTemplate, User } from "../types";
+import type { DocTemplate, User, TemplateVersionMeta } from "../types";
 import { TEMPLATE_CATEGORIES, SCOPE_LABELS, SCOPE_COLORS } from "../types";
 import { toHtml, stripHtml, smartTidyHtml, detailRowsToTable } from "../utils/template";
 import { sanitizeHtml } from "../utils/sanitizeHtml";
@@ -32,6 +32,15 @@ export default function TemplateLibrary() {
   const [viewTarget, setViewTarget] = useState<DocTemplate | null>(null);
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+
+  // 历史版本抽屉
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [versions, setVersions] = useState<TemplateVersionMeta[]>([]);
+  const [verLoading, setVerLoading] = useState(false);
+  const [previewVer, setPreviewVer] = useState<number | null>(null);
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -127,6 +136,55 @@ ${body}
     } catch (err) {
       message.error((err as Error).message);
     }
+  };
+
+  // ---- 历史版本：列表 / 预览 / 恢复 ----
+  const openHistory = async (t: DocTemplate) => {
+    setViewTarget(t);
+    setHistoryOpen(true);
+    setPreviewVer(null);
+    setPreviewHtml("");
+    setVerLoading(true);
+    try {
+      const res = await api.getTemplateVersions(t.id);
+      setVersions(res.items || []);
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+    setVerLoading(false);
+  };
+
+  const loadVersionPreview = async (ver: number) => {
+    if (!viewTarget) return;
+    setPreviewVer(ver);
+    setPreviewLoading(true);
+    try {
+      const v = await api.getTemplateVersion(viewTarget.id, ver);
+      setPreviewHtml(v.content || "");
+    } catch (err) {
+      message.error((err as Error).message);
+      setPreviewHtml("");
+    }
+    setPreviewLoading(false);
+  };
+
+  const handleRestore = async (ver: number) => {
+    if (!viewTarget) return;
+    setRestoring(true);
+    try {
+      const res = await api.restoreTemplateVersion(viewTarget.id, ver);
+      message.success(res.versioned ? `已恢复到 v${ver}（恢复前的内容已留底）` : "内容与该版本一致，无需恢复");
+      // 查看弹窗还在后面挂着——把恢复后的内容带回去，避免展示旧文
+      if (res.versioned && previewHtml) {
+        setViewTarget({ ...viewTarget, content: previewHtml, updated_at: new Date().toISOString() });
+      }
+      setHistoryOpen(false);
+      setPreviewVer(null);
+      fetchTemplates();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+    setRestoring(false);
   };
 
   // 一键整理格式：按中文文档惯例自动排版，先预览，用户选择采用或放弃
@@ -494,12 +552,15 @@ ${body}
       >
         {viewTarget && (
           <div>
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <Tag color="blue">{viewTarget.category}</Tag>
               <Tag color={SCOPE_COLORS[viewTarget.scope] || "default"}>{SCOPE_LABELS[viewTarget.scope] || "共享"}</Tag>
               <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                 更新于 {fmtDateTime(viewTarget.updated_at)}
               </Typography.Text>
+              <Button size="small" icon={<HistoryOutlined />} onClick={() => openHistory(viewTarget)}>
+                历史版本
+              </Button>
             </div>
             <div
               className="doc-preview"
@@ -509,6 +570,89 @@ ${body}
           </div>
         )}
       </Modal>
+
+      {/* 历史版本抽屉：左侧版本列表，右侧快照预览，可恢复。
+          zIndex 1050 —— 从「查看」Modal 里打开，必须盖住它（约定嵌套 1050） */}
+      <Drawer
+        title={viewTarget ? `历史版本 - ${viewTarget.name}` : "历史版本"}
+        open={historyOpen}
+        onClose={() => { setHistoryOpen(false); setPreviewVer(null); }}
+        width={860}
+        zIndex={1050}
+        destroyOnHidden
+      >
+        {verLoading ? (
+          <div style={{ padding: 40, textAlign: "center" }}>加载中…</div>
+        ) : versions.length === 0 ? (
+          <Empty description="暂无历史版本。从下次编辑保存起，系统会自动留底。" />
+        ) : (
+          <div style={{ display: "flex", gap: 16, height: "100%", minHeight: 0 }}>
+            <div style={{ width: 280, overflowY: "auto", flexShrink: 0 }}>
+              <List
+                size="small"
+                dataSource={versions}
+                renderItem={(v) => (
+                  <List.Item
+                    key={v.version}
+                    onClick={() => loadVersionPreview(v.version)}
+                    style={{
+                      cursor: "pointer",
+                      background: previewVer === v.version ? "var(--color-primary-bg, #e6f4ff)" : undefined,
+                      borderLeft: previewVer === v.version ? "3px solid var(--color-primary, #1677ff)" : "3px solid transparent",
+                      paddingInline: 12,
+                    }}
+                  >
+                    <div style={{ width: "100%" }}>
+                      <Space size={4}>
+                        <Typography.Text strong>v{v.version}</Typography.Text>
+                        {v.note && <Tag style={{ marginInlineEnd: 0 }}>{v.note}</Tag>}
+                      </Space>
+                      <div>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {fmtDateTime(v.created_at)}
+                          {v.editor_name ? ` · ${v.editor_name}` : ""}
+                        </Typography.Text>
+                      </div>
+                    </div>
+                  </List.Item>
+                )}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+              {previewVer === null ? (
+                <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Empty description="点选左侧版本查看快照" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                </div>
+              ) : (
+                <>
+                  <Space style={{ marginBottom: 8 }}>
+                    <Typography.Text strong>预览 v{previewVer}</Typography.Text>
+                    <Popconfirm
+                      title={`恢复到 v${previewVer}？`}
+                      description="当前内容会先留底为新版本，历史只增不删"
+                      onConfirm={() => handleRestore(previewVer)}
+                      okButtonProps={{ loading: restoring }}
+                    >
+                      <Button size="small" type="primary" loading={restoring}>
+                        恢复到此版本
+                      </Button>
+                    </Popconfirm>
+                  </Space>
+                  <div
+                    className="doc-preview"
+                    style={{ flex: 1, minHeight: 0, overflowY: "auto", border: "1px solid var(--color-border, #f0f0f0)", borderRadius: 6, padding: 12 }}
+                    dangerouslySetInnerHTML={{
+                      __html: previewLoading
+                        ? "<p style='color:#999'>加载中…</p>"
+                        : sanitizeHtml(detailRowsToTable(toHtml(previewHtml))),
+                    }}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </Drawer>
 
       {/* 一键整理格式：排版预览（采用 / 放弃） */}
       <Modal

@@ -462,3 +462,19 @@ CREATE TABLE IF NOT EXISTS usage_daily (
   last_at TEXT,
   PRIMARY KEY (day, menu, user_id)
 );
+
+-- 内容版本快照：业务正文被覆盖前留底，可回滚（先接 doc_templates，后续可扩 job/profile）。
+-- 只在内容真正变化时写入；每个 target 保留最近 MAX_KEEP 版。
+CREATE TABLE IF NOT EXISTS content_versions (
+  id TEXT PRIMARY KEY,
+  target_type TEXT NOT NULL,            -- template / job / profile
+  target_id TEXT NOT NULL,
+  version INTEGER NOT NULL,
+  content TEXT NOT NULL,                -- 全文快照（HTML/纯文本）
+  editor_id TEXT,                       -- 触发本次变更的用户（恢复也是新版本）
+  note TEXT,                            -- 可选备注，如「恢复自 v3」
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (target_type, target_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cv_target ON content_versions(target_type, target_id, version);

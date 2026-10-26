@@ -223,6 +223,19 @@ export interface DocTemplate {
   updated_at: string;
 }
 
+// 内容版本快照（模板历史）：列表只回元数据，正文按 version 单取
+export interface TemplateVersionMeta {
+  version: number;
+  note: string | null;
+  created_at: string;
+  size: number;
+  editor_name: string | null;
+}
+
+export interface TemplateVersion extends Omit<TemplateVersionMeta, "size" | "editor_name"> {
+  content: string;
+}
+
 // 模板分类（新建/筛选共用，共 7 大类）
 export const TEMPLATE_CATEGORIES = [
   "招聘入职", "合同协议", "员工异动", "薪酬福利", "社保公积金", "离职退休", "证明文档",

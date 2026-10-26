@@ -1,5 +1,5 @@
 import message from "antd/es/message";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuWebhook, FeishuNotifyMode, AuditLogRow, AuditLogsResponse } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, TemplateVersionMeta, TemplateVersion, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuWebhook, FeishuNotifyMode, AuditLogRow, AuditLogsResponse } from "./types";
 
 const BASE = "/api";
 
@@ -231,6 +231,11 @@ export const api = {
   getChangelog: () =>
     request<{ version: string | null; title: string | null; updated_at: string | null; items: string[] }>(
       "/auth/settings/changelog"
+    ),
+  // 历史公告（含当前，新→旧）：老用户可回看错过的版本
+  getChangelogHistory: () =>
+    request<{ items: { version: string; title: string; updated_at: string; items: string[] }[] }>(
+      "/auth/settings/changelog/history"
     ),
   setChangelog: (data: { version: string; title?: string; updated_at?: string; items: string[] }) =>
     request<{ ok: boolean }>("/auth/settings/changelog", { method: "PUT", body: JSON.stringify(data) }),
@@ -528,6 +533,17 @@ export const api = {
 
   duplicateTemplate: (id: string) =>
     request(`/templates/${id}/duplicate`, { method: "POST" }),
+
+  // 模板历史版本：列表只回元数据，正文按需单取，恢复会生成新版本
+  getTemplateVersions: (id: string) =>
+    request<{ items: TemplateVersionMeta[] }>(`/templates/${id}/versions`),
+  getTemplateVersion: (id: string, ver: number) =>
+    request<TemplateVersion>(`/templates/${id}/versions/${ver}`),
+  restoreTemplateVersion: (id: string, ver: number) =>
+    request<{ id: string; versioned: boolean; restored_from: number }>(
+      `/templates/${id}/versions/${ver}/restore`,
+      { method: "POST" }
+    ),
 
   // ---- 团队管理（管理员/manager）----
   getTeamMembers: () => request("/team/members"),

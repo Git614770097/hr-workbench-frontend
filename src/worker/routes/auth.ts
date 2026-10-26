@@ -1122,8 +1122,11 @@ auth.put("/settings/dict", async (c) => {
   return c.json({ ok: true });
 });
 
-// ---- 更新公告：存 site_settings（key = app_changelog，值为 JSON） ----
+// ---- 更新公告：存 site_settings ----
+// app_changelog         = 当前公告（ChangelogModal 弹窗用，只留最新）
+// app_changelog_history = 历史公告数组（只增不删，老用户可回看错过的版本）
 const CHANGELOG_SETTING_KEY = "app_changelog";
+const CHANGELOG_HISTORY_KEY = "app_changelog_history";
 // 前端首屏读取 version 与本地已读版本比对，不同则弹窗提示「本次更新了什么」。
 // GET 登录即可（所有用户都要看公告）；PUT 仅管理员（改版本号 + 说明即触发全员下次打开弹窗）。
 auth.get("/settings/changelog", async (c) => {
@@ -1144,6 +1147,20 @@ auth.get("/settings/changelog", async (c) => {
   }
 });
 
+// 历史公告列表（含当前那条，按版本号倒序近似排序——新写入的排前面）
+auth.get("/settings/changelog/history", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const raw = await getSetting(c.env.DB, CHANGELOG_HISTORY_KEY);
+  if (!raw) return c.json({ items: [] });
+  try {
+    const arr = JSON.parse(raw);
+    return c.json({ items: Array.isArray(arr) ? arr : [] });
+  } catch {
+    return c.json({ items: [] });
+  }
+});
+
 auth.put("/settings/changelog", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
@@ -1157,13 +1174,42 @@ auth.put("/settings/changelog", async (c) => {
   const items = Array.isArray(body.items)
     ? (body.items as unknown[]).map((x) => String(x).trim()).filter(Boolean)
     : [];
-  const value = JSON.stringify({
+  const next = {
     version,
     title: String(body.title || "").trim(),
     updated_at: String(body.updated_at || "").trim(),
     items,
-  });
-  await setSettings(c.env.DB, [[CHANGELOG_SETTING_KEY, value]]);
+  };
+
+  // 旧公告归档到 history（同版本号反复改不重复入档，只更新归档条目）
+  const [curRaw, histRaw] = await Promise.all([
+    getSetting(c.env.DB, CHANGELOG_SETTING_KEY),
+    getSetting(c.env.DB, CHANGELOG_HISTORY_KEY),
+  ]);
+  let history: unknown[] = [];
+  try {
+    const arr = histRaw ? JSON.parse(histRaw) : [];
+    if (Array.isArray(arr)) history = arr;
+  } catch { /* 历史损坏则重建 */ }
+
+  if (curRaw) {
+    try {
+      const cur = JSON.parse(curRaw);
+      if (cur && cur.version && cur.version !== version) {
+        history = history.filter((h) => (h as { version?: string })?.version !== cur.version);
+        history.unshift(cur);
+      }
+    } catch { /* 当前公告损坏则跳过归档 */ }
+  }
+  // 同版本号保存时替换 history 里的同名条目（改的是「当前」，history 保持含当前旧副本）
+  history = history.filter((h) => (h as { version?: string })?.version !== version);
+  history.unshift(next);
+  if (history.length > 50) history = history.slice(0, 50);
+
+  await setSettings(c.env.DB, [
+    [CHANGELOG_SETTING_KEY, JSON.stringify(next)],
+    [CHANGELOG_HISTORY_KEY, JSON.stringify(history)],
+  ]);
   return c.json({ ok: true });
 });
 
