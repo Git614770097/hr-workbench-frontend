@@ -17,3 +17,6 @@ _shots/
 
 # 代理工作区数据（记忆/任务），不入库
 .workbuddy-ai/
+
+# 测试令牌（含临时会话，禁止提交）
+.wb-test-token

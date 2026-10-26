@@ -22,6 +22,7 @@
     "@fontsource/jetbrains-mono": "^5.1.0",
     "antd": "^5.22.0",
     "dayjs": "^1.11.23",
+    "dompurify": "^3.4.17",
     "echarts": "^6.1.0",
     "exceljs": "^4.4.0",
     "hono": "^4.6.0",

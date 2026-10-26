@@ -262,7 +262,7 @@ const CATEGORIES: Category[] = [
               <li><Text type="secondary">侧栏「人才资产 → 人才AI匹配」（常规入口）</Text></li>
               <li><Text type="secondary">人才库工具栏「人才AI匹配」（挑人场景顺手进）</Text></li>
               <li><Text type="secondary">人才详情页头部「人才AI匹配」（测单个人）</Text></li>
-              <li><Text type="secondary">岗位管理每行「匹配人才」（按岗位标题自动找同名画像）</Text></li>
+              <li><Text type="secondary">岗位管理「更多」下拉里的「匹配人才」（按岗位标题自动找同名画像）</Text></li>
             </ul>
             <Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 8 }}>
               区别：「AI 简历解读」看的是单个候选人的亮点与风险；「人才AI匹配」回答的是一堆人里先看谁。

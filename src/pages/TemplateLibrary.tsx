@@ -11,6 +11,7 @@ import { api } from "../api";
 import type { DocTemplate, User } from "../types";
 import { TEMPLATE_CATEGORIES, SCOPE_LABELS, SCOPE_COLORS } from "../types";
 import { toHtml, stripHtml, smartTidyHtml, detailRowsToTable } from "../utils/template";
+import { sanitizeHtml } from "../utils/sanitizeHtml";
 import { downloadBlob, dateStamp, escapeHtml } from "../utils/file";
 import { fmtDate, fmtDateTime } from "../utils/time";
 import RichTextEditor from "../components/RichTextEditor";
@@ -503,7 +504,7 @@ ${body}
             <div
               className="doc-preview"
               style={{ maxHeight: "62vh", overflowY: "auto" }}
-              dangerouslySetInnerHTML={{ __html: detailRowsToTable(toHtml(viewTarget.content)) }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(detailRowsToTable(toHtml(viewTarget.content))) }}
             />
           </div>
         )}
@@ -531,7 +532,7 @@ ${body}
           <div
             className="doc-preview"
             style={{ maxHeight: "60vh", overflowY: "auto" }}
-            dangerouslySetInnerHTML={{ __html: tidyPreview }}
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(tidyPreview) }}
           />
         )}
       </Modal>

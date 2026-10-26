@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
 import { genId } from "../helpers";
+import { stripDangerousHtml } from "../../utils/htmlStrip";
 
 const templates = new Hono<{ Bindings: Env }>();
 
@@ -76,7 +77,7 @@ templates.post("/", async (c) => {
   const id = genId();
   await c.env.DB.prepare(
     "INSERT INTO doc_templates (id, owner_id, name, category, content, scope) VALUES (?, ?, ?, ?, ?, ?)"
-  ).bind(id, session.userId, body.name, body.category || "证明文档", body.content, scope).run();
+  ).bind(id, session.userId, body.name, body.category || "证明文档", stripDangerousHtml(String(body.content || "")), scope).run();
   return c.json({ id, name: body.name, scope });
 });
 
@@ -98,7 +99,7 @@ templates.post("/:id/duplicate", async (c) => {
   const name = `${src.name}（副本）`;
   await c.env.DB.prepare(
     "INSERT INTO doc_templates (id, owner_id, name, category, content, scope) VALUES (?, ?, ?, ?, ?, 'private')"
-  ).bind(newId, session.userId, name, src.category, src.content).run();
+  ).bind(newId, session.userId, name, src.category, stripDangerousHtml(src.content)).run();
   return c.json({ id: newId, name });
 });
 
@@ -125,7 +126,7 @@ templates.put("/:id", async (c) => {
        scope = COALESCE(?, scope),
        updated_at = datetime('now')
      WHERE id = ?`
-  ).bind(body.name, body.category, body.content, scope, id).run();
+  ).bind(body.name, body.category, body.content === undefined ? null : stripDangerousHtml(String(body.content)), scope, id).run();
   return c.json({ id });
 });
 
