@@ -17,7 +17,7 @@ import { copyText as copyToClipboard } from "../utils/clipboard";
 import { buildJobDiagnosisReport } from "../utils/jobReport";
 import {
   JOB_STATUS_LABELS, JOB_STATUS_COLORS, PRIORITY_LABELS,
-  PRIORITY_COLORS, PIPELINE_STAGES, STAGE_META,
+  PRIORITY_COLORS, PIPELINE_STAGES, STAGE_META, PALETTE,
 } from "../types";
 import JobFormModal from "../components/JobFormModal";
 import AddToPipelineModal from "../components/AddToPipelineModal";
@@ -233,7 +233,7 @@ export default function Jobs() {  const navigate = useNavigate();
             <div style={{ minWidth: 110 }}>
               <Progress
                 percent={pct} size="small"
-                strokeColor={pct >= 100 ? "#10b981" : "#3b82f6"}
+                strokeColor={pct >= 100 ? "#10b981" : PALETTE.blue}
                 format={() => `${done}/${hc}`}
               />
             </div>
@@ -246,7 +246,7 @@ export default function Jobs() {  const navigate = useNavigate();
       render: (v: number, r: Job) => (
         <Tooltip title="点击查看岗位详情">
           <a onClick={() => openDetail(r)} className="job-badge-link">
-            <Badge count={v || 0} showZero color={(v || 0) > 0 ? "#3b82f6" : "#d9d9d9"} overflowCount={999} />
+            <Badge count={v || 0} showZero color={(v || 0) > 0 ? PALETTE.blue : "#d9d9d9"} overflowCount={999} />
           </a>
         </Tooltip>
       ),

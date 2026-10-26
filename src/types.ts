@@ -254,6 +254,22 @@ export const SCOPE_COLORS: Record<string, string> = {
   private: "default",
 };
 
+/**
+ * 数据语义色板（状态标签 / AI 判定 / 图表系列等「类别色」）。
+ * 与 UI 主题色（--color-primary）分离：类别色固定不换肤，否则「已入职=蓝」
+ * 会随主题变成绿、和「在职看机会」撞色。UI 链接/按钮/选中态一律走 var(--color-primary)。
+ */
+export const PALETTE = {
+  blue: "#3b82f6",
+  green: "#10b981",
+  amber: "#f59e0b",
+  red: "#ef4444",
+  purple: "#722ed1",
+  indigo: "#6366f1",
+  cyan: "#06b6d4",
+  gray: "#8c8c8c",
+} as const;
+
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;
@@ -270,10 +286,10 @@ export const STATUS_LABELS: Record<string, string> = {
 };
 
 export const STATUS_COLORS: Record<string, string> = {
-  active: "#10b981",
-  passive: "#f59e0b",
-  placed: "#3b82f6",
-  do_not_contact: "#ef4444",
+  active: PALETTE.green,
+  passive: PALETTE.amber,
+  placed: PALETTE.blue,
+  do_not_contact: PALETTE.red,
 };
 
 // 录入方式：人才是怎么进库的（具体来自哪个平台看 source 字段）
@@ -284,9 +300,9 @@ export const ENTRY_TYPE_LABELS: Record<string, string> = {
 };
 
 export const ENTRY_TYPE_COLORS: Record<string, string> = {
-  manual: "#8c8c8c",
-  import: "#1677ff",
-  sync: "#722ed1",
+  manual: PALETTE.gray,
+  import: PALETTE.blue,
+  sync: PALETTE.purple,
 };
 
 export const ENTRY_TYPE_OPTIONS = [
@@ -1191,10 +1207,10 @@ export interface MatchResult {
 }
 
 export const VERDICT_COLORS: Record<string, string> = {
-  强烈推荐: "#10b981",
-  推荐: "#3b82f6",
-  可考虑: "#f59e0b",
-  不建议: "#ef4444",
+  强烈推荐: PALETTE.green,
+  推荐: PALETTE.blue,
+  可考虑: PALETTE.amber,
+  不建议: PALETTE.red,
 };
 
 // ---- 人才来源渠道 ----

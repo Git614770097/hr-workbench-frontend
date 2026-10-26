@@ -402,7 +402,7 @@ export default function Tasks() {  const [searchParams, setSearchParams] = useS
             {PRIORITY_LABELS[t.priority] || t.priority}
           </Tag>
           {t.talent_id && (
-            <Link to={`/talents/${t.talent_id}`} style={{ color: "#3b82f6" }}>
+            <Link to={`/talents/${t.talent_id}`} style={{ color: "var(--color-primary)" }}>
               <UserOutlined /> {t.talent_name || "关联人才"}
             </Link>
           )}

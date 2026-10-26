@@ -2,7 +2,7 @@
    登录 / 注册 / 忘记密码页 · 「蓝色主题 · 左右布局」版
    - 浅蓝色画布（蓝/青/天蓝多色柔光）+ 点阵 + 两枚漂浮装饰圆
    - 双栏卡片：左侧蓝色渐变品牌区 / 右侧白色表单区
-   - 主色统一在蓝色域（#1d4ed8 / #2563eb / #0ea5e9 / #3b82f6）
+   - 主色统一在蓝色域（#1d4ed8 / #2563eb / #0ea5e9 / var(--color-primary)）
    - 紧凑布局：注册 7 字段靠「身份 2×2 网格 + 关联字段两列 + 邀请码折叠」压进常见视口，不滚动
    独立于后台 global.css，固定浅色呈现。
    ========================================================================== */
@@ -145,7 +145,7 @@
   align-self: flex-start;
   display: inline-flex; align-items: center; gap: 8px;
   padding: 6px 14px; border-radius: 999px;
-  font-size: 0.74rem; letter-spacing: 0.02em; color: #dbeafe;
+  font-size: var(--font-hint); letter-spacing: 0.02em; color: #dbeafe;
   background: rgba(255, 255, 255, 0.16);
   border: 1px solid rgba(255, 255, 255, 0.24);
   backdrop-filter: blur(6px);
@@ -181,7 +181,7 @@
 .login-brand-lead {
   position: relative; z-index: 1;
   color: rgba(224, 236, 255, 0.86);
-  font-size: 0.92rem; line-height: 1.7; margin: 0;
+  font-size: var(--font-body-lg); line-height: 1.7; margin: 0;
   max-width: 30em;
 }
 
@@ -195,7 +195,7 @@
   display: flex; align-items: center; gap: 12px;
   padding: 9px 14px;
   border-radius: 12px;
-  font-size: 0.88rem; color: rgba(240, 247, 255, 0.95);
+  font-size: var(--font-body-lg); color: rgba(240, 247, 255, 0.95);
   background: rgba(255, 255, 255, 0.10);
   border: 1px solid rgba(255, 255, 255, 0.18);
   transition: background-color 0.18s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
@@ -209,7 +209,7 @@
   display: grid; place-items: center;
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.22);
-  font-size: 0.68rem; color: #dbeafe; font-weight: 700;
+  font-size: var(--font-hint); color: #dbeafe; font-weight: 700;
   transition: transform 0.25s ease;
 }
 .login-points li:hover .num { transform: rotate(-8deg) scale(1.06); }
@@ -232,7 +232,7 @@
 .login-kpis b {
   font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.3;
 }
-.login-kpis span { font-size: 0.72rem; color: rgba(200, 220, 255, 0.82); }
+.login-kpis span { font-size: var(--font-hint); color: rgba(200, 220, 255, 0.82); }
 
 /* ============ 右侧：纯白表单区 ============ */
 .login-form {
@@ -255,7 +255,7 @@
 .login-tabs button {
   border: none; background: transparent; cursor: pointer;
   padding: 7px 22px; border-radius: 999px;
-  font-family: inherit; font-size: 0.88rem; font-weight: 600; color: #1e40af;
+  font-family: inherit; font-size: var(--font-body-lg); font-weight: 600; color: #1e40af;
   transition: background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease;
 }
 .login-tabs button.on {
@@ -267,7 +267,7 @@
 
 /* 标题副标题 */
 .login-title { font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 4px; color: #0c1e3e; }
-.login-sub { color: #64748b; font-size: 0.85rem; margin: 0 0 14px; line-height: 1.55; }
+.login-sub { color: #64748b; font-size: var(--font-body-lg); margin: 0 0 14px; line-height: 1.55; }
 
 /* antd 表单 */
 .login-form .ant-form-item { margin-bottom: 10px; }
@@ -278,7 +278,7 @@
   background: #f8fbff;
   /* 强制深色文字：登录页固定浅色呈现，不受全局暗色主题影响 */
   color: #0f172a;
-  font-size: 0.92rem;
+  font-size: var(--font-body-lg);
   transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.22s ease;
 }
 .login-form .ant-input::placeholder,
@@ -341,7 +341,7 @@
   box-shadow: 0 18px 32px -10px rgba(37, 99, 235, 0.65);
 }
 .login-form .ant-btn-primary:active { transform: translateY(0); filter: brightness(0.98); }
-.login-alert { margin-bottom: 12px; border-radius: 10px; font-size: 0.84rem; }
+.login-alert { margin-bottom: 12px; border-radius: 10px; font-size: var(--font-body); }
 
 /* 验证码行 */
 .login-captcha { display: flex; align-items: center; gap: 8px; }
@@ -358,7 +358,7 @@
 .login-captcha-img svg { display: block; width: 100%; height: 100%; }
 .login-captcha-countdown {
   position: absolute; right: 0; bottom: 0;
-  font-size: 10px; line-height: 1.4; padding: 2px 6px;
+  font-size: var(--font-hint); line-height: 1.4; padding: 2px 6px;
   border-top-left-radius: 8px; pointer-events: none;
   font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
   font-variant-numeric: tabular-nums;
@@ -381,7 +381,7 @@
   flex-shrink: 0;
   height: 42px;
   padding: 0 12px;
-  font-size: 0.84rem;
+  font-size: var(--font-body);
   font-weight: 600;
   color: #2563eb !important;
   white-space: nowrap;
@@ -394,7 +394,7 @@
 .login-switch {
   margin-top: 12px;
   display: flex; align-items: center; justify-content: center; gap: 6px;
-  font-size: 0.84rem; color: #94a3b8;
+  font-size: var(--font-body); color: #94a3b8;
 }
 .login-switch a {
   color: #2563eb; cursor: pointer; font-weight: 600; text-decoration: none;
@@ -406,7 +406,7 @@
 /* ---- 页脚 ---- */
 .login-foot {
   display: flex; align-items: center; justify-content: center; gap: 16px;
-  font-size: 0.76rem; color: #1e40af; flex-wrap: wrap;
+  font-size: var(--font-hint); color: #1e40af; flex-wrap: wrap;
   text-align: center;
 }
 .login-foot-links { display: flex; gap: 16px; }
@@ -441,12 +441,12 @@
 }
 .login-form .reg-role-item .reg-role-label {
   display: block;
-  font-size: 0.84rem;
+  font-size: var(--font-body);
   font-weight: 600;
 }
 .login-form .reg-role-item .reg-role-desc {
   display: block;
-  font-size: 0.72rem;
+  font-size: var(--font-hint);
   color: #64748b;
   /* 文案已控制在 ~12 字内，此处仅作兜底，保证卡片高度整齐 */
   overflow: hidden;
@@ -467,7 +467,7 @@
 .login-ref-toggle {
   display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px;
   margin: -2px 0 10px;
-  font-size: 0.76rem; color: #94a3b8;
+  font-size: var(--font-hint); color: #94a3b8;
 }
 .login-ref-toggle a {
   color: #2563eb; font-weight: 600; cursor: pointer;

@@ -1,3 +1,4 @@
+import { PALETTE } from "../../types";
 import { Hono } from "hono";
 import type { Env } from "../index";
 import { getSession } from "./auth";
@@ -337,7 +338,7 @@ overview.get("/trend", async (c) => {
       range,
       labels,
       series: [
-        { key: "new_talents", label: "新增人才", color: "#3b82f6", data: newTalents },
+        { key: "new_talents", label: "新增人才", color: PALETTE.blue, data: newTalents },
         { key: "interview", label: "进入面试", color: "#8b5cf6", data: interviews },
         { key: "hired", label: "入职", color: "#10b981", data: hired },
       ],

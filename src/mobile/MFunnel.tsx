@@ -1,3 +1,4 @@
+import { PALETTE } from "../types";
 import { useEffect, useState } from "react";
 import { Select, Spin, message } from "antd";
 import { api } from "../api";
@@ -11,7 +12,7 @@ const TIME_RANGES = [
 ];
 
 const SEG_NAMES = ["简历 → 首面", "首面 → Offer", "Offer → 入职"];
-const SEG_COLORS = ["#3b82f6", "#06b6d4", "#f59e0b"];
+const SEG_COLORS = [PALETTE.blue, PALETTE.cyan, PALETTE.amber];
 
 const pct = (v: number) => `${(v * 100).toFixed(v >= 0.1 || v === 0 ? 0 : 1)}%`;
 const dayText = (v: number | null) => (v == null ? "—" : `${Math.round(v * 10) / 10} 天`);

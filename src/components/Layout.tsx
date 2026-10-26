@@ -54,7 +54,7 @@ import ThunderboltOutlined from "@ant-design/icons/es/icons/ThunderboltOutlined"
 import QuestionCircleOutlined from "@ant-design/icons/es/icons/QuestionCircleOutlined";
 import PlayCircleOutlined from "@ant-design/icons/es/icons/PlayCircleOutlined";
 import type { User } from "../types";
-import { ROLE_LABELS } from "../types";
+import { ROLE_LABELS, PALETTE } from "../types";
 import { api } from "../api";
 import { THEME_COLORS, type ThemeState } from "../theme";
 import { onboardingStepsFor } from "./onboardingSteps";
@@ -173,7 +173,7 @@ const NAV_TREE: (NavGroup | NavLeaf)[] = [
     icon: <AppstoreOutlined />,
     color: "#10b981",
     children: [
-      { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: "#3b82f6", perm: "talents" },
+      { to: "/talents", label: "人才库管理", icon: <TeamOutlined />, color: PALETTE.blue, perm: "talents" },
       { to: "/profiles", label: "人才画像", icon: <UserSwitchOutlined />, color: "#10b981", perm: "profiles" },
       // 人才AI匹配：与画像并列的独立菜单。画像=配置岗位能力模型，匹配=按模型给候选人评分，
       // 两件事分开摆概念更清晰；权限仍复用 profiles（后端路由同口径）
@@ -859,7 +859,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
             </Popover>
             <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={["click"]}>
               <div className="topbar-user-trigger" data-onb="topbar-user">
-                <Avatar style={{ backgroundColor: user.role === "admin" ? "#f59e0b" : "#3b82f6" }}>
+                <Avatar style={{ backgroundColor: user.role === "admin" ? "#f59e0b" : "var(--color-primary)" }}>
                   {user.name.charAt(0).toUpperCase()}
                 </Avatar>
                 <div className="topbar-user-info">

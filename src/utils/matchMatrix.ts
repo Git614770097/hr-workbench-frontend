@@ -1,4 +1,4 @@
-import { VERDICT_COLORS } from "../types";
+import { VERDICT_COLORS, PALETTE } from "../types";
 
 /** 矩阵最多显示几列（1440 宽屏下每列约 200px，再多就读不清了） */
 export const MATRIX_MAX_COLS = 6;
@@ -74,7 +74,7 @@ export const MATRIX_ROWS: MatrixRowDef[] = [
       main: String(c.score),
       sub: c.verdict,
       tone: "neutral",
-      color: VERDICT_COLORS[c.verdict] || "#3b82f6",
+      color: VERDICT_COLORS[c.verdict] || PALETTE.blue,
       big: true,
     }),
   },

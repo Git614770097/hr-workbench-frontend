@@ -3,7 +3,7 @@ import {
   TrophyOutlined, FileTextOutlined, UserAddOutlined, SendOutlined, CalendarOutlined,
   CheckCircleFilled, CloseCircleFilled, QuestionCircleFilled, ExclamationCircleFilled,
 } from "@ant-design/icons";
-import { VERDICT_COLORS } from "../types";
+import { VERDICT_COLORS, PALETTE } from "../types";
 import type { MatchResult } from "../types";
 import type { ParsedTalent } from "../utils/resumeImport";
 
@@ -115,7 +115,7 @@ export default function MatchResultCard({
   rank, talent, result, savedId, importing, fromLibrary, onViewText, onImport, onAddToPipeline, onCreateTask,
 }: Props) {
   const { hard } = result;
-  const color = VERDICT_COLORS[result.verdict] || "#3b82f6";
+  const color = VERDICT_COLORS[result.verdict] || PALETTE.blue;
   const bg = VERDICT_BG[result.verdict] || "rgba(59,130,246,.08)";
   const title = [talent.current_title, talent.current_company].filter(Boolean).join(" @ ");
   const isTop = rank === 1;

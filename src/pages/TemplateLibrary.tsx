@@ -339,7 +339,7 @@ ${body}
       ellipsis: true,
       render: (v: string) => (
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          <FileTextOutlined style={{ color: "#3b82f6" }} />
+          <FileTextOutlined style={{ color: "var(--color-primary)" }} />
           <Typography.Text strong style={{ maxWidth: 260 }} ellipsis={{ tooltip: v }}>{v}</Typography.Text>
         </span>
       ),
@@ -597,8 +597,8 @@ ${body}
                     onClick={() => loadVersionPreview(v.version)}
                     style={{
                       cursor: "pointer",
-                      background: previewVer === v.version ? "var(--color-primary-bg, #e6f4ff)" : undefined,
-                      borderLeft: previewVer === v.version ? "3px solid var(--color-primary, #1677ff)" : "3px solid transparent",
+                      background: previewVer === v.version ? "var(--color-primary-bg)" : undefined,
+                      borderLeft: previewVer === v.version ? "3px solid var(--color-primary)" : "3px solid transparent",
                       paddingInline: 12,
                     }}
                   >

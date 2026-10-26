@@ -9,7 +9,7 @@ import {
   UserSwitchOutlined, TrophyOutlined, CloseOutlined, ClearOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
-import { VERDICT_COLORS } from "../types";
+import { VERDICT_COLORS, PALETTE } from "../types";
 import type { MatchProfile, MatchProfileLite, MatchResult, Talent } from "../types";
 import { parseResumeToTalent, parseResumeFile, recordToData } from "../utils/resumeImport";
 import type { ParsedTalent } from "../utils/resumeImport";
@@ -811,7 +811,7 @@ export default function Match() {
                   <span
                     style={{
                       fontSize: 16, fontWeight: 700,
-                      color: VERDICT_COLORS[top.verdict] || "#3b82f6",
+                      color: VERDICT_COLORS[top.verdict] || PALETTE.blue,
                     }}
                   >
                     {top.score} 分

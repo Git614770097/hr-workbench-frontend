@@ -134,7 +134,7 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
       footer={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <Typography.Text type="secondary">
-            已选 <Typography.Text strong style={{ color: "#1677ff" }}>{selected.length}</Typography.Text> 人
+            已选 <Typography.Text strong style={{ color: "var(--color-primary)" }}>{selected.length}</Typography.Text> 人
             <span style={{ marginLeft: 6 }}>· 可勾选多人，跨页选择会保留</span>
             {excludeIds.length > 0 && `（${excludeIds.length} 位已在比选列表中，不可重复勾选）`}
           </Typography.Text>
@@ -158,7 +158,7 @@ export default function TalentPickerModal({ open, excludeIds, onCancel, onOk }: 
           allowClear
           value={kw}
           placeholder="输入即搜索：姓名 / 公司 / 职位 / 技能"
-          suffix={searching ? <LoadingOutlined style={{ color: "#1677ff" }} /> : null}
+          suffix={searching ? <LoadingOutlined style={{ color: "var(--color-primary)" }} /> : null}
           onChange={handleKwChange}
           onCompositionStart={() => { composingRef.current = true; }}
           onCompositionEnd={handleCompositionEnd}
