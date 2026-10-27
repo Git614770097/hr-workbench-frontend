@@ -30,6 +30,25 @@ function isMobilePath(pathname: string): boolean {
   return pathname === "/m" || pathname.startsWith("/m/");
 }
 
+/** 未登录也开放的路径：落地页 / 登录页 / 帮助中心（登录页顶部「帮助中心」直达） */
+const PUBLIC_PATHS = new Set(["/", "/login", "/help"]);
+
+/**
+ * 首屏要不要去问一次 `/auth/me`。
+ *
+ * 会话在 httpOnly cookie 里，前端看不见，只能靠 `auth_hint` 这个布尔提示位判断。
+ * 但只看提示位有个漏洞：用户清掉站点数据（或换了个只保留 cookie 的清理策略）后，
+ * cookie 仍然有效、提示位却没了——这时直接访问 /talents 会被当成未登录，看到落地页。
+ *
+ * 所以补一条：**停在受保护路径上时，即使没有提示位也试一次**。
+ * 代价只有「匿名访客直接打开深链接会多一次 401 → 跳登录页」，而这恰好是更合理的行为；
+ * 停在落地页 / 登录页 / 帮助中心的访客依然零鉴权请求。
+ */
+function shouldAttemptSession(): boolean {
+  if (hasSession()) return true;
+  return !PUBLIC_PATHS.has(window.location.pathname);
+}
+
 import ChangelogModal from "./components/ChangelogModal";
 // 使用埋点：桌面与移动两棵树各挂一份，不渲染任何 UI
 import UsageTracker from "./components/UsageTracker";
@@ -131,9 +150,9 @@ export default function App({ theme, onChangeTheme }: AppProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchUser = useCallback(async () => {
-    // 只查「有没有会话提示」，不读凭据——凭据在 httpOnly cookie 里。
-    // 匿名访客（落地页）因此一次鉴权请求都不发。
-    if (!hasSession()) {
+    // 不读凭据（凭据在 httpOnly cookie 里），只判断「要不要去问一次 /auth/me」。
+    // 匿名访客停在落地页 / 登录页 / 帮助中心时，一次鉴权请求都不发。
+    if (!shouldAttemptSession()) {
       setLoading(false);
       return;
     }
@@ -153,9 +172,10 @@ export default function App({ theme, onChangeTheme }: AppProps) {
           try { localStorage.setItem("user", JSON.stringify(res)); } catch {}
           setUser(res);
           return;
-        } catch {
-          // request 内遇到 401 已经清会话提示并跳登录；其余（含超时）继续重试。
-          if (!hasSession()) return;
+        } catch (e) {
+          // 401 已由 request 清提示位并跳登录，重试只会再拿一次 401；
+          // 其余（超时 / 网络抖动）继续退避重试。
+          if ((e as Error & { code?: string }).code === "UNAUTHORIZED") return;
         }
       }
       // 全部失败：降级用上次的用户信息进入，别把人挡在门外。
@@ -289,7 +309,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
   }
 
   // 有会话提示但首屏加载失败 → 错误提示 + 重试，不再无限转圈
-  if (loadError && hasSession()) {
+  if (loadError && shouldAttemptSession()) {
     return (
       <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", height: "100vh", gap: 16, padding: 24 }}>
         <Alert type="warning" showIcon message="加载失败" description={loadError} style={{ maxWidth: 440 }} />

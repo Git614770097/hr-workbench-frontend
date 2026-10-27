@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Card, Descriptions, Tag, Button, Space, Typography, Empty, Spin, Tooltip,
@@ -9,6 +9,7 @@ import {
   CopyOutlined, CalendarOutlined, RobotOutlined, SolutionOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
+import { useAsyncData } from "../hooks/useAsyncData";
 import type { Task, TalentDetailData, TalentStageLog, User, AiResumeInsight } from "../types";
 import { STATUS_LABELS, STATUS_COLORS, STAGE_META, PRIORITY_LABELS, PRIORITY_COLORS } from "../types";
 import TalentFormModal from "../components/TalentFormModal";
@@ -71,8 +72,6 @@ async function readResumeText(t: TalentDetailData): Promise<string | null> {
 export default function TalentDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [talent, setTalent] = useState<TalentDetailData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -85,17 +84,14 @@ export default function TalentDetail() {
   // 页内入口按菜单权限显示（与侧栏一致）：没有的权限不摆按钮，点了也是被 RequirePerm 拦
   const canP = (p: string) => isAdmin || (currentUser?.permissions || []).includes(p);
 
-  const fetchData = async () => {
-    if (!id) return;
-    try {
-      setTalent(await api.getTalent(id));
-    } catch (err) {
-      console.error(err);
-    }
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchData(); }, [id]);
+  // 详情页最容易撞上「陈旧响应」：从人才 A 快速切到 B 时，A 的响应若后到，
+  // 会把 A 的数据写到 B 的页面上（地址是 B、内容是 A）。useAsyncData 只让最后一次
+  // 发起的请求写 state，其余丢弃。fetchData 现在是稳定的 reload，可直接当回调传。
+  const { data: talent, loading, reload: fetchData } = useAsyncData(
+    () => api.getTalent(id!),
+    [id],
+    { enabled: !!id }
+  );
 
   // 阶段日志按投递分组：id → 该投递的流转历史（正序存，展示时倒序＝最新在上）
   const logGroups = useMemo(() => {
@@ -111,7 +107,7 @@ export default function TalentDetail() {
   const toggleTask = async (t: Task) => {
     try {
       await api.updateTaskStatus(t.id, t.status === "done" ? "pending" : "done");
-      fetchData();
+      void fetchData();
     } catch (err) {
       message.error((err as Error).message);
     }
@@ -122,7 +118,7 @@ export default function TalentDetail() {
     try {
       await api.deleteTalent(talent.id);
       message.success("已删除");
-      navigate("/talents");
+      void navigate("/talents");
     } catch (err) {
       message.error((err as Error).message);
     }
@@ -134,7 +130,7 @@ export default function TalentDetail() {
     try {
       await api.uploadResume(talent.id, file);
       message.success("简历已上传");
-      fetchData();
+      void fetchData();
     } catch (err) {
       message.error((err as Error).message);
     }
@@ -147,7 +143,7 @@ export default function TalentDetail() {
     try {
       await api.deleteResume(talent.id);
       message.success("简历已删除");
-      fetchData();
+      void fetchData();
     } catch (err) {
       message.error((err as Error).message);
     }

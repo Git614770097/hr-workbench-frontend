@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Select, Input, Drawer, Button, Tag, Rate, Timeline, Popconfirm, message, Spin } from "antd";
 import { ArrowRightOutlined, CloseCircleOutlined, DeleteOutlined, StarOutlined } from "@ant-design/icons";
 import { api } from "../api";
-import type { PipelineCard, PipelineResponse, Stage, StageLog } from "../types";
+import { useAsyncData } from "../hooks/useAsyncData";
+import type { PipelineCard, Stage, StageLog } from "../types";
 import { PIPELINE_STAGES } from "../types";
 import { useDict } from "../dict";
 
@@ -13,12 +14,10 @@ const VISIBLE_STAGES = PIPELINE_STAGES.filter(
 
 export default function MPipeline() {
   const { rejectReasons } = useDict();
-  const [data, setData] = useState<PipelineResponse | null>(null);
   const [jobs, setJobs] = useState<{ id: string; title: string }[]>([]);
   const [jobFilter, setJobFilter] = useState<string>("");
   const [q, setQ] = useState("");
   const [stage, setStage] = useState<Stage>("screening");
-  const [loading, setLoading] = useState(true);
 
   const [card, setCard] = useState<PipelineCard | null>(null);
   const [reason, setReason] = useState("");
@@ -26,21 +25,13 @@ export default function MPipeline() {
   const [saving, setSaving] = useState(false);
   const [logs, setLogs] = useState<StageLog[]>([]);
 
-  const load = async () => {
-    setLoading(true);
-    try {
-      const res = await api.getPipeline({ job_id: jobFilter || undefined, q: q || undefined });
-      setData(res);
-    } catch (e) {
-      message.error((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-  }, [jobFilter, q]);
+  // 切岗位 / 改关键词都会重新拉看板，请求会重叠：先发的慢响应不能覆盖后发的。
+  // 失败提示沿用原来的 toast 行为，交给 onError。
+  const { data, loading, reload: load } = useAsyncData(
+    () => api.getPipeline({ job_id: jobFilter || undefined, q: q || undefined }),
+    [jobFilter, q],
+    { onError: (e) => message.error(e.message), keepOnError: true }
+  );
 
   useEffect(() => {
     api.getJobOptions().then((r) => setJobs(r.map((j) => ({ id: j.id, title: j.title })))).catch(() => {});

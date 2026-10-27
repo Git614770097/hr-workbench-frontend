@@ -81,7 +81,11 @@ async function request<T>(
   if (res.status === 401) {
     setSession(false);
     window.location.href = "/login";
-    throw new Error("未登录");
+    // 带上 code，调用方据此区分「确实是未登录」与「网络/超时」——
+    // 前者不该重试（重试也只会再拿一次 401），后者值得退避重试。
+    const e = new Error("未登录");
+    (e as Error & { code?: string }).code = "UNAUTHORIZED";
+    throw e;
   }
 
   if (!res.ok) {

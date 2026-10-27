@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Segmented, Tag, Drawer, Button, Input, Select, DatePicker, message, Spin, Popconfirm, Modal } from "antd";
 import { CheckOutlined, DeleteOutlined, StopOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { api } from "../api";
+import { useAsyncData } from "../hooks/useAsyncData";
 import type { Task } from "../types";
 import { PRIORITY_LABELS } from "../types";
 import { shiftToNextWorkday } from "../utils/holidays";
@@ -16,10 +17,7 @@ const SCOPES = [
 const PRIORITY_OPTIONS = Object.entries(PRIORITY_LABELS).map(([k, v]) => ({ label: v, value: k }));
 
 export default function MTasks() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [summary, setSummary] = useState({ pending: 0, overdue: 0, today: 0 });
   const [scope, setScope] = useState("todo");
-  const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<Task | null>(null);
 
   // 新建待办：手机上最容易冒出来的动作（面完随手记一条），所以做成悬浮按钮 + 底部抽屉
@@ -32,9 +30,10 @@ export default function MTasks() {
   }>({ title: "", due_date: null, priority: "normal", content: "" });
   const [saving, setSaving] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
-    try {
+  // 一次拉「清单 + 汇总」两件事，所以 getter 返回一个合并对象。
+  // 切 scope（未完成/已完成/全部）会重叠发请求，旧响应不能覆盖新的。
+  const { data, loading, reload: load } = useAsyncData(
+    async () => {
       const res = await api.getTasks({ scope });
       // 逾期排最前，其次按到期日升序，无日期的沉底
       const items = (res.items || []).slice().sort((a, b) => {
@@ -43,19 +42,15 @@ export default function MTasks() {
         if (!b.due_date) return -1;
         return a.due_date < b.due_date ? -1 : 1;
       });
-      setTasks(items);
       const s = await api.getTaskSummary();
-      setSummary(s);
-    } catch (e) {
-      message.error((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return { tasks: items, summary: s };
+    },
+    [scope],
+    { onError: (e) => message.error(e.message), keepOnError: true }
+  );
 
-  useEffect(() => {
-    load();
-  }, [scope]);
+  const tasks = data?.tasks ?? [];
+  const summary = data?.summary ?? { pending: 0, overdue: 0, today: 0 };
 
   const toggleDone = async (t: Task) => {
     const next = t.status === "done" ? "pending" : "done";
@@ -63,7 +58,7 @@ export default function MTasks() {
       await api.updateTaskStatus(t.id, next);
       message.success(next === "done" ? "已完成" : "已恢复未完成");
       setDetail(null);
-      load();
+      void load();
     } catch (e) {
       message.error((e as Error).message);
     }
@@ -74,7 +69,7 @@ export default function MTasks() {
       await api.deleteTask(t.id);
       message.success("已删除");
       setDetail(null);
-      load();
+      void load();
     } catch (e) {
       message.error((e as Error).message);
     }
@@ -104,7 +99,7 @@ export default function MTasks() {
         setCreateOpen(false);
         setDraft({ title: "", due_date: null, priority: "normal", content: "" });
         setScope("todo");
-        load();
+        void load();
       } catch (e) {
         message.error((e as Error).message);
       } finally {
@@ -286,7 +281,7 @@ export default function MTasks() {
                     await api.updateTaskStatus(detail.id, "cancelled");
                     message.success("已取消");
                     setDetail(null);
-                    load();
+                    void load();
                   }}
                 >
                   取消这条待办
