@@ -1,4 +1,6 @@
 import { lazyPage } from "./utils/lazyPage";
+import { reportClientError } from "./utils/clientError";
+import { isChunkLoadError } from "./utils/chunkError";
 
 /**
  * 路由页面的 loader 注册表。
@@ -45,11 +47,32 @@ export const pageLoaders = {
 
 export type PagePath = keyof typeof pageLoaders;
 
+/**
+ * 预取失败只报第一次。
+ *
+ * 一个过期标签页里，Layout 的空闲预取会每 400ms 试一个菜单，20 多个页面连着失败——
+ * 每次都写一条审计纯属灌表，而一条就足够定位问题了（消息里带具体 path）。
+ * 用模块级标记而不是 60 秒窗口：本页面生命周期内失败过一次，后面的失败都是同一个原因。
+ */
+let prefetchFailureReported = false;
+
 /** 预取某路由的 chunk（幂等）。路径不在表里（如 /talents/:id）时做前缀归一。 */
 export function prefetchPage(path: string): void {
   const key = normalizePageKey(path);
   const loader = key ? pageLoaders[key as PagePath] : undefined;
-  if (loader) void loader().catch(() => {});
+  if (!loader) return;
+  loader().catch((err: unknown) => {
+    // 预取失败用户完全无感（真去访问时会重新走 lazyPage），但这是「标签页已经过期」
+    // 的最早信号——比等用户点到那个菜单早得多，必须留痕。
+    //
+    // ⚠️ 这里**绝不能**自动刷新：用户可能正在填表单，为了一个后台预取失败就把整页
+    //    刷掉是不可接受的。刷新只在用户真正要用那个页面时才发生（见 lazyPage）。
+    const error = err instanceof Error ? err : new Error(String(err));
+    if (!prefetchFailureReported && isChunkLoadError(error)) {
+      prefetchFailureReported = true;
+      reportClientError(new Error(`预取 chunk 失败 ${key}：${error.message}`));
+    }
+  });
 }
 
 /** "/talents/123" → "/talents"；"/talents/detail" 保持不变（详情页单独一个 chunk） */
@@ -61,31 +84,35 @@ function normalizePageKey(path: string): string {
 }
 
 // ── 页面组件：App 路由直接用 ──────────────────────────────────────────
-export const Login = lazyPage(pageLoaders["/login"]);
-export const Tasks = lazyPage(pageLoaders["/tasks"]);
-export const Funnel = lazyPage(pageLoaders["/funnel"]);
-export const Jobs = lazyPage(pageLoaders["/jobs"]);
-export const Requisitions = lazyPage(pageLoaders["/requisitions"]);
-export const Pipeline = lazyPage(pageLoaders["/pipeline"]);
-export const Interviews = lazyPage(pageLoaders["/interviews"]);
-export const Approvals = lazyPage(pageLoaders["/approvals"]);
-export const Onboarding = lazyPage(pageLoaders["/onboarding"]);
-export const TalentList = lazyPage(pageLoaders["/talents"]);
-export const TalentDetail = lazyPage(pageLoaders["/talents/detail"]);
-export const Profiles = lazyPage(pageLoaders["/profiles"]);
-export const Match = lazyPage(pageLoaders["/match"]);
-export const AiAssistant = lazyPage(pageLoaders["/ai-assistant"]);
-export const TemplateLibrary = lazyPage(pageLoaders["/templates"]);
-export const Contracts = lazyPage(pageLoaders["/contracts"]);
-export const Social = lazyPage(pageLoaders["/social"]);
-export const Roles = lazyPage(pageLoaders["/roles"]);
-export const Users = lazyPage(pageLoaders["/users"]);
-export const Team = lazyPage(pageLoaders["/team"]);
-export const Settings = lazyPage(pageLoaders["/settings"]);
-export const Logs = lazyPage(pageLoaders["/logs"]);
-export const Help = lazyPage(pageLoaders["/help"]);
-export const MTasks = lazyPage(pageLoaders["/m/tasks"]);
-export const MPipeline = lazyPage(pageLoaders["/m/pipeline"]);
-export const MTalents = lazyPage(pageLoaders["/m/talents"]);
-export const MInterviews = lazyPage(pageLoaders["/m/interviews"]);
-export const MFunnel = lazyPage(pageLoaders["/m/funnel"]);
+// 传路径名进去只为了上报时能说清「哪个页面没加载出来」（location 在多标签/预取
+// 场景下未必指向它）。
+const page = (p: PagePath) => lazyPage(pageLoaders[p], p);
+
+export const Login = page("/login");
+export const Tasks = page("/tasks");
+export const Funnel = page("/funnel");
+export const Jobs = page("/jobs");
+export const Requisitions = page("/requisitions");
+export const Pipeline = page("/pipeline");
+export const Interviews = page("/interviews");
+export const Approvals = page("/approvals");
+export const Onboarding = page("/onboarding");
+export const TalentList = page("/talents");
+export const TalentDetail = page("/talents/detail");
+export const Profiles = page("/profiles");
+export const Match = page("/match");
+export const AiAssistant = page("/ai-assistant");
+export const TemplateLibrary = page("/templates");
+export const Contracts = page("/contracts");
+export const Social = page("/social");
+export const Roles = page("/roles");
+export const Users = page("/users");
+export const Team = page("/team");
+export const Settings = page("/settings");
+export const Logs = page("/logs");
+export const Help = page("/help");
+export const MTasks = page("/m/tasks");
+export const MPipeline = page("/m/pipeline");
+export const MTalents = page("/m/talents");
+export const MInterviews = page("/m/interviews");
+export const MFunnel = page("/m/funnel");

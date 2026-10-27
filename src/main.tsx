@@ -51,6 +51,18 @@ dayjs.locale("zh-cn");
 // 全局兜底：未捕获异常 / 未处理 Promise 拒绝也上报留痕（渲染崩溃由 ErrorBoundary 报）
 installGlobalErrorHandlers();
 
+// ⚠️ 这里刻意**不监听** vite:preloadError。
+//
+// 直觉上该在这里接管它（官方文档的示例就是 reload），但实测踩过坑：
+// 一旦在 handler 里 event.preventDefault()，Vite 的 __vitePreload 就不会把
+// 真实错误抛给调用方，promise 反而 resolve 成 undefined——于是 lazyPage 拿到的是
+// "Cannot read properties of undefined (reading 'default')"，识别不出这是 chunk 404，
+// 自动刷新和「页面已更新」文案全都失效（上报里只剩一句没头没尾的 TypeError）。
+//
+// 本项目所有动态 import 都有 catch（lazyPage / lazyModal / prefetchPage），
+// 让错误正常传播到它们那里，既能拿到真实的 "Failed to fetch dynamically imported
+// module"，也顺带知道是哪个页面。真正没人接的失败由上面的 unhandledrejection 兜住。
+
 // 等价于 @ant-design/v5-patch-for-react-19 的实现（该包内容就是这 15 行）。
 // 之所以自己写而不用那个包：它内部 import 的是 antd 桶文件，会把首屏拖成 522KB。
 // unstableSetRender 是模块级单例，antd 的 message / notification / Modal.confirm

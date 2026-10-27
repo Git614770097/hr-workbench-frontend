@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { prefetchPage } from "../routePages";
+import { lazyModal } from "../utils/lazyModal";
 import { BRAND } from "../brand";
 import Avatar from "antd/es/avatar";
 import Button from "antd/es/button";
@@ -64,14 +65,17 @@ import { isTouchDevice, setDeviceOverride } from "../utils/device";
 // ReferralModal 里用了 antd 的 Table，而它是首屏静态闭包里**唯一**引 Table 的文件，
 // 于是一个冷门的「邀请」弹窗把 Table(118KB) 连带 rc-table / rc-pagination /
 // rc-virtual-list 一起拖进了首屏。Pushplus / FeishuBind / AiKey 三个又各引了
-// Popconfirm。改成 lazy + 按 open 门控后，这些只在用户真正点开时才下载。
-const Onboarding = lazy(() => import("./Onboarding"));
-const PushplusModal = lazy(() => import("./PushplusModal"));
-const FeishuBindModal = lazy(() => import("./FeishuBindModal"));
-const PasswordModal = lazy(() => import("./PasswordModal"));
-const AiKeyModal = lazy(() => import("./AiKeyModal"));
-const MembershipModal = lazy(() => import("./MembershipModal"));
-const ReferralModal = lazy(() => import("./ReferralModal"));
+// Popconfirm。改成按 open 门控的懒加载后，这些只在用户真正点开时才下载。
+//
+// ⚠️ 用 lazyModal 而不是 React.lazy：后者加载失败会把错误抛给顶层 ErrorBoundary，
+//    整页变成「页面出错了」；弹窗打不开不该把用户正在填的表单冲掉。
+const Onboarding = lazyModal(() => import("./Onboarding"), "新手指引");
+const PushplusModal = lazyModal(() => import("./PushplusModal"), "PushPlus 推送");
+const FeishuBindModal = lazyModal(() => import("./FeishuBindModal"), "飞书绑定");
+const PasswordModal = lazyModal(() => import("./PasswordModal"), "修改密码");
+const AiKeyModal = lazyModal(() => import("./AiKeyModal"), "AI 密钥");
+const MembershipModal = lazyModal(() => import("./MembershipModal"), "会员");
+const ReferralModal = lazyModal(() => import("./ReferralModal"), "邀请好友");
 
 // 引导只自动播放一次，之后靠顶栏问号按钮手动唤出
 // 「已看过」按用户维度记录（换账号后新账号仍会走一次首次引导）
@@ -927,62 +931,66 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
         <main className="main-content">{children}</main>
       </div>
 
-      {/* 弹窗统一按 open 门控 + Suspense：未打开时连 chunk 都不会请求 */}
-      <Suspense fallback={null}>
-        {onbOpen && (
-          <Onboarding
-            key={onbNonce}
-            steps={onbSteps}
-            open
-            onClose={closeOnboarding}
-            onNavigate={navigate}
-          />
-        )}
+      {/* 弹窗统一按 open 门控：未打开时连 chunk 都不会请求。
+          这里不需要 Suspense——lazyModal 是非挂起式的（自己管加载态），
+          用 React.lazy 才会 suspend 并把加载失败抛给顶层 ErrorBoundary。 */}
+      {onbOpen && (
+        <Onboarding
+          key={onbNonce}
+          steps={onbSteps}
+          open
+          onClose={closeOnboarding}
+          onNavigate={navigate}
+        />
+      )}
 
-        {pushplusOpen && (
-          <PushplusModal
-            open
-            configured={!!user.pushplus_configured}
-            onClose={() => setPushplusOpen(false)}
-            onConfiguredChange={(configured) => onUserChange({ ...user, pushplus_configured: configured })}
-          />
-        )}
+      {pushplusOpen && (
+        <PushplusModal
+          open
+          configured={!!user.pushplus_configured}
+          onClose={() => setPushplusOpen(false)}
+          onConfiguredChange={(configured) => onUserChange({ ...user, pushplus_configured: configured })}
+        />
+      )}
 
-        {feishuOpen && (
-          <FeishuBindModal
-            open
-            bound={!!user.feishu_bound}
-            onClose={() => setFeishuOpen(false)}
-          />
-        )}
+      {feishuOpen && (
+        <FeishuBindModal
+          open
+          bound={!!user.feishu_bound}
+          onClose={() => setFeishuOpen(false)}
+        />
+      )}
 
-        {passwordOpen && (
-          <PasswordModal
-            open
-            forced={forcePassword}
-            onClose={() => (forcePassword ? dismissForcePassword() : setPasswordOpen(false))}
-            onSuccess={() => {
-              // 改完后清掉「必须改密码」标记，避免本次会话反复弹
-              setForcePassword(false);
-              onUserChange({ ...user, must_change_password: false });
-            }}
-          />
-        )}
+      {passwordOpen && (
+        <PasswordModal
+          open
+          forced={forcePassword}
+          // 参数为 true 表示「加载失败被动关闭」：此时不能记「本次会话别再弹」，
+          // 否则用户等于靠一次 chunk 404 绕过了强制改密码。
+          onClose={(failed?: boolean) =>
+            forcePassword && !failed ? dismissForcePassword() : setPasswordOpen(false)
+          }
+          onSuccess={() => {
+            // 改完后清掉「必须改密码」标记，避免本次会话反复弹
+            setForcePassword(false);
+            onUserChange({ ...user, must_change_password: false });
+          }}
+        />
+      )}
 
-        {memberOpen && (
-          <MembershipModal
-            open
-            user={user}
-            onClose={() => setMemberOpen(false)}
-          />
-        )}
+      {memberOpen && (
+        <MembershipModal
+          open
+          user={user}
+          onClose={() => setMemberOpen(false)}
+        />
+      )}
 
-        {referralOpen && (
-          <ReferralModal open onClose={() => setReferralOpen(false)} />
-        )}
+      {referralOpen && (
+        <ReferralModal open onClose={() => setReferralOpen(false)} />
+      )}
 
-        {aiKeyOpen && <AiKeyModal open onClose={() => setAiKeyOpen(false)} />}
-      </Suspense>
+      {aiKeyOpen && <AiKeyModal open onClose={() => setAiKeyOpen(false)} />}
     </div>
   );
 }
