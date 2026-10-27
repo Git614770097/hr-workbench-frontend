@@ -1,0 +1,8 @@
+# git hook 脚本必须是 LF 行尾。
+# 本机 core.autocrlf=true（Windows 默认），不加这条规则 checkout 出来的 hook 会带 CRLF，
+# Git Bash 执行时报 `bad interpreter: /bin/sh^M`，钩子静默失效——比没有钩子更糟，
+# 因为大家以为有护栏。
+.githooks/* text eol=lf
+
+# 其余文件交给 git 默认处理
+* text=auto

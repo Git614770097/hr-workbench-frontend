@@ -550,9 +550,12 @@ talents.get("/contracts/files", async (c) => {
   return c.json(rows);
 });
 
-// 合同文件下载/预览（支持 query token，便于 <a>/iframe 直接打开）
+// 合同文件下载/预览（同源 <a>/iframe 直开，cookie 自动携带）
 talents.get("/contracts/files/:id/file", async (c) => {
-  const token = c.req.query("token") || getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  // 只认 cookie / Authorization 头，**不再**接受 ?token= 查询参数。
+  // 前端已改走 httpOnly cookie（同源 iframe、<a download> 都会自动带），
+  // 而 URL 里的凭据会落进浏览器历史、Referer、网关访问日志——是最容易被忽略的泄漏面。
+  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
   if (!token) return c.json({ error: "未登录" }, 401);
   const sessionStr = await c.env.SESSIONS.get(token);
   if (!sessionStr) return c.json({ error: "未登录" }, 401);
@@ -1114,8 +1117,10 @@ talents.post("/resume", async (c) => {
 
 // ---- 获取简历文件（用于预览/下载）----
 talents.get("/:id/resume", async (c) => {
-  // 支持 query param token（用于 iframe 预览）
-  const token = c.req.query("token") || getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  // 只认 cookie / Authorization 头，**不再**接受 ?token= 查询参数。
+  // 前端已改走 httpOnly cookie（同源 iframe、<a download> 都会自动带），
+  // 而 URL 里的凭据会落进浏览器历史、Referer、网关访问日志——是最容易被忽略的泄漏面。
+  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
   if (!token) return c.json({ error: "未登录" }, 401);
   const sessionStr = await c.env.SESSIONS.get(token);
   if (!sessionStr) return c.json({ error: "未登录" }, 401);

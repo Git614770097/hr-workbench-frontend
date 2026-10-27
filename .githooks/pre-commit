@@ -1,0 +1,20 @@
+#!/bin/sh
+# 提交前护栏：类型检查。
+#
+# 启用方式：npm install 时由 package.json 的 prepare 脚本自动执行
+#   git config core.hooksPath .githooks
+# 手工启用：git config core.hooksPath .githooks
+# 临时跳过：git commit --no-verify
+#
+# 为什么这里只放 tsc、把 eslint 挪到 pre-push：
+#   实测全量 `tsc --noEmit` 47s、`eslint src` 43s，两个串起来 90s——
+#   挂在每次 commit 上没人受得了，最后一定被 --no-verify 养成习惯，护栏等于不存在。
+#   而类型感知 lint 的开销几乎全是「建 TS program」，按暂存文件切也只降到 26s，切不动。
+#   所以按「频率 × 成本」分层：commit 只付 19s（增量 tsc），push 前付 43s（lint）。
+#
+# 故意**不做格式化**：prettier 全量格式化会让每次提交混入几万行无关 diff，
+# review 时真正的问题反而被淹没。
+set -e
+
+echo "▸ tsc --noEmit（增量）"
+npx tsc --noEmit --incremental --tsBuildInfoFile .cache/tsc.tsbuildinfo

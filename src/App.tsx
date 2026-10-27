@@ -6,7 +6,7 @@ import Alert from "antd/es/alert";
 import message from "antd/es/message";
 import type { User } from "./types";
 import type { ThemeState } from "./theme";
-import { api } from "./api";
+import { api, hasSession } from "./api";
 import { DictProvider } from "./dict";
 // 落地页保持同步加载（未登录时的首屏，避免白屏闪烁）；
 // 登录页是懒加载的：antd Form / Radio 与 rc-field-form 整棵树只有它用，
@@ -126,13 +126,14 @@ export default function App({ theme, onChangeTheme }: AppProps) {
   });
   // 绑定确认页（授权回来后确认飞书账号是本人）
   const [feishuConfirm, setFeishuConfirm] = useState<string | null>(null);
-  // 有 token 但首屏加载失败（典型：D1 冷启动导致 /api/auth/me 查询挂起超时），
+  // 有会话但首屏加载失败（典型：D1 冷启动导致 /api/auth/me 查询挂起超时），
   // 不进登录页、给「重试」入口，避免一直卡在 loading 出不来。
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const fetchUser = useCallback(async () => {
-    const token = localStorage.getItem("token");
-    if (!token) {
+    // 只查「有没有会话提示」，不读凭据——凭据在 httpOnly cookie 里。
+    // 匿名访客（落地页）因此一次鉴权请求都不发。
+    if (!hasSession()) {
       setLoading(false);
       return;
     }
@@ -153,8 +154,8 @@ export default function App({ theme, onChangeTheme }: AppProps) {
           setUser(res);
           return;
         } catch {
-          // request 内遇到 401 已经清 token 并跳登录；其余（含超时）继续重试。
-          if (!localStorage.getItem("token")) return;
+          // request 内遇到 401 已经清会话提示并跳登录；其余（含超时）继续重试。
+          if (!hasSession()) return;
         }
       }
       // 全部失败：降级用上次的用户信息进入，别把人挡在门外。
@@ -216,7 +217,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
       if (document.visibilityState !== "visible") return;
       if (Date.now() - last < 60_000) return;
       last = Date.now();
-      if (!localStorage.getItem("token")) return;
+      if (!hasSession()) return;
       api.me()
         .then((res) => {
           try { localStorage.setItem("user", JSON.stringify(res)); } catch {}
@@ -272,7 +273,9 @@ export default function App({ theme, onChangeTheme }: AppProps) {
   //    浏览器随后才执行整页跳转。整页跳转本身会重置整个应用状态，
   //    这里不需要（也不应该）再动 React 状态。
   const logout = () => {
-    localStorage.removeItem("token");
+    // 服务端登出（删 KV session + 删 cookie）是 fire-and-forget，见 api.logout 的注释；
+    // 本地只清「用户信息缓存」，不涉及任何凭据。
+    api.logout();
     localStorage.removeItem("user");
     window.location.replace("/login");
   };
@@ -285,8 +288,8 @@ export default function App({ theme, onChangeTheme }: AppProps) {
     );
   }
 
-  // 有 token 但首屏加载失败 → 错误提示 + 重试，不再无限转圈
-  if (loadError && localStorage.getItem("token")) {
+  // 有会话提示但首屏加载失败 → 错误提示 + 重试，不再无限转圈
+  if (loadError && hasSession()) {
     return (
       <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", height: "100vh", gap: 16, padding: 24 }}>
         <Alert type="warning" showIcon message="加载失败" description={loadError} style={{ maxWidth: 440 }} />

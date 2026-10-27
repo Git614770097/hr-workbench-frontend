@@ -18,7 +18,7 @@ import matchRoutes from "./routes/match";
 import aiAssistRoutes from "./routes/aiAssist";
 import teamRoutes from "./routes/team";
 import { overview } from "./routes/overview";
-import logsRoutes, { purgeOldUsage } from "./routes/logs";
+import logsRoutes, { purgeOldUsage, purgeOldAuditLogs } from "./routes/logs";
 import { auditRoutes } from "./routes/audit";
 import { feishuRoutes } from "./routes/feishu";
 import { writeAudit } from "./audit";
@@ -390,5 +390,7 @@ export default {
     await freezeExpiredAccounts(env);
     // 使用日志明细滚动清理（保留 30 天；聚合表不动）
     await purgeOldUsage(env);
+    // 审计日志滚动清理（保留 180 天；分批删，见 purgeOldAuditLogs）
+    await purgeOldAuditLogs(env);
   },
 };

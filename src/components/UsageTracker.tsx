@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { isMobilePathname, menuKeyOfPath } from "../usageMeta";
+import { hasSession } from "../api";
 
 /**
  * 前端使用埋点：记录用户打开了哪些模块（PV）与停留时长。
@@ -59,9 +60,8 @@ function flush() {
     settle();
     if (!pending.size) return;
 
-    const token = typeof localStorage !== "undefined" ? localStorage.getItem("token") : null;
     // 未登录（登录页/落地页）不上报，顺手丢掉避免越积越多
-    if (!token) {
+    if (!hasSession()) {
       pending.clear();
       return;
     }
@@ -92,7 +92,7 @@ function flush() {
     // 兜底：keepalive 让请求在页面卸载后仍能完成（体积上限 64KB，本场景远低于）
     fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      headers: { "Content-Type": "application/json" },
       body: payload,
       keepalive: true,
     }).catch(() => {});

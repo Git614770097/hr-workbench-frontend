@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "prepare": "git config core.hooksPath .githooks || true",
     "test:parser": "node scripts/test-resume-parser.mjs",
     "test:sql": "node scripts/test-sql-refactor.mjs",
     "preview": "vite preview",
@@ -36,10 +39,14 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.0.0",
     "@cloudflare/workers-types": "^4.0.0",
+    "@eslint/js": "^9.39.5",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.72.1",
     "vite": "^6.0.0",
     "wrangler": "4.134.0"
   }

@@ -50,6 +50,49 @@ export async function purgeOldUsage(env: Env): Promise<void> {
   }
 }
 
+/**
+ * 审计日志保留天数。
+ *
+ * 之前 audit_logs **没有任何清理**：每一次写操作、每一次敏感读、每一条前端崩溃上报都会
+ * 往这张表追加一行，只增不减。表越大，`idx_audit_ts` 的维护成本、导出审计报表的耗时、
+ * D1 的存储计费都跟着涨，而 99% 的查询只关心最近一两个月。
+ *
+ * 180 天是个折中：合规追溯一般要 6 个月以上，而半年以上的操作流水实际查询频率极低。
+ * 真要留档就定期导出 SQL 备份，别指望在线表既是热查询表又是归档库。
+ */
+const AUDIT_RETENTION_DAYS = 180;
+
+/** 单批删除行数 / 单次最多跑几批：避免一条 DELETE 撞上 D1 的单次执行限制或超时 */
+const AUDIT_PURGE_BATCH = 2_000;
+const AUDIT_PURGE_MAX_BATCHES = 10;
+
+/**
+ * 清理超期审计日志。
+ *
+ * ⚠️ 边界必须用 SQLite 的 `datetime('now')` 算，**不能**用 JS 的 `toISOString()`：
+ * 写入时走的就是 `datetime('now')`（UTC，`YYYY-MM-DD HH:MM:SS`，空格分隔）。
+ * 而 ISO 串是 `YYYY-MM-DDTHH:MM:SS.sssZ`——字符串比较里 `'2026-10-27T…' > '2026-10-27 …'`，
+ * 混用会让「今天」的数据被判成超期，一次删掉当天的全部审计记录。
+ */
+export async function purgeOldAuditLogs(env: Env): Promise<void> {
+  try {
+    for (let i = 0; i < AUDIT_PURGE_MAX_BATCHES; i++) {
+      const res = await env.DB.prepare(
+        `DELETE FROM audit_logs
+          WHERE id IN (
+            SELECT id FROM audit_logs WHERE ts < datetime('now', ?) LIMIT ${AUDIT_PURGE_BATCH}
+          )`
+      )
+        .bind(`-${AUDIT_RETENTION_DAYS} days`)
+        .run();
+      // 不足一批说明已经删干净，不必再空跑
+      if ((res.meta?.changes ?? 0) < AUDIT_PURGE_BATCH) break;
+    }
+  } catch {
+    /* 清理失败不影响定时任务的其他工作；下次 cron 会继续 */
+  }
+}
+
 const logs = new Hono<{ Bindings: Env }>();
 
 /**

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { setCookie, getCookie } from "hono/cookie";
+import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 import type { Env } from "../index";
 import { genId, cachedJson, invalidateCache } from "../helpers";
 import { sendPushPlus, notifyNewRegistration, notifyPasswordResetRequest, notifyMembershipRequest, notifyUserApproved } from "../reminders";
@@ -15,6 +15,9 @@ const auth = new Hono<{ Bindings: Env }>();
 const PBKDF2_ITER = 100_000;
 const PBKDF2_KEYLEN = 32; // 32 字节 = 256 bit
 const KDF_HASH = "SHA-256";
+
+/** 会话有效期（KV TTL 与 cookie maxAge 必须一致，否则会出现「cookie 还在、session 已过期」的诡异 401） */
+const SESSION_TTL = 60 * 60 * 24 * 7;
 
 function toHex(buf: Uint8Array): string {
   return Array.from(buf).map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -439,10 +442,50 @@ auth.post("/login", async (c) => {
   }
 
   const token = genToken();
-  await c.env.SESSIONS.put(token, JSON.stringify({ userId: user!.id, role: user!.role, name: user!.name }), { expirationTtl: 60 * 60 * 24 * 7 });
-  setCookie(c, "token", token, { httpOnly: true, path: "/", maxAge: 60 * 60 * 24 * 7, sameSite: "Lax" });
+  await c.env.SESSIONS.put(token, JSON.stringify({ userId: user!.id, role: user!.role, name: user!.name }), { expirationTtl: SESSION_TTL });
+  // 会话只放在 httpOnly cookie 里下发，**不再**在响应体里返回 token。
+  // 前端以前会把 body 里的 token 存进 localStorage 再塞回 Authorization 头，
+  // 那等于把同一份凭据复制到一个 JS 可读的地方：收益为零（cookie 同源自动带），
+  // 代价是 XSS 能直接捞走。secure 保证只在 HTTPS 下回传（localhost 视为安全上下文）。
+  // 本机 / 局域网调试时不加 Secure。这不是为了省事：
+  // 手机连 http://192.168.x.x 测移动端时，浏览器会**直接拒收** Secure cookie，
+  // 现象是「密码对了、接口 200、但就是没登录」，非常难查。
+  // 注意不能按 `new URL(c.req.url).protocol` 判断——wrangler dev 下这个值并不可靠
+  // （实测 http 进来的请求也报 https），所以这里按主机名判断，语义明确。
+  // 线上域名是 hr-work.club，走 Cloudflare 必定 https，Secure 始终生效。
+  const host = new URL(c.req.url).hostname;
+  const isLocalHost =
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "[::1]" ||
+    /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+  setCookie(c, "token", token, {
+    httpOnly: true,
+    path: "/",
+    maxAge: SESSION_TTL,
+    sameSite: "Lax",
+    secure: !isLocalHost,
+  });
 
-  return c.json({ id: user!.id, phone: user!.phone, name: user!.name, role: user!.role, token });
+  return c.json({ id: user!.id, phone: user!.phone, name: user!.name, role: user!.role });
+});
+
+/**
+ * 登出。**必须有这个接口**：会话在 httpOnly cookie 里，前端读不到也删不掉，
+ * 只清 localStorage 只是「视觉上登出」——cookie 还能用 7 天，KV 里的 session 也还在。
+ * 这里做三件事：删 KV 里的 session（立刻失效，不等 TTL）+ 删 cookie。
+ */
+auth.post("/logout", async (c) => {
+  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  if (token) {
+    try {
+      await c.env.SESSIONS.delete(token);
+    } catch {
+      /* KV 抖动不该让登出失败：cookie 仍会被删掉 */
+    }
+  }
+  deleteCookie(c, "token", { path: "/" });
+  return c.json({ ok: true });
 });
 
 // ---- 获取当前用户 ----

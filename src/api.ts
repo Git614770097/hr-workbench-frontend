@@ -3,8 +3,49 @@ import type { User, UserRow, Talent, TalentDetailData, DocTemplate, TemplateVers
 
 const BASE = "/api";
 
-function getToken(): string | null {
-  return localStorage.getItem("token");
+/**
+ * 会话提示位。
+ *
+ * 会话本身只存在于 **httpOnly cookie** 里（后端 setCookie 下发），前端读不到、也不需要读：
+ * 同源 fetch 会自动带上。这里存的只是一个布尔提示「本浏览器大概有会话」，用途仅有一个——
+ * 决定首屏要不要去调 `/auth/me`，从而让匿名访客（落地页）**一次鉴权请求都不发**。
+ *
+ * ⚠️ 它**不是凭据**：伪造它得不到任何权限，最多让前端多发一次 `/auth/me` 并拿到 401。
+ * 以前这里存的是真 token，那等于把同一份凭据复制一份到 JS 可读的地方（XSS 直接捞走），
+ * 收益为零，纯属自找攻击面。
+ */
+const SESSION_HINT = "auth_hint";
+
+/** 旧版本把会话 token 存在这个 key 里。现在只用于一次性迁移，见 hasSession。 */
+const LEGACY_TOKEN = "token";
+
+export function hasSession(): boolean {
+  try {
+    if (localStorage.getItem(SESSION_HINT) === "1") return true;
+    // 一次性迁移：老版本用户 localStorage 里留着 token、但没有提示位。
+    // 既然它还在，说明这台浏览器登录过——补上提示位，同时**删掉那份旧凭据**
+    // （cookie 里的会话仍然有效，这份副本已经没有任何用处，留着只是攻击面）。
+    // 不做这一步的话，上线瞬间所有在线用户都会被打回登录页。
+    if (localStorage.getItem(LEGACY_TOKEN)) {
+      localStorage.setItem(SESSION_HINT, "1");
+      localStorage.removeItem(LEGACY_TOKEN);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function setSession(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(SESSION_HINT, "1");
+    else localStorage.removeItem(SESSION_HINT);
+    // 顺手清掉可能残留的旧凭据（例如登录前就存在于 localStorage 的历史值）
+    localStorage.removeItem(LEGACY_TOKEN);
+  } catch {
+    /* 隐私模式下 localStorage 可能抛错，忽略即可：退化成「每次首屏都试一次 /auth/me」 */
+  }
 }
 
 async function request<T>(
@@ -12,12 +53,11 @@ async function request<T>(
   options: RequestInit = {},
   timeoutMs = 15000
 ): Promise<T> {
-  const token = getToken();
+  // 不再手动加 Authorization：凭据在 httpOnly cookie 里，同源请求自动携带。
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   // 前端超时兜底：D1 冷启动或网络异常时 fetch 可能长时间挂起（无超时），
   // 会导致首屏 loading 永久转圈、页面出不来。超时后抛错交由上层重试。
@@ -39,7 +79,7 @@ async function request<T>(
   clearTimeout(timer);
 
   if (res.status === 401) {
-    localStorage.removeItem("token");
+    setSession(false);
     window.location.href = "/login";
     throw new Error("未登录");
   }
@@ -66,13 +106,32 @@ export const api = {
 
   // 登录：手机号 + 密码 + 图文验证码（登录不发短信，省费用；注册仍用短信验证）
   login: (data: { phone: string; password: string; captcha_id: string; captcha: string }) =>
-    request<{ id: string; phone: string; name: string; role: string; token: string }>("/auth/login", {
+    request<{ id: string; phone: string; name: string; role: string }>("/auth/login", {
       method: "POST",
       body: JSON.stringify(data),
     }).then((r) => {
-      localStorage.setItem("token", r.token);
+      setSession(true);
       return r;
     }),
+
+  // 登出：必须打服务端接口。会话在 httpOnly cookie 里，前端删不掉；
+  // 只清本地状态等于「视觉上登出」，cookie 还能用 7 天，KV 里的 session 也还活着。
+  //
+  // 用 `keepalive: true` 且**不 await**：调用方紧接着就 `location.replace("/login")`，
+  // 普通 fetch 会被整页跳转 abort 掉，结果就是「点了登出、服务端什么也没发生」。
+  // keepalive 让浏览器在文档卸载后仍把这个请求发完。
+  logout: () => {
+    setSession(false);
+    try {
+      void fetch(`${BASE}/auth/logout`, {
+        method: "POST",
+        keepalive: true,
+        credentials: "same-origin",
+      });
+    } catch {
+      /* 网络异常也照常清本地状态：服务端 session 到期自然失效 */
+    }
+  },
 
   // ⚠️ 首屏关键接口：实测服务端已优化到 ~1s，但网络/TLS 层偶发抖动（实测 TLS 握手 0.5~10.8s）。
   // 超时给足余量，且允许调用方传更短的超时做「快速失败 + 渐进重试」。
@@ -320,7 +379,6 @@ export const api = {
     let res: Response;
     try {
       res = await fetch(`${BASE}/talents/${talentId}/resume`, {
-        headers: { Authorization: `Bearer ${getToken()}` },
         signal: ctrl.signal,
       });
     } catch {
@@ -343,7 +401,6 @@ export const api = {
     const timer = setTimeout(() => ctrl.abort(), 30000);
     return fetch(`${BASE}/talents/resume`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${getToken()}` },
       body: formData,
       signal: ctrl.signal,
     }).then(async (res) => {
@@ -359,17 +416,14 @@ export const api = {
     });
   },
 
-  // 简历预览/下载 URL：后端 GET /:id/resume 支持 ?token= 会话鉴权（iframe 预览场景无法带
-  // Authorization 头，走 query）。早期设计的 ticket 一次性票据后端未实现，直接用会话 token。
-  getResumeUrl: async (talentId: string) => {
-    const t = getToken();
-    return `${BASE}/talents/${talentId}/resume${t ? `?token=${encodeURIComponent(t)}` : ""}`;
-  },
+  // 简历预览/下载 URL。
+  // ⚠️ 以前会把会话 token 拼进 query（`?token=...`）来绕过「iframe 带不了 Authorization 头」的问题。
+  // 现在凭据在 httpOnly cookie 里，同源 iframe / <a download> 都会自动带上，**不需要也不应该**
+  // 把凭据放进 URL——URL 会落进浏览器历史、Referer 头、CDN/网关访问日志，是最容易被忽略的泄漏面。
+  getResumeUrl: async (talentId: string) => `${BASE}/talents/${talentId}/resume`,
 
-  getResumeDownloadUrl: async (talentId: string) => {
-    const t = getToken();
-    return `${BASE}/talents/${talentId}/resume?download=1${t ? `&token=${encodeURIComponent(t)}` : ""}`;
-  },
+  getResumeDownloadUrl: async (talentId: string) =>
+    `${BASE}/talents/${talentId}/resume?download=1`,
 
   deleteResume: (talentId: string) =>
     request(`/talents/${talentId}/resume`, { method: "DELETE" }),
@@ -402,7 +456,6 @@ export const api = {
     const timer = setTimeout(() => ctrl.abort(), 60000);
     return fetch(`${BASE}/talents/contracts/files`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${getToken()}` },
       body: formData,
       signal: ctrl.signal,
     }).then(async (res) => {
@@ -422,9 +475,9 @@ export const api = {
   getContractFiles: (talentId: string) =>
     request<ContractFile[]>(`/talents/contracts/files?talent_id=${encodeURIComponent(talentId)}`),
 
-  // 合同文件预览 / 下载地址（带 token，可直接给 <a> / iframe 用）
+  // 合同文件预览 / 下载地址（同源 <a>/iframe 直开，cookie 自动携带；不再拼 ?token=）
   getContractFileUrl: (fileId: string, download = false) =>
-    `${BASE}/talents/contracts/files/${fileId}/file?token=${getToken() || ""}${download ? "&download=1" : ""}`,
+    `${BASE}/talents/contracts/files/${fileId}/file${download ? "?download=1" : ""}`,
 
   deleteContractFile: (fileId: string) =>
     request(`/talents/contracts/files/${fileId}`, { method: "DELETE" }),

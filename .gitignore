@@ -1,6 +1,9 @@
 node_modules
 dist*
 .wrangler/
+
+# tsc 增量编译缓存（pre-commit 用，见 .githooks/pre-commit）
+.cache/
  
 # 代理工作区数据（记忆/备份），不入库
 .workbuddy/
