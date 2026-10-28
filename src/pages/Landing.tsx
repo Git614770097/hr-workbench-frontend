@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { BRAND } from "../brand";import "../styles/landing.css";
 
@@ -59,7 +59,7 @@ const FEATURES = [
     ),
   },
   {
-    title: "社保 · 公积金 · 个税", desc: "增减员待办自动生成，个税累计预扣一键算清，薪资到手明明白白。",
+    title: "社保 · 公积金 · 个税", desc: "增减员待办自动生成，个税按累计预扣法逐月测算，薪资到手明明白白。",
     tags: ["增减员", "个税计算"], c1: "#d97706", c2: "#fbbf24",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -94,7 +94,7 @@ const FLOW = [
 const SECURITY = [
   { idx: "01", title: "租户隔离", desc: "每家企业数据按账号完全隔离，互不可见、互不干扰。" },
   { idx: "02", title: "权限分级", desc: "角色 + 菜单级权限控制，敏感操作可审计、可追溯。" },
-  { idx: "03", title: "隐私合规", desc: "简历等个人信息处理遵循《个人信息保护法》，加密存储。" },
+  { idx: "03", title: "隐私合规", desc: "简历等个人信息处理遵循《个人信息保护法》，全站 HTTPS 传输，存储层静态加密。" },
 ];
 
 // 定价说明（2026-10-24 调整为一口价）：¥19.9/年一口价、不做功能分级——
@@ -123,15 +123,61 @@ const PLANS = [
 const CUSTOM_ITEMS = [
   { idx: "01", title: "流程改造", desc: "你的招聘流程怎么走，系统就怎么改：增加环节、调整阶段、改审批方式。" },
   { idx: "02", title: "字段与报表", desc: "加你需要的字段、做你想要的统计口径，导出成你要的表格格式。" },
-  { idx: "03", title: "系统对接", desc: "与现有 OA、考勤、财务或企业微信打通，避免数据两边录。" },
+  { idx: "03", title: "系统对接", desc: "审批、面试与到期提醒可直接推到飞书；也可与你的 OA、考勤、财务系统对接，避免数据两边录。" },
   { idx: "04", title: "私有化部署", desc: "部署到你自己的服务器或云账号，数据完全不出公司，独立维护。" },
 ];
 
-// TODO：把下面换成你真实的联系方式（邮箱或微信号），页面会自动显示联系入口。
-// 留空时定制板块只引导用户注册，不会显示占位式的假信息。
-const CONTACT = { email: "", wechat: "" };
+// 联系方式：填了就渲染成可点击复制的按钮；两项都空时定制板块只引导用户注册，
+// 不会显示占位式的假信息。
+const CONTACT = { email: "", wechat: "17319258381" };
 
 export default function Landing() {
+  const [copyState, setCopyState] = useState<"idle" | "done" | "fail">("idle");
+  // 定价卡的「聊聊需求」和定制板块的微信按钮是两个独立入口，状态必须分开：
+  // 共用一个 state 时，点其中一个会让另一个的文案也变，看起来像点了两个。
+  const [planCopyState, setPlanCopyState] = useState<"idle" | "done" | "fail">("idle");
+
+  // 点微信按钮直接复制号码：手机上看落地页的人多半是随手一瞥，
+  // 让他长按选中一串数字再切到微信里搜，中间会掉一半人。
+  // ⚠️ 必须三层兜底——clipboard API 在非 HTTPS / 权限被拒 / 老浏览器下都会失败，
+  //    失败时如果什么都不做，用户点了按钮毫无反应，比没有按钮更糟。
+  const makeCopy = (setState: (s: "idle" | "done" | "fail") => void) => () => {
+    const text = CONTACT.wechat;
+    if (!text) return;
+    const done = () => {
+      setState("done");
+      window.setTimeout(() => setState("idle"), 2400);
+    };
+    const fail = () => {
+      setState("fail");
+      window.setTimeout(() => setState("idle"), 4000);
+    };
+    const legacyCopy = () => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand("copy");
+      } catch {
+        ok = false;
+      }
+      document.body.removeChild(ta);
+      if (ok) done();
+      else fail();
+    };
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(text).then(done, legacyCopy);
+      return;
+    }
+    legacyCopy();
+  };
+  const copyWechat = makeCopy(setCopyState);
+  const copyWechatFromPlan = makeCopy(setPlanCopyState);
+
   // 滚动 reveal：进入视口后加 .in 触发淡入上浮
   useEffect(() => {
     const els = document.querySelectorAll(".land-reveal");
@@ -346,6 +392,15 @@ export default function Landing() {
                       >
                         {p.cta}
                       </a>
+                    ) : CONTACT.wechat ? (
+                      <button
+                        type="button"
+                        className={`land-btn ${p.featured ? "land-btn-primary" : "land-btn-ghost"}`}
+                        style={{ fontFamily: "inherit" }}
+                        onClick={copyWechatFromPlan}
+                      >
+                        {planCopyState === "done" ? "已复制微信号" : planCopyState === "fail" ? "请手动复制微信号" : p.cta}
+                      </button>
                     ) : (
                       <Link to={loginTo} className={`land-btn ${p.featured ? "land-btn-primary" : "land-btn-ghost"}`}>
                         {p.cta}
@@ -395,9 +450,18 @@ export default function Landing() {
                 </a>
               ) : null}
               {CONTACT.wechat ? (
-                <p style={{ margin: 0, color: "var(--land-muted)", fontSize: "0.95rem" }}>
-                  或添加微信：<b>{CONTACT.wechat}</b>
-                </p>
+                <button
+                  type="button"
+                  className={CONTACT.email ? "land-btn land-btn-ghost" : "land-btn land-btn-primary"}
+                  style={{ fontFamily: "inherit" }}
+                  onClick={copyWechat}
+                >
+                  {copyState === "done"
+                    ? "已复制，去微信添加"
+                    : copyState === "fail"
+                      ? `请手动复制：${CONTACT.wechat}`
+                      : `添加微信：${CONTACT.wechat}`}
+                </button>
               ) : null}
               {!CONTACT.email && !CONTACT.wechat ? (
                 <>
