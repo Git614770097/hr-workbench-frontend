@@ -137,7 +137,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
   // 飞书 OAuth 回调结果：/?feishu=bound 或 /?feishu=error&reason=... 或 /?feishu=confirm&ck=...
   // 必须在首次渲染时就取走——已登录时 "/" 会立即被 Navigate 替换成 /funnel，
   // 等 effect 跑完查询参数已从地址栏消失。回跳是整页加载，此时读一次即可。
-  const [feishuResult] = useState<{ status: string; reason: string | null; ck: string | null } | null>(() => {
+  const [feishuResult, setFeishuResult] = useState<{ status: string; reason: string | null; ck: string | null } | null>(() => {
     if (typeof window === "undefined") return null;
     const p = new URLSearchParams(window.location.search);
     const s = p.get("feishu");
@@ -200,6 +200,11 @@ export default function App({ theme, onChangeTheme }: AppProps) {
 
   // 飞书回调落地面提示（成功/失败各一条，随后清理 URL 防刷新重复弹）。
   // 未登录时静默忽略——那说明授权中途会话过期，用户回登录页重新走即可。
+  //
+  // ⚠️ 处理完必须一次性消费掉 feishuResult（置空）：本 effect 依赖 [feishuResult, user]，
+  // 而 user 每次 fetchUser() 都会换新引用（绑定成功后 onDone 就调了 fetchUser），
+  // 不置空的话同一份 ck 会被重放进确认弹窗——那时 token 已被 confirm 消费，
+  // 弹窗只会报「确认已过期」（2026-10-28 线上截图故障的根因）。
   const FEISHU_ERROR_TEXT: Record<string, string> = {
     access_denied: "你取消了飞书授权",
     missing_params: "飞书回调参数缺失",
@@ -224,6 +229,7 @@ export default function App({ theme, onChangeTheme }: AppProps) {
     u.searchParams.delete("reason");
     u.searchParams.delete("ck");
     window.history.replaceState({}, "", u.pathname + u.search);
+    setFeishuResult(null); // 一次性消费，防 user 刷新导致重放
   }, [feishuResult, user, fetchUser]);
 
   // 静默刷新用户信息：管理员改了某人的身份 / 权限 / 会员状态后，对方把页面切回前台

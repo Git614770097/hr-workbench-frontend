@@ -199,7 +199,8 @@ feishu.get("/bind/pending", async (c) => {
 
 /**
  * 绑定确认（登录用户）：展示过飞书昵称/头像、用户点「确认绑定」后才真正写库。
- * token 一次性，验证后立即删除；ttl 10 分钟。open_id 唯一性校验同回调。
+ * token 在**绑定成功后**才消费（写库成即删）；失败（409 被占用 / 参数损坏除外）不删，
+ * 用户可原地重试而不必重新扫码。ttl 10 分钟兜底回收。open_id 唯一性校验同回调。
  */
 feishu.post("/bind/confirm", async (c) => {
   const session = await getSession(c);
@@ -208,9 +209,12 @@ feishu.post("/bind/confirm", async (c) => {
   if (!body.ck) return c.json({ error: "参数缺失" }, 400);
   const raw = await sessionGet(c.env, `feishu:bind:${body.ck}`);
   if (!raw) return c.json({ error: "确认已过期，请重新扫码" }, 400);
-  await c.env.SESSIONS.delete(`feishu:bind:${body.ck}`);
   let pending: { userId: string; openId: string; name: string; avatarUrl: string };
-  try { pending = JSON.parse(raw) as typeof pending; } catch { return c.json({ error: "确认数据损坏" }, 400); }
+  try { pending = JSON.parse(raw) as typeof pending; } catch {
+    // 内容已损坏，重试无意义——这种才就地消费掉
+    await c.env.SESSIONS.delete(`feishu:bind:${body.ck}`);
+    return c.json({ error: "确认数据损坏" }, 400);
+  }
   // 只允许确认自己的绑定（防拿别人的确认链接恶意绑定）
   if (pending.userId !== session.userId) return c.json({ error: "确认链接与当前账号不匹配" }, 403);
   // open_id 全局唯一：同一飞书不允许绑到多个系统账号
@@ -219,6 +223,8 @@ feishu.post("/bind/confirm", async (c) => {
   if (clash) return c.json({ error: "这个飞书已经绑定到其他账号了（一个飞书只能绑一个系统账号）" }, 409);
   await c.env.DB.prepare("UPDATE users SET feishu_open_id = ?, notify_channel = 'feishu' WHERE id = ?")
     .bind(pending.openId, session.userId).run();
+  // 成功才消费 token：失败路径保留 token 供重试（userId 已绑定，无被冒用风险）
+  await c.env.SESSIONS.delete(`feishu:bind:${body.ck}`);
   return c.json({ ok: true, name: pending.name });
 });
 
