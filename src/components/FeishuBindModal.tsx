@@ -81,8 +81,9 @@ export default function FeishuBindModal({ open, bound, onClose }: Props) {
           </Space>
         )}
 
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          提醒经管理员配置的飞书应用发送；收不到消息时请联系管理员检查「系统设置 → 飞书集成」。
+        <Typography.Text type="secondary" style={{ fontSize: "var(--font-hint)" }}>
+          提醒经飞书应用发送（你自助配置的 &gt; 团队 &gt; 系统默认）。绑定报「你没有 XX 的使用权限」或收不到消息时，
+          到「消息推送设置 → 飞书应用配置」填入你自己企业的应用凭证即可。
         </Typography.Text>
       </Space>
     </Modal>

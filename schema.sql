@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS users (
   intended_role TEXT,                    -- 注册时自报身份（hr/headhunter/team/other），仅作意向参考，不参与鉴权
   team_id TEXT,                          -- 团队标识：NULL=个人；管理员=自己的id；子用户=管理员id。同 team_id 共享业务数据
   notify_channel TEXT DEFAULT 'pushplus', -- 到期提醒推送渠道：pushplus / feishu / wecom
-  feishu_open_id TEXT,                    -- 飞书 open_id（notify_channel=feishu 时使用）
+  feishu_open_id TEXT,                    -- 飞书 open_id（notify_channel=feishu 时使用；应用级标识）
+  feishu_app_id TEXT,                     -- 绑定时使用的飞书应用 app_id（open_id 随应用而异，发信必须用同一应用）
   wecom_userid TEXT,                      -- 企业微信 userid（notify_channel=wecom 时使用）
   ai_key TEXT,                            -- 自有 DeepSeek API Key（BYOK）
   ai_key_masked TEXT,                     -- AI Key 掩码（展示用，如 sk-****abc）
@@ -426,11 +427,13 @@ CREATE INDEX IF NOT EXISTS idx_audit_target ON audit_logs(target_type, target_id
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action, ts);
 
 -- ---- 飞书集成（BYOK）：应用凭证 + 群机器人 webhook ----
--- feishu_apps：team_id NULL=全局默认/非空=该 team 自配；app_secret 等密文，主密钥 AI_KEY_SECRET。
+-- feishu_apps 三级作用域：team_id 非空=团队自配 / user_id 非空=个人自配 / 两者 NULL=全局默认。
+-- 解析顺序：团队 → 个人 → 全局（见 resolveFeishuApp）。app_secret 等密文，主密钥 AI_KEY_SECRET。
 -- 发送模式（群+个人/仅群/仅个人）存 site_settings（key = feishu_notify_mode）。
 CREATE TABLE IF NOT EXISTS feishu_apps (
   id TEXT PRIMARY KEY,
   team_id TEXT,
+  user_id TEXT,
   name TEXT,
   app_id TEXT NOT NULL,
   app_secret_enc TEXT NOT NULL,

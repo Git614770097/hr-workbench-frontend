@@ -1,5 +1,5 @@
 import message from "antd/es/message";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, TemplateVersionMeta, TemplateVersion, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuWebhook, FeishuNotifyMode, AuditLogRow, AuditLogsResponse } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, DocTemplate, TemplateVersionMeta, TemplateVersion, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuMyApp, FeishuWebhook, FeishuNotifyMode, AuditLogRow, AuditLogsResponse } from "./types";
 
 const BASE = "/api";
 
@@ -199,6 +199,13 @@ export const api = {
   // 保存飞书应用凭证（admin；敏感字段加密存库）
   saveFeishuSettings: (data: { name?: string; app_id: string; app_secret?: string; encrypt_key?: string; verification_token?: string }) =>
     request<{ ok: boolean }>("/feishu/settings", { method: "POST", body: JSON.stringify(data) }),
+  // 我的飞书应用配置（任何登录用户自助；scope=team 落团队行全团队共用）
+  getFeishuMyApp: () =>
+    request<FeishuMyApp>("/feishu/my-app"),
+  saveFeishuMyApp: (data: { name?: string; app_id: string; app_secret?: string; encrypt_key?: string; verification_token?: string }) =>
+    request<{ ok: boolean; scope: "team" | "user" }>("/feishu/my-app", { method: "POST", body: JSON.stringify(data) }),
+  deleteFeishuMyApp: () =>
+    request<{ ok: boolean; deleted: number }>("/feishu/my-app", { method: "DELETE" }),
   // 生成飞书 OAuth 授权 URL（前端拿到后跳转让用户授权绑定）
   feishuBindUrl: () =>
     request<{ url: string }>("/feishu/oauth/start"),

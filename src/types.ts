@@ -33,6 +33,17 @@ export interface FeishuSettings {
   enabled?: boolean;
 }
 
+/** 我的飞书应用配置（任何登录用户自助）：GET /feishu/my-app。scope=team 为团队行（全团队共用）。 */
+export interface FeishuMyApp {
+  scope: "team" | "user";
+  configured: boolean;
+  name?: string | null;
+  app_id?: string | null;
+  has_encrypt_key?: boolean;
+  has_verification_token?: boolean;
+  enabled?: boolean;
+}
+
 /** 飞书群自定义机器人（webhook 地址不回显，仅元信息）。 */
 export interface FeishuWebhook {
   id: string;

@@ -1,6 +1,6 @@
 import type { Env } from "./index";
 import { escapeHtml } from "../utils/escapeHtml";
-import { resolveFeishuApp, sendFeishuText, resolveFeishuWebhooks, sendFeishuWebhook } from "./feishu";
+import { resolveFeishuAppForSend, sendFeishuText, resolveFeishuWebhooks, sendFeishuWebhook } from "./feishu";
 
 /** 飞书文本消息不渲染 HTML：把 notify* 系列拼的富文本转纯文本（<br>→换行、去标签、还原实体）。 */
 function htmlToPlain(html: string): string {
@@ -128,6 +128,7 @@ export interface UserChannelRow {
   team_id?: string | null;
   pushplus_token: string | null;
   feishu_open_id: string | null;
+  feishu_app_id?: string | null;
   notify_channel: string | null;
 }
 
@@ -143,7 +144,8 @@ export async function sendViaUserChannel(
   content: string
 ): Promise<{ ok: boolean; message: string }> {
   if (u.notify_channel === "feishu" && u.feishu_open_id) {
-    const cfg = await resolveFeishuApp(env.DB, u.team_id ?? null, env.AI_KEY_SECRET);
+    // open_id 是应用级标识：优先用户绑定时的应用（feishu_app_id），与 open_id 同源才投递得到
+    const cfg = await resolveFeishuAppForSend(env.DB, u, env.AI_KEY_SECRET);
     if (cfg) return sendFeishuText(env.SESSIONS, cfg, u.feishu_open_id, htmlToPlain(content));
     return { ok: false, message: "飞书配置不完整，未推送（可在设置里改用 PushPlus）" };
   }
@@ -161,7 +163,7 @@ export async function notifyUser(
   content: string
 ): Promise<{ ok: boolean; message: string }> {
   const u = await env.DB.prepare(
-    "SELECT id, name, team_id, pushplus_token, feishu_open_id, notify_channel FROM users WHERE id = ?"
+    "SELECT id, name, team_id, pushplus_token, feishu_open_id, feishu_app_id, notify_channel FROM users WHERE id = ?"
   ).bind(userId).first<UserChannelRow>();
   if (!u) return { ok: false, message: "用户不存在" };
   return sendViaUserChannel(env, u, title, content);
@@ -182,8 +184,10 @@ export async function notifyAdmins(
 ): Promise<AdminNotifyResult> {
   type AdminRecipient = {
     id: string; name: string;
+    team_id: string | null;
     pushplus_token: string | null;
     feishu_open_id: string | null;
+    feishu_app_id: string | null;
     notify_channel: string | null;
   };
 
@@ -217,7 +221,7 @@ export async function notifyAdmins(
   }
 
   const rows = await env.DB.prepare(
-    `SELECT u.id, u.name, u.pushplus_token, u.feishu_open_id, u.notify_channel
+    `SELECT u.id, u.name, u.team_id, u.pushplus_token, u.feishu_open_id, u.feishu_app_id, u.notify_channel
        FROM users u LEFT JOIN roles r ON u.role_id = r.id
       WHERE u.status = 'active'
         AND ( (u.pushplus_token IS NOT NULL AND u.pushplus_token != '')
@@ -237,9 +241,8 @@ export async function notifyAdmins(
     return { pushedTo: res.ok ? 1 : 0, viaGlobal: true, note: res.message };
   }
 
-  // 飞书应用凭证（全局默认 / team 覆盖）；主密钥未配置则飞书不可用，自动回落 PushPlus
-  const feishuCfg = await resolveFeishuApp(env.DB, null, env.AI_KEY_SECRET);
-
+  // 飞书应用按收件人逐个解析（各人绑定的应用可能不同，open_id 是应用级标识）；
+  // 主密钥未配置则飞书不可用，自动回落 PushPlus
   let pushedTo = 0;
   let viaFeishu = 0;
   const failures: string[] = [...groupFailures];
@@ -248,9 +251,14 @@ export async function notifyAdmins(
   } else {
     for (const u of admins) {
       let res: { ok: boolean; message: string };
-      if (u.notify_channel === "feishu" && u.feishu_open_id && feishuCfg) {
-        res = await sendFeishuText(env.SESSIONS, feishuCfg, u.feishu_open_id, htmlToPlain(content));
-        if (res.ok) viaFeishu++;
+      if (u.notify_channel === "feishu" && u.feishu_open_id) {
+        const cfg = await resolveFeishuAppForSend(env.DB, u, env.AI_KEY_SECRET);
+        if (cfg) {
+          res = await sendFeishuText(env.SESSIONS, cfg, u.feishu_open_id, htmlToPlain(content));
+          if (res.ok) viaFeishu++;
+        } else {
+          res = { ok: false, message: "飞书绑定/配置不完整，未推送（可改用 PushPlus）" };
+        }
       } else if (u.pushplus_token && u.pushplus_token.trim()) {
         res = await sendPushPlus(u.pushplus_token, title, content);
       } else if (u.notify_channel === "feishu") {
@@ -496,7 +504,7 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
 
   // 所有 active 且配了任一推送通道的用户（飞书私信或 PushPlus，只配飞书的不再漏掉）
   const activeUsers = await env.DB.prepare(
-    `SELECT id, name, team_id, pushplus_token, feishu_open_id, notify_channel FROM users
+    `SELECT id, name, team_id, pushplus_token, feishu_open_id, feishu_app_id, notify_channel FROM users
      WHERE status = 'active'
        AND ( (pushplus_token IS NOT NULL AND pushplus_token != '')
              OR (notify_channel = 'feishu' AND feishu_open_id IS NOT NULL AND feishu_open_id != '') )`

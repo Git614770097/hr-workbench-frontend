@@ -348,7 +348,11 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
         const msg = err instanceof Error ? err.message : "";
         if (msg.includes("尚未配置")) {
           if (user.role === "admin") navigate("/settings?tab=feishu");
-          else message.warning("飞书集成尚未启用，请联系管理员开启（系统设置 → 飞书集成）");
+          // 非管理员也能自助配置（跨企业用户配自己企业的应用）——直接打开配置入口
+          else {
+            message.info("先配置飞书应用才能绑定：在「消息推送设置 → 飞书应用配置」填入你企业的 App ID / App Secret");
+            setPushplusOpen(true);
+          }
         } else {
           message.error(msg || "发起授权失败，请稍后重试");
         }
@@ -897,7 +901,7 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
         )}
 
         {/* 飞书引导横幅：未绑定用户可见（可关闭，按用户记忆；绑定后自动消失）。
-            文案按「已配置 / 管理员未配置 / 成员未配置」分流，按钮共用统一入口。 */}
+            文案按「已配置 / 未配置」分流，未配置给自助配置入口，按钮共用统一入口。 */}
         {!user.feishu_bound && !feishuGuideDismissed && feishuConfigured !== null && (
           <Alert
             type="info"
@@ -922,7 +926,13 @@ export default function Layout({ user, onLogout, theme, onChangeTheme, onUserCha
                   </Button>
                 </span>
               ) : (
-                <span>管理员还没有开启飞书集成，开启后即可把合同到期、面试、审批提醒直接收到飞书。</span>
+                <span>
+                  还没配置飞书应用：如果你的飞书和系统默认应用不在同一个企业，绑定会提示「无使用权限」。
+                  在「消息推送设置 → 飞书应用配置」填入你企业的应用凭证即可。
+                  <Button type="link" size="small" style={{ paddingInline: 4 }} onClick={() => setPushplusOpen(true)}>
+                    去配置
+                  </Button>
+                </span>
               )
             }
           />

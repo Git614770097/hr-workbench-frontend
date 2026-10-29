@@ -25,6 +25,7 @@ export interface FeishuConfig {
 interface FeishuAppRow {
   id: string;
   team_id: string | null;
+  user_id: string | null;
   name: string | null;
   app_id: string;
   app_secret_enc: string;
@@ -44,28 +45,56 @@ async function decodeAppRow(row: FeishuAppRow, secret: string | undefined): Prom
 }
 
 /**
- * 解析本次该用的飞书应用：优先本团队自配（team_id 匹配，多企业 BYOK 覆盖），
- * 否则回落全局默认（team_id IS NULL，单运营部署即用此条）。主密钥未配置则整体关闭。
+ * 解析本次该用的飞书应用（三级作用域）：团队行 → 个人行 → 全局行。
+ * 团队行（team_id 非空）= manager 自配、全团队共用；个人行（user_id 非空）= 用户自助配置；
+ * 全局行（两者均 NULL）= 运营默认。三级一次 db.batch 查完（D1 铁律：无依赖查询必须 batch）。
+ * 主密钥缺失或解密失败视为该行不可用，继续向下回落。
  */
 export async function resolveFeishuApp(
   db: D1Database,
-  teamId?: string | null,
+  teamId: string | null | undefined,
+  userId: string | null | undefined,
   secret?: string
 ): Promise<FeishuConfig | null> {
-  if (teamId) {
-    const teamRow = await db
-      .prepare("SELECT * FROM feishu_apps WHERE team_id = ? AND enabled = 1")
-      .bind(teamId)
-      .first<FeishuAppRow>();
-    if (teamRow) {
-      const cfg = await decodeAppRow(teamRow, secret);
+  const [teamRes, userRes, globalRes] = await db.batch([
+    db.prepare("SELECT * FROM feishu_apps WHERE team_id = ? AND user_id IS NULL AND enabled = 1").bind(teamId ?? null),
+    db.prepare("SELECT * FROM feishu_apps WHERE user_id = ? AND enabled = 1").bind(userId ?? null),
+    db.prepare("SELECT * FROM feishu_apps WHERE team_id IS NULL AND user_id IS NULL AND enabled = 1"),
+  ]);
+  for (const res of [teamRes, userRes, globalRes]) {
+    const row = (res.results?.[0] as FeishuAppRow | undefined) ?? null;
+    if (row) {
+      const cfg = await decodeAppRow(row, secret);
       if (cfg) return cfg;
     }
   }
-  const globalRow = await db
-    .prepare("SELECT * FROM feishu_apps WHERE team_id IS NULL AND enabled = 1")
+  return null;
+}
+
+/**
+ * 按 app_id 直取应用（发信/建会用）：飞书 open_id 是应用级标识——绑定用了哪个应用，
+ * 发信就必须用同一应用，否则投递不到。用户存的 feishu_app_id 就是干这个的。
+ * 找不到或已停用返回 null（调用方应提示重新绑定，而不是换应用硬发）。
+ */
+export async function resolveFeishuAppByAppId(db: D1Database, appId: string, secret?: string): Promise<FeishuConfig | null> {
+  const row = await db
+    .prepare("SELECT * FROM feishu_apps WHERE app_id = ? AND enabled = 1")
+    .bind(appId)
     .first<FeishuAppRow>();
-  return globalRow ? await decodeAppRow(globalRow, secret) : null;
+  return row ? decodeAppRow(row, secret) : null;
+}
+
+/**
+ * 发信/建会解析：优先用户绑定时的应用（feishu_app_id，保证与 open_id 同应用），
+ * 否则回落三级作用域（兼容加列前的旧绑定数据）。
+ */
+export async function resolveFeishuAppForSend(
+  db: D1Database,
+  u: { id: string; team_id?: string | null; feishu_app_id?: string | null },
+  secret?: string
+): Promise<FeishuConfig | null> {
+  if (u.feishu_app_id) return resolveFeishuAppByAppId(db, u.feishu_app_id, secret);
+  return resolveFeishuApp(db, u.team_id ?? null, u.id, secret);
 }
 
 /**
