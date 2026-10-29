@@ -34,6 +34,8 @@ async function deleteTalentCascade(db: D1Database, talentId: string): Promise<vo
     db.prepare("DELETE FROM approval_instances WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM job_stage_logs WHERE talent_job_id IN (SELECT id FROM talent_jobs WHERE talent_id = ?)").bind(talentId),
     db.prepare("DELETE FROM talent_jobs WHERE talent_id = ?").bind(talentId),
+    // 入职材料清单（外键 ON DELETE CASCADE 备了兜底，但本函数约定不依赖级联、显式删干净）
+    db.prepare("DELETE FROM onboarding_items WHERE talent_id = ?").bind(talentId),
     // 待办属于用户，不静默删除，只解除与人才的关联
     db.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(talentId),
@@ -900,9 +902,11 @@ talents.get("/:id", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const id = c.req.param("id");
-  let sql = "SELECT t.*, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id WHERE t.id = ?";
-  const params: string[] = [id];
-  if (session.role !== "admin") { sql += " AND t.owner_id = ?"; params.push(session.userId); }
+  // 与列表/编辑同口径用 ownerScope（团队互见互编）：原来详情硬编码 owner_id=自己，
+  // 导致「列表能看见同事的人才、点进详情 404、但编辑接口又能改」的断裂
+  const os = ownerScope(session, "t.owner_id");
+  let sql = "SELECT t.*, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id WHERE t.id = ?" + os.sql;
+  const params: string[] = [id, ...os.params];
 
   const row = await c.env.DB.prepare(sql).bind(...params).first();
   if (!row) return c.json({ error: "人才不存在" }, 404);

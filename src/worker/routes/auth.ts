@@ -6,6 +6,7 @@ import { sendPushPlus, notifyNewRegistration, notifyPasswordResetRequest, notify
 import { newReferralCode, getReferralConfig, grantReferralReward, notifyReferralReward } from "../referral";
 import { getSmsConfig, sendSmsCode, verifySmsCode } from "../sms";
 import { sessionGet } from "../kv";
+import { escapeHtml } from "../../utils/escapeHtml";
 import { getSetting, getSettings, setSettings } from "../settings";
 const auth = new Hono<{ Bindings: Env }>();
 
@@ -106,7 +107,7 @@ function renderCaptchaSvg(code: string): string {
       const rotate = (Math.random() * 40 - 20).toFixed(0);
       const color = CAPTCHA_COLORS[Math.floor(Math.random() * CAPTCHA_COLORS.length)];
       const fontSize = 26 + Math.floor(Math.random() * 6);
-      return `<text x="${x}" y="${y}" font-size="${fontSize}" font-weight="700" fill="${color}" transform="rotate(${rotate} ${x} ${y})" text-anchor="middle" font-family="Arial, sans-serif">${ch}</text>`;
+      return `<text x="${x}" y="${y}" font-size="${fontSize}" font-weight="700" fill="${color}" transform="rotate(${rotate} ${x} ${y})" text-anchor="middle" font-family="Arial, sans-serif">${escapeHtml(ch)}</text>`;
     })
     .join("");
 
@@ -417,11 +418,15 @@ auth.post("/login", async (c) => {
 
   const pwdCheck = await verifyPassword(password, user.password_hash);
   if (!pwdCheck.ok) { await recordFail(); return c.json({ error: "手机号或密码错误" }, 401); }
-  // 旧格式（单轮 SHA-256）校验通过后就地升级为 PBKDF2，用户无感知
+  // 旧格式（单轮 SHA-256）校验通过后就地升级为 PBKDF2，用户无感知。
+  // 升级后 session 里的 pw 快照必须用**新** hash（写在下面 session 时用 pwdSnapshot），
+  // 否则快照=旧值、DB=新值，getSession 一比对当场把自己登出。
+  let pwdSnapshot = user.password_hash;
   if (pwdCheck.needsUpgrade) {
     try {
+      pwdSnapshot = await hashPassword(password);
       await c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?")
-        .bind(await hashPassword(password), user.id).run();
+        .bind(pwdSnapshot, user.id).run();
     } catch { /* 升级失败不影响本次登录 */ }
   }
 
@@ -442,7 +447,7 @@ auth.post("/login", async (c) => {
   }
 
   const token = genToken();
-  await c.env.SESSIONS.put(token, JSON.stringify({ userId: user!.id, role: user!.role, name: user!.name }), { expirationTtl: SESSION_TTL });
+  await c.env.SESSIONS.put(token, JSON.stringify({ userId: user!.id, role: user!.role, name: user!.name, pw: pwdSnapshot }), { expirationTtl: SESSION_TTL });
   // 会话只放在 httpOnly cookie 里下发，**不再**在响应体里返回 token。
   // 前端以前会把 body 里的 token 存进 localStorage 再塞回 Authorization 头，
   // 那等于把同一份凭据复制到一个 JS 可读的地方：收益为零（cookie 同源自动带），
@@ -571,6 +576,8 @@ auth.put("/users/:id/approve", async (c) => {
 
   const target = await c.env.DB.prepare("SELECT role, status, name, phone FROM users WHERE id = ?").bind(id).first<{ role: string; status: string; name: string; phone: string }>();
   if (!target) return c.json({ error: "用户不存在" }, 404);
+  // 幂等保护：重复 approve 会再送 1 个月试用（paid_until 被无条件刷新），已开通的直接拒绝
+  if (target.status === "active") return c.json({ error: "该用户已是正式状态，无需重复开通（续费请用「开通会员」）" }, 400);
 
   // 校验角色存在（允许不分配角色，此时用户登录后看不到任何菜单）
   let finalRoleId: string | null = null;
@@ -978,8 +985,9 @@ auth.put("/users/:id/membership", async (c) => {
     // 避免「当天 00:00 即被判过期」导致当天就被冻结。
     const raw = body.paid_until.trim();
     const normalized = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw} 23:59:59` : raw;
-    // 续费/开通：写入有效期，并把可能处于 frozen 的状态恢复为 active
-    await c.env.DB.prepare("UPDATE users SET paid_until = ?, status = 'active' WHERE id = ?")
+    // 续费/开通：写入有效期，并把可能处于 frozen 的状态恢复为 active。
+    // disabled 不复活——停用是管理员的账号管控决定，不应被「顺手续个费」盖掉
+    await c.env.DB.prepare("UPDATE users SET paid_until = ?, status = CASE WHEN status = 'disabled' THEN 'disabled' ELSE 'active' END WHERE id = ?")
       .bind(normalized, id).run();
     await grantReward();
     return c.json({ ok: true });
@@ -989,9 +997,9 @@ auth.put("/users/:id/membership", async (c) => {
     const m = Math.floor(body.months);
     // 已过期或从未开通 → 从今天起算；仍在有效期 → 在当前日期上顺延
     // 用 datetime(paid_until) 归一化比较，避免仅日期串被误判；
-    // 顺带把 frozen 恢复为 active（续费即解封）
+    // 顺带把 frozen 恢复为 active（续费即解封），disabled 不复活（同上）
     await c.env.DB.prepare(
-      "UPDATE users SET status = 'active', paid_until = datetime(" +
+      "UPDATE users SET status = CASE WHEN status = 'disabled' THEN 'disabled' ELSE 'active' END, paid_until = datetime(" +
       "CASE WHEN paid_until IS NULL OR datetime(paid_until) < datetime('now') " +
       "THEN datetime('now') ELSE datetime(paid_until) END, '+' || ? || ' months') WHERE id = ?"
     ).bind(String(m), id).run();
@@ -1265,6 +1273,8 @@ export interface SessionInfo {
   name: string;
   /** 团队标识：admin/个人用户为 null；manager = 自己的 id；团队成员 = 所属管理员的 id */
   teamId?: string | null;
+  /** 登录时 password_hash 的快照：改密/重置后 hash 变化，旧会话随之作废（见 getSession） */
+  pw?: string;
 }
 
 export async function getSession(c: any): Promise<SessionInfo | null> {
@@ -1280,13 +1290,29 @@ export async function getSession(c: any): Promise<SessionInfo | null> {
   // 原本 /me 等接口会再查一次同一张 users 表的同一条记录 —— D1 每次查询都是一次网络往返，
   // 同一请求里白白多 1 次往返（/auth/me 实测偶发 11s+ 就是这么累出来的）。
   // 现在 KV(1) + D1(1) = 2 次往返；调用方可直接用 session.user，不要再重复查 users。
-  const u = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token, paid_until, status, intended_role, team_id, notify_channel, feishu_open_id FROM users WHERE id = ?").bind(info.userId).first() as { role: string; team_id: string | null } | null;
+  const u = await c.env.DB.prepare("SELECT id, phone, name, role, role_id, must_change_password, pushplus_token, paid_until, status, intended_role, team_id, notify_channel, feishu_open_id, password_hash FROM users WHERE id = ?").bind(info.userId).first() as { role: string; team_id: string | null; status: string | null; password_hash: string } | null;
   if (u) {
+    // 停用/待审/已拒账号的旧会话一律失效：登录入口只挡新登录，KV session TTL 7 天，
+    // 不在这里拦的话「停用成员」携旧 cookie 最长 7 天仍可全量读写，停用形同虚设。
+    // frozen 不在此列（只读放行，写操作由 index.ts 的冻结守卫硬拦）。
+    if (u.status === "disabled" || u.status === "pending" || u.status === "rejected") {
+      await c.env.SESSIONS.delete(token).catch(() => {});
+      return null;
+    }
+    // 改密/重置密码后旧会话一律失效（登录时把 password_hash 快照进 session，变了即作废）。
+    // 否则管理员重置成员密码后，对方旧 cookie 仍可继续操作。历史会话（无 pw 快照）一并作废，
+    // 部署后全员需重新登录一次，属一次性成本。
+    if (info.pw !== u.password_hash) {
+      await c.env.SESSIONS.delete(token).catch(() => {});
+      return null;
+    }
     info.role = u.role;
     info.teamId = u.team_id;
     info.user = u;
   } else {
-    info.teamId = null;
+    // 用户已被删除：旧会话同样必须立即失效（否则拿旧 cookie 仍能读写 7 天）
+    await c.env.SESSIONS.delete(token).catch(() => {});
+    return null;
   }
   return info;
 }

@@ -58,6 +58,10 @@ onboarding.post("/init", async (c) => {
   let b: any;
   try { b = await c.req.json(); } catch { return c.json({ error: "请求参数格式不正确" }, 400); }
   if (!b.talent_id) return c.json({ error: "缺少候选人" }, 400);
+  // 归属校验：清单挂在别人的人才上会被外人抢占幂等键（init 一次后负责人再 init 报「已生成过」）
+  const tal = await c.env.DB.prepare("SELECT owner_id FROM talents WHERE id = ?").bind(b.talent_id).first<{ owner_id: string }>();
+  if (!tal) return c.json({ error: "候选人不存在" }, 404);
+  if (!(await canTouch(c.env, session, tal.owner_id))) return c.json({ error: "无权操作该候选人的入职材料" }, 403);
 
   // 已有清单则直接报错（避免一键生成出两套）；实际写入复用 talentFlow 的幂等实现
   const created = await ensureOnboardingItems(c.env.DB, {
@@ -77,6 +81,10 @@ onboarding.post("/", async (c) => {
   try { b = await c.req.json(); } catch { return c.json({ error: "请求参数格式不正确" }, 400); }
   if (!b.name || !String(b.name).trim()) return c.json({ error: "请填写材料名称" }, 400);
   if (!b.talent_id) return c.json({ error: "缺少候选人" }, 400);
+  // 归属校验：不能给任意他人的候选人挂材料项
+  const tal = await c.env.DB.prepare("SELECT owner_id FROM talents WHERE id = ?").bind(b.talent_id).first<{ owner_id: string }>();
+  if (!tal) return c.json({ error: "候选人不存在" }, 404);
+  if (!(await canTouch(c.env, session, tal.owner_id))) return c.json({ error: "无权操作该候选人的入职材料" }, 403);
 
   const id = genId();
   await c.env.DB.prepare(`

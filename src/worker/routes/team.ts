@@ -82,10 +82,12 @@ team.post("/members", async (c) => {
 
   const id = genId();
   const code = await newReferralCode(c.env.DB);
+  // paid_until 继承管理员自己的：不填会被次日定时任务判为「NULL=过期」冻成只读，
+  // 新成员建完第二天就变冻结、管理员还找不到原因（建队流程与付费口径必须闭环）。
   await c.env.DB.prepare(
-    "INSERT INTO users (id, phone, name, password_hash, role, role_id, status, team_id, referral_code, intended_role, must_change_password) " +
-    "VALUES (?, ?, ?, ?, 'user', ?, 'active', ?, ?, 'hr', 1)"
-  ).bind(id, phone, name, await hashPassword(password), body.role_id || null, teamId, code).run();
+    "INSERT INTO users (id, phone, name, password_hash, role, role_id, status, team_id, referral_code, intended_role, must_change_password, paid_until) " +
+    "SELECT ?, ?, ?, ?, 'user', ?, 'active', ?, ?, 'hr', 1, paid_until FROM users WHERE id = ?"
+  ).bind(id, phone, name, await hashPassword(password), body.role_id || null, teamId, code, teamId).run();
   return c.json({ ok: true, id });
 });
 

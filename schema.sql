@@ -443,6 +443,14 @@ CREATE TABLE IF NOT EXISTS feishu_apps (
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
+-- 作用域唯一约束：SQLite 的 UNIQUE 对 NULL 不生效，按作用域拆三个部分索引
+-- （个人行 user_id 唯一 / 团队行 team_id 唯一 / 全局行只允许一行），防 /my-app 并发双写。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feishu_apps_user_scope
+  ON feishu_apps(user_id) WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feishu_apps_team_scope
+  ON feishu_apps(team_id) WHERE team_id IS NOT NULL AND user_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_feishu_apps_global_scope
+  ON feishu_apps((1)) WHERE team_id IS NULL AND user_id IS NULL;
 
 -- feishu_webhooks：飞书群自定义机器人（零应用依赖，群内全员可见，不能私信个人）。
 CREATE TABLE IF NOT EXISTS feishu_webhooks (

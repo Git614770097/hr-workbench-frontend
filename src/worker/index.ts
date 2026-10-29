@@ -197,6 +197,18 @@ app.use("/api/jobs", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
+// 招聘漏斗（/api/pipeline/funnel）：与「招聘看板」同源数据，但页面是独立菜单。
+// 只统计、不修改数据：funnel 或 pipeline 任一权限即可——funnel 是独立菜单权限，
+// 只授 funnel 的角色能看到「招聘概览」菜单，数据接口却 403 的错位必须堵上。
+// ⚠️ 必须注册在 /api/pipeline/* catch-all **之前**（Hono 按注册顺序执行，
+// 兜底守卫先跑会把只授 funnel 的角色直接拦掉，这条永远轮不到执行）。
+app.use("/api/pipeline/funnel", async (c, next) => {
+  const blockedF = await menuGuard(c, "funnel");
+  if (!blockedF) return next();
+  const blockedP = await menuGuard(c, "pipeline");
+  if (blockedP) return blockedP;
+  return next();
+});
 // 招聘流程看板（与岗位管理同权限：没有岗位就看不了流程）
 app.use("/api/pipeline/*", async (c, next) => {
   const blocked = await menuGuard(c, "pipeline");
@@ -233,10 +245,6 @@ for (const p of ["/api/requisitions", "/api/approvals", "/api/onboarding"]) {
   });
 }
 
-// 招聘漏斗：与「招聘看板」同源数据，但页面是独立菜单。
-// 只统计、不修改数据，因此不额外要求 funnel 权限 ——
-// 有 pipeline 权限即可查看（避免存量角色看不到数据）。
-// 注：路由为 /api/pipeline/funnel，已被上面 /api/pipeline/* 覆盖。
 // 待办日历
 app.use("/api/tasks/*", async (c, next) => {
   const blocked = await menuGuard(c, "tasks");
@@ -305,6 +313,9 @@ app.use("/api/roles/*", async (c, next) => {
 // 若拆成两个 app.use 会叠加执行，变成「必须同时拥有两个权限」才放行。
 app.use("/api/ai/*", async (c, next) => {
   const p = c.req.path;
+  // 自助服务接口（配额查询/自己的 AI Key 读写）：任何登录用户都用得到（顶栏 AiKeyModal），
+  // 不能落进菜单权限兜底——否则不带 interviews 权限的角色连自己的 key 都配不了。
+  if (p.startsWith("/api/ai/quota") || p.startsWith("/api/ai/own-key")) return next();
   const menuKey =
     p.startsWith("/api/ai/outreach") || p.startsWith("/api/ai/resume-insight")
       ? "talents" // 沟通文案 / 简历解读：人才库语义，跟随 talents 权限

@@ -1,6 +1,15 @@
 import { escapeHtml } from "./file";
+import { sanitizeHtml } from "./sanitizeHtml";
 
 // ---------- HTML / 纯文本互转 ----------
+
+// 安全解析 HTML：必须用 DOMParser 而不是 div.innerHTML ——
+// innerHTML 赋值会立即触发 <img onerror> 等（文档一挂就拉取/执行），
+// DOMParser 产出的是惰性文档，不加载子资源、不执行任何处理器，解析阶段零风险。
+// 后续所有 querySelector/innerHTML 读写都在这个惰性树上做。
+function parseHtml(html: string): HTMLElement {
+  return new DOMParser().parseFromString(html, "text/html").body;
+}
 
 // 判断内容是否已经是 HTML（富文本模板）
 export function looksLikeHtml(content: string): boolean {
@@ -9,9 +18,7 @@ export function looksLikeHtml(content: string): boolean {
 
 // 去掉 HTML 标签，得到纯文本（用于内容校验、统计等）
 export function stripHtml(html: string): string {
-  const div = document.createElement("div");
-  div.innerHTML = html;
-  return div.textContent || "";
+  return parseHtml(html).textContent || "";
 }
 
 // 统一转为 HTML：富文本模板原样返回；旧的纯文本模板按段落/换行转换
@@ -30,8 +37,7 @@ export function toHtml(content: string): string {
 // 2. 去掉段落尾部多余空格与 <br>
 // 3. 连续空段落合并为一个，首尾空段落删除
 export function tidyHtml(html: string): string {
-  const c = document.createElement("div");
-  c.innerHTML = html;
+  const c = parseHtml(html);
 
   // 1) 清除背景高亮（mammoth/Word 导入常见残留）
   c.querySelectorAll<HTMLElement>("[style]").forEach((el) => {
@@ -79,18 +85,22 @@ function isDetailRow(line: string): boolean {
 
 // 一组连续明细行 → HTML 表格（首行作表头）
 function buildDetailTable(lines: string[]): string {
+  // 单元格内容是拆行出来的内联 HTML 片段（可能带 <b> 等）：不能 escapeHtml（会毁格式），
+  // 也不能原样拼进 <td>（src=x onerror 之类处理器会跟着放大进导出/预览链路）——
+  // 过 DOMPurify：保留加粗/斜体等排版，干掉脚本与事件处理器。
+  const cell = (s: string) => sanitizeHtml(s);
   const rows = lines.map((line) => {
     const cells = line.split("|").map((c) => c.trim()).filter((c) => c !== "");
     return cells;
   });
   const head = rows.shift() || [];
-  const headHtml = head.map((c) => `<th>${c}</th>`).join("");
+  const headHtml = head.map((c) => `<th>${cell(c)}</th>`).join("");
   // 单单元格行（形如 {{增员明细}} 的占位行）跨整行，作为表格内的可填空行
   const bodyHtml = rows
     .map((cs) =>
       cs.length === 1
-        ? `<tr><td colspan="${head.length}">${cs[0]}</td></tr>`
-        : `<tr>${cs.map((c) => `<td>${c}</td>`).join("")}</tr>`
+        ? `<tr><td colspan="${head.length}">${cell(cs[0])}</td></tr>`
+        : `<tr>${cs.map((c) => `<td>${cell(c)}</td>`).join("")}</tr>`
     )
     .join("");
   return `<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;margin:4px 0;font-size:13px"><thead><tr>${headHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`;
@@ -100,14 +110,14 @@ function buildDetailTable(lines: string[]): string {
 // 用于导出 Word / 查看预览 —— 台账类模板（增减员表、补缴申请表等）导出后才是可用的表格。
 // 非明细行保持原样，不改动任何文字内容。
 export function detailRowsToTable(html: string): string {
-  const c = document.createElement("div");
-  c.innerHTML = html;
+  const c = parseHtml(html);
   const parts: string[] = [];
 
   for (const block of Array.from(c.children)) {
     if (block.tagName !== "P") { parts.push(block.outerHTML); continue; }
     const style = block.getAttribute("style");
-    const styleAttr = style ? ` style="${style}"` : "";
+    // style 值要回插进 style="..."：引号必须转义，否则带引号的 style 能破出属性注入新属性
+    const styleAttr = style ? ` style="${escapeHtml(style)}"` : "";
     const lines = block.innerHTML.split(/<br\s*\/?>/i).map((s) => s.trim());
     if (!lines.some(isDetailRow)) { parts.push(block.outerHTML); continue; }
 
@@ -137,8 +147,7 @@ export function detailRowsToTable(html: string): string {
 // 规则：标题居中加粗二号黑体；条款/序号标题加粗；正文宋体四号 + 首行缩进 2 字符；
 //       甲乙方信息行不缩进；末尾落款（公司/日期/签章）右对齐
 export function smartTidyHtml(html: string): string {
-  const c = document.createElement("div");
-  c.innerHTML = tidyHtml(html);
+  const c = parseHtml(tidyHtml(html));
 
   // 只处理直接子块级元素（li 保持列表原样）
   const blocks = Array.from(c.children).filter((el) => /^(P|H[1-6]|DIV)$/.test(el.tagName));

@@ -397,63 +397,60 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
   const today = ymd(new Date());
   const soon = ymd(new Date(Date.now() + 3 * 86400000));
 
-  // 待办（含负责人姓名与 token）
-  const taskRows = await env.DB.prepare(
-    `SELECT t.title, t.due_date, t.owner_id, u.name AS owner_name, u.pushplus_token
-     FROM talent_tasks t
-     LEFT JOIN users u ON t.owner_id = u.id
-     WHERE t.status = 'pending' AND t.due_date IS NOT NULL
-       AND t.due_date >= ? AND t.due_date <= ?
-     ORDER BY t.due_date ASC`
-  )
-    .bind(today, soon)
-    .all<{ title: string; due_date: string; owner_id: string; owner_name: string | null; pushplus_token: string | null }>();
+  // 4 组到期数据 + 发送模式：互相无依赖，一次 db.batch（D1 铁律：逐条 await 白白多 N 次往返）
+  const [taskRows, contractRows, probationRows, interviewRows, modeRow] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT t.title, t.due_date, t.owner_id, u.name AS owner_name, u.pushplus_token
+       FROM talent_tasks t
+       LEFT JOIN users u ON t.owner_id = u.id
+       WHERE t.status = 'pending' AND t.due_date IS NOT NULL
+         AND t.due_date >= ? AND t.due_date <= ?
+       ORDER BY t.due_date ASC`
+    ).bind(today, soon),
+    env.DB.prepare(
+      `SELECT name, contract_end
+       FROM talents
+       WHERE contract_end IS NOT NULL
+         AND contract_end >= ? AND contract_end <= ?
+       ORDER BY contract_end ASC`
+    ).bind(today, soon),
+    env.DB.prepare(
+      `SELECT name, probation_end
+       FROM talents
+       WHERE probation_end IS NOT NULL
+         AND probation_end >= ? AND probation_end <= ?
+       ORDER BY probation_end ASC`
+    ).bind(today, soon),
+    env.DB.prepare(
+      `SELECT iv.scheduled_at, iv.round, iv.mode, iv.location, iv.meeting_url,
+              t.name AS talent_name, j.title AS job_title,
+              iv.owner_id, u.name AS owner_name, u.pushplus_token
+       FROM interviews iv
+       JOIN talents t ON iv.talent_id = t.id
+       LEFT JOIN jobs j ON iv.job_id = j.id
+       LEFT JOIN users u ON iv.owner_id = u.id
+       WHERE iv.status = 'scheduled' AND iv.scheduled_at IS NOT NULL
+         AND substr(iv.scheduled_at, 1, 10) >= ? AND substr(iv.scheduled_at, 1, 10) <= ?
+       ORDER BY iv.scheduled_at ASC`
+    ).bind(today, soon),
+    env.DB.prepare("SELECT value FROM site_settings WHERE key = 'feishu_notify_mode'"),
+  ]);
+  // 发送模式：both=群+个人 / group=仅群 / personal=仅个人（默认）。
+  // 原先只有 notifyAdmins 读它，每日提醒完全无视——「仅群」时照样逐人私发，
+  // 与设置页「不发个人」的承诺相反。这里补齐分流。
+  // （batch 返回 D1Result<unknown>，行类型在这里补断言；site_settings 单行取 results[0]）
+  const modeVal = ((modeRow.results?.[0] ?? null) as { value: string | null } | null)?.value;
+  const notifyMode = modeVal === "both" || modeVal === "group" ? modeVal : "personal";
 
-  const contractRows = await env.DB.prepare(
-    `SELECT name, contract_end
-     FROM talents
-     WHERE contract_end IS NOT NULL
-       AND contract_end >= ? AND contract_end <= ?
-     ORDER BY contract_end ASC`
-  )
-    .bind(today, soon)
-    .all<{ name: string; contract_end: string }>();
-
-  const probationRows = await env.DB.prepare(
-    `SELECT name, probation_end
-     FROM talents
-     WHERE probation_end IS NOT NULL
-       AND probation_end >= ? AND probation_end <= ?
-     ORDER BY probation_end ASC`
-  )
-    .bind(today, soon)
-    .all<{ name: string; probation_end: string }>();
-
-  // 面试安排：未来 3 天内的「待面试」，按负责人定向推送（scheduled_at 是 'YYYY-MM-DD HH:mm' 本地时区串）
-  const interviewRows = await env.DB.prepare(
-    `SELECT iv.scheduled_at, iv.round, iv.mode, iv.location, iv.meeting_url,
-            t.name AS talent_name, j.title AS job_title,
-            iv.owner_id, u.name AS owner_name, u.pushplus_token
-     FROM interviews iv
-     JOIN talents t ON iv.talent_id = t.id
-     LEFT JOIN jobs j ON iv.job_id = j.id
-     LEFT JOIN users u ON iv.owner_id = u.id
-     WHERE iv.status = 'scheduled' AND iv.scheduled_at IS NOT NULL
-       AND substr(iv.scheduled_at, 1, 10) >= ? AND substr(iv.scheduled_at, 1, 10) <= ?
-     ORDER BY iv.scheduled_at ASC`
-  )
-    .bind(today, soon)
-    .all<{
-      scheduled_at: string; round: string; mode: string;
-      location: string | null; meeting_url: string | null;
-      talent_name: string; job_title: string | null;
-      owner_id: string; owner_name: string | null; pushplus_token: string | null;
-    }>();
-
-  const tasks = taskRows.results || [];
-  const contracts = contractRows.results || [];
-  const probations = probationRows.results || [];
-  const interviews = interviewRows.results || [];
+  const tasks = (taskRows.results || []) as { title: string; due_date: string; owner_id: string; owner_name: string | null; pushplus_token: string | null }[];
+  const contracts = (contractRows.results || []) as { name: string; contract_end: string }[];
+  const probations = (probationRows.results || []) as { name: string; probation_end: string }[];
+  const interviews = (interviewRows.results || []) as {
+    scheduled_at: string; round: string; mode: string;
+    location: string | null; meeting_url: string | null;
+    talent_name: string; job_title: string | null;
+    owner_id: string; owner_name: string | null; pushplus_token: string | null;
+  }[];
 
   if (tasks.length === 0 && contracts.length === 0 && probations.length === 0 && interviews.length === 0) {
     return {
@@ -575,9 +572,50 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
     };
   }
 
-  // 逐人推送（按各自通道：飞书私信或 PushPlus）
+  // ---- notify_mode 分流：group/both 先发群机器人（一条汇总，内容同个人版合并）----
+  // UI 承诺「仅群=全员群里收，不发个人」；both 则群+个人双发。
+  const groupNotes: string[] = [];
+  let viaGroup = 0;
+  if (notifyMode !== "personal") {
+    const webhooks = await resolveFeishuWebhooks(env.DB, null, env.AI_KEY_SECRET);
+    const allLines: string[] = [];
+    for (const [ownerId, grp] of tasksByOwner) {
+      allLines.push(`<b>待办提醒（${grp.items.length} 条${grp.owner_name ? `，负责人 ${grp.owner_name}` : ""}）</b>`);
+      for (const it of grp.items) allLines.push(`&nbsp;&nbsp;· ${it.title} — ${dueLabel(it.due_date, today)}`);
+    }
+    for (const [, items] of interviewsByOwner) {
+      allLines.push(`<b>面试安排（${items.length} 场）</b>`);
+      for (const it of items) allLines.push(`&nbsp;&nbsp;· ${it}`);
+    }
+    if (globalHtml) allLines.push(globalHtml);
+    const plain = htmlToPlain(allLines.join("<br>"));
+    for (const w of webhooks) {
+      const r = await sendFeishuWebhook(w.url, `【待办到期提醒】\n${plain}`);
+      if (r.ok) viaGroup++;
+      else groupNotes.push(`群「${w.name}」：${r.message}`);
+    }
+    if (notifyMode === "group") {
+      // 仅群：未配群机器人必须显式报出来（否则提醒凭空消失），配了就不再发个人
+      return {
+        sent: viaGroup > 0,
+        taskCount: tasks.length,
+        contractCount: contracts.length,
+        probationCount: probations.length,
+        interviewCount: interviews.length,
+        pushedTo: viaGroup,
+        skippedNoToken: 0,
+        message: webhooks.length === 0
+          ? "发送模式为「仅群」，但尚未配置群机器人，本次提醒未发出（请在飞书集成里添加群 webhook，或切回个人模式）"
+          : viaGroup > 0
+            ? `已推送到 ${viaGroup}/${webhooks.length} 个飞书群（仅群模式，未发个人）` + (groupNotes.length > 0 ? `；${groupNotes.join("；")}` : "")
+            : `推送到群全部失败：${groupNotes.join("；")}`,
+      };
+    }
+  }
+
+  // 逐人推送（按各自通道：飞书私信或 PushPlus；both 模式下与群发并行）
   let pushedTo = 0;
-  const failures: string[] = [];
+  const failures: string[] = [...groupNotes];
   for (const [, r] of recipientMap) {
     if (r.lines.length === 0) continue;
     const res = await sendViaUserChannel(env, r.user, "待办到期提醒", r.lines.join("<br>"));
@@ -586,17 +624,17 @@ export async function runReminders(env: Env): Promise<ReminderResult> {
   }
 
   return {
-    sent: pushedTo > 0,
+    sent: pushedTo > 0 || viaGroup > 0,
     taskCount: tasks.length,
     contractCount: contracts.length,
     probationCount: probations.length,
     interviewCount: interviews.length,
-    pushedTo,
+    pushedTo: pushedTo + viaGroup,
     skippedNoToken,
-    message: pushedTo > 0
-      ? `已推送给 ${pushedTo} 人` +
+    message: (pushedTo > 0 || viaGroup > 0)
+      ? `已推送给 ${pushedTo} 人` + (viaGroup > 0 ? ` + ${viaGroup} 个群` : "") +
         (skippedNoToken > 0 ? `，${skippedNoToken} 条待办因负责人未配置 token 未推送` : "") +
-        (failures.length > 0 ? `；${failures.length} 人推送失败` : "")
+        (failures.length > 0 ? `；${failures.length} 路失败` : "")
       : failures.length > 0
         ? `推送失败：${failures.join("；")}`
         : "无已配置推送 token 的用户",

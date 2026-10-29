@@ -192,8 +192,12 @@ templates.get("/:id/versions", async (c) => {
   if (!session) return c.json({ error: "未登录" }, 401);
 
   const id = c.req.param("id");
-  const row = await c.env.DB.prepare("SELECT id FROM doc_templates WHERE id = ?").bind(id).first<{ id: string }>();
+  const row = await c.env.DB.prepare("SELECT id, scope, owner_id FROM doc_templates WHERE id = ?").bind(id).first<{ id: string; scope: string; owner_id: string }>();
   if (!row) return c.json({ error: "模板不存在" }, 404);
+  // 可见性与列表口径一致：private 仅创建者+admin——版本正文里是模板全量内容，漏了等于私有模板可被枚举读走
+  if (row.scope === "private" && row.owner_id !== session.userId && session.role !== "admin") {
+    return c.json({ error: "无权查看该模板" }, 403);
+  }
 
   const res = await c.env.DB.prepare(
     `SELECT cv.version, cv.note, cv.created_at, LENGTH(cv.content) AS size, u.name AS editor_name
@@ -213,8 +217,12 @@ templates.get("/:id/versions/:ver", async (c) => {
   const ver = parseInt(c.req.param("ver"), 10);
   if (!Number.isFinite(ver)) return c.json({ error: "版本号无效" }, 400);
 
-  const row = await c.env.DB.prepare("SELECT id FROM doc_templates WHERE id = ?").bind(id).first<{ id: string }>();
+  const row = await c.env.DB.prepare("SELECT id, scope, owner_id FROM doc_templates WHERE id = ?").bind(id).first<{ id: string; scope: string; owner_id: string }>();
   if (!row) return c.json({ error: "模板不存在" }, 404);
+  // 同列表口径：private 仅创建者+admin（历史版本正文=模板全量内容）
+  if (row.scope === "private" && row.owner_id !== session.userId && session.role !== "admin") {
+    return c.json({ error: "无权查看该模板" }, 403);
+  }
 
   const v = await c.env.DB.prepare(
     `SELECT version, content, note, created_at FROM content_versions

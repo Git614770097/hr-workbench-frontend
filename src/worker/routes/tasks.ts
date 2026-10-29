@@ -126,6 +126,12 @@ tasks.post("/", async (c) => {
 
   const body = await c.req.json<any>();
   if (!body.title || !String(body.title).trim()) return c.json({ error: "待办标题为必填" }, 400);
+  // 归属校验：不能给他人的候选人挂待办（不传 talent_id 的通用待办不受限）
+  if (body.talent_id) {
+    const tal = await c.env.DB.prepare("SELECT owner_id FROM talents WHERE id = ?").bind(String(body.talent_id)).first<{ owner_id: string }>();
+    if (!tal) return c.json({ error: "候选人不存在" }, 404);
+    if (!(await canTouch(c.env, session, tal.owner_id))) return c.json({ error: "无权给该候选人的挂待办" }, 403);
+  }
 
   const id = genId();
   const due = body.due_date || null;

@@ -44,12 +44,19 @@ function notifyApprovalPending(
     ].join("<br>");
 
     let targets: string[] = [];
-    if (opts.approverId) {
-      targets = [opts.approverId];
+    // 指定审批人：只在仍可用（active）时直发；被停用/移出则回落管理员集合，避免通知进黑洞。
+    const designated = opts.approverId
+      ? await env.DB.prepare("SELECT id, status FROM users WHERE id = ?").bind(opts.approverId).first<{ id: string; status: string | null }>()
+      : null;
+    if (designated && designated.status === "active") {
+      targets = [designated.id];
     } else {
+      // 团队场景要圈到 manager：team_id 对子用户来说=管理员的用户 id，
+      // 原 SQL 用 role='admin' 会把 manager 行滤掉（id=? 命中的恰是 manager），
+      // 造成「团队管理员永远收不到待办通知」。个人用户发起时 teamId 为空 → 只圈超管。
       const rows = await env.DB.prepare(
         `SELECT id FROM users
-         WHERE status = 'active' AND role = 'admin'
+         WHERE status = 'active' AND role IN ('admin', 'manager')
            AND (id = ? OR team_id IS NULL OR team_id = ?)`
       ).bind(opts.teamId, opts.teamId).all<{ id: string }>();
       targets = (rows.results || []).map((r) => r.id);
@@ -57,7 +64,11 @@ function notifyApprovalPending(
     await Promise.all(
       targets
         .filter((uid) => uid !== opts.ownerId)
-        .map((uid) => notifyUser(env, uid, `${sceneLabel(opts.scene)}审批待处理`, body).catch(() => null))
+        .map((uid) => notifyUser(env, uid, `${sceneLabel(opts.scene)}审批待处理`, body).catch((e) => {
+          // 吞掉不阻断审批，但必须留痕——通知失败连日志都没有时，通道坏了没人知道
+          console.error(`[approvals] 待处理通知发送失败 uid=${uid}:`, e instanceof Error ? e.message : e);
+          return null;
+        }))
     );
   })());
 }
@@ -85,7 +96,10 @@ function notifyApprovalResult(
       "<br>",
       "详情见：登录后台 → 审批中心。",
     ].join("<br>");
-    await notifyUser(env, opts.ownerId, `${sceneLabel(opts.scene)}审批${verdict}`, body).catch(() => null);
+    await notifyUser(env, opts.ownerId, `${sceneLabel(opts.scene)}审批${verdict}`, body).catch((e) => {
+      console.error(`[approvals] 审批结果通知发送失败 uid=${opts.ownerId}:`, e instanceof Error ? e.message : e);
+      return null;
+    });
   })());
 }
 
@@ -387,9 +401,11 @@ approvals.post("/instances/:id/decide", async (c) => {
   }
   if (inst.status !== "pending") return c.json({ error: "该审批已结束" }, 400);
 
-  // 真审批：发起人与审批人必须分离。团队子用户不能审自己发起的审批，
-  // 只能由同团队的管理员处理（管理员/超管不受此限，其自身审批在发起时已自动通过）。
-  if (inst.owner_id === session.userId && session.role === "user" && session.teamId) {
+  // 真审批：发起人与审批人必须分离。任何人不能处理自己发起的审批（admin 除外）。
+  // 原判断带 `&& session.teamId` 条件——成员把 team_id 弄没（退队/被移出）后就能自批，
+  // 且子用户发起时走的是「团队子用户保持 pending」路径，绕过等于审批制衡失效。
+  // solo/manager/admin 发起即自动通过（isSoloConfirmer），不会留 pending 单要自己批。
+  if (inst.owner_id === session.userId && session.role !== "admin") {
     return c.json({ error: "自己的审批需由团队管理员处理" }, 403);
   }
   // 环节指定了审批人时，只有该审批人或超管能处理（为将来「指定审批人」留口子；
@@ -428,11 +444,18 @@ approvals.post("/instances/:id/decide", async (c) => {
     return c.json({ ok: true, status: "rejected" });
   }
 
-  // 通过：看还有没有下一步
-  const next = await c.env.DB.prepare(
+  // 通过：看还有没有下一步。
+  // ⚠️ totalSteps 必须以流程模板的步骤数为准——步骤行是「到达时才插入」的，
+  // 数已插入行永远等于 current_step+1，会造成第 1 个审批人点通过即终审（多级审批被短路）。
+  // 模板不在/未配流程时回退数行（等价单步，保持旧行为）。
+  const flowRow = inst.flow_id
+    ? await c.env.DB.prepare("SELECT flow_steps FROM approval_flows WHERE id = ?").bind(inst.flow_id).first<{ flow_steps: string }>()
+    : null;
+  const flowSteps = parseSteps(flowRow?.flow_steps);
+  const cnt = await c.env.DB.prepare(
     "SELECT COUNT(*) as n FROM approval_steps WHERE instance_id = ?"
   ).bind(id).first<{ n: number }>();
-  const totalSteps = next?.n ?? 1;
+  const totalSteps = flowSteps.length > 0 ? flowSteps.length : (cnt?.n ?? 1);
   const nextIndex = inst.current_step + 1;
 
   if (nextIndex < totalSteps) {
@@ -440,10 +463,7 @@ approvals.post("/instances/:id/decide", async (c) => {
       "UPDATE approval_instances SET current_step = ?, updated_at=datetime('now') WHERE id=?"
     ).bind(nextIndex, id).run();
     // 取下一步骤名（来自流程模板或兜底）
-    const flow = inst.flow_id
-      ? await c.env.DB.prepare("SELECT flow_steps FROM approval_flows WHERE id = ?").bind(inst.flow_id).first<{ flow_steps: string }>()
-      : null;
-    const steps = parseSteps(flow?.flow_steps);
+    const steps = flowSteps;
     await c.env.DB.prepare(
       "INSERT INTO approval_steps (id, instance_id, step_index, step_name, approver_id) VALUES (?, ?, ?, ?, ?)"
     ).bind(genId(), id, nextIndex, steps[nextIndex]?.name || "审批", steps[nextIndex]?.approver_id || null).run();

@@ -45,7 +45,7 @@ async function decodeAppRow(row: FeishuAppRow, secret: string | undefined): Prom
 }
 
 /**
- * 解析本次该用的飞书应用（三级作用域）：团队行 → 个人行 → 全局行。
+ * 解析本次该用的飞书应用（三级作用域）：个人行 → 团队行 → 全局行（粒度最细优先）。
  * 团队行（team_id 非空）= manager 自配、全团队共用；个人行（user_id 非空）= 用户自助配置；
  * 全局行（两者均 NULL）= 运营默认。三级一次 db.batch 查完（D1 铁律：无依赖查询必须 batch）。
  * 主密钥缺失或解密失败视为该行不可用，继续向下回落。
@@ -61,7 +61,10 @@ export async function resolveFeishuApp(
     db.prepare("SELECT * FROM feishu_apps WHERE user_id = ? AND enabled = 1").bind(userId ?? null),
     db.prepare("SELECT * FROM feishu_apps WHERE team_id IS NULL AND user_id IS NULL AND enabled = 1"),
   ]);
-  for (const res of [teamRes, userRes, globalRes]) {
+  // 取用顺序：个人 → 团队 → 全局（粒度最细优先）。
+  // 不能团队在前：成员自助配了自己企业的应用时，团队行会把个人配置遮蔽掉，
+  // 跨企业自助入口等于失效。个人用户（无 team）不受影响。
+  for (const res of [userRes, teamRes, globalRes]) {
     const row = (res.results?.[0] as FeishuAppRow | undefined) ?? null;
     if (row) {
       const cfg = await decodeAppRow(row, secret);
@@ -348,7 +351,7 @@ export async function resolveFeishuWebhooks(
   const teamRows: FeishuWebhookRow[] = [];
   const globalRows: FeishuWebhookRow[] = [];
   for (const r of results || []) {
-    const url = await decryptAiKey(secret, r.url_enc).catch(() => null);
+    const url = await decryptAiKey(r.url_enc, secret).catch(() => null);
     if (!url) continue;
     const row: FeishuWebhookRow = { id: r.id, name: r.name, url };
     if (r.team_id) teamRows.push(row); // team 自配优先，全部缺失才回落全局
