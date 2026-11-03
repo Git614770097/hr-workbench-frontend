@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   Card, Descriptions, Tag, Button, Space, Typography, Empty, Spin, Tooltip, Select,
-  message, Popconfirm, Upload, Checkbox, Timeline,
+  message, Popconfirm, Upload, Checkbox, Timeline, Tabs, Collapse,
 } from "antd";
 import {
   EditOutlined, DeleteOutlined, ArrowLeftOutlined, FilePdfOutlined, UploadOutlined,
@@ -220,6 +220,23 @@ export default function TalentDetail() {
   const tasks = talent.tasks || [];
   const pipeline = talent.pipeline || [];
 
+  // 最近更新的那条投递：摘要条与「当前状态」卡都要用它。
+  // 一个候选人可能投了多个岗位，「当前在哪」只能有一个答案——取最近动过的那个。
+  const latestPipeline = pipeline.length
+    ? pipeline.slice().sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""))[0]
+    : null;
+  const latestStageMeta = latestPipeline ? STAGE_META[latestPipeline.stage] : null;
+  // 下一步该做什么：未完成待办里最早到期的那条（没到期日的排最后）
+  const openTasks = tasks.filter((t) => t.status !== "done");
+  // 待办排序：未完成在前，已完成沉底；未完成的按到期日升序——
+  // 这样列表最上面那条就是「下一步该做什么」，不用再单独标一次。
+  const sortedTasks = tasks.slice().sort((a, b) => {
+    const ad = a.status === "done" ? 1 : 0;
+    const bd = b.status === "done" ? 1 : 0;
+    if (ad !== bd) return ad - bd;
+    return (a.due_date || "9999-99-99").localeCompare(b.due_date || "9999-99-99");
+  });
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -254,101 +271,179 @@ export default function TalentDetail() {
         </Space>
       </div>
 
+      {/* 摘要条：把「最该先看的几项」提到首屏。
+          之前基本信息 17 项平铺在下面的卡里，手机号排到第 16 位、邮箱第 17 位——
+          而 HR 打开详情页最先确认的就是「怎么联系他」和「现在什么情况」。
+          这里只放 6 项，其余仍在下方卡片里。 */}
+      <div className="talent-summary">
+        <span className="talent-summary-item">
+          <span className="talent-summary-label">电话</span>
+          {talent.phone ? <CopyBtn text={talent.phone} label="电话" /> : <span className="talent-summary-empty">-</span>}
+        </span>
+        <span className="talent-summary-item">
+          <span className="talent-summary-label">当前</span>
+          {talent.current_company || talent.current_title
+            ? [talent.current_company, talent.current_title].filter(Boolean).join(" · ")
+            : <span className="talent-summary-empty">-</span>}
+        </span>
+        <span className="talent-summary-item">
+          <span className="talent-summary-label">期望薪资</span>
+          {talent.expected_salary || <span className="talent-summary-empty">-</span>}
+        </span>
+        <span className="talent-summary-item">
+          <span className="talent-summary-label">期望城市</span>
+          {talent.expected_city || <span className="talent-summary-empty">-</span>}
+        </span>
+        <span className="talent-summary-item">
+          <span className="talent-summary-label">当前阶段</span>
+          {latestPipeline
+            ? <Tag color={latestStageMeta?.color} style={{ marginInlineEnd: 0 }}>{latestStageMeta?.label || latestPipeline.stage}</Tag>
+            : <span className="talent-summary-empty">未进流程</span>}
+        </span>
+        <span className="talent-summary-item">
+          <span className="talent-summary-label">评分</span>
+          {latestPipeline?.rating
+            ? <span style={{ color: "#faad14" }}>{"★".repeat(latestPipeline.rating)}</span>
+            : <span className="talent-summary-empty">-</span>}
+        </span>
+      </div>
+
       <div className="detail-grid">
         <div>
           <Card title="基本信息" style={{ marginBottom: 16 }}>
-            <Descriptions column={2} size="small">
-              <Descriptions.Item label="年龄">{talent.age != null ? `${talent.age}岁` : "-"}</Descriptions.Item>
-              <Descriptions.Item label="出生年月">
-                {talent.birth_date ? (
-                  <Space size={6}>
-                    {/* 精度决定显示到月还是年：只写了年份的不能假装知道月份 */}
-                    {talent.birth_date_precision === "exact" || talent.birth_date_precision === "month"
-                      ? talent.birth_date.slice(0, 7)
-                      : talent.birth_date.slice(0, 4)}
-                    {talent.birth_date_precision === "estimated" && (
-                      <Tooltip title="按录入时的年龄反推的出生年份，误差最多 1 岁。补上实际出生年月后会自动精确，年龄也会跟着实时算">
-                        <Tag color="orange" style={{ marginInlineEnd: 0 }}>推算</Tag>
-                      </Tooltip>
-                    )}
-                  </Space>
-                ) : "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="性别">{talent.gender || "-"}</Descriptions.Item>
-              <Descriptions.Item label="学历">{talent.education || "-"}</Descriptions.Item>
-              <Descriptions.Item label="毕业院校">{talent.school || "-"}</Descriptions.Item>
-              <Descriptions.Item label="当前公司">{talent.current_company || "-"}</Descriptions.Item>
-              <Descriptions.Item label="当前职位">{talent.current_title || "-"}</Descriptions.Item>
-              <Descriptions.Item label="工作年限">{talent.years_experience != null ? `${talent.years_experience}年` : "-"}</Descriptions.Item>
-              <Descriptions.Item label="所在城市">{talent.city || "-"}</Descriptions.Item>
-              <Descriptions.Item label="行业">{talent.industry || "-"}</Descriptions.Item>
-              <Descriptions.Item label="期望薪资">{talent.expected_salary || "-"}</Descriptions.Item>
-              <Descriptions.Item label="期望城市">{talent.expected_city || "-"}</Descriptions.Item>
-              <Descriptions.Item label="来源渠道">{talent.source || "-"}</Descriptions.Item>
-              <Descriptions.Item label="入职日期">{talent.hire_date || "-"}</Descriptions.Item>
-              {isAdmin && <Descriptions.Item label="创建人">{talent.owner_name || "-"}</Descriptions.Item>}
-              <Descriptions.Item label="电话" span={2}>
-                {talent.phone ? (
-                  <Space size={6}>{talent.phone}<CopyBtn text={talent.phone} label="电话" /></Space>
-                ) : "-"}
-              </Descriptions.Item>
-              <Descriptions.Item label="邮箱" span={2}>
-                {talent.email ? (
-                  <Space size={6}>{talent.email}<CopyBtn text={talent.email} label="邮箱" /></Space>
-                ) : "-"}
-              </Descriptions.Item>
-            </Descriptions>
+            {/* 按语义分三组：身份 / 求职意向 / 履历。
+                之前 17 项平铺在一个 Descriptions 里，手机号排到第 16 位、邮箱第 17 位，
+                而这两个恰恰是筛选候选人时最先看的。分组后主次也清楚了。 */}
+            <div className="info-group">
+              <div className="info-group-title">身份</div>
+              <Descriptions column={2} size="small">
+                <Descriptions.Item label="电话">
+                  {talent.phone ? (
+                    <Space size={6}>{talent.phone}<CopyBtn text={talent.phone} label="电话" /></Space>
+                  ) : "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="邮箱">
+                  {talent.email ? (
+                    <Space size={6}>{talent.email}<CopyBtn text={talent.email} label="邮箱" /></Space>
+                  ) : "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="年龄">{talent.age != null ? `${talent.age}岁` : "-"}</Descriptions.Item>
+                <Descriptions.Item label="出生年月">
+                  {talent.birth_date ? (
+                    <Space size={6}>
+                      {/* 精度决定显示到月还是年：只写了年份的不能假装知道月份 */}
+                      {talent.birth_date_precision === "exact" || talent.birth_date_precision === "month"
+                        ? talent.birth_date.slice(0, 7)
+                        : talent.birth_date.slice(0, 4)}
+                      {talent.birth_date_precision === "estimated" && (
+                        <Tooltip title="按录入时的年龄反推的出生年份，误差最多 1 岁。补上实际出生年月后会自动精确，年龄也会跟着实时算">
+                          <Tag color="orange" style={{ marginInlineEnd: 0 }}>推算</Tag>
+                        </Tooltip>
+                      )}
+                    </Space>
+                  ) : "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="性别">{talent.gender || "-"}</Descriptions.Item>
+              </Descriptions>
+            </div>
+
+            <div className="info-group">
+              <div className="info-group-title">求职意向</div>
+              <Descriptions column={2} size="small">
+                <Descriptions.Item label="期望薪资">{talent.expected_salary || "-"}</Descriptions.Item>
+                <Descriptions.Item label="期望城市">{talent.expected_city || "-"}</Descriptions.Item>
+                <Descriptions.Item label="当前职位">{talent.current_title || "-"}</Descriptions.Item>
+                <Descriptions.Item label="当前公司">{talent.current_company || "-"}</Descriptions.Item>
+              </Descriptions>
+            </div>
+
+            <div className="info-group">
+              <div className="info-group-title">履历</div>
+              <Descriptions column={2} size="small">
+                <Descriptions.Item label="学历">{talent.education || "-"}</Descriptions.Item>
+                <Descriptions.Item label="毕业院校">{talent.school || "-"}</Descriptions.Item>
+                <Descriptions.Item label="工作年限">{talent.years_experience != null ? `${talent.years_experience}年` : "-"}</Descriptions.Item>
+                <Descriptions.Item label="所在城市">{talent.city || "-"}</Descriptions.Item>
+                <Descriptions.Item label="行业">{talent.industry || "-"}</Descriptions.Item>
+              </Descriptions>
+            </div>
+
+            {/* 低频字段收进折叠：来源/入职日期/创建人平时不看，但要看时不能找不到 */}
+            <Collapse
+              ghost
+              size="small"
+              items={[{
+                key: "more",
+                label: <span style={{ fontSize: 13, color: "#8c8c8c" }}>更多信息</span>,
+                children: (
+                  <Descriptions column={2} size="small">
+                    <Descriptions.Item label="来源渠道">{talent.source || "-"}</Descriptions.Item>
+                    <Descriptions.Item label="入职日期">{talent.hire_date || "-"}</Descriptions.Item>
+                    {isAdmin && <Descriptions.Item label="创建人">{talent.owner_name || "-"}</Descriptions.Item>}
+                  </Descriptions>
+                ),
+              }]}
+            />
           </Card>
 
-          {/* 简历原文：平台同步/粘贴录入的全文。与 resume_url 文件并存——
-              文件用于原始排版预览，文本用于全文检索与 AI 解读 */}
-          {talent.resume_text && (
-            <Card
-              title="简历原文"
-              style={{ marginBottom: 16 }}
-              extra={
-                <Tag color="blue">
-                  {talent.entry_type === "sync" ? "招聘平台同步" : "已录入"}
-                </Tag>
-              }
-            >
-              <div
-                style={{
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  fontSize: 13,
-                  lineHeight: 1.9,
-                  color: "#334155",
-                  maxHeight: 520,
-                  overflowY: "auto",
-                  paddingRight: 4,
-                }}
-              >
-                {talent.resume_text}
-              </div>
-            </Card>
-          )}
-
-          {/* AI 简历解读：亮点/风险/与岗位匹配度。有简历文件时先抽取原文，失败则仅按字段 */}
-          <AiResultCard
-            title="AI 简历解读"
-            style={{ marginBottom: 16 }}
-            loadingTip={talent.resume_url ? "正在读取简历原文并生成解读…" : "AI 正在生成解读，约需 5-15 秒…"}
-            hint="点击「生成」，AI 会基于档案字段与简历原文给出亮点、风险点和录用建议，供你筛选时参考。"
-            fetchOnMount={async () => {
-              const r = await api.aiResumeInsightGet(talent.id);
-              return (r?.data ? { ...r.data, _persisted: true } : null) as Record<string, unknown> | null;
-            }}
-            onGenerate={async () => {
-              const text = await readResumeText(talent);
-              return (await api.aiResumeInsight({
-                talent_id: talent.id,
-                text,
-              })) as unknown as Record<string, unknown>;
-            }}
-            toText={(d) => insightToText(d as AiResumeInsight)}
-            render={(d) => <AiInsightView data={d as AiResumeInsight} />}
-          />
+          {/* 简历原文与 AI 解读合并成一张卡、两个 Tab：
+              它们本来就是同一份材料的两面，分成两张卡既多占版面，
+              又逼着用户来回滚动对照。 */}
+          <Card title="简历与 AI 解读" style={{ marginBottom: 16 }}>
+            <Tabs
+              defaultActiveKey="text"
+              items={[
+                {
+                  key: "text",
+                  label: "简历原文",
+                  children: talent.resume_text ? (
+                    <div
+                      style={{
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                        fontSize: 13,
+                        lineHeight: 1.9,
+                        color: "#334155",
+                        maxHeight: 520,
+                        overflowY: "auto",
+                        paddingRight: 4,
+                      }}
+                    >
+                      {talent.resume_text}
+                    </div>
+                  ) : (
+                    <Empty description="暂无简历原文（可上传简历文件，或手动粘贴）" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  ),
+                },
+                {
+                  key: "ai",
+                  label: "AI 解读",
+                  children: (
+                    /* bare：去掉 Card 外框，避免卡片套卡片 */
+                    <AiResultCard
+                      bare
+                      title="AI 简历解读"
+                      loadingTip={talent.resume_url ? "正在读取简历原文并生成解读…" : "AI 正在生成解读，约需 5-15 秒…"}
+                      hint="点击「生成」，AI 会基于档案字段与简历原文给出亮点、风险点和录用建议，供你筛选时参考。"
+                      fetchOnMount={async () => {
+                        const r = await api.aiResumeInsightGet(talent.id);
+                        return (r?.data ? { ...r.data, _persisted: true } : null) as Record<string, unknown> | null;
+                      }}
+                      onGenerate={async () => {
+                        const text = await readResumeText(talent);
+                        return (await api.aiResumeInsight({
+                          talent_id: talent.id,
+                          text,
+                        })) as unknown as Record<string, unknown>;
+                      }}
+                      toText={(d) => insightToText(d as AiResumeInsight)}
+                      render={(d) => <AiInsightView data={d as AiResumeInsight} />}
+                    />
+                  ),
+                },
+              ]}
+            />
+          </Card>
 
           {talent.skills.length > 0 && (
             <Card title="技能标签" style={{ marginBottom: 16 }}>
@@ -364,100 +459,11 @@ export default function TalentDetail() {
         </div>
 
         <div>
-          {/* 简历预览卡片 */}
+          {/* ④ 当前状态：详情页的核心价值是「推进这一个人」，不是「读档案」。
+              之前「待办」「投递进程」排在右栏第 3、4 位，而右栏整体又在首屏之外——
+              打开页面第一眼看到的只有年龄/性别。现在把它们提到最前面。 */}
           <Card
-            title="简历文件"
-            style={{ marginBottom: 16 }}
-            extra={
-              <Upload accept=".pdf,.docx" showUploadList={false} beforeUpload={handleUploadResume} disabled={uploading}>
-                <Button size="small" icon={<UploadOutlined />} loading={uploading}>上传简历</Button>
-              </Upload>
-            }
-          >
-            {talent.resume_url ? (
-              <div>
-                <Space style={{ marginBottom: 12 }}>
-                  <FilePdfOutlined style={{ fontSize: 20, color: "#ff4d4f" }} />
-                  <Typography.Text>{talent.resume_url.split("/").pop()}</Typography.Text>
-                </Space>
-                <Space>
-                  <Button type="primary" onClick={() => setPreviewOpen(true)}>预览简历</Button>
-                  <Popconfirm title="确认删除简历文件？人才记录会保留。" onConfirm={handleDeleteResume}>
-                    <Button danger icon={<DeleteOutlined />}>删除简历</Button>
-                  </Popconfirm>
-                </Space>
-              </div>
-            ) : (
-              <Empty description="暂无简历文件，请上传" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            )}
-          </Card>
-
-          {/* 附件：作品集 / 证书 / 其他材料。与上面的「简历文件」分开是刻意的——
-              简历只有一份（resume_url 单字段，传新的会删旧的），附件可以多份。
-              合在一张卡里会让人误以为「上传附件会覆盖简历」。 */}
-          <Card
-            title={`附件${files.length > 0 ? `（${files.length}）` : ""}`}
-            style={{ marginBottom: 16 }}
-            extra={
-              <Space size={8}>
-                <Select
-                  size="small"
-                  value={uploadKind}
-                  onChange={setUploadKind}
-                  style={{ width: 84 }}
-                  options={[
-                    { label: "作品集", value: "portfolio" },
-                    { label: "证书", value: "certificate" },
-                    { label: "其他", value: "other" },
-                  ]}
-                />
-                <Upload showUploadList={false} beforeUpload={handleUploadFile} disabled={uploadingFile}>
-                  <Button size="small" icon={<UploadOutlined />} loading={uploadingFile}>上传附件</Button>
-                </Upload>
-              </Space>
-            }
-          >
-            {files.length === 0 ? (
-              <Empty description="暂无附件（作品集、证书等，单个 10MB 以内）" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <Space direction="vertical" style={{ width: "100%" }} size={10}>
-                {files.map((f) => (
-                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    {fileIcon(f.mime)}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <Typography.Link
-                        href={api.getTalentFileUrl(talent.id, f.id)}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                      >
-                        {f.name}
-                      </Typography.Link>
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        {FILE_KIND_LABELS[f.kind] || "其他"} · {fmtFileSize(f.size)} · {(f.created_at || "").slice(0, 10)}
-                      </Typography.Text>
-                    </div>
-                    <Space size={2}>
-                      <Button
-                        size="small"
-                        type="link"
-                        href={api.getTalentFileUrl(talent.id, f.id, true)}
-                      >
-                        下载
-                      </Button>
-                      <Popconfirm title={`确认删除「${f.name}」？`} onConfirm={() => handleDeleteFile(f.id, f.name)}>
-                        <Button size="small" type="link" danger>删除</Button>
-                      </Popconfirm>
-                    </Space>
-                  </div>
-                ))}
-              </Space>
-            )}
-          </Card>
-
-          {/* 相关待办：逾期红、今日橙，可直接打勾完成 */}
-          <Card
-            title={`相关待办${tasks.length > 0 ? `（${tasks.filter((t) => t.status !== "done").length}）` : ""}`}
+            title="当前状态"
             style={{ marginBottom: 16 }}
             extra={
               /* 不要 <Link><Button/></Link>：<a> 内嵌 <button> 是非法 HTML，点击易被外层吞掉。 */
@@ -466,52 +472,184 @@ export default function TalentDetail() {
               </Link>
             }
           >
-            {tasks.length === 0 ? (
-              <Empty description="暂无关联待办" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <div>
-                {tasks.map((t) => {
-                  const done = t.status === "done";
-                  const overdue = !done && !!t.due_date && t.due_date < today;
-                  const dueToday = !done && !!t.due_date && t.due_date === today;
-                  return (
-                    <div
-                      key={t.id}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 8,
-                        padding: "7px 2px", borderBottom: "1px dashed #f0f0f0",
-                      }}
-                    >
-                      <Checkbox checked={done} onChange={() => toggleTask(t)} />
-                      <span
+            <Descriptions column={2} size="small">
+              <Descriptions.Item label="当前阶段">
+                {latestPipeline ? (
+                  <Tag color={latestStageMeta?.color} style={{ marginInlineEnd: 0 }}>
+                    {latestStageMeta?.label || latestPipeline.stage}
+                  </Tag>
+                ) : <span style={{ color: "#9ca3af" }}>尚未进入招聘看板</span>}
+              </Descriptions.Item>
+              <Descriptions.Item label="所在岗位">
+                {latestPipeline ? latestPipeline.job_title : "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label="评分">
+                {latestPipeline?.rating
+                  ? <span style={{ color: "#faad14" }}>{"★".repeat(latestPipeline.rating)}</span>
+                  : "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label="来源渠道">{talent.source || "-"}</Descriptions.Item>
+            </Descriptions>
+
+            {/* 待办合并进这张卡：之前「当前状态」里显示一条「下一步」、
+                下面「相关待办」卡又显示一遍完整列表，同一条待办出现两次。
+                现在只留这一处，排序上未完成在前、最早到期的在最上面——最上面那条就是下一步。 */}
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed #f0f0f0" }}>
+              <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 6 }}>
+                待办{openTasks.length > 0 ? `（${openTasks.length} 项未完成）` : ""}
+              </div>
+              {tasks.length === 0 ? (
+                <Typography.Text type="secondary" style={{ fontSize: 13 }}>暂无关联待办</Typography.Text>
+              ) : (
+                <div>
+                  {sortedTasks.map((t) => {
+                    const done = t.status === "done";
+                    const overdue = !done && !!t.due_date && t.due_date < today;
+                    const dueToday = !done && !!t.due_date && t.due_date === today;
+                    return (
+                      <div
+                        key={t.id}
                         style={{
-                          flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                          fontSize: 13, color: done ? "#9ca3af" : "#374151",
-                          textDecoration: done ? "line-through" : "none",
+                          display: "flex", alignItems: "center", gap: 8,
+                          padding: "7px 2px", borderBottom: "1px dashed #f0f0f0",
                         }}
-                        title={t.content || t.title}
                       >
-                        {t.title}
-                      </span>
-                      {t.priority === "high" && !done && (
-                        <Tag color={PRIORITY_COLORS.high} style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "18px" }}>
-                          {PRIORITY_LABELS.high}
-                        </Tag>
-                      )}
-                      {t.due_date && (
-                        <Tag
-                          color={overdue ? "red" : dueToday ? "orange" : "default"}
-                          style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "18px", flexShrink: 0 }}
+                        <Checkbox checked={done} onChange={() => toggleTask(t)} />
+                        <span
+                          style={{
+                            flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            fontSize: 13, color: done ? "#9ca3af" : "#374151",
+                            textDecoration: done ? "line-through" : "none",
+                          }}
+                          title={t.content || t.title}
                         >
-                          {overdue ? "逾期 " : dueToday ? "今日 " : ""}
-                          {t.due_date.slice(5).replace("-", "月")}日
-                        </Tag>
+                          {t.title}
+                        </span>
+                        {t.priority === "high" && !done && (
+                          <Tag color={PRIORITY_COLORS.high} style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "18px" }}>
+                            {PRIORITY_LABELS.high}
+                          </Tag>
+                        )}
+                        {t.due_date && (
+                          <Tag
+                            color={overdue ? "red" : dueToday ? "orange" : "default"}
+                            style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "18px", flexShrink: 0 }}
+                          >
+                            {overdue ? "逾期 " : dueToday ? "今日 " : ""}
+                            {t.due_date.slice(5).replace("-", "月")}日
+                          </Tag>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* ⑤ 材料：简历文件与附件合并成一张卡、两个 Tab。
+              两者都是「这个人的材料」，之前拆成两张卡，右栏就被撑长了。
+              Tab 分开仍然保留了「上传附件不会覆盖简历」的语义（各自独立面板）。 */}
+          <Card title="材料" style={{ marginBottom: 16 }}>
+            <Tabs
+              defaultActiveKey="resume"
+              items={[
+                {
+                  key: "resume",
+                  label: "简历文件",
+                  children: (
+                    <div>
+                      {talent.resume_url ? (
+                        <div>
+                          <Space style={{ marginBottom: 12 }}>
+                            <FilePdfOutlined style={{ fontSize: 20, color: "#ff4d4f" }} />
+                            <Typography.Text>{talent.resume_url.split("/").pop()}</Typography.Text>
+                          </Space>
+                          <Space wrap>
+                            <Button type="primary" onClick={() => setPreviewOpen(true)}>预览简历</Button>
+                            <Popconfirm title="确认删除简历文件？人才记录会保留。" onConfirm={handleDeleteResume}>
+                              <Button danger icon={<DeleteOutlined />}>删除简历</Button>
+                            </Popconfirm>
+                            {/* 上传放在已有文件旁边而不是最上面：否则会让人以为必须先上传 */}
+                            <Upload accept=".pdf,.docx" showUploadList={false} beforeUpload={handleUploadResume} disabled={uploading}>
+                              <Button icon={<UploadOutlined />} loading={uploading}>替换简历</Button>
+                            </Upload>
+                          </Space>
+                        </div>
+                      ) : (
+                        <div>
+                          <Empty description="暂无简历文件，请上传" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                          <Upload accept=".pdf,.docx" showUploadList={false} beforeUpload={handleUploadResume} disabled={uploading}>
+                            <Button icon={<UploadOutlined />} loading={uploading}>上传简历</Button>
+                          </Upload>
+                        </div>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  ),
+                },
+                {
+                  key: "files",
+                  label: `附件${files.length > 0 ? `（${files.length}）` : ""}`,
+                  children: (
+                    <div>
+                      {/* 附件类型（作品集/证书/其他）要先选再传，否则后端不知道归到哪一类 */}
+                      <Space size={8} style={{ marginBottom: 12 }}>
+                        <Select
+                          size="small"
+                          value={uploadKind}
+                          onChange={setUploadKind}
+                          style={{ width: 84 }}
+                          options={[
+                            { label: "作品集", value: "portfolio" },
+                            { label: "证书", value: "certificate" },
+                            { label: "其他", value: "other" },
+                          ]}
+                        />
+                        <Upload showUploadList={false} beforeUpload={handleUploadFile} disabled={uploadingFile}>
+                          <Button size="small" icon={<UploadOutlined />} loading={uploadingFile}>上传附件</Button>
+                        </Upload>
+                      </Space>
+                      {files.length === 0 ? (
+                        <Empty description="暂无附件（作品集、证书等，单个 10MB 以内）" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                      ) : (
+                        <Space direction="vertical" style={{ width: "100%" }} size={10}>
+                          {files.map((f) => (
+                            <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              {fileIcon(f.mime)}
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <Typography.Link
+                                  href={api.getTalentFileUrl(talent.id, f.id)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                                >
+                                  {f.name}
+                                </Typography.Link>
+                                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                                  {FILE_KIND_LABELS[f.kind] || "其他"} · {fmtFileSize(f.size)} · {(f.created_at || "").slice(0, 10)}
+                                </Typography.Text>
+                              </div>
+                              <Space size={2}>
+                                <Button
+                                  size="small"
+                                  type="link"
+                                  href={api.getTalentFileUrl(talent.id, f.id, true)}
+                                >
+                                  下载
+                                </Button>
+                                <Popconfirm title={`确认删除「${f.name}」？`} onConfirm={() => handleDeleteFile(f.id, f.name)}>
+                                  <Button size="small" type="link" danger>删除</Button>
+                                </Popconfirm>
+                              </Space>
+                            </div>
+                          ))}
+                        </Space>
+                      )}
+                    </div>
+                  ),
+                },
+              ]}
+            />
           </Card>
 
           {/* 投递进程：每个岗位一条，含当前阶段与流转时间线 */}

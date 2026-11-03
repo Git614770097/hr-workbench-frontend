@@ -365,6 +365,32 @@ html[data-theme-mode="dark"] .theme-mode-btn.is-active { color: #fff; }
 
 /* 详情页 */
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+
+/* ===== 人才详情页：摘要条 + 基本信息分组 ===== */
+/* 摘要条：把「最该先看的几项」提到首屏。以前基本信息 17 项平铺在下方卡片里，
+   手机号排到第 16 位——而 HR 打开详情页最先看的就是「怎么联系」。 */
+.talent-summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 0;
+  padding: 10px 16px; margin-bottom: 16px;
+  background: #f7f9fc; border: 1px solid #e8edf5; border-radius: 8px;
+  font-size: 13px;
+}
+/* 各项之间用竖线分隔：之前只用 gap，6 项挤在一起看不出分界 */
+.talent-summary-item {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 20px; border-right: 1px solid #e3e8f0;
+}
+.talent-summary-item:last-child { border-right: 0; padding-right: 0; }
+.talent-summary-item:first-child { padding-left: 0; }
+.talent-summary-label { color: #8c8c8c; font-size: 12px; }
+.talent-summary-empty { color: #bfbfbf; }
+
+/* 基本信息分组：身份 / 求职意向 / 履历 */
+.info-group { margin-bottom: 14px; }
+.info-group-title {
+  font-size: 12px; color: #8c8c8c; margin-bottom: 6px;
+  padding-left: 8px; border-left: 2px solid #d9e2ef;
+}
 /* ===== 移动端适配（2026-09-29）：≤768px 侧栏变抽屉 ===== */
 /* 遮罩默认不渲染，仅手机端菜单打开时显示；桌面下永久 display:none（防 resize 残留态） */
 .app-nav-mask { display: none; position: fixed; inset: 0; z-index: 999; background: rgba(0, 0, 0, 0.45); }

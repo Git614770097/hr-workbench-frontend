@@ -26,10 +26,16 @@ export interface AiResultCardProps {
   loadingTip?: string;
   /** 进入时自动拉取历史结果（如上次已生成的文案），返回 null 表示没有；不消耗配额 */
   fetchOnMount?: () => Promise<Record<string, unknown> | null>;
+  /**
+   * 去掉外框与内边距，只留「标题 + 操作按钮 + 内容」。
+   * 用于把本组件塞进别的卡片/Tab 内部（如详情页「简历与 AI 解读」Tab），
+   * 避免出现卡片套卡片。
+   */
+  bare?: boolean;
 }
 
 export default function AiResultCard({
-  title, onGenerate, render, toText, hint, extra, style, loadingTip, fetchOnMount,
+  title, onGenerate, render, toText, hint, extra, style, loadingTip, fetchOnMount, bare,
 }: AiResultCardProps) {
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
@@ -96,7 +102,9 @@ export default function AiResultCard({
   return (
     <Card
       size="small"
-      style={style}
+      style={bare ? { ...style, border: 0, background: "transparent" } : style}
+      variant={bare ? "borderless" : "outlined"}
+      styles={bare ? { body: { padding: 0 } } : undefined}
       title={
         <Space size={6}>
           <RobotOutlined />
