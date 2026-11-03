@@ -28,6 +28,11 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
   const [saving, setSaving] = useState(false);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const isEdit = !!talentId;
+  // 出生年月改动时实时算年龄：让用户看到「选完年月就知道几岁」，不用自己减
+  const birthWatch = Form.useWatch("birth_date", form) as ReturnType<typeof dayjs> | undefined;
+  const ageHint = birthWatch
+    ? `当前 ${dayjs().diff(birthWatch, "year")} 岁 · 自动计算`
+    : "年龄按出生年月自动算";
 
   useEffect(() => {
     if (!open) return;
@@ -39,6 +44,8 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
           form.setFieldsValue({
             ...t,
             skills: t.skills.join(", "),
+            // 出生日期回填成 dayjs 对象（DatePicker 只认 dayjs，直接塞字符串会显示空白）
+            birth_date: t.birth_date ? dayjs(t.birth_date) : null,
             hire_date: t.hire_date ? dayjs(t.hire_date) : null,
             next_follow_at: t.next_follow_at ? dayjs(t.next_follow_at) : null,
           });
@@ -80,6 +87,13 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
         ...values,
         years_experience: values.years_experience ?? undefined,
         skills: values.skills ? values.skills.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
+        // 出生年月只选到月，统一存当月 1 号 + precision=month：
+        // 这样 UI 不会把「1996-03-01」当成用户确认过的具体生日。
+        // 三态语义：有值→写入；显式清空（null）→清掉；没动过（undefined）→不传，保持原值。
+        birth_date: values.birth_date ? values.birth_date.format("YYYY-MM-01") : (values.birth_date === null ? null : undefined),
+        birth_date_precision: values.birth_date ? "month" : (values.birth_date === null ? null : undefined),
+        // 清空出生年月时把年龄一起清掉，否则会留下一个没有来源的孤儿年龄
+        age: values.birth_date === null ? null : undefined,
         hire_date: values.hire_date ? values.hire_date.format("YYYY-MM-DD") : (values.hire_date === null ? null : undefined),
         next_follow_at: values.next_follow_at
           ? values.next_follow_at.format("YYYY-MM-DD HH:mm")
@@ -136,8 +150,8 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
             <Form.Item name="email" label="邮箱" rules={[{ type: "email", message: "邮箱格式不正确" }]}>
               <Input placeholder="请输入邮箱" />
             </Form.Item>
-            <Form.Item name="age" label="年龄">
-              <InputNumber style={{ width: "100%" }} min={16} max={80} placeholder="请输入年龄" />
+            <Form.Item name="birth_date" label="出生年月" extra={ageHint}>
+              <DatePicker style={{ width: "100%" }} picker="month" placeholder="选择出生年月" allowClear />
             </Form.Item>
             <Form.Item name="gender" label="性别">
               <Select allowClear placeholder="请选择性别" options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} />

@@ -110,6 +110,18 @@ export interface Role {
   owner_id?: string | null;
 }
 
+/** 人才附件（作品集 / 证书 / 其他材料）。与简历主文件（talent.resume_url）分开存 */
+export interface TalentFile {
+  id: string;
+  /** portfolio=作品集 / certificate=证书 / other=其他 */
+  kind: "portfolio" | "certificate" | "other";
+  name: string;
+  /** 字节数，前端用于展示「2.3MB」并拦截超过 10MB 的文件 */
+  size: number;
+  mime: string | null;
+  created_at: string;
+}
+
 export interface Talent {
   id: string;
   owner_id: string;
@@ -140,6 +152,9 @@ export interface Talent {
   source: string | null;     // 来源渠道
   entry_type?: string | null; // 录入方式: manual=手动录入 / import=简历导入 / sync=平台同步
   birth_date: string | null;
+  /** 出生日期精度：exact=精确到日 / month=只到月 / year=只到年 / estimated=据年龄反推。
+   *  age 现在是派生值（由 birth_date 实时算），这个字段决定 UI 该不该加「推算」提示。 */
+  birth_date_precision?: string | null;
   contract_end: string | null;
   probation_end: string | null;
   resignation_date: string | null;

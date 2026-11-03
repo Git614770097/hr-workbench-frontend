@@ -1,5 +1,5 @@
 import message from "antd/es/message";
-import type { User, UserRow, Talent, TalentDetailData, DocTemplate, TemplateVersionMeta, TemplateVersion, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuMyApp, FeishuWebhook, FeishuNotifyMode, AuditLogRow, AuditLogsResponse } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, TalentFile, DocTemplate, TemplateVersionMeta, TemplateVersion, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuMyApp, FeishuWebhook, FeishuNotifyMode, AuditLogRow, AuditLogsResponse } from "./types";
 
 const BASE = "/api";
 
@@ -438,6 +438,43 @@ export const api = {
 
   deleteResume: (talentId: string) =>
     request(`/talents/${talentId}/resume`, { method: "DELETE" }),
+
+  // ---- 人才附件（作品集 / 证书 / 其他）----
+  // 与简历分开：简历只有一份（resume_url），附件可以多份。
+  getTalentFiles: (talentId: string) =>
+    request<{ items: TalentFile[] }>(`/talents/${talentId}/files`),
+
+  uploadTalentFile: (talentId: string, file: File, kind = "other") => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("kind", kind);
+    const ctrl = new AbortController();
+    // 附件最大 10MB，弱网上传要留足时间；30s 对手机热点会偏紧
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+    return fetch(`${BASE}/talents/${talentId}/files`, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+      signal: ctrl.signal,
+    }).then(async (res) => {
+      clearTimeout(timer);
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({ error: "上传失败" }))) as { error?: string };
+        throw new Error(err.error || "上传失败");
+      }
+      return res.json() as Promise<TalentFile>;
+    }, (e) => {
+      clearTimeout(timer);
+      throw e;
+    });
+  },
+
+  deleteTalentFile: (talentId: string, fileId: string) =>
+    request(`/talents/${talentId}/files/${fileId}`, { method: "DELETE" }),
+
+  // 附件地址：同源请求会自动带 httpOnly cookie，不需要也不能拼 token
+  getTalentFileUrl: (talentId: string, fileId: string, download = false) =>
+    `${BASE}/talents/${talentId}/files/${fileId}${download ? "?download=1" : ""}`,
 
   // 合规到期扫描：合同 / 试用期 30 天内到期（含已过期未更新）
   getTalentCompliance: () =>

@@ -2,7 +2,7 @@ import { api } from "../api";
 import {
   extractName, extractPhone, extractEmail, extractAge, extractGender,
   extractTitle, extractCompany, extractSchool, extractMajor, extractCity, extractSkills,
-  extractYearsExperience, normalizeEducation,
+  extractYearsExperience, normalizeEducation, extractBirthInfo, ageFromBirthDate, type BirthPrecision,
 } from "./resumeParser";
 import { sanitizeField, sanitizeSkills } from "./fieldSanity";
 
@@ -31,6 +31,10 @@ export interface ParsedTalent {
   phone: string;
   email: string;
   age: number | null;
+  /** 出生日期 YYYY-MM-DD：年龄的唯一事实源。有值时 age 只是它的派生结果 */
+  birth_date: string;
+  /** 出生日期精度：exact/month/year；空串表示没有出生日期 */
+  birth_date_precision: BirthPrecision | "";
   gender: string;
   education: string;
   school: string;
@@ -59,12 +63,17 @@ export function extractTalentLocal(
   fileName: string,
   file: File | null
 ): ParsedTalent {
+  // 出生日期是年龄的事实源：抽到了就由它算年龄，抽不到才退回「直接写年龄」的快照。
+  // 这条顺序不能反——简历里常同时出现「28岁」和「1996年3月」，后者才是明年还准的那个。
+  const birth = extractBirthInfo(text);
   return {
     key,
     name: sanitizeField("name", extractName(text)),
     phone: extractPhone(text),
     email: extractEmail(text),
-    age: extractAge(text),
+    age: birth ? ageFromBirthDate(birth.date) : extractAge(text),
+    birth_date: birth?.date ?? "",
+    birth_date_precision: birth?.precision ?? "",
     gender: extractGender(text),
     education: normalizeEducation(text),
     school: sanitizeField("school", extractSchool(text)),
@@ -87,12 +96,16 @@ export function extractTalentWithAI(
   local: ParsedTalent
 ): ParsedTalent {
   const skills = ai.skills?.length ? ai.skills.join(", ") : local.skills;
+  // 出生日期优先：本地规则抽到了生日，它就是事实源，AI 给的 age 不再采信。
+  // 否则会出现「birth_date=1996-03 但 age=28」这种自相矛盾的记录——读取时
+  // 后端会用 birth_date 重算并覆盖 age，于是核对页显示 28、入库后变成 30。
+  const hasBirth = !!local.birth_date;
   return {
     ...local,
     name: ai.name || local.name,
     phone: ai.phone || local.phone,
     email: ai.email || local.email,
-    age: ai.age ?? local.age,
+    age: hasBirth ? local.age : (ai.age ?? local.age),
     gender: ai.gender || local.gender,
     education: ai.education || local.education,
     school: ai.school || local.school,
@@ -134,6 +147,8 @@ export function recordToData(r: ParsedTalent) {
     phone: r.phone || undefined,
     email: r.email || undefined,
     age: r.age ?? undefined,
+    birth_date: r.birth_date || undefined,
+    birth_date_precision: r.birth_date_precision || undefined,
     gender: r.gender || undefined,
     education: r.education || undefined,
     school: r.school || undefined,

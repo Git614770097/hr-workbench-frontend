@@ -390,6 +390,13 @@ function calcAge(year: number, month: number, day: number, precise: boolean): nu
   return age >= 16 && age <= 80 ? age : null;
 }
 
+/** 出生日期（YYYY-MM-DD）→ 今天的周岁。用于把生日换算成核对弹窗里显示的年龄。 */
+export function ageFromBirthDate(date: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((date || "").trim());
+  if (!m) return null;
+  return calcAge(parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10), true);
+}
+
 export function extractAge(text: string): number | null {
   const t = normalizeText(text);
   // 直接写年龄："年龄:28" / "28岁" / "Age: 28" / "28 years old"
@@ -423,6 +430,50 @@ export function extractBirthDate(text: string): string {
   if (!parsed) return "";
   if (parsed.month < 1 || parsed.month > 12 || parsed.day < 1 || parsed.day > 31) return "";
   return `${parsed.year}-${pad2(parsed.month)}-${pad2(parsed.day)}`;
+}
+
+/** 出生日期精度：决定 UI 能不能把年龄说成「精确」 */
+export type BirthPrecision = "exact" | "month" | "year";
+
+/**
+ * 出生日期 + 精度（年龄的唯一事实源）。
+ *
+ * 为什么需要精度：简历里「1996 年 3 月」和「1996-03-15」都能算出年龄，但前者
+ * 只有月份可靠，后者精确到日。如果不区分，UI 会把「按 1 号算」的结果当成真实
+ * 生日展示，跨年时用户会发现年龄莫名其妙跳了一岁却找不到原因。
+ *
+ * 与 extractBirthDate 的关系：那个函数只返回日期字符串（老调用方在用），
+ * 这个函数额外返回精度，两者共用 findBirthToken / parseFlexibleDate。
+ */
+export function extractBirthInfo(
+  text: string
+): { date: string; precision: BirthPrecision } | null {
+  const t = normalizeText(text);
+
+  const found = findBirthToken(t);
+  if (found) {
+    const parsed = parseFlexibleDate(found.token);
+    if (parsed && parsed.month >= 1 && parsed.month <= 12 && parsed.day >= 1 && parsed.day <= 31) {
+      // 原始 token 里到底写没写「日」——不能看 parsed.day，因为 parseFlexibleDate
+      // 在缺日时会默认填 1，光看解析结果分不出「写了 1 号」和「没写」。
+      const wroteDay =
+        /日/.test(found.token) ||
+        /\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4}/.test(found.token) ||
+        /\d{1,2}\s+[A-Za-z]{3,9}[.\- ]?\d{4}/.test(found.token) ||
+        /[A-Za-z]{3,9}[.\- ]?\d{1,2},?[.\- ]?\d{4}/.test(found.token);
+      // precise=false 表示月日顺序存疑（如 05/06/1990），此时只敢保证到月
+      const precision: BirthPrecision = wroteDay && parsed.precise ? "exact" : "month";
+      return { date: `${parsed.year}-${pad2(parsed.month)}-${pad2(parsed.day)}`, precision };
+    }
+  }
+
+  // 兜底：只写了出生年份（「1996 年生」「出生年份：1996」）
+  const ym = t.match(/(?:出生年份|出生年|生于)\s*[:：]?\s*((?:19|20)\d{2})/);
+  if (ym) {
+    const y = parseInt(ym[1], 10);
+    if (y >= 1900 && y <= 2025) return { date: `${y}-01-01`, precision: "year" };
+  }
+  return null;
 }
 
 export function extractGender(text: string): string {

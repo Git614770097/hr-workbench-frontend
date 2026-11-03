@@ -47,6 +47,10 @@ function talentToParsed(t: Talent, key: string): ParsedTalent {
     phone: t.phone || "",
     email: t.email || "",
     age: t.age,
+    // 出生日期跟着人才库记录一起带过来：比对页只是展示用，但字段缺了会让
+    // 「年龄是不是推算的」这个提示在比选界面丢失，口径就和人才详情页对不上
+    birth_date: t.birth_date || "",
+    birth_date_precision: (t.birth_date_precision as ParsedTalent["birth_date_precision"]) || "",
     gender: t.gender || "",
     education: t.education || "",
     school: t.school || "",

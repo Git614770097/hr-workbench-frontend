@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import {
-  Modal, Button, Input, InputNumber, Select, Typography, Spin, Alert, Tag, Tooltip,
+  Modal, Button, Input, InputNumber, Select, Typography, Spin, Alert, Tag, Tooltip, DatePicker,
 } from "antd";
+import dayjs from "dayjs";
 import { STATUS_LABELS } from "../types";
 import { useDict } from "../dict";
 import type { ParsedTalent } from "../utils/resumeImport";
@@ -176,8 +177,28 @@ export default function ImportPreviewModal({
               <label style={{ fontSize: 13, color: "#5b6472" }}>邮箱</label>
               <Input size="small" value={record.email} placeholder="请输入邮箱" onChange={(e) => onChange("email", e.target.value)} />
 
-              <label style={{ fontSize: 13, color: "#5b6472" }}>年龄</label>
-              <InputNumber size="small" min={16} max={80} value={record.age ?? undefined} placeholder="年龄" style={{ width: "100%" }} onChange={(v) => onChange("age", v ?? null)} />
+              <label style={{ fontSize: 13, color: "#5b6472" }}>
+                出生年月
+                {record.birth_date ? (
+                  <span style={{ color: "#94a3b8", marginLeft: 4 }}>
+                    （{dayjs().diff(dayjs(record.birth_date), "year")} 岁）
+                  </span>
+                ) : null}
+              </label>
+              <DatePicker
+                size="small"
+                picker="month"
+                value={record.birth_date ? dayjs(record.birth_date) : undefined}
+                placeholder={record.age ? `原简历写 ${record.age} 岁，建议补年月` : "出生年月"}
+                style={{ width: "100%" }}
+                onChange={(v) => {
+                  // 三个字段一起改：生日是事实源，年龄只是它的派生值。
+                  // 选到月就存当月 1 号 + month 精度，后端读取时按生日实时算年龄。
+                  onChange("birth_date", v ? v.format("YYYY-MM-01") : "");
+                  onChange("birth_date_precision", v ? "month" : "");
+                  onChange("age", v ? dayjs().diff(v, "year") : null);
+                }}
+              />
 
               <label style={{ fontSize: 13, color: "#5b6472" }}>性别</label>
               <Select size="small" value={record.gender || undefined} allowClear placeholder="性别" style={{ width: "100%" }} onChange={(v) => onChange("gender", v || "")} options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} />

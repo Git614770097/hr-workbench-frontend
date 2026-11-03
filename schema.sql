@@ -79,7 +79,8 @@ CREATE TABLE IF NOT EXISTS talents (
   notes TEXT,
   stage TEXT DEFAULT 'new', -- 全局招聘阶段: new/screening/interview/offer/hired/archived
   source TEXT,              -- 来源渠道: boss/liepin/51job/zhaopin/referral/campus/...
-  birth_date TEXT,          -- 出生日期（生日提醒）
+  birth_date TEXT,          -- 出生日期（年龄的唯一事实源，读取时实时推算 age）
+  birth_date_precision TEXT, -- 出生日期精度: exact=精确到日 / month=只到月 / year=只到年 / estimated=据年龄反推
   contract_end TEXT,        -- 合同到期日
   probation_end TEXT,       -- 试用期结束日
   resignation_date TEXT,    -- 预计离职日期（离职倒计时）
@@ -90,6 +91,21 @@ CREATE TABLE IF NOT EXISTS talents (
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
+
+-- 人才附件（作品集 / 证书 / 其他材料）
+-- 为什么不复用 talents.resume_url：那个字段是「简历主文件」，只有一份，
+-- 上传新简历会先删旧的。作品集可能多份，塞进去会互相覆盖。
+CREATE TABLE IF NOT EXISTS talent_files (
+  id TEXT PRIMARY KEY,
+  talent_id TEXT NOT NULL,
+  kind TEXT DEFAULT 'other',   -- portfolio=作品集 / certificate=证书 / other=其他
+  name TEXT NOT NULL,          -- 原始文件名（展示用）
+  size INTEGER,                -- 字节数
+  mime TEXT,                   -- MIME 类型（下载时回填 Content-Type）
+  storage_key TEXT NOT NULL,   -- KV key: file:{talent_id}:{uuid}.{ext}
+  created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_talent_files_talent ON talent_files(talent_id);
 
 -- 岗位表
 CREATE TABLE IF NOT EXISTS jobs (

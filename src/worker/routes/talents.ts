@@ -16,6 +16,24 @@ import { shiftToWorkday } from "../utils/workday";
 const talents = new Hono<{ Bindings: Env }>();
 
 /**
+ * 年龄的 SQL 表达式：由 birth_date 实时算周岁。
+ *
+ * 为什么不用 `(julianday('now') - julianday(birth_date)) / 365.25`：
+ * 那个近似公式在闰年边界会差一天，导致「今天刚满 30 岁」的人显示 29。
+ * 用 YYYY.MMDD 相减再取整是精确的：2026.1103 - 1996.0315 = 30.0788 → 30；
+ * 生日还没到的（1996.1220）= 29.9883 → 29，正确。
+ *
+ * birth_date 为空或格式非法时 strftime 返回 NULL，整个表达式为 NULL。
+ * 所以筛选/排序一律包一层 COALESCE 回退到存量 age 列——老数据没有生日，
+ * 只有「录入时那一刻的年龄快照」，不兜底就会被所有年龄筛选漏掉。
+ */
+const AGE_SQL = (alias: string) =>
+  `CAST(strftime('%Y.%m%d','now') - strftime('%Y.%m%d', ${alias}.birth_date) AS INTEGER)`;
+
+/** 年龄取值：有生日用实时值，没有才用快照。筛选/排序/返回统一用这个口径 */
+const AGE_COALESCE = (alias: string) => `COALESCE(${AGE_SQL(alias)}, ${alias}.age)`;
+
+/**
  * 删除一个人才及其全部关联数据（顺序敏感，一个 batch 完成）。
  *
  * 为什么单独一个函数：单删（DELETE /:id）和批量删（POST /batch/delete）原本各
@@ -27,7 +45,24 @@ const talents = new Hono<{ Bindings: Env }>();
  *          talents 被多张表引用，必须最后删。不依赖 ON DELETE CASCADE，
  *          这样即便某些行的 talent_job_id 为空也能安全清理。
  */
-async function deleteTalentCascade(db: D1Database, talentId: string): Promise<void> {
+async function deleteTalentCascade(db: D1Database, kv: KVNamespace, talentId: string): Promise<void> {
+  // KV 里的文件必须在这里清掉，不能只删表行：
+  // 孤儿对象既占空间，又让「已删除人才」的简历/作品集仍然躺在存储里——
+  // 对 HR 系统来说这是实打实的个人信息残留（个保法要求删除权落地）。
+  // 简历主文件（talents.resume_url）和附件（talent_files.storage_key）都要删。
+  const keys: string[] = [];
+  const talentRow = await db.prepare("SELECT resume_url FROM talents WHERE id = ?")
+    .bind(talentId).first<{ resume_url: string | null }>();
+  if (talentRow?.resume_url) keys.push(talentRow.resume_url);
+  const fileRows = await db.prepare("SELECT storage_key FROM talent_files WHERE talent_id = ?")
+    .bind(talentId).all<{ storage_key: string }>();
+  for (const f of fileRows.results || []) keys.push(f.storage_key);
+
+  for (const key of keys) {
+    // 单个对象删失败不阻断整体删除：宁可留一个孤儿对象，也不能让人才删不掉
+    try { await kv.delete(key); } catch { /* ignore */ }
+  }
+
   await db.batch([
     db.prepare("DELETE FROM approval_steps WHERE instance_id IN (SELECT id FROM approval_instances WHERE talent_id = ?)").bind(talentId),
     db.prepare("DELETE FROM interviews WHERE talent_id = ?").bind(talentId),
@@ -40,6 +75,7 @@ async function deleteTalentCascade(db: D1Database, talentId: string): Promise<vo
     db.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(talentId),
+    db.prepare("DELETE FROM talent_files WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM talents WHERE id = ?").bind(talentId),
   ]);
 }
@@ -266,15 +302,15 @@ talents.get("/", async (c) => {
   if (name) { conditions.push("t.name LIKE ?"); params.push(`%${name}%`); }
   if (phone) { conditions.push("t.phone LIKE ?"); params.push(`%${phone}%`); }
   if (email) { conditions.push("t.email LIKE ?"); params.push(`%${email}%`); }
-  if (age && !isNaN(parseInt(age, 10))) { conditions.push("t.age = ?"); params.push(parseInt(age, 10)); }
+  if (age && !isNaN(parseInt(age, 10))) { conditions.push(`${AGE_COALESCE("t")} = ?`); params.push(parseInt(age, 10)); }
   if (education) multiLike(education, "t.education");
   if (school) { conditions.push("t.school LIKE ?"); params.push(`%${school}%`); }
   if (major) { conditions.push("t.major LIKE ?"); params.push(`%${major}%`); }
   if (years && !isNaN(parseInt(years, 10))) { conditions.push("t.years_experience = ?"); params.push(parseInt(years, 10)); }
-  // 区间筛选：年龄 / 年限
+  // 区间筛选：年龄 / 年限（年龄走 birth_date 实时算，见 AGE_COALESCE）
   const ageLo = toIntOrNull(ageMin), ageHi = toIntOrNull(ageMax);
-  if (ageLo != null) { conditions.push("t.age >= ?"); params.push(ageLo); }
-  if (ageHi != null) { conditions.push("t.age <= ?"); params.push(ageHi); }
+  if (ageLo != null) { conditions.push(`${AGE_COALESCE("t")} >= ?`); params.push(ageLo); }
+  if (ageHi != null) { conditions.push(`${AGE_COALESCE("t")} <= ?`); params.push(ageHi); }
   const yearsLo = toIntOrNull(yearsMin), yearsHi = toIntOrNull(yearsMax);
   if (yearsLo != null) { conditions.push("t.years_experience >= ?"); params.push(yearsLo); }
   if (yearsHi != null) { conditions.push("t.years_experience <= ?"); params.push(yearsHi); }
@@ -313,9 +349,10 @@ talents.get("/", async (c) => {
   const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
   // 列表排序：白名单字段，避免 SQL 注入；order 仅接受 asc/desc
+  // age 排序必须走 AGE_COALESCE：t.age 是快照，跨年后按它排会把「今年刚长一岁」的人排错位
   const sortWhitelist: Record<string, string> = {
     name: "t.name",
-    age: "t.age",
+    age: AGE_COALESCE("t"),
     years_experience: "t.years_experience",
     created_at: "t.created_at",
     updated_at: "t.updated_at",
@@ -326,14 +363,16 @@ talents.get("/", async (c) => {
   const orderBy = sortWhitelist[sortParam || ""] ? `${sortWhitelist[sortParam || ""]} ${orderSql}` : "t.updated_at DESC";
 
   const countResult = await c.env.DB.prepare(`SELECT COUNT(*) as total FROM talents t ${where}`).bind(...params).first<{ total: number }>();
-  const rows = await c.env.DB.prepare(`SELECT t.*, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`).bind(...params, limit, offset).all();
+  const rows = await c.env.DB.prepare(`SELECT t.*, ${AGE_SQL("t")} AS age_calc, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`).bind(...params, limit, offset).all();
 
   const items = rows.results.map((r: any) => {
     // 列表不返回简历全文：单条最长 20000 字，20 条能把响应撑到几百 KB，
     // 而列表只需要知道「有没有简历」。全文由详情接口 GET /:id 返回。
-    const { resume_text, ...rest } = r;
+    const { resume_text, age_calc, ...rest } = r;
     return {
       ...rest,
+      // 年龄以 birth_date 实时算为准（age_calc），没生日才回退到存量快照
+      age: age_calc ?? r.age,
       has_resume: !!(resume_text && String(resume_text).trim()),
       skills: r.skills ? JSON.parse(r.skills) : [],
       tags: r.tags ? JSON.parse(r.tags) : [],
@@ -833,7 +872,7 @@ talents.post("/batch/delete", async (c) => {
       // 忽略 KV 清理异常
     }
     try {
-      await deleteTalentCascade(c.env.DB, id);
+      await deleteTalentCascade(c.env.DB, c.env.RESUMES, id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       return c.json({ error: `删除失败：${msg}（${id}）` }, 500);
@@ -905,7 +944,7 @@ talents.get("/:id", async (c) => {
   // 与列表/编辑同口径用 ownerScope（团队互见互编）：原来详情硬编码 owner_id=自己，
   // 导致「列表能看见同事的人才、点进详情 404、但编辑接口又能改」的断裂
   const os = ownerScope(session, "t.owner_id");
-  let sql = "SELECT t.*, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id WHERE t.id = ?" + os.sql;
+  let sql = `SELECT t.*, ${AGE_SQL("t")} AS age_calc, u.name as owner_name FROM talents t JOIN users u ON t.owner_id = u.id WHERE t.id = ?` + os.sql;
   const params: string[] = [id, ...os.params];
 
   const row = await c.env.DB.prepare(sql).bind(...params).first();
@@ -943,8 +982,12 @@ talents.get("/:id", async (c) => {
 
   // （沟通记录功能已下线：全库无写入入口，详情页时间线恒为空，详见 git 历史）
 
+  // 年龄以 birth_date 实时算为准（age_calc），没生日才回退到存量快照。
+  // age_calc 是查询辅助列，不能漏给前端——否则 Talent 类型里会多出一个没定义的字段。
+  const { age_calc, ...talentRow } = row as any;
   return c.json({
-    ...(row as any),
+    ...talentRow,
+    age: age_calc ?? talentRow.age,
     skills: (row as any).skills ? JSON.parse((row as any).skills) : [],
     tags: (row as any).tags ? JSON.parse((row as any).tags) : [],
     tasks,
@@ -964,8 +1007,8 @@ talents.post("/", async (c) => {
   const id = genId();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
   const tags = body.tags ? JSON.stringify(body.tags) : null;
-  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, major, current_company, current_title, years_experience, city, skills, tags, industry, expected_salary, expected_city, status, source, resume_url, resume_text, notes, birth_date, contract_end, probation_end, resignation_date, hire_date, next_follow_at, entry_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .bind(id, session.userId, name, cleanText(body.phone, 30), cleanText(body.email, 120), body.age ?? null, cleanText(body.gender, 10), cleanText(body.education, 30), cleanText(body.school, 80), cleanText(body.major, 60), cleanText(body.current_company, 80), cleanText(body.current_title, 60), body.years_experience || null, cleanText(body.city, 40), skills, tags, cleanText(body.industry, 40), cleanText(body.expected_salary, 40), cleanText(body.expected_city, 40), cleanText(body.status, 20) || "active", cleanText(body.source, 30), cleanText(body.resume_url, 500), cleanText(body.resume_text, 20000), cleanText(body.notes, 2000), dateOrNull(body.birth_date), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), dateOrNull(body.next_follow_at), normalizeEntryType(body.entry_type)).run();
+  await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, major, current_company, current_title, years_experience, city, skills, tags, industry, expected_salary, expected_city, status, source, resume_url, resume_text, notes, birth_date, birth_date_precision, contract_end, probation_end, resignation_date, hire_date, next_follow_at, entry_type) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(id, session.userId, name, cleanText(body.phone, 30), cleanText(body.email, 120), body.age ?? null, cleanText(body.gender, 10), cleanText(body.education, 30), cleanText(body.school, 80), cleanText(body.major, 60), cleanText(body.current_company, 80), cleanText(body.current_title, 60), body.years_experience || null, cleanText(body.city, 40), skills, tags, cleanText(body.industry, 40), cleanText(body.expected_salary, 40), cleanText(body.expected_city, 40), cleanText(body.status, 20) || "active", cleanText(body.source, 30), cleanText(body.resume_url, 500), cleanText(body.resume_text, 20000), cleanText(body.notes, 2000), dateOrNull(body.birth_date), cleanText(body.birth_date_precision, 20), dateOrNull(body.contract_end), dateOrNull(body.probation_end), dateOrNull(body.resignation_date), dateOrNull(body.hire_date), dateOrNull(body.next_follow_at), normalizeEntryType(body.entry_type)).run();
 
   return c.json({ id, ...body, name });
 });
@@ -984,10 +1027,16 @@ talents.put("/:id", async (c) => {
 
   const body = await c.req.json<any>();
   const skills = body.skills ? JSON.stringify(body.skills) : null;
-  // 日期字段动态拼 SET：传了才更新（含清空 ""→NULL），未传保持原值——COALESCE 无法区分这两种情况
-  const dateFields = ["birth_date", "contract_end", "probation_end", "resignation_date", "hire_date", "next_follow_at"] as const;
+  // 「传了才更新」的可空字段：传值则写入（"" 归一成 NULL 即清空），未传保持原值。
+  // 为什么单独拼 SET：COALESCE 分不清「没传这个字段」和「传了空值想清空」，
+  // 对这几个字段这两者语义完全不同（编辑时清空生日必须真的清掉）。
+  // birth_date_precision 必须跟着 birth_date 一起走，否则会出现「生日改了、
+  // 精度标记还是旧值」的错位，UI 上就会把精确日期标成「据年龄推算」。
+  // age 也在这里：它现在是 birth_date 的派生值，清空生日时要能一起清掉，
+  // 否则会留下一个没有来源的孤儿年龄（读取时 age_calc 为 NULL，回退到它）。
+  const dateFields = ["birth_date", "birth_date_precision", "age", "contract_end", "probation_end", "resignation_date", "hire_date", "next_follow_at"] as const;
   let dateSet = "";
-  const dateParams: (string | null)[] = [];
+  const dateParams: (string | number | null)[] = [];
   for (const f of dateFields) {
     if (body[f] !== undefined) {
       dateSet += `, ${f} = ?`;
@@ -997,12 +1046,12 @@ talents.put("/:id", async (c) => {
   // D1 的 .bind() 不接受 undefined，必须归一化为 null，否则编辑时任意空字段都会 500。
   // 标量字段统一走 undefined → null 转换（name 为 NOT NULL，前端编辑时必传，不会是 null）。
   const scalars: (string | number | null)[] = [
-    cleanText(body.name, 50), cleanText(body.phone, 30), cleanText(body.email, 120), body.age, cleanText(body.gender, 10), cleanText(body.education, 30),
+    cleanText(body.name, 50), cleanText(body.phone, 30), cleanText(body.email, 120), cleanText(body.gender, 10), cleanText(body.education, 30),
     cleanText(body.school, 80), cleanText(body.major, 60), cleanText(body.current_company, 80), cleanText(body.current_title, 60), body.years_experience,
     cleanText(body.city, 40), skills, body.tags ? JSON.stringify(body.tags) : null, cleanText(body.industry, 40), cleanText(body.expected_salary, 40), cleanText(body.expected_city, 40),
     cleanText(body.status, 20), cleanText(body.source, 30), cleanText(body.resume_url, 500), cleanText(body.resume_text, 20000), cleanText(body.notes, 2000),
   ].map((v) => (v === undefined ? null : v));
-  await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), age = COALESCE(?, age), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), major = COALESCE(?, major), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), tags = COALESCE(?, tags), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), source = COALESCE(?, source), resume_url = COALESCE(?, resume_url), resume_text = COALESCE(?, resume_text), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
+  await c.env.DB.prepare(`UPDATE talents SET name = COALESCE(?, name), phone = COALESCE(?, phone), email = COALESCE(?, email), gender = COALESCE(?, gender), education = COALESCE(?, education), school = COALESCE(?, school), major = COALESCE(?, major), current_company = COALESCE(?, current_company), current_title = COALESCE(?, current_title), years_experience = COALESCE(?, years_experience), city = COALESCE(?, city), skills = COALESCE(?, skills), tags = COALESCE(?, tags), industry = COALESCE(?, industry), expected_salary = COALESCE(?, expected_salary), expected_city = COALESCE(?, expected_city), status = COALESCE(?, status), source = COALESCE(?, source), resume_url = COALESCE(?, resume_url), resume_text = COALESCE(?, resume_text), notes = COALESCE(?, notes)${dateSet}, updated_at = datetime('now') WHERE id = ?`)
     .bind(...scalars, ...dateParams, id).run();
 
   // 合同/试用期日期有变更（含清空）→ 立即同步到期提醒待办
@@ -1053,7 +1102,7 @@ talents.delete("/:id", async (c) => {
   // approval_instances），不依赖 ON DELETE CASCADE，
   // 即使这些行的 talent_job_id 为空也能安全删除。
   try {
-    await deleteTalentCascade(c.env.DB, id);
+    await deleteTalentCascade(c.env.DB, c.env.RESUMES, id);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return c.json({ error: `删除失败：${msg}` }, 500);
@@ -1159,6 +1208,150 @@ talents.get("/:id/resume", async (c) => {
   headers.set("Content-Type", meta.type || "application/octet-stream");
   headers.set("Content-Disposition", `${isDownload ? "attachment" : "inline"}; filename="${encodeURIComponent(filename)}"`);
   return new Response(bytes, { headers });
+});
+
+// ---- 人才附件（作品集 / 证书 / 其他）----
+// 与简历主文件分开：简历只有一份（resume_url 单字段），附件可以多份。
+// 存储复用 RESUMES 这个 KV 命名空间，key 前缀用 file: 区分。
+
+/** 附件单文件上限。KV 单值上限 25MB，这里收到 10MB——
+ *  超过 10MB 的多半是视频或安装包，那类东西塞 KV 既慢又贵，该换 R2 而不是放宽限制。 */
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+
+talents.get("/:id/files", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const talentId = c.req.param("id");
+
+  let checkSql = "SELECT id FROM talents WHERE id = ?";
+  const checkParams: string[] = [talentId];
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
+  const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first();
+  if (!existing) return c.json({ error: "人才不存在" }, 404);
+
+  const rows = await c.env.DB.prepare(
+    "SELECT id, kind, name, size, mime, created_at FROM talent_files WHERE talent_id = ? ORDER BY created_at DESC"
+  ).bind(talentId).all();
+  return c.json({ items: rows.results });
+});
+
+talents.post("/:id/files", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const talentId = c.req.param("id");
+
+  let checkSql = "SELECT id FROM talents WHERE id = ?";
+  const checkParams: string[] = [talentId];
+  { const sc = ownerScope(session); checkSql += sc.sql; checkParams.push(...sc.params); }
+  const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first();
+  if (!existing) return c.json({ error: "人才不存在" }, 404);
+
+  const formData = await c.req.formData();
+  const file = formData.get("file") as File | null;
+  if (!file || !file.size) return c.json({ error: "缺少文件" }, 400);
+  if (file.size > MAX_FILE_BYTES) {
+    return c.json({ error: `文件过大：单个附件最大 10MB，当前 ${(file.size / 1024 / 1024).toFixed(1)}MB` }, 400);
+  }
+
+  const kindRaw = String(formData.get("kind") || "other");
+  const kind = ["portfolio", "certificate", "other"].includes(kindRaw) ? kindRaw : "other";
+  const ext = file.name.split(".").pop()?.toLowerCase() || "";
+  const storageKey = `file:${talentId}:${crypto.randomUUID()}${ext ? "." + ext : ""}`;
+
+  const buf = await file.arrayBuffer();
+  await c.env.RESUMES.put(storageKey, JSON.stringify({
+    data: arrayBufferToBase64(buf),
+    name: file.name,
+    type: file.type || "application/octet-stream",
+  }));
+
+  const id = genId();
+  await c.env.DB.prepare(
+    "INSERT INTO talent_files (id, talent_id, kind, name, size, mime, storage_key) VALUES (?,?,?,?,?,?,?)"
+  ).bind(
+    id, talentId, kind, cleanText(file.name, 200) || "未命名附件", file.size, cleanText(file.type, 100), storageKey
+  ).run();
+
+  await writeAudit(c.env, session, {
+    action: "create",
+    targetType: "talent_file",
+    targetId: id,
+    targetName: file.name,
+    detail: { talent_id: talentId, kind, size: file.size },
+  });
+
+  return c.json({ id, kind, name: file.name, size: file.size });
+});
+
+talents.get("/:id/files/:fileId", async (c) => {
+  // 与简历下载同口径：只认 cookie / Authorization，不接受 URL 里的凭据
+  const token = getCookie(c, "token") || c.req.header("Authorization")?.replace("Bearer ", "");
+  if (!token) return c.json({ error: "未登录" }, 401);
+  const sessionStr = await c.env.SESSIONS.get(token);
+  if (!sessionStr) return c.json({ error: "未登录" }, 401);
+  const session = JSON.parse(sessionStr);
+
+  const talentId = c.req.param("id");
+  const fileId = c.req.param("fileId");
+
+  let sql = "SELECT f.id, f.name, f.mime, f.storage_key FROM talent_files f JOIN talents t ON f.talent_id = t.id WHERE f.id = ? AND f.talent_id = ?";
+  const params: string[] = [fileId, talentId];
+  { const sc = ownerScope(session, "t.owner_id"); sql += sc.sql; params.push(...sc.params); }
+  const row = await c.env.DB.prepare(sql).bind(...params).first<{ id: string; name: string; mime: string | null; storage_key: string }>();
+  if (!row) return c.json({ error: "附件不存在" }, 404);
+
+  const stored = await c.env.RESUMES.get(row.storage_key);
+  if (!stored) return c.json({ error: "附件文件已丢失" }, 404);
+  const meta = JSON.parse(stored);
+  const bytes = base64ToArrayBuffer(meta.data);
+
+  const isDownload = c.req.query("download") === "1";
+  await writeAudit(c.env, session, {
+    action: isDownload ? "export" : "view",
+    targetType: "talent_file",
+    targetId: row.id,
+    targetName: row.name,
+    detail: { talent_id: talentId, download: isDownload },
+  });
+
+  const mime = meta.type || row.mime || "application/octet-stream";
+  // 只有 PDF 和图片允许 inline：附件是用户上传的任意文件，
+  // 让 html/svg 在同源下 inline 渲染等于主动开一个 XSS 入口。
+  const inlineSafe = /^(application\/pdf|image\/(png|jpeg|gif|webp))$/i.test(mime);
+  const headers = new Headers();
+  headers.set("Content-Type", mime);
+  headers.set(
+    "Content-Disposition",
+    `${inlineSafe && !isDownload ? "inline" : "attachment"}; filename="${encodeURIComponent(meta.name || row.name || "file")}"`
+  );
+  return new Response(bytes, { headers });
+});
+
+talents.delete("/:id/files/:fileId", async (c) => {
+  const session = await getSession(c);
+  if (!session) return c.json({ error: "未登录" }, 401);
+  const talentId = c.req.param("id");
+  const fileId = c.req.param("fileId");
+
+  let sql = "SELECT f.id, f.name, f.storage_key FROM talent_files f JOIN talents t ON f.talent_id = t.id WHERE f.id = ? AND f.talent_id = ?";
+  const params: string[] = [fileId, talentId];
+  { const sc = ownerScope(session, "t.owner_id"); sql += sc.sql; params.push(...sc.params); }
+  const row = await c.env.DB.prepare(sql).bind(...params).first<{ id: string; name: string; storage_key: string }>();
+  if (!row) return c.json({ error: "附件不存在" }, 404);
+
+  // 先删 KV 再删行：反过来的话，一旦 KV 删除失败就再也找不到这个 key（行没了），
+  // 变成一个永远占空间的孤儿对象。
+  await c.env.RESUMES.delete(row.storage_key);
+  await c.env.DB.prepare("DELETE FROM talent_files WHERE id = ?").bind(row.id).run();
+
+  await writeAudit(c.env, session, {
+    action: "delete",
+    targetType: "talent_file",
+    targetId: row.id,
+    targetName: row.name,
+    detail: { talent_id: talentId },
+  });
+  return c.json({ ok: true });
 });
 
 // ---- 批量导入 ----

@@ -1,16 +1,17 @@
 import { useState, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
-  Card, Descriptions, Tag, Button, Space, Typography, Empty, Spin, Tooltip,
+  Card, Descriptions, Tag, Button, Space, Typography, Empty, Spin, Tooltip, Select,
   message, Popconfirm, Upload, Checkbox, Timeline,
 } from "antd";
 import {
   EditOutlined, DeleteOutlined, ArrowLeftOutlined, FilePdfOutlined, UploadOutlined,
   CopyOutlined, CalendarOutlined, RobotOutlined, SolutionOutlined,
+  FileImageOutlined, FileOutlined,
 } from "@ant-design/icons";
 import { api } from "../api";
 import { useAsyncData } from "../hooks/useAsyncData";
-import type { Task, TalentDetailData, TalentStageLog, User, AiResumeInsight } from "../types";
+import type { Task, TalentDetailData, TalentStageLog, User, AiResumeInsight, TalentFile } from "../types";
 import { STATUS_LABELS, STATUS_COLORS, STAGE_META, PRIORITY_LABELS, PRIORITY_COLORS } from "../types";
 import TalentFormModal from "../components/TalentFormModal";
 import ResumePreviewModal from "../components/ResumePreviewModal";
@@ -23,6 +24,28 @@ import { parseResumeFile } from "../utils/resumeImport";
 /** 后端 datetime('now') 是 UTC 且无时区后缀，解析时补 T+Z（全站统一做法） */
 function fmtUtc(s: string): Date {
   return new Date(s.includes("T") || s.includes("Z") ? s : s.replace(" ", "T") + "Z");
+}
+
+/** 附件类型的中文名 */
+const FILE_KIND_LABELS: Record<string, string> = {
+  portfolio: "作品集",
+  certificate: "证书",
+  other: "其他",
+};
+
+/** 字节数 → 人读的大小。附件上限 10MB，所以不用处理 GB。 */
+function fmtFileSize(n: number | null): string {
+  const size = n || 0;
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** 附件图标按 MIME 分色：pdf 红、图片绿、其余蓝——比一律用同一个图标更容易扫 */
+function fileIcon(mime: string | null) {
+  if (mime === "application/pdf") return <FilePdfOutlined style={{ color: "#ff4d4f", fontSize: 18 }} />;
+  if ((mime || "").startsWith("image/")) return <FileImageOutlined style={{ color: "#16a34a", fontSize: 18 }} />;
+  return <FileOutlined style={{ color: "#2563eb", fontSize: 18 }} />;
 }
 
 function localYmd(): string {
@@ -75,6 +98,9 @@ export default function TalentDetail() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // 附件上传：kind 由用户先选（作品集/证书/其他），默认「其他」
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadKind, setUploadKind] = useState<"portfolio" | "certificate" | "other">("other");
   const [outreachOpen, setOutreachOpen] = useState(false);
 
   const currentUser: User | null = (() => {
@@ -149,6 +175,45 @@ export default function TalentDetail() {
     }
   };
 
+  // ---- 附件（作品集 / 证书 / 其他）：与简历主文件分开，可多份 ----
+  const { data: filesData, reload: reloadFiles } = useAsyncData(
+    () => api.getTalentFiles(id!),
+    [id],
+    { enabled: !!id, keepOnError: true }
+  );
+  const files = filesData?.items || [];
+
+  const handleUploadFile = async (file: File) => {
+    if (!talent) return false;
+    // 前端先拦一道：10MB 是后端硬限制，与其等上传完再报错，不如本地就挡住。
+    // 弱网下传一个 30MB 的文件要几分钟，最后才告诉用户「太大」是不可接受的。
+    if (file.size > 10 * 1024 * 1024) {
+      message.error(`「${file.name}」有 ${(file.size / 1024 / 1024).toFixed(1)}MB，单个附件最大 10MB`);
+      return false;
+    }
+    setUploadingFile(true);
+    try {
+      await api.uploadTalentFile(talent.id, file, uploadKind);
+      message.success("附件已上传");
+      await reloadFiles();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+    setUploadingFile(false);
+    return false;
+  };
+
+  const handleDeleteFile = async (fileId: string, name: string) => {
+    if (!talent) return;
+    try {
+      await api.deleteTalentFile(talent.id, fileId);
+      message.success(`已删除「${name}」`);
+      await reloadFiles();
+    } catch (err) {
+      message.error((err as Error).message);
+    }
+  };
+
   if (loading) return <div style={{ textAlign: "center", padding: "3rem" }}><Spin size="large" /></div>;
   if (!talent) return <Empty description={"人才不存在"} />;
 
@@ -194,6 +259,21 @@ export default function TalentDetail() {
           <Card title="基本信息" style={{ marginBottom: 16 }}>
             <Descriptions column={2} size="small">
               <Descriptions.Item label="年龄">{talent.age != null ? `${talent.age}岁` : "—"}</Descriptions.Item>
+              <Descriptions.Item label="出生年月">
+                {talent.birth_date ? (
+                  <Space size={6}>
+                    {/* 精度决定显示到月还是年：只写了年份的不能假装知道月份 */}
+                    {talent.birth_date_precision === "exact" || talent.birth_date_precision === "month"
+                      ? talent.birth_date.slice(0, 7)
+                      : talent.birth_date.slice(0, 4)}
+                    {talent.birth_date_precision === "estimated" && (
+                      <Tooltip title="按录入时的年龄反推的出生年份，误差最多 1 岁。补上实际出生年月后会自动精确，年龄也会跟着实时算">
+                        <Tag color="orange" style={{ marginInlineEnd: 0 }}>推算</Tag>
+                      </Tooltip>
+                    )}
+                  </Space>
+                ) : "—"}
+              </Descriptions.Item>
               <Descriptions.Item label="性别">{talent.gender || "—"}</Descriptions.Item>
               <Descriptions.Item label="学历">{talent.education || "—"}</Descriptions.Item>
               <Descriptions.Item label="毕业院校">{talent.school || "—"}</Descriptions.Item>
@@ -309,6 +389,69 @@ export default function TalentDetail() {
               </div>
             ) : (
               <Empty description="暂无简历文件，请上传" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            )}
+          </Card>
+
+          {/* 附件：作品集 / 证书 / 其他材料。与上面的「简历文件」分开是刻意的——
+              简历只有一份（resume_url 单字段，传新的会删旧的），附件可以多份。
+              合在一张卡里会让人误以为「上传附件会覆盖简历」。 */}
+          <Card
+            title={`附件${files.length > 0 ? `（${files.length}）` : ""}`}
+            style={{ marginBottom: 16 }}
+            extra={
+              <Space size={8}>
+                <Select
+                  size="small"
+                  value={uploadKind}
+                  onChange={setUploadKind}
+                  style={{ width: 84 }}
+                  options={[
+                    { label: "作品集", value: "portfolio" },
+                    { label: "证书", value: "certificate" },
+                    { label: "其他", value: "other" },
+                  ]}
+                />
+                <Upload showUploadList={false} beforeUpload={handleUploadFile} disabled={uploadingFile}>
+                  <Button size="small" icon={<UploadOutlined />} loading={uploadingFile}>上传附件</Button>
+                </Upload>
+              </Space>
+            }
+          >
+            {files.length === 0 ? (
+              <Empty description="暂无附件（作品集、证书等，单个 10MB 以内）" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            ) : (
+              <Space direction="vertical" style={{ width: "100%" }} size={10}>
+                {files.map((f) => (
+                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {fileIcon(f.mime)}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <Typography.Link
+                        href={api.getTalentFileUrl(talent.id, f.id)}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                      >
+                        {f.name}
+                      </Typography.Link>
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        {FILE_KIND_LABELS[f.kind] || "其他"} · {fmtFileSize(f.size)} · {(f.created_at || "").slice(0, 10)}
+                      </Typography.Text>
+                    </div>
+                    <Space size={2}>
+                      <Button
+                        size="small"
+                        type="link"
+                        href={api.getTalentFileUrl(talent.id, f.id, true)}
+                      >
+                        下载
+                      </Button>
+                      <Popconfirm title={`确认删除「${f.name}」？`} onConfirm={() => handleDeleteFile(f.id, f.name)}>
+                        <Button size="small" type="link" danger>删除</Button>
+                      </Popconfirm>
+                    </Space>
+                  </div>
+                ))}
+              </Space>
             )}
           </Card>
 
