@@ -109,6 +109,31 @@ export default function ImportPreviewModal({
         </div>
       }
     >
+      {/* 手工录入提示：解析失败的文件转成了空白记录，得让用户知道「为什么是空的、
+          该看哪里」。不提示的话，用户只会看到一张全空的表单，以为系统又出错了。 */}
+      {record?._manualReason && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="这份没能自动解析，需要你对照左侧原文件填写"
+          description={
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              原因：{record._manualReason}
+            </Typography.Text>
+          }
+        />
+      )}
+      {/* 图片识别提示：OCR 出来的数字容易错（0/O、1/l、小数点），必须点名让人核对 */}
+      {record?._ocr && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="这份是图片型 PDF，文字由识别生成，请重点核对手机号、出生年月与薪资"
+        />
+      )}
+
       {/* 批量确认进度：常驻在弹窗内，长耗时操作不能只靠 toast */}
       {batchProgress && (
         <Alert

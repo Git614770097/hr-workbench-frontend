@@ -37,6 +37,9 @@ export interface Env {
   /** 智谱 GLM Key（wrangler secret put ZHIPU_API_KEY）：配了就优先走免费的 GLM-4.7-Flash，
    *  429/异常时自动回落 DEEPSEEK_API_KEY。未配置则行为与旧版一致，只走 DeepSeek。 */
   ZHIPU_API_KEY?: string;
+  /** 图片型 PDF 的 OCR 模型（可选）。不填按内置候选列表依次尝试；
+   *  智谱换模型名时不用改代码，`wrangler secret put ZHIPU_VISION_MODEL` 即可覆盖。 */
+  ZHIPU_VISION_MODEL?: string;
   /** 用户自有 AI Key 的加密主密钥（wrangler secret put AI_KEY_SECRET）；未配置则关闭自定义 Key 功能 */
   AI_KEY_SECRET?: string;
   PUSHPLUS_TOKEN?: string;

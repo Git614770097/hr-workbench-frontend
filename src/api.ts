@@ -371,6 +371,8 @@ export const api = {
       city?: string;
       skills?: string[];
       _ai_fallback?: boolean;
+      /** 文本是 OCR 识别出来的（图片型 PDF） */
+      _ocr?: boolean;
     }>(
       `/parse-resume/file?name=${encodeURIComponent(file.name)}&ai=${withAi ? 1 : 0}`,
       {

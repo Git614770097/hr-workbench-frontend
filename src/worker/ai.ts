@@ -317,6 +317,106 @@ export async function deepseekJsonSafe(
   }
 }
 
+// ── 视觉 OCR（图片型 PDF 兜底）───────────────────────────────────────────
+//
+// 为什么单独一条通道、不走 callWithFallback：
+//  - DeepSeek 没有视觉模型，这条路上它帮不上忙，没法「优先 DeepSeek」；
+//  - 视觉调用只吃图不吃文本，返回的是**纯文本**而不是 JSON，跟上面的
+//    json_object 约定完全不同，硬塞进同一个函数会把两套语义搅在一起。
+//
+// ⚠️ 模型选型踩过的坑：**别用 glm-4v-flash**。它最大输出只有 1K token，
+// 一页密集中文简历（1500~2500 token）会被从中间截断，而且不报错——
+// 表现就是「识别出来的简历只有上半页」，比彻底失败更难发现。
+// 这里选的是免费档里输出够大的视觉模型（32K），并在失败时按顺序换下一个。
+//
+// 为什么只做「转录」不做「直接抽字段」：转录是视觉模型最稳的任务，
+// 字段抽取交给后面已经调好的 DeepSeek + 本地规则管线。这样即使模型这一轮
+// 状态不好，也只是文字质量差一点，而不是整份简历全空。
+
+/** 视觉模型候选：按顺序尝试，前一个 404/400（模型下线或改名）就换下一个 */
+const ZHIPU_VISION_MODELS = ["glm-4.6v-flash", "glm-5.3-flash", "glm-4v-flash"];
+/** 视觉调用比纯文本慢得多（要传整页图），给 60s；批量导入时前端超时是 120s */
+const VISION_TIMEOUT_MS = 60_000;
+
+export interface OcrResult {
+  ok: boolean;
+  text: string;
+  /** 失败原因（日志/前端提示用） */
+  reason?: string;
+}
+
+/**
+ * 整页图片 → 文字。
+ *
+ * @param jpegBase64 不含 data URI 前缀的 base64
+ * @param modelOverride 环境变量指定的模型（ZHIPU_VISION_MODEL），留空走候选列表
+ */
+export async function zhipuOcrImage(
+  zhipuKey: string,
+  jpegBase64: string,
+  prompt: string,
+  modelOverride?: string | null
+): Promise<OcrResult> {
+  const candidates = modelOverride ? [modelOverride] : ZHIPU_VISION_MODELS;
+  let lastReason = "视觉识别失败";
+
+  for (const model of candidates) {
+    try {
+      const auth = await zhipuBearer(zhipuKey);
+      const resp = await fetch(ZHIPU_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: auth },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "image_url", image_url: { url: `data:image/jpeg;base64,${jpegBase64}` } },
+                { type: "text", text: prompt },
+              ],
+            },
+          ],
+          temperature: 0.01,
+          // 一页密集中文简历约 1500~2500 token，给 4000 留余量；
+          // 超过这个量基本是模型在重复输出，不是内容真的有那么多
+          max_tokens: 4000,
+        }),
+        signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
+      });
+
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => "");
+        lastReason = `HTTP ${resp.status} ${body.slice(0, 160)}`;
+        // 只有「模型不存在/参数不对」才换下一个；429/5xx 换模型也没用，直接失败
+        if (resp.status === 400 || resp.status === 404) continue;
+        return { ok: false, text: "", reason: lastReason };
+      }
+
+      const data = (await resp.json()) as {
+        choices?: { message?: { content?: string | { type?: string; text?: string }[] } }[];
+      };
+      const content = data.choices?.[0]?.message?.content;
+      // 有的版本把 content 返回成 [{type:"text", text:"..."}] 数组
+      const text = typeof content === "string"
+        ? content
+        : Array.isArray(content)
+          ? content.map((p) => p?.text ?? "").join("")
+          : "";
+      if (!text.trim()) {
+        lastReason = "模型返回空内容";
+        continue;
+      }
+      return { ok: true, text };
+    } catch (e) {
+      lastReason = (e as Error)?.message || "视觉识别异常";
+    }
+  }
+  return { ok: false, text: "", reason: lastReason };
+}
+
+
+
 /** 把 AI 返回的任意值安全转成长度受限的字符串数组（用于 reasons / gaps / risks） */
 export function toStringArray(v: unknown, max = 5): string[] {
   const arr = Array.isArray(v) ? v : typeof v === "string" ? [v] : [];

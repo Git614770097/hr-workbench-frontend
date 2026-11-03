@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import {
-  Modal, Upload, Button, Alert, message, Typography, Select, Switch,
+  Modal, Upload, Button, Alert, message, Typography, Select, Switch, Tag,
 } from "antd";
 import { InboxOutlined } from "@ant-design/icons";
 import { api } from "../api";
 import { useDict } from "../dict";
 import ImportPreviewModal from "./ImportPreviewModal";
 import {
-  parseResumeToTalent, recordToData,
+  parseResumeToTalent, recordToData, blankRecordForFile,
 } from "../utils/resumeImport";
 import type { ParsedTalent } from "../utils/resumeImport";
 
@@ -48,6 +48,13 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   const batchIdRef = useRef<string | null>(null);
   // 前端行 key → 明细 id。文件名可能重复，只能靠解析时分配的 key 映射。
   const itemIdByKey = useRef<Record<string, string>>({});
+  // 失败文件的明细 id（按 files 下标）：用户改用「手动录入」后要回写状态
+  const failedItemIdByIndex = useRef<Record<number, string>>({});
+
+  // 失败分组：按原因归并，避免把几十份同样的文案拼成一堵墙
+  const [failGroups, setFailGroups] = useState<{ message: string; names: string[] }[]>([]);
+  // 可以转成手工录入的失败文件（带原始 File，造空白记录时要靠它）
+  const [manualCandidates, setManualCandidates] = useState<{ index: number; file: File; message: string }[]>([]);
 
   /**
    * 记录失败绝不能连累导入本身。
@@ -98,6 +105,9 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     // 上一批的批次号不能带过来，否则新一批的明细会记到旧批次里
     batchIdRef.current = null;
     itemIdByKey.current = {};
+    failedItemIdByIndex.current = {};
+    setFailGroups([]);
+    setManualCandidates([]);
     // 来源渠道每次打开都重置：宁可多选一次，也不能把上一批的渠道错标到新一批
     setBatchSource(undefined);
     // 自动去重默认开：避免用户误点「全部确认」把已入库的人重复写入
@@ -112,19 +122,21 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     try {
       const parsed: ParsedTalent[] = [];
       // 逐份容错：扫描件 / 损坏文件只跳过它自己，不能连累同批其余简历
-      const failed: string[] = [];
+      const failed: { index: number; file: File; message: string }[] = [];
       // 与 files 严格同序：下标 i 就是 files[i] 的命运，最后一次性提交成导入明细。
       // 解析失败的也要占一行——「上传 20 份只进来 13 份」里的差额必须在记录里看得见，
-      // 只记成功的话，这份记录就只会在顺利时有用，而顺利时根本没人来查。
+      // 只记成功的话，这份记录就只会在有失败时有用，而顺利时根本没人来查。
       const logItems: {
         file_name: string; file_size: number; talent_name?: string;
         status: string; error?: string; parse_source?: string;
       }[] = [];
       const keyByIndex: (string | null)[] = [];
-      for (const file of files) {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
         const key = nextKey();
         try {
-          // 上传到服务端抽文本 + AI 解析（AI 不可用时服务端已降级为本地规则）
+          // 上传到服务端抽文本 + AI 解析（AI 不可用时服务端已降级为本地规则；
+          // 图片型 PDF 服务端会先做视觉识别，识别出的文本照常走后面的管线）
           const { talent } = await parseResumeToTalent(file, key);
           parsed.push(talent);
           keyByIndex.push(key);
@@ -143,7 +155,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
             status: "failed",
             error: (e as Error).message,
           });
-          failed.push(`「${file.name}」${(e as Error).message}`);
+          failed.push({ index: i, file, message: (e as Error).message });
         }
       }
 
@@ -157,19 +169,30 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
           ids.forEach((id, i) => {
             const k = keyByIndex[i];
             if (k) itemIdByKey.current[k] = id;
+            // 失败的那几份也要记住明细 id：用户点「手动录入」后它们会转成
+            // pending 甚至 imported，没有 id 就回写不了，记录会永远停在 failed
+            else failedItemIdByIndex.current[i] = id;
           });
         }
       } catch {
         /* 忽略：不影响导入 */
       }
       if (failed.length > 0) {
+        // 按原因分组，而不是把每份的完整文案拼成一串。
+        // 27 份扫描件会拼出上千字，真正要看的信息（共几份、为什么）全被淹了。
+        const groups = new Map<string, string[]>();
+        for (const f of failed) {
+          const list = groups.get(f.message) || [];
+          list.push(f.file.name);
+          groups.set(f.message, list);
+        }
+        setFailGroups([...groups.entries()].map(([message, names]) => ({ message, names })));
+        setManualCandidates(failed);
         if (parsed.length === 0) {
-          setError(failed.join("；"));
           setParsing(false);
           parsingRef.current = false;
           return;
         }
-        message.warning(`${failed.length} 份未能解析：${failed.join("；")}`, 6);
       }
       setRecords((prev) => [...prev, ...parsed]);
       // 简历模式下解析完自动进入逐份核对（从第一份开始）
@@ -183,14 +206,17 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       const missingPhone = parsed.filter((r) => !r.phone).length;
       const aiCount = parsed.filter((r) => r._ai).length;
       const localCount = parsed.length - aiCount;
+      const ocrCount = parsed.filter((r) => r._ocr).length;
       const missing: string[] = [];
       if (missingName > 0) missing.push(`${missingName} 份缺少姓名（${missingNameFiles.join("、")}）`);
       if (missingPhone > 0) missing.push(`${missingPhone} 份缺少手机号`);
+      // 图片识别出来的要单独点名：识别错字（尤其数字和生僻字）比文本 PDF 多得多
+      const ocrNote = ocrCount > 0 ? `，其中 ${ocrCount} 份是图片识别，请重点核对数字` : "";
       const srcNote = `AI ${aiCount} 份 / 本地规则 ${localCount} 份`;
       if (missing.length > 0) {
-        message.warning(`已解析 ${parsed.length} 份简历（${srcNote}），其中 ${missing.join("、")}（已置空并标黄），请逐份核对补充后再录入`, 6);
+        message.warning(`已解析 ${parsed.length} 份简历（${srcNote}${ocrNote}），其中 ${missing.join("、")}（已置空并标黄），请逐份核对补充后再录入`, 6);
       } else {
-        message.success(`已解析 ${parsed.length} 份简历（${srcNote}），请逐份核对后录入`);
+        message.success(`已解析 ${parsed.length} 份简历（${srcNote}${ocrNote}），请逐份核对后录入`);
       }
     } catch (err) {
       setError((err as Error).message);
@@ -214,6 +240,30 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
 
   const updateRecord = (key: string, field: keyof ParsedTalent, value: any) => {
     setRecords((prev) => prev.map((r) => (r.key === key ? { ...r, [field]: value } : r)));
+  };
+
+  /**
+   * 把解析失败的文件转成空白记录，让用户照着原文件手工填。
+   *
+   * 原来的做法是「全失败就只弹一条错误，一条记录都不生成」——而错误文案里
+   * 写着「或手动填写信息」。用户既导不进来也填不了，只能反复重传同一份文件。
+   * 现在给一个明确出口：点一下就把这些文件变成可编辑的空记录，
+   * 核对弹窗左侧照样能打开原 PDF（图片型 PDF 也能看见扫描内容）。
+   */
+  const handleManualEntry = () => {
+    if (manualCandidates.length === 0) return;
+    const blanks = manualCandidates.map((f) => {
+      const key = nextKey();
+      // 复用原来那条明细的 id，用户填完保存后状态能从 failed 改成 imported
+      const itemId = failedItemIdByIndex.current[f.index];
+      if (itemId) itemIdByKey.current[key] = itemId;
+      return blankRecordForFile(f.file, key, f.message);
+    });
+    setRecords((prev) => [...prev, ...blanks]);
+    setReviewKey((cur) => cur ?? blanks[0].key);
+    setFailGroups([]);
+    setManualCandidates([]);
+    message.info(`已转为手工录入 ${blanks.length} 份，左侧可以对照原文件填写`);
   };
 
   // 当前正在核对的记录
@@ -464,6 +514,48 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
 
       {parsing && <Alert message="AI 识别中…" type="info" showIcon style={{ marginTop: 16 }} />}
       {error && <Alert message={error} type="error" showIcon style={{ marginTop: 16, marginBottom: 16 }} />}
+
+      {/* 解析失败：按原因归并。原来是把每份的完整文案拼成一串，
+          27 份扫描件能拼出上千字，用户根本读不完，也不知道该怎么办 */}
+      {failGroups.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginTop: 16 }}
+          message={
+            <span>
+              {failGroups.reduce((n, g) => n + g.names.length, 0)} 份没能自动解析
+            </span>
+          }
+          description={
+            <div style={{ fontSize: 13 }}>
+              {failGroups.map((g, gi) => (
+                <div key={gi} style={{ marginBottom: gi === failGroups.length - 1 ? 0 : 10 }}>
+                  <div style={{ marginBottom: 4 }}>
+                    <Tag color="orange">{g.names.length} 份</Tag>
+                    {g.message}
+                  </div>
+                  {/* 文件名最多列 8 个，再多就折叠——用户要的是「哪些」，不是逐条读完 */}
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {g.names.slice(0, 8).join("、")}
+                    {g.names.length > 8 ? ` 等 ${g.names.length} 份` : ""}
+                  </Typography.Text>
+                </div>
+              ))}
+              {manualCandidates.length > 0 && (
+                <div style={{ marginTop: 12 }}>
+                  <Button size="small" onClick={handleManualEntry}>
+                    仍然手动录入这 {manualCandidates.length} 份
+                  </Button>
+                  <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
+                    左侧可以打开原文件对照着填
+                  </Typography.Text>
+                </div>
+              )}
+            </div>
+          }
+        />
+      )}
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
         <Button onClick={handleCloseModal}>关闭</Button>

@@ -4,10 +4,11 @@ import { getSession } from "./auth";
 import { sanitizeField, sanitizeSkills } from "../../utils/fieldSanity";
 import { normalizeEducation, normalizeGender } from "../../utils/resumeParser";
 
-import { deepseekJsonSafe } from "../ai";
+import { deepseekJsonSafe, zhipuOcrImage } from "../ai";
 import type { AiKeyInput } from "../ai";
 import { resolveAiKey } from "../aiKey";
-import { extractDocText, DocError } from "../docText";
+import { extractDocText, extractPageJpegs, DocError } from "../docText";
+import { arrayBufferToBase64 } from "../helpers";
 
 // AI 简历解析接口
 // 前端把简历文本（或文件 base64）发到这里，后端用 DEEPSEEK_API_KEY 调 DeepSeek，
@@ -164,6 +165,57 @@ aiParse.post("/", async (c) => {
  */
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
+/**
+ * 图片型 PDF 的兜底：把整页图交给视觉模型转录成文字。
+ *
+ * 为什么只做「转录」不做「直接抽字段」：转录是视觉模型最稳的任务，
+ * 字段抽取交给后面已经调好的 DeepSeek + 本地规则管线。这样即使模型
+ * 这一轮状态不好，也只是文字质量差一点，而不是整份简历全空。
+ * 附带好处：转录出的文字会回填到核对弹窗左侧的「简历原文」，
+ * 扫描件用户第一次能在界面上看到内容。
+ *
+ * 为什么只取前 2 页：简历正文基本都在前两页；每页一次视觉调用要十几秒，
+ * 前端等的是 120s，取多了必然超时。第 3 页起的内容对招聘决策价值很低。
+ */
+const OCR_MAX_PAGES = 2;
+
+const OCR_PROMPT = `请把这张图片里的全部文字完整转录出来，用于简历信息提取。要求：
+1. 只输出文字本身，不要总结、不要解释、不要加任何前后缀或标记；
+2. 保持原有的分行与段落顺序；
+3. 表格式排版按「字段名: 值」逐行输出；
+4. 看不清的字用「□」代替，绝对不要猜测或编造。`;
+
+async function ocrScannedPdf(
+  env: Env,
+  buf: Uint8Array
+): Promise<{ ok: true; text: string } | { ok: false; reason: string }> {
+  const zhipuKey = env.ZHIPU_API_KEY;
+  if (!zhipuKey) {
+    return { ok: false, reason: "未配置 ZHIPU_API_KEY，无法识别图片型 PDF" };
+  }
+
+  const pages = extractPageJpegs(buf, OCR_MAX_PAGES);
+  if (pages.length === 0) {
+    return { ok: false, reason: "这份 PDF 里取不出整页图片（可能是 JBIG2/CCITT 压缩）" };
+  }
+
+  const texts: string[] = [];
+  for (const jpg of pages) {
+    // Uint8Array 的 buffer 可能比视图大（subarray 出来的），必须按 byteOffset 精确切
+    const ab = jpg.buffer.slice(jpg.byteOffset, jpg.byteOffset + jpg.byteLength) as ArrayBuffer;
+    const r = await zhipuOcrImage(zhipuKey, arrayBufferToBase64(ab), OCR_PROMPT, env.ZHIPU_VISION_MODEL);
+    if (!r.ok) {
+      // 一页失败就整体算失败：半份简历比没有更危险（缺的那半不会被发现）
+      return { ok: false, reason: r.reason || "识别失败" };
+    }
+    texts.push(r.text.trim());
+  }
+
+  const text = texts.join("\n\n");
+  if (text.length < 30) return { ok: false, reason: "识别结果为空" };
+  return { ok: true, text };
+}
+
 aiParse.post("/file", async (c) => {
   const session = await getSession(c);
   if (!session) return c.json({ error: "未登录" }, 401);
@@ -183,27 +235,52 @@ aiParse.post("/file", async (c) => {
     return c.json({ error: "文件超过 20MB，请压缩后再上传" }, 413);
   }
 
+  const bytes = new Uint8Array(ab);
   let text: string;
+  /** 这份文本是不是 OCR 出来的（前端据此提示「已识别图片文字，请重点核对」） */
+  let ocrUsed = false;
+
   try {
-    ({ text } = await extractDocText(new Uint8Array(ab), fileName));
+    ({ text } = await extractDocText(bytes, fileName));
   } catch (e) {
-    // code 透传给前端：scanned（扫描件）/ unsupported（格式）/ corrupt（损坏）文案不同
-    if (e instanceof DocError) return c.json({ error: e.message, code: e.code }, 422);
-    console.log(`[ai] 文件解析异常 ${fileName}: ${(e as Error)?.message}`);
-    return c.json({ error: "文件解析失败，请稍后重试" }, 500);
+    if (!(e instanceof DocError)) {
+      console.log(`[ai] 文件解析异常 ${fileName}: ${(e as Error)?.message}`);
+      return c.json({ error: "文件解析失败，请稍后重试" }, 500);
+    }
+
+    // 图片型 PDF：抽出文字这条路走不通，改走视觉识别
+    if (e.code === "scanned" && e.hasImages) {
+      const ocr = await ocrScannedPdf(c.env, bytes);
+      if (ocr.ok) {
+        text = ocr.text;
+        ocrUsed = true;
+      } else {
+        console.log(`[ai] 图片型 PDF 识别失败 ${fileName}: ${ocr.reason}`);
+        return c.json(
+          {
+            error: `这份 PDF 是图片，自动识别没成功（${ocr.reason}）。可以手动填写信息，或换一份能复制文字的 PDF。`,
+            code: "scanned",
+          },
+          422
+        );
+      }
+    } else {
+      // code 透传给前端：scanned / fontmap / unsupported / corrupt 文案不同
+      return c.json({ error: e.message, code: e.code }, 422);
+    }
   }
 
-  if (!wantAi) return c.json({ text });
+  if (!wantAi) return c.json({ text, _ocr: ocrUsed || undefined });
 
   const apiKey = await resolveAiKey(c.env, session.userId);
   if (!apiKey.key && !apiKey.zhipu) {
     // 没配 Key 也把文本返回：前端用本地正则规则兜底，至少不丢内容
-    return c.json({ ...EMPTY, text, _ai_fallback: true });
+    return c.json({ ...EMPTY, text, _ai_fallback: true, _ocr: ocrUsed || undefined });
   }
 
   const raw = await callDeepSeek(apiKey, text);
-  if (!raw) return c.json({ ...EMPTY, text, _ai_fallback: true });
-  return c.json({ ...normalizeAiResult(raw), text });
+  if (!raw) return c.json({ ...EMPTY, text, _ai_fallback: true, _ocr: ocrUsed || undefined });
+  return c.json({ ...normalizeAiResult(raw), text, _ocr: ocrUsed || undefined });
 });
 
 export default aiParse;

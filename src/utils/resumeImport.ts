@@ -52,6 +52,10 @@ export interface ParsedTalent {
   file: File | null;
   /** 解析来源：true=AI 解析，false=本地规则回退 */
   _ai?: boolean;
+  /** 文本是 OCR 识别出来的（图片型 PDF），核对时提示用户重点核对 */
+  _ocr?: boolean;
+  /** 有值表示这份没能自动解析，需要手工填；内容是失败原因 */
+  _manualReason?: string;
 }
 
 // 从纯文本提取人才字段（本地规则引擎，作为兜底）
@@ -137,6 +141,8 @@ export async function parseResumeToTalent(
   const text = r.text;
   const local = extractTalentLocal(text, key, file.name, file);
   const talent = r._ai_fallback ? { ...local, _ai: false } : extractTalentWithAI(r, local);
+  // OCR 出来的文本识别错字比文本 PDF 多，核对时要提醒用户重点看
+  if (r._ocr) talent._ocr = true;
   return { talent, text };
 }
 
@@ -160,5 +166,42 @@ export function recordToData(r: ParsedTalent) {
     skills: r.skills ? r.skills.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : [],
     status: r.status || "active",
     notes: r.notes || undefined,
+  };
+}
+
+/**
+ * 解析失败的简历 → 一条空白记录，供用户手工录入。
+ *
+ * 为什么要造这个：导入失败时原来的做法是「什么都不生成，只弹一条错误」，
+ * 而错误文案里写着「或手动填写信息」——可界面上根本没有可填的东西，
+ * 用户只能反复重传同一份文件。图片型 PDF、加密 PDF、损坏文件都会走到这里。
+ *
+ * 记录里带着原始 File，核对弹窗左侧的 PDF 预览照样能打开（图片型 PDF 也能看见
+ * 扫描内容），用户照着图填即可，不用离开页面。
+ */
+export function blankRecordForFile(file: File, key: string, reason: string): ParsedTalent {
+  return {
+    key,
+    name: "",
+    phone: "",
+    email: "",
+    age: null,
+    birth_date: "",
+    birth_date_precision: "",
+    gender: "",
+    education: "",
+    school: "",
+    major: "",
+    current_company: "",
+    current_title: "",
+    years_experience: null,
+    city: "",
+    skills: "",
+    status: "active",
+    notes: "",
+    fileName: file.name,
+    file,
+    // 带上原因，核对弹窗据此提示「这份需要手工填」
+    _manualReason: reason,
   };
 }
