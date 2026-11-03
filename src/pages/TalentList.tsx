@@ -114,9 +114,6 @@ const OPTIONAL_COL_LABELS: Record<string, string> = {
   owner_name: "创建人",
 };
 const OPTIONAL_COL_ORDER = Object.keys(OPTIONAL_COL_LABELS);
-// 保存的常用搜索（名称 + 一组筛选条件），存 localStorage 跨会话复用
-interface SavedSearch { name: string; filters: Filters; }
-const SAVED_SEARCHES_KEY = "talent_list_saved_searches";
 // 默认只显示高频列：低频字段（年龄/院校/城市/邮箱）按需在「列设置」里打开
 const DEFAULT_VISIBLE_COLS = ["current_title", "years_experience", "education", "phone", "status", "entry_type", "tags"];
 const COLS_STORAGE_KEY = "talent_list_visible_cols";
@@ -204,36 +201,6 @@ export default function TalentList() {
     setVisibleCols(keys);
     try { localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(keys)); } catch { /* 存储失败不阻断 */ }
   };
-
-  // 常用搜索：保存当前筛选条件并命名，下次一键复用
-  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(SAVED_SEARCHES_KEY) || "null");
-      if (Array.isArray(saved)) return saved.filter((s: any) => s && typeof s.name === "string" && s.filters);
-    } catch { /* 忽略脏数据 */ }
-    return [];
-  });
-  const [saveSearchOpen, setSaveSearchOpen] = useState(false);
-  const [saveSearchName, setSaveSearchName] = useState("");
-  const persistSavedSearches = (list: SavedSearch[]) => {
-    setSavedSearches(list);
-    try { localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(list)); } catch { /* 存储失败不阻断 */ }
-  };
-  const applySavedSearch = (s: SavedSearch) => {
-    setDraft(s.filters);
-    setApplied(s.filters);
-    setPage(1);
-  };
-  const saveCurrentSearch = () => {
-    const name = saveSearchName.trim();
-    if (!name) { message.warning("请输入搜索名称"); return; }
-    persistSavedSearches([...savedSearches.filter((s) => s.name !== name), { name, filters: applied }]);
-    setSaveSearchOpen(false);
-    setSaveSearchName("");
-    message.success("已保存当前搜索");
-  };
-  const removeSavedSearch = (name: string) =>
-    persistSavedSearches(savedSearches.filter((s) => s.name !== name));
 
   const currentUser: User | null = (() => {
     try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -850,22 +817,6 @@ export default function TalentList() {
             )}
             <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
             <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
-            {/* 常用搜索：一键复用已保存的筛选；「保存」把当前条件命名后存本地 */}
-            <Dropdown
-              trigger={["click"]}
-              menu={{
-                items: savedSearches.length
-                  ? savedSearches.map((s) => ({ key: s.name, label: s.name }))
-                  : [{ key: "__empty", label: "暂无保存的搜索", disabled: true }],
-                onClick: ({ key }) => {
-                  const s = savedSearches.find((x) => x.name === key);
-                  if (s) applySavedSearch(s);
-                },
-              }}
-            >
-              <Button>常用搜索 <DownOutlined /></Button>
-            </Dropdown>
-            <Button onClick={() => setSaveSearchOpen(true)}>保存搜索</Button>
           </Space>
         </div>
         <Table
@@ -1037,33 +988,6 @@ export default function TalentList() {
             ))}
           </div>
         ) : null}
-      </Modal>
-
-      {/* 保存常用搜索：命名当前筛选条件并存入本地；已保存的可直接删除 */}
-      <Modal
-        title="保存常用搜索"
-        open={saveSearchOpen}
-        onOk={saveCurrentSearch}
-        onCancel={() => setSaveSearchOpen(false)}
-        okText="保存"
-      >
-        <Input
-          placeholder="给这组搜索条件起个名字，如「杭州本科3年以上」"
-          value={saveSearchName}
-          onChange={(e) => setSaveSearchName(e.target.value)}
-          onPressEnter={saveCurrentSearch}
-          allowClear
-        />
-        {savedSearches.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 12, color: "#8c8c8c", marginBottom: 6 }}>已保存（点 × 删除）</div>
-            <Space wrap size={[8, 8]}>
-              {savedSearches.map((s) => (
-                <Tag key={s.name} closable onClose={() => removeSavedSearch(s.name)}>{s.name}</Tag>
-              ))}
-            </Space>
-          </div>
-        )}
       </Modal>
     </div>
   );
