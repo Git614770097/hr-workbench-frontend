@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
-  Popconfirm, message, Dropdown, Alert, Modal, Empty, Typography,
+  message, Dropdown, Alert, Modal, Empty, Typography,
   Checkbox, Popover, Tooltip,
 } from "antd";
 import {
@@ -10,6 +10,7 @@ import {
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
   FileWordOutlined, PlusOutlined,
   FileExcelOutlined, SettingOutlined, RobotOutlined, HistoryOutlined,
+  RightOutlined, MoreOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -568,8 +569,11 @@ export default function TalentList() {
       render: (text: string, record: Talent) => (
         <Space size={4}>
           <Link to={`/talents/${record.id}`} style={{ fontWeight: 600 }}>{text}</Link>
+          {/* 箭头是给「能进详情」这件事一个可见的锚点：原来只有蓝色姓名，
+              用户扫到行尾的操作列找入口会落空（操作列里原本没有「详情」） */}
+          <RightOutlined style={{ fontSize: 10, color: "#bfbfbf" }} />
           {record.has_resume && (
-            <Tooltip title="已存简历原文，点开查看">
+            <Tooltip title="已存简历原文，进详情可查看">
               <Tag color="blue" style={{ margin: 0, fontSize: 11, lineHeight: "16px", padding: "0 5px" }}>简历</Tag>
             </Tooltip>
           )}
@@ -644,22 +648,54 @@ export default function TalentList() {
     action: {
       title: "操作",
       key: "action",
-      width: 184,
+      width: 140,
       fixed: "right" as const,
-      render: (_: any, record: Talent) => (
-        <Space size={4}>
-          <Button type="link" size="small" onClick={() => setEditId(record.id)}>编辑</Button>
-          {record.resume_url && (
-            <>
-              <Button type="link" size="small" onClick={() => setPreviewTalent(record)}>预览</Button>
-              <Button type="link" size="small" onClick={() => handleExportResume(record)}>导出</Button>
-            </>
-          )}
-          <Popconfirm title="确认删除？所有关联数据将被清除。" onConfirm={() => handleDelete(record.id, record.name)}>
-            <Button type="link" size="small" danger>删除</Button>
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_: any, record: Talent) => {
+        // 低频动作收进「⋯」：预览/导出/删除不该各占一个按钮位，
+        // 把位置让给「详情」——它才是这一行最主要的目标。
+        // 删除走 Modal.confirm 而不是 Popconfirm：下拉菜单项点完就收起，
+        // 挂在下拉项上的 Popconfirm 会跟着一起消失，确认框根本出不来。
+        const moreItems: MenuProps["items"] = [
+          ...(record.resume_url
+            ? [
+                { key: "preview", label: "简历预览" },
+                { key: "export", label: "导出简历" },
+              ]
+            : []),
+          { type: "divider" as const },
+          { key: "delete", label: "删除", danger: true },
+        ];
+        return (
+          <Space size={0}>
+            <Button type="link" size="small" onClick={() => navigate(`/talents/${record.id}`)}>详情</Button>
+            <Button type="link" size="small" onClick={() => setEditId(record.id)}>编辑</Button>
+            <Dropdown
+              trigger={["click"]}
+              menu={{
+                items: moreItems,
+                onClick: ({ key, domEvent }) => {
+                  // 阻止冒泡到 tr，否则点菜单项会连带触发整行跳转
+                  domEvent.stopPropagation();
+                  if (key === "preview") setPreviewTalent(record);
+                  else if (key === "export") handleExportResume(record);
+                  else if (key === "delete") {
+                    Modal.confirm({
+                      title: `确认删除「${record.name}」？`,
+                      content: "所有关联数据将被清除，且不可恢复。",
+                      okText: "删除",
+                      okType: "danger",
+                      cancelText: "取消",
+                      onOk: () => handleDelete(record.id, record.name),
+                    });
+                  }
+                },
+              }}
+            >
+              <Button type="link" size="small" icon={<MoreOutlined />} aria-label="更多操作" />
+            </Dropdown>
+          </Space>
+        );
+      },
     },
   };
 
@@ -839,6 +875,20 @@ export default function TalentList() {
           rowKey="id"
           loading={loading}
           rowSelection={rowSelection}
+          // 整行可点进详情：原来唯一入口是那个蓝色姓名，用户扫到行尾找入口会落空。
+          // 三种情况必须让行点击失效，否则会抢掉用户本来要做的事：
+          //   1. 点在勾选框/按钮/链接/下拉上——那是另一个明确意图；
+          //   2. 用户正在拖选文字（手机号那列经常要复制）；
+          //   3. 选中态是点击后的默认结果，不做额外处理。
+          onRow={(record) => ({
+            style: { cursor: "pointer" },
+            onClick: (e) => {
+              const el = e.target as HTMLElement;
+              if (el.closest("button, a, input, label, .ant-checkbox-wrapper, .ant-table-selection-column, .ant-dropdown-trigger")) return;
+              if (window.getSelection()?.toString()) return;
+              navigate(`/talents/${record.id}`);
+            },
+          })}
           onChange={handleTableChange}
           scroll={{ x: scrollX }}
           locale={{
