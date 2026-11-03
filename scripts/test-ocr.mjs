@@ -1,20 +1,31 @@
 // 用真实 Key 验证「图片型 PDF → 文字」这条链路通不通、识别质量够不够。
 //
-// 为什么不塞进 e2e：它需要 ZHIPU_API_KEY，而密钥不该进仓库、也不该贴进聊天框。
-// 这个脚本从环境变量读 Key，你本地跑一次就知道结果。
+// 为什么不塞进 e2e：它要真实调用付费接口，不该混进 CI。
+// 这个脚本从环境变量读 Key，本地跑一次就知道结果。
 //
-// 用法：
-//   ZHIPU_API_KEY=你的key node scripts/test-ocr.mjs "某份扫描件.pdf"
-//   ZHIPU_API_KEY=... node scripts/test-ocr.mjs "简历目录" --limit 3
+// 用法（Key 会自动从 .dev.vars 读，不用手输）：
+//   node scripts/test-ocr.mjs "某份扫描件.pdf"
+//   node scripts/test-ocr.mjs "简历目录" --limit 3
+//   DEEPSEEK_API_KEY=xxx node scripts/test-ocr.mjs ...
 //
-// 它做的事和线上完全一致：从 PDF 里切出整页 JPEG → base64 → 视觉模型转录。
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+// 它做的事和线上完全一致：从 PDF 里切出整页 JPEG → base64 → deepseek-flash 转录。
+import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { join, extname, basename } from "node:path";
 
-const KEY = process.env.ZHIPU_API_KEY;
-const URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
-// 与 src/worker/ai.ts 的候选列表保持一致
-const MODELS = ["glm-4.6v-flash", "glm-5.3-flash", "glm-4v-flash"];
+/** 没显式给 Key 就从 .dev.vars 读（避免把密钥贴进命令行历史） */
+function loadKey() {
+  if (process.env.DEEPSEEK_API_KEY) return process.env.DEEPSEEK_API_KEY;
+  if (existsSync(".dev.vars")) {
+    const m = /^DEEPSEEK_API_KEY=(.+)$/m.exec(readFileSync(".dev.vars", "utf8"));
+    if (m) return m[1].trim();
+  }
+  return null;
+}
+
+const KEY = loadKey();
+const URL = "https://api.deepseek.com/chat/completions";
+// 与 src/worker/ai.ts 保持一致
+const MODEL = process.env.DEEPSEEK_VISION_MODEL || "deepseek-flash";
 
 const PROMPT = `请把这张图片里的全部文字完整转录出来，用于简历信息提取。要求：
 1. 只输出文字本身，不要总结、不要解释、不要加任何前后缀或标记；
@@ -63,37 +74,46 @@ function collect(p) {
   return [p];
 }
 
-async function ocr(model, b64) {
+async function ocr(b64) {
   const t0 = Date.now();
   const resp = await fetch(URL, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${KEY}` },
     body: JSON.stringify({
-      model,
+      model: MODEL,
       messages: [{
         role: "user",
         content: [
-          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}` } },
           { type: "text", text: PROMPT },
+          { type: "image_url", image_url: { url: `data:image/jpeg;base64,${b64}`, detail: "original" } },
         ],
       }],
       temperature: 0.01,
-      max_tokens: 4000,
+      max_tokens: 8192,
+      // ⚠️ 必须显式关闭思考：不传 thinking 时 0731 版会按任务复杂度自动路由到
+      // high 档，而 max_tokens 是「推理 token + 正文 token」共享预算，实测
+      // reasoning 能吃满 8191 个 token → HTTP 200 但 content 为空串。
+      // 纯视觉转录不需要思考链，关掉后更快也更便宜。
+      thinking: { type: "disabled" },
     }),
     signal: AbortSignal.timeout(60000),
   });
   const ms = Date.now() - t0;
-  if (!resp.ok) return { ok: false, status: resp.status, body: (await resp.text()).slice(0, 300), ms };
+  if (!resp.ok) return { ok: false, status: resp.status, body: (await resp.text()).slice(0, 400), ms };
   const data = await resp.json();
   const c = data.choices?.[0]?.message?.content;
   const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((p) => p?.text ?? "").join("") : "";
-  return { ok: !!text.trim(), text, ms, usage: data.usage };
+  // 注意「HTTP 200 但正文为空」是一种独立故障：reasoning_tokens 吃光了预算，
+  // 不能和网络/鉴权失败混在一起报，否则会被误判成 Key 失效。
+  if (!text.trim()) {
+    return { ok: false, empty: true, ms, usage: data.usage, finish: data.choices?.[0]?.finish_reason };
+  }
+  return { ok: true, text, ms, usage: data.usage, finish: data.choices?.[0]?.finish_reason };
 }
 
 (async () => {
   if (!KEY) {
-    console.log("缺少 ZHIPU_API_KEY。用法：");
-    console.log('  ZHIPU_API_KEY=你的key node scripts/test-ocr.mjs "某份扫描件.pdf"');
+    console.log("缺少 DEEPSEEK_API_KEY（也读不到 .dev.vars）");
     process.exit(1);
   }
 
@@ -107,7 +127,7 @@ async function ocr(model, b64) {
   }
 
   const files = collect(target).slice(0, limit);
-  console.log(`测试 ${files.length} 份\n`);
+  console.log(`模型：${MODEL}    测试 ${files.length} 份\n`);
 
   for (const f of files) {
     const name = basename(f);
@@ -120,25 +140,25 @@ async function ocr(model, b64) {
     const b64 = Buffer.from(pages[0]).toString("base64");
     console.log(`  base64 ${(b64.length / 1024).toFixed(0)} KB`);
 
-    let done = false;
-    for (const model of MODELS) {
-      const r = await ocr(model, b64);
-      if (r.ok) {
-        console.log(`  ✅ ${model}  耗时 ${(r.ms / 1000).toFixed(1)}s  输出 ${r.text.length} 字  tokens=${JSON.stringify(r.usage)}`);
-        console.log("  ---- 转录结果（前 600 字）----");
-        console.log(r.text.slice(0, 600).split("\n").map((l) => "  " + l).join("\n"));
-        console.log("  ------------------------------");
-        const out = `dist/ocr-${name.replace(/\.pdf$/i, "")}.txt`;
-        writeFileSync(out, r.text);
-        console.log(`  完整结果已写入 ${out}\n`);
-        done = true;
-        break;
-      }
-      console.log(`  ⚠️ ${model} 失败：HTTP ${r.status} ${r.body?.slice(0, 160)}`);
-      // 只有模型不存在才换下一个，429/鉴权失败换模型也没用
-      if (r.status !== 400 && r.status !== 404) break;
+    const r = await ocr(b64);
+    if (r.ok) {
+      console.log(`  ✅ 耗时 ${(r.ms / 1000).toFixed(1)}s  输出 ${r.text.length} 字  finish=${r.finish}`);
+      console.log(`  tokens: ${JSON.stringify(r.usage)}`);
+      // 截断是静默的：finish_reason=length 时后半页就没了，必须显式告警
+      if (r.finish === "length") console.log("  ⚠️ 输出被截断（finish_reason=length），后半页内容缺失！");
+      console.log("  ---- 转录结果（前 700 字）----");
+      console.log(r.text.slice(0, 700).split("\n").map((l) => "  " + l).join("\n"));
+      console.log("  ------------------------------");
+      const out = `dist/ocr-${name.replace(/\.pdf$/i, "")}.txt`;
+      writeFileSync(out, r.text);
+      console.log(`  完整结果已写入 ${out}\n`);
+    } else if (r.empty) {
+      const rt = r.usage?.completion_tokens_details?.reasoning_tokens ?? "?";
+      console.log(`  ❌ HTTP 200 但正文为空  耗时 ${(r.ms / 1000).toFixed(1)}s  finish=${r.finish}`);
+      console.log(`  reasoning_tokens=${rt} / completion_tokens=${r.usage?.completion_tokens}  ← 推理把输出预算吃光了\n`);
+    } else {
+      console.log(`  ❌ 请求失败：HTTP ${r.status}\n  ${r.body}\n`);
     }
-    if (!done) console.log("  ❌ 全部模型都失败\n");
   }
 })().catch((e) => {
   console.error("脚本异常：", e.message);

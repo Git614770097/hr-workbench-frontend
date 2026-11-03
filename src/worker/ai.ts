@@ -160,11 +160,14 @@ async function callProvider(
         // 超时边缘，且长输出更容易被截断成不完整 JSON。默认收在 3000。
         max_tokens: opts.maxTokens ?? 3000,
         response_format: { type: "json_object" },
-        // ⚠️ GLM-4.7-Flash **默认开启思维链**：推理过程会吃光 max_tokens，
-        // 导致 content 为空、响应拖到 17s+。本项目全是结构化 JSON 提取/生成，不需要推理。
-        // 官方明确：disabled 后「响应更快、占用并发槽更短」，直接缓解免费档 429。
-        // DeepSeek 不认这个字段，故只对智谱发送。
-        ...(provider === "zhipu" ? { thinking: { type: "disabled" } } : {}),
+        // ⚠️ 两家都**默认开启思维链**，必须显式关掉，且字段格式不同：
+        //  - GLM-4.7-Flash：推理会吃光 max_tokens，content 变空、响应拖到 17s+；
+        //    官方明确 disabled 后「响应更快、占用并发槽更短」，直接缓解免费档 429。
+        //  - DeepSeek V4-Flash 0731：不传参 ≠ 关闭，服务端按任务复杂度自动路由到
+        //    high 档，reasoning 能吃满整个 max_tokens 预算 → HTTP 200 但 content 空串。
+        //    实测 27 份扫描件 OCR：不关思考时 15 份空正文、6 份截断，关掉后 27/27 正常。
+        // 本项目全是结构化 JSON 提取/生成，不需要推理链，关掉纯赚（更快更省）。
+        thinking: { type: "disabled" },
       }),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -320,100 +323,141 @@ export async function deepseekJsonSafe(
 // ── 视觉 OCR（图片型 PDF 兜底）───────────────────────────────────────────
 //
 // 为什么单独一条通道、不走 callWithFallback：
-//  - DeepSeek 没有视觉模型，这条路上它帮不上忙，没法「优先 DeepSeek」；
-//  - 视觉调用只吃图不吃文本，返回的是**纯文本**而不是 JSON，跟上面的
-//    json_object 约定完全不同，硬塞进同一个函数会把两套语义搅在一起。
+//  - 文本调用要 response_format=json_object 拿结构化结果；视觉这里要的是
+//    **纯文本转录**，硬塞进同一个函数会把两套语义搅在一起；
+//  - 视觉只有 deepseek-flash 支持（deepseek-v4-pro 不支持），没有「优先/兜底」
+//    的余地，选型是固定的。
 //
-// ⚠️ 模型选型踩过的坑：**别用 glm-4v-flash**。它最大输出只有 1K token，
-// 一页密集中文简历（1500~2500 token）会被从中间截断，而且不报错——
-// 表现就是「识别出来的简历只有上半页」，比彻底失败更难发现。
-// 这里选的是免费档里输出够大的视觉模型（32K），并在失败时按顺序换下一个。
+// ⚠️ 模型必须用 deepseek-flash：
+//  - deepseek-v4-pro **不支持视觉**（官方能力表明确标了 Not supported）；
+//  - 老的 deepseek-v4-flash-vision-exp 已被官方下线，请求会被转到最新的
+//    Flash 模型，直接写新名字更清楚。
 //
-// 为什么只做「转录」不做「直接抽字段」：转录是视觉模型最稳的任务，
-// 字段抽取交给后面已经调好的 DeepSeek + 本地规则管线。这样即使模型这一轮
-// 状态不好，也只是文字质量差一点，而不是整份简历全空。
+// 图片走 base64 data URL（官方推荐的内联方式）：候选人的简历不能传到公网
+// 图床再让模型去下载，这是隐私红线。单张上限 32MiB、请求体 48MiB，够用。
+//
+// 成本：图片按尺寸折算 token，**每张上限 1024 token**（2000×2000 和 5000×5000
+// 折算后一样）。一份简历一页 ≈ 1024 输入 token，按 $0.15/1M 算约 0.001 元。
+//
+// ⚠️⚠️ 必须显式传 thinking.type=disabled，这是踩过坑的：
+//  deepseek-flash（V4-Flash 0731）**不传 thinking 不等于关闭思考**，服务端会按
+//  任务复杂度自动路由到 high 档。而 max_tokens 是「推理 token + 正文 token」
+//  共享的预算——high 档下 reasoning 能一口气吃满 8191 个 token，最终
+//  **HTTP 200、usage 扣了钱、但 message.content 是空串**。
+//  实测 27 份扫描件简历：不关思考时 15 份空正文 + 6 份截断（reasoning 占 87%~98%），
+//  关掉后 27/27 全部 finish=stop，耗时还从 1.2~2.5s 降到 0.3~1.3s。
+//  纯视觉转录不需要思维链，关掉纯赚。
 
-/** 视觉模型候选：按顺序尝试，前一个 404/400（模型下线或改名）就换下一个 */
-const ZHIPU_VISION_MODELS = ["glm-4.6v-flash", "glm-5.3-flash", "glm-4v-flash"];
-/** 视觉调用比纯文本慢得多（要传整页图），给 60s；批量导入时前端超时是 120s */
+const DEEPSEEK_VISION_MODEL = "deepseek-flash";
+/** 视觉调用比纯文本慢（要传整页图），给 60s；批量导入时前端超时是 120s */
 const VISION_TIMEOUT_MS = 60_000;
+/** 非思考模式下的输出上限。8192 是 deepseek 允许的最大值，一页简历约 2500 token 够用 */
+const VISION_MAX_TOKENS = 8192;
 
 export interface OcrResult {
   ok: boolean;
   text: string;
   /** 失败原因（日志/前端提示用） */
   reason?: string;
+  /**
+   * 输出撞到 max_tokens 上限被截断（finish_reason=length）。
+   * 此时 text 只有上半页——**不能当失败丢掉**（有总比没有强），
+   * 但调用方必须记日志，前端也应提示重点核对，否则缺的那半不会被发现。
+   */
+  truncated?: boolean;
 }
 
 /**
  * 整页图片 → 文字。
  *
+ * 只做「转录」不做「直接抽字段」：转录是视觉模型最稳的任务，字段抽取交给
+ * 后面已经调好的 DeepSeek + 本地规则管线。这样即使模型这一轮状态不好，
+ * 也只是文字质量差一点，而不是整份简历全空——而且转录出的文本还能回填到
+ * 核对弹窗左侧的「简历原文」，扫描件用户第一次能在界面上看到内容。
+ *
+ * @param apiKey DeepSeek Key（系统 Key 或用户自有 BYOK）
  * @param jpegBase64 不含 data URI 前缀的 base64
- * @param modelOverride 环境变量指定的模型（ZHIPU_VISION_MODEL），留空走候选列表
  */
-export async function zhipuOcrImage(
-  zhipuKey: string,
+export async function deepseekOcrImage(
+  apiKey: string,
   jpegBase64: string,
   prompt: string,
   modelOverride?: string | null
 ): Promise<OcrResult> {
-  const candidates = modelOverride ? [modelOverride] : ZHIPU_VISION_MODELS;
-  let lastReason = "视觉识别失败";
+  try {
+    const resp = await fetch(DEEPSEEK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: modelOverride || DEEPSEEK_VISION_MODEL,
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: prompt },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${jpegBase64}`,
+                  // original 保留原图。默认 auto 目前等同 original，但显式写死，
+                  // 免得哪天默认值改成 low（512×512）把简历正文糊掉
+                  detail: "original",
+                },
+              },
+            ],
+          },
+        ],
+        temperature: 0.01,
+        // 一页密集中文简历约 1500~2500 token，给 8192（模型允许的最大值）留足余量。
+        // 截断是不报错的，表现是「只识别出上半页」，所以宁大勿小。
+        max_tokens: VISION_MAX_TOKENS,
+        // 见文件头注释：不传这一行会有近半数请求返回空正文
+        thinking: { type: "disabled" },
+      }),
+      signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
+    });
 
-  for (const model of candidates) {
-    try {
-      const auth = await zhipuBearer(zhipuKey);
-      const resp = await fetch(ZHIPU_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: auth },
-        body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: "user",
-              content: [
-                { type: "image_url", image_url: { url: `data:image/jpeg;base64,${jpegBase64}` } },
-                { type: "text", text: prompt },
-              ],
-            },
-          ],
-          temperature: 0.01,
-          // 一页密集中文简历约 1500~2500 token，给 4000 留余量；
-          // 超过这个量基本是模型在重复输出，不是内容真的有那么多
-          max_tokens: 4000,
-        }),
-        signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
-      });
-
-      if (!resp.ok) {
-        const body = await resp.text().catch(() => "");
-        lastReason = `HTTP ${resp.status} ${body.slice(0, 160)}`;
-        // 只有「模型不存在/参数不对」才换下一个；429/5xx 换模型也没用，直接失败
-        if (resp.status === 400 || resp.status === 404) continue;
-        return { ok: false, text: "", reason: lastReason };
-      }
-
-      const data = (await resp.json()) as {
-        choices?: { message?: { content?: string | { type?: string; text?: string }[] } }[];
-      };
-      const content = data.choices?.[0]?.message?.content;
-      // 有的版本把 content 返回成 [{type:"text", text:"..."}] 数组
-      const text = typeof content === "string"
-        ? content
-        : Array.isArray(content)
-          ? content.map((p) => p?.text ?? "").join("")
-          : "";
-      if (!text.trim()) {
-        lastReason = "模型返回空内容";
-        continue;
-      }
-      return { ok: true, text };
-    } catch (e) {
-      lastReason = (e as Error)?.message || "视觉识别异常";
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => "");
+      return { ok: false, text: "", reason: `HTTP ${resp.status} ${body.slice(0, 160)}` };
     }
+
+    const data = (await resp.json()) as {
+      choices?: {
+        message?: { content?: string | { type?: string; text?: string }[] };
+        finish_reason?: string;
+      }[];
+      usage?: {
+        completion_tokens?: number;
+        completion_tokens_details?: { reasoning_tokens?: number };
+      };
+    };
+    const content = data.choices?.[0]?.message?.content;
+    // 兼容 content 返回成 [{type:"text", text:"..."}] 数组的版本
+    const text = typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content.map((p) => p?.text ?? "").join("")
+        : "";
+    if (!text.trim()) {
+      // 空正文最常见的原因是推理把预算吃光（见文件头注释）。把 reasoning_tokens
+      // 带进 reason，下次再出问题能一眼看出是配置退化了还是模型真抽风。
+      const rt = data.usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+      return {
+        ok: false,
+        text: "",
+        reason: rt > 0
+          ? `模型返回空内容（推理消耗 ${rt} token 占满输出预算，检查 thinking 是否被关闭）`
+          : "模型返回空内容",
+      };
+    }
+    const truncated = data.choices?.[0]?.finish_reason === "length";
+    return { ok: true, text, truncated: truncated || undefined };
+  } catch (e) {
+    return { ok: false, text: "", reason: (e as Error)?.message || "视觉识别异常" };
   }
-  return { ok: false, text: "", reason: lastReason };
 }
+
 
 
 

@@ -4,7 +4,7 @@ import { getSession } from "./auth";
 import { sanitizeField, sanitizeSkills } from "../../utils/fieldSanity";
 import { normalizeEducation, normalizeGender } from "../../utils/resumeParser";
 
-import { deepseekJsonSafe, zhipuOcrImage } from "../ai";
+import { deepseekJsonSafe, deepseekOcrImage } from "../ai";
 import type { AiKeyInput } from "../ai";
 import { resolveAiKey } from "../aiKey";
 import { extractDocText, extractPageJpegs, DocError } from "../docText";
@@ -186,14 +186,10 @@ const OCR_PROMPT = `请把这张图片里的全部文字完整转录出来，用
 4. 看不清的字用「□」代替，绝对不要猜测或编造。`;
 
 async function ocrScannedPdf(
-  env: Env,
-  buf: Uint8Array
+  apiKey: string,
+  buf: Uint8Array,
+  model?: string | null
 ): Promise<{ ok: true; text: string } | { ok: false; reason: string }> {
-  const zhipuKey = env.ZHIPU_API_KEY;
-  if (!zhipuKey) {
-    return { ok: false, reason: "未配置 ZHIPU_API_KEY，无法识别图片型 PDF" };
-  }
-
   const pages = extractPageJpegs(buf, OCR_MAX_PAGES);
   if (pages.length === 0) {
     return { ok: false, reason: "这份 PDF 里取不出整页图片（可能是 JBIG2/CCITT 压缩）" };
@@ -203,10 +199,15 @@ async function ocrScannedPdf(
   for (const jpg of pages) {
     // Uint8Array 的 buffer 可能比视图大（subarray 出来的），必须按 byteOffset 精确切
     const ab = jpg.buffer.slice(jpg.byteOffset, jpg.byteOffset + jpg.byteLength) as ArrayBuffer;
-    const r = await zhipuOcrImage(zhipuKey, arrayBufferToBase64(ab), OCR_PROMPT, env.ZHIPU_VISION_MODEL);
+    const r = await deepseekOcrImage(apiKey, arrayBufferToBase64(ab), OCR_PROMPT, model);
     if (!r.ok) {
       // 一页失败就整体算失败：半份简历比没有更危险（缺的那半不会被发现）
       return { ok: false, reason: r.reason || "识别失败" };
+    }
+    // 截断不判失败（有上半页总比没有强），但必须留痕：
+    // 线上如果频繁出现，说明 max_tokens 或 thinking 配置退化了。
+    if (r.truncated) {
+      console.log(`[ai] OCR 输出被截断，第 ${texts.length + 1} 页后续内容缺失`);
     }
     texts.push(r.text.trim());
   }
@@ -235,6 +236,11 @@ aiParse.post("/file", async (c) => {
     return c.json({ error: "文件超过 20MB，请压缩后再上传" }, 413);
   }
 
+  // Key 延迟解析并缓存：普通文本 PDF 用不到它，没必要为每次预览都查一次库；
+  // 但扫描件要 OCR、以及后面的 AI 抽取都要用，所以只查一次、两处共用。
+  let cachedKey: Awaited<ReturnType<typeof resolveAiKey>> | null = null;
+  const getKey = async () => (cachedKey ??= await resolveAiKey(c.env, session.userId));
+
   const bytes = new Uint8Array(ab);
   let text: string;
   /** 这份文本是不是 OCR 出来的（前端据此提示「已识别图片文字，请重点核对」） */
@@ -250,7 +256,17 @@ aiParse.post("/file", async (c) => {
 
     // 图片型 PDF：抽出文字这条路走不通，改走视觉识别
     if (e.code === "scanned" && e.hasImages) {
-      const ocr = await ocrScannedPdf(c.env, bytes);
+      const aiKey = await getKey();
+      if (!aiKey.key) {
+        return c.json(
+          {
+            error: "这份 PDF 是图片，需要 AI 识别，但系统还没配置 DeepSeek Key。可以手动填写信息，或换一份能复制文字的 PDF。",
+            code: "scanned",
+          },
+          422
+        );
+      }
+      const ocr = await ocrScannedPdf(aiKey.key, bytes, c.env.DEEPSEEK_VISION_MODEL);
       if (ocr.ok) {
         text = ocr.text;
         ocrUsed = true;
@@ -272,7 +288,7 @@ aiParse.post("/file", async (c) => {
 
   if (!wantAi) return c.json({ text, _ocr: ocrUsed || undefined });
 
-  const apiKey = await resolveAiKey(c.env, session.userId);
+  const apiKey = await getKey();
   if (!apiKey.key && !apiKey.zhipu) {
     // 没配 Key 也把文本返回：前端用本地正则规则兜底，至少不丢内容
     return c.json({ ...EMPTY, text, _ai_fallback: true, _ocr: ocrUsed || undefined });
