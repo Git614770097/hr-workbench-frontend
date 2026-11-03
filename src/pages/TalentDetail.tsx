@@ -258,7 +258,7 @@ export default function TalentDetail() {
         <div>
           <Card title="基本信息" style={{ marginBottom: 16 }}>
             <Descriptions column={2} size="small">
-              <Descriptions.Item label="年龄">{talent.age != null ? `${talent.age}岁` : "—"}</Descriptions.Item>
+              <Descriptions.Item label="年龄">{talent.age != null ? `${talent.age}岁` : "-"}</Descriptions.Item>
               <Descriptions.Item label="出生年月">
                 {talent.birth_date ? (
                   <Space size={6}>
@@ -272,30 +272,30 @@ export default function TalentDetail() {
                       </Tooltip>
                     )}
                   </Space>
-                ) : "—"}
+                ) : "-"}
               </Descriptions.Item>
-              <Descriptions.Item label="性别">{talent.gender || "—"}</Descriptions.Item>
-              <Descriptions.Item label="学历">{talent.education || "—"}</Descriptions.Item>
-              <Descriptions.Item label="毕业院校">{talent.school || "—"}</Descriptions.Item>
-              <Descriptions.Item label="当前公司">{talent.current_company || "—"}</Descriptions.Item>
-              <Descriptions.Item label="当前职位">{talent.current_title || "—"}</Descriptions.Item>
-              <Descriptions.Item label="工作年限">{talent.years_experience != null ? `${talent.years_experience}年` : "—"}</Descriptions.Item>
-              <Descriptions.Item label="所在城市">{talent.city || "—"}</Descriptions.Item>
-              <Descriptions.Item label="行业">{talent.industry || "—"}</Descriptions.Item>
-              <Descriptions.Item label="期望薪资">{talent.expected_salary || "—"}</Descriptions.Item>
-              <Descriptions.Item label="期望城市">{talent.expected_city || "—"}</Descriptions.Item>
-              <Descriptions.Item label="来源渠道">{talent.source || "—"}</Descriptions.Item>
-              <Descriptions.Item label="入职日期">{talent.hire_date || "—"}</Descriptions.Item>
-              {isAdmin && <Descriptions.Item label="创建人">{talent.owner_name || "—"}</Descriptions.Item>}
+              <Descriptions.Item label="性别">{talent.gender || "-"}</Descriptions.Item>
+              <Descriptions.Item label="学历">{talent.education || "-"}</Descriptions.Item>
+              <Descriptions.Item label="毕业院校">{talent.school || "-"}</Descriptions.Item>
+              <Descriptions.Item label="当前公司">{talent.current_company || "-"}</Descriptions.Item>
+              <Descriptions.Item label="当前职位">{talent.current_title || "-"}</Descriptions.Item>
+              <Descriptions.Item label="工作年限">{talent.years_experience != null ? `${talent.years_experience}年` : "-"}</Descriptions.Item>
+              <Descriptions.Item label="所在城市">{talent.city || "-"}</Descriptions.Item>
+              <Descriptions.Item label="行业">{talent.industry || "-"}</Descriptions.Item>
+              <Descriptions.Item label="期望薪资">{talent.expected_salary || "-"}</Descriptions.Item>
+              <Descriptions.Item label="期望城市">{talent.expected_city || "-"}</Descriptions.Item>
+              <Descriptions.Item label="来源渠道">{talent.source || "-"}</Descriptions.Item>
+              <Descriptions.Item label="入职日期">{talent.hire_date || "-"}</Descriptions.Item>
+              {isAdmin && <Descriptions.Item label="创建人">{talent.owner_name || "-"}</Descriptions.Item>}
               <Descriptions.Item label="电话" span={2}>
                 {talent.phone ? (
                   <Space size={6}>{talent.phone}<CopyBtn text={talent.phone} label="电话" /></Space>
-                ) : "—"}
+                ) : "-"}
               </Descriptions.Item>
               <Descriptions.Item label="邮箱" span={2}>
                 {talent.email ? (
                   <Space size={6}>{talent.email}<CopyBtn text={talent.email} label="邮箱" /></Space>
-                ) : "—"}
+                ) : "-"}
               </Descriptions.Item>
             </Descriptions>
           </Card>

@@ -9,6 +9,7 @@ import { STATUS_LABELS } from "../types";
 import { useDict } from "../dict";
 
 import { notifyOnbSaved } from "./onboardingAutoFill";
+import BirthMonthPicker from "./BirthMonthPicker";
 
 interface Props {
   open: boolean;
@@ -86,7 +87,10 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
       const data = {
         ...values,
         years_experience: values.years_experience ?? undefined,
-        skills: values.skills ? values.skills.split(",").map((s: string) => s.trim()).filter(Boolean) : [],
+        // 技能输入框是多行的：逗号、中文逗号、换行都当分隔符
+        skills: values.skills
+          ? values.skills.split(/[,，\n]/).map((s: string) => s.trim()).filter(Boolean)
+          : [],
         // 出生年月只选到月，统一存当月 1 号 + precision=month：
         // 这样 UI 不会把「1996-03-01」当成用户确认过的具体生日。
         // 三态语义：有值→写入；显式清空（null）→清掉；没动过（undefined）→不传，保持原值。
@@ -132,7 +136,7 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
       title={isEdit ? "编辑人才" : "新增人才"}
       open={open}
       onCancel={onClose}
-      width={880}
+      width={1080}
       destroyOnClose
       footer={null}
     >
@@ -151,7 +155,9 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
               <Input placeholder="请输入邮箱" />
             </Form.Item>
             <Form.Item name="birth_date" label="出生年月" extra={ageHint}>
-              <DatePicker style={{ width: "100%" }} picker="month" placeholder="选择出生年月" allowClear />
+              {/* 不用 DatePicker picker="month"：那个面板点 ‹ 一次只退一年，
+                  选 1994 年要连点 30 多次。换成「年 + 月」两个下拉后一次到位。 */}
+              <BirthMonthPicker />
             </Form.Item>
             <Form.Item name="gender" label="性别">
               <Select allowClear placeholder="请选择性别" options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} />
@@ -199,7 +205,13 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
               <Select allowClear showSearch placeholder="请选择来源渠道" options={sources.map((s) => ({ label: s, value: s }))} />
             </Form.Item>
             <Form.Item name="skills" label="技能" className="span-all">
-              <Input placeholder="逗号分隔，如 Java, Spring" />
+              {/* 多行输入：技术栈动辄十几个词，单行框要一直横向拖滚动条。
+                  提交时逗号、中文逗号、换行都当分隔符（见 handleSubmit）。 */}
+              <Input.TextArea
+                rows={4}
+                placeholder={"每行一个技能，或用逗号分隔\n如 Java / Spring Boot / MySQL / Redis"}
+                style={{ resize: "vertical" }}
+              />
             </Form.Item>
           </div>
           <Form.Item name="notes" label="备注">
