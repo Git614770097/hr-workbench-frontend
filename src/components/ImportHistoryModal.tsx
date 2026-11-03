@@ -293,10 +293,7 @@ export default function ImportHistoryModal({ open, onClose }: Props) {
         }}
       />
 
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          只显示你可见范围内的记录（管理员全部 / 同团队 / 仅本人）
-        </Typography.Text>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
         <Button size="small" icon={<ReloadOutlined />} onClick={() => { setDetails({}); void reload(); }}>
           刷新
         </Button>
