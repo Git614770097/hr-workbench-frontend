@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
@@ -9,7 +9,7 @@ import {
   ImportOutlined, FilePdfOutlined, ExportOutlined,
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
   FileWordOutlined, PlusOutlined,
-  FileExcelOutlined, SettingOutlined, RobotOutlined,
+  FileExcelOutlined, SettingOutlined, RobotOutlined, HistoryOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -21,6 +21,9 @@ import {
   ENTRY_TYPE_LABELS, ENTRY_TYPE_COLORS, ENTRY_TYPE_OPTIONS,
 } from "../types";
 import ImportModal from "../components/ImportModal";
+// 导入记录：常驻弹窗，用 lazy + 门控（与 Layout.tsx 的弹窗同一模式），
+// 不跟着人才库页一起进首包
+const ImportHistoryModal = lazy(() => import("../components/ImportHistoryModal"));
 import ResumePreviewModal from "../components/ResumePreviewModal";
 import TalentFormModal from "../components/TalentFormModal";
 import { useDict } from "../dict";
@@ -139,6 +142,7 @@ export default function TalentList() {
 
   // 弹窗状态
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importHistoryOpen, setImportHistoryOpen] = useState(false);
   const [previewTalent, setPreviewTalent] = useState<Talent | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -765,6 +769,11 @@ export default function TalentList() {
               {"新增人才"}
             </Button>
             <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
+            {/* 导入记录：上传 N 份 / 录入 N 份 / 失败 N 份，逐份可查。
+                放在「导入」右边——它是导入这个动作的补充说明，不是独立功能 */}
+            <Tooltip title="查看历次导入的逐份结果（哪些没进来、为什么）">
+              <Button icon={<HistoryOutlined />} onClick={() => setImportHistoryOpen(true)}>导入记录</Button>
+            </Tooltip>
             {/* 人才AI匹配入口：从「挑人」场景顺手进匹配页（页内自选画像）。
                 用站内统一 ai-btn（淡紫底 + 机器人图标）标识 AI 能力，
                 与人才详情页头部按钮、画像页「去匹配」视觉一致 */}
@@ -874,6 +883,14 @@ export default function TalentList() {
         onClose={() => setImportModalOpen(false)}
         onSuccess={refreshAfterImport}
       />
+
+      {/* 导入记录（上传 N 份 / 录入 N 份 / 失败 N 份，逐份可查）。
+          懒加载 + 门控：不打开就不下载这份代码，也不影响首屏 */}
+      <Suspense fallback={null}>
+        {importHistoryOpen && (
+          <ImportHistoryModal open onClose={() => setImportHistoryOpen(false)} />
+        )}
+      </Suspense>
 
       {/* 简历预览弹窗（PDF 原生渲染保留格式；Word 在线转 HTML 查看，不下载） */}
       <ResumePreviewModal talent={previewTalent} onClose={() => setPreviewTalent(null)} />

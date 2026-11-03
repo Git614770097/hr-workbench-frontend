@@ -122,6 +122,44 @@ export interface TalentFile {
   created_at: string;
 }
 
+/** 导入明细状态：四态相加恒等于上传份数 */
+export type ImportItemStatus = "pending" | "imported" | "duplicate" | "failed";
+
+/** 一次「导入简历」会话 = 一个批次。计数全部由明细现算，不是表头存的快照。 */
+export interface ImportBatch {
+  id: string;
+  user_name: string | null;
+  /** 本批统一来源渠道，未选为 null */
+  source: string | null;
+  /** 本批是否开启自动去重（D1 里是 1/0，不是布尔） */
+  dedup: number;
+  started_at: string;
+  /** 中途关浏览器则留空，列表里显示「未结束」 */
+  finished_at: string | null;
+  total: number;
+  imported: number;
+  duplicate: number;
+  failed: number;
+  pending: number;
+}
+
+/** 逐份明细：哪个文件、什么结果、为什么失败 */
+export interface ImportBatchItem {
+  id: string;
+  file_name: string | null;
+  file_size: number | null;
+  talent_id: string | null;
+  talent_name: string | null;
+  status: ImportItemStatus;
+  error: string | null;
+  /** ai / local：线上 AI 长期不可用时，这是唯一的实测证据 */
+  parse_source: string | null;
+  created_at: string;
+  updated_at: string | null;
+  /** 人才是否还在（被删了就不给链接，避免点进去 404） */
+  talent_alive: number;
+}
+
 export interface Talent {
   id: string;
   owner_id: string;

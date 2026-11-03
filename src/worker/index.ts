@@ -19,6 +19,7 @@ import aiAssistRoutes from "./routes/aiAssist";
 import teamRoutes from "./routes/team";
 import { overview } from "./routes/overview";
 import logsRoutes, { purgeOldUsage, purgeOldAuditLogs } from "./routes/logs";
+import { importBatchRoutes, purgeOldImportBatches } from "./routes/importBatches";
 import { auditRoutes } from "./routes/audit";
 import { feishuRoutes } from "./routes/feishu";
 import { writeAudit } from "./audit";
@@ -273,6 +274,13 @@ app.use("/api/parse-resume/*", async (c, next) => {
   if (blocked) return blocked;
   return next();
 });
+// 导入记录：导入是人才库的功能，记录里全是候选人姓名，权限必须跟着人才库走。
+// "/api/import-batches/*" 同时匹配裸路径，无需再注册一份（叠加执行会变成「两个权限都要」）。
+app.use("/api/import-batches/*", async (c, next) => {
+  const blocked = await menuGuard(c, "talents");
+  if (blocked) return blocked;
+  return next();
+});
 // 人才AI匹配：独立菜单「人才画像」+ 匹配页，权限跟随 profiles
 app.use("/api/match/*", async (c, next) => {
   const blocked = await menuGuard(c, "profiles");
@@ -353,6 +361,8 @@ app.route("/api/approvals", approvalRoutes);
 app.route("/api/onboarding", onboardingRoutes);
 app.route("/api/tasks", taskRoutes);
 app.route("/api/parse-resume", aiParseRoutes);
+// 导入记录（上传 N 份 / 录入 N 份 / 失败 N 份的逐份明细），权限跟随人才库
+app.route("/api/import-batches", importBatchRoutes);
 app.route("/api/match", matchRoutes);
 app.route("/api/ai", aiAssistRoutes);
 app.route("/api/team", teamRoutes);
@@ -403,5 +413,7 @@ export default {
     await purgeOldUsage(env);
     // 审计日志滚动清理（保留 180 天；分批删，见 purgeOldAuditLogs）
     await purgeOldAuditLogs(env);
+    // 导入记录滚动清理（同样 180 天；明细分批删 + 孤儿清扫，见 purgeOldImportBatches）
+    await purgeOldImportBatches(env);
   },
 };

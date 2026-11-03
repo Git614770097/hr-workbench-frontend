@@ -1,5 +1,5 @@
 import message from "antd/es/message";
-import type { User, UserRow, Talent, TalentDetailData, TalentFile, DocTemplate, TemplateVersionMeta, TemplateVersion, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuMyApp, FeishuWebhook, FeishuNotifyMode, AuditLogRow, AuditLogsResponse } from "./types";
+import type { User, UserRow, Talent, TalentDetailData, TalentFile, DocTemplate, TemplateVersionMeta, TemplateVersion, PaginatedResponse, Role, Job, JobDetail, PipelineCard, PipelineResponse, StageLog, FunnelResponse, Task, TaskSummary, OverviewResponse, TrendResponse, MatchProfile, MatchProfileLite, MatchResult, ComplianceResponse, ContractItem, ContractSyncResult, ContractFile, ContractUploadResult, SocialItem, SocialRateTemplate, SocialRateInput, Interview, Requisition, ApprovalFlow, ApprovalInstance, OnboardingItem, UsageEventsResponse, AiResumeInsight, AiOutreach, AiOutreachScene, AiRejectTone, AiInterviewQuestions, AiCandidateSummary, AiRecapReport, AiJobDiagnosis, AiOnboardChecklist, AiTalentInventory, AiQuotaInfo, AiUsage, AiWeeklyReport, AiCandidateCompare, AiOfferNegotiation, AiSourcingCopy, AiChannelAdvice, AiContractReview, AiSocialReminder, AiTaxPlan, AiProbationCompliance, AiOwnKeyInfo, FeishuSettings, FeishuMyApp, FeishuWebhook, FeishuNotifyMode, AuditLogRow, AuditLogsResponse, ImportBatch, ImportBatchItem } from "./types";
 
 const BASE = "/api";
 
@@ -475,6 +475,52 @@ export const api = {
   // 附件地址：同源请求会自动带 httpOnly cookie，不需要也不能拼 token
   getTalentFileUrl: (talentId: string, fileId: string, download = false) =>
     `${BASE}/talents/${talentId}/files/${fileId}${download ? "?download=1" : ""}`,
+
+  // ---- 导入记录 ----
+  // 批次在用户第一次选中文件时创建（不是打开弹窗时），避免留一堆 0 份的空批次
+  createImportBatch: (data: { source?: string | null; dedup?: boolean }) =>
+    request<{ id: string }>("/import-batches", { method: "POST", body: JSON.stringify(data) }),
+
+  // 批量写明细：返回的 ids 与提交顺序严格一一对应（文件名可能重复，只有下标能可靠映射）
+  addImportBatchItems: (id: string, items: {
+    file_name: string;
+    file_size: number;
+    talent_name?: string;
+    status?: string;
+    error?: string;
+    parse_source?: string;
+  }[]) =>
+    request<{ ids: string[] }>(`/import-batches/${id}/items`, {
+      method: "POST",
+      body: JSON.stringify(items),
+    }),
+
+  // 逐份更新：录入成功 / 判重跳过 / 录入报错 时各调一次，一份一落盘
+  updateImportBatchItem: (
+    batchId: string,
+    itemId: string,
+    patch: { status?: string; talent_id?: string | null; talent_name?: string; error?: string }
+  ) =>
+    request(`/import-batches/${batchId}/items/${itemId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  finishImportBatch: (id: string) =>
+    request(`/import-batches/${id}/finish`, { method: "POST" }),
+
+  getImportBatches: (params: { page?: number; limit?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set("page", String(params.page));
+    if (params.limit) qs.set("limit", String(params.limit));
+    const s = qs.toString();
+    return request<{ items: ImportBatch[]; total: number; page: number; limit: number }>(
+      `/import-batches${s ? `?${s}` : ""}`
+    );
+  },
+
+  getImportBatch: (id: string) =>
+    request<{ batch: ImportBatch; items: ImportBatchItem[] }>(`/import-batches/${id}`),
 
   // 合规到期扫描：合同 / 试用期 30 天内到期（含已过期未更新）
   getTalentCompliance: () =>

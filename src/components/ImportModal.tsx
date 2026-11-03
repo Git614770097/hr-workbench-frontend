@@ -43,6 +43,44 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   // 本轮已录入份数，用于结束时汇总
   const savedCount = useRef(0);
 
+  // ---- 导入记录（上传 N 份 / 录入 N 份 / 失败 N 份，事后可查）----
+  // 批次在第一次选中文件时才创建，不是打开弹窗时——否则用户点开又关掉会留一堆 0 份的空批次。
+  const batchIdRef = useRef<string | null>(null);
+  // 前端行 key → 明细 id。文件名可能重复，只能靠解析时分配的 key 映射。
+  const itemIdByKey = useRef<Record<string, string>>({});
+
+  /**
+   * 记录失败绝不能连累导入本身。
+   * 导入记录是「事后追溯」的辅助能力，它挂了也要让用户把简历录进去——
+   * 所以这里所有调用都是 catch 吞掉的 fire-and-forget，没有一个 await 在关键路径上。
+   */
+  const ensureBatch = async (): Promise<string | null> => {
+    if (batchIdRef.current) return batchIdRef.current;
+    try {
+      const { id } = await api.createImportBatch({ source: batchSource || null, dedup });
+      batchIdRef.current = id;
+      return id;
+    } catch {
+      return null;
+    }
+  };
+
+  /** 更新单份明细状态：录入成功 / 判重跳过 / 录入报错 各调一次 */
+  const markItem = (key: string, patch: { status?: string; talent_id?: string | null; talent_name?: string; error?: string }) => {
+    const bid = batchIdRef.current;
+    const iid = itemIdByKey.current[key];
+    if (!bid || !iid) return;
+    api.updateImportBatchItem(bid, iid, patch).catch(() => {});
+  };
+
+  /** 结束批次：全部处理完 / 用户关闭弹窗时调用，幂等 */
+  const finishBatch = () => {
+    const bid = batchIdRef.current;
+    if (!bid) return;
+    batchIdRef.current = null;
+    api.finishImportBatch(bid).catch(() => {});
+  };
+
   // 批量确认进度：一次性录入剩余全部时，核对弹窗内常驻显示「正在录入 x/y」
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
 
@@ -57,6 +95,9 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     setSavingOne(false);
     savedCount.current = 0;
     pendingFilesRef.current = [];
+    // 上一批的批次号不能带过来，否则新一批的明细会记到旧批次里
+    batchIdRef.current = null;
+    itemIdByKey.current = {};
     // 来源渠道每次打开都重置：宁可多选一次，也不能把上一批的渠道错标到新一批
     setBatchSource(undefined);
     // 自动去重默认开：避免用户误点「全部确认」把已入库的人重复写入
@@ -72,14 +113,54 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       const parsed: ParsedTalent[] = [];
       // 逐份容错：扫描件 / 损坏文件只跳过它自己，不能连累同批其余简历
       const failed: string[] = [];
+      // 与 files 严格同序：下标 i 就是 files[i] 的命运，最后一次性提交成导入明细。
+      // 解析失败的也要占一行——「上传 20 份只进来 13 份」里的差额必须在记录里看得见，
+      // 只记成功的话，这份记录就只会在顺利时有用，而顺利时根本没人来查。
+      const logItems: {
+        file_name: string; file_size: number; talent_name?: string;
+        status: string; error?: string; parse_source?: string;
+      }[] = [];
+      const keyByIndex: (string | null)[] = [];
       for (const file of files) {
-        // 上传到服务端抽文本 + AI 解析（AI 不可用时服务端已降级为本地规则）
+        const key = nextKey();
         try {
-          const { talent } = await parseResumeToTalent(file, nextKey());
+          // 上传到服务端抽文本 + AI 解析（AI 不可用时服务端已降级为本地规则）
+          const { talent } = await parseResumeToTalent(file, key);
           parsed.push(talent);
+          keyByIndex.push(key);
+          logItems.push({
+            file_name: file.name,
+            file_size: file.size,
+            talent_name: talent.name || undefined,
+            status: "pending",
+            parse_source: talent._ai ? "ai" : "local",
+          });
         } catch (e) {
+          keyByIndex.push(null);
+          logItems.push({
+            file_name: file.name,
+            file_size: file.size,
+            status: "failed",
+            error: (e as Error).message,
+          });
           failed.push(`「${file.name}」${(e as Error).message}`);
         }
+      }
+
+      // 落导入记录：一次 POST 提交本批全部文件。返回的 ids 与提交顺序一一对应
+      // （文件名可能重复，只有下标能可靠映射回前端记录）。
+      // 整段吞异常：导入记录是事后追溯用的辅助能力，不能因为它挂了让人录不进简历。
+      try {
+        const bid = await ensureBatch();
+        if (bid) {
+          const { ids } = await api.addImportBatchItems(bid, logItems);
+          ids.forEach((id, i) => {
+            const k = keyByIndex[i];
+            if (k) itemIdByKey.current[k] = id;
+          });
+        }
+      } catch {
+        /* 忽略：不影响导入 */
       }
       if (failed.length > 0) {
         if (parsed.length === 0) {
@@ -146,6 +227,14 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     // dedup=true 时后端判重，命中则跳过不插入（created 为空、skipped 有值）
     const res = await api.importTalents([data], { dedup });
     const created = res.items?.[0];
+    const skipped = res.skipped?.[0];
+    // 结果先落盘再传简历文件：文件上传失败时人已经在库里了，
+    // 记录该是「已录入」而不是「失败」——否则用户会以为白录了一遍。
+    if (created) {
+      markItem(rec.key, { status: "imported", talent_id: created.id, talent_name: rec.name });
+    } else if (skipped) {
+      markItem(rec.key, { status: "duplicate", talent_name: rec.name });
+    }
     if (created && rec.file) {
       try {
         await api.uploadResume(created.id, rec.file);
@@ -154,7 +243,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         message.warning("简历文件保存失败，可稍后在人才详情页重新上传");
       }
     }
-    return { created, skipped: res.skipped?.[0] };
+    return { created, skipped };
   };
 
   // 处理完当前记录后自动切到下一份；全部处理完则刷新列表并关闭导入弹窗
@@ -164,6 +253,8 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     if (remaining.length === 0) {
       setRecords([]);
       setReviewKey(null);
+      // 全部处理完 = 批次自然结束。没处理完就关弹窗的走 finishBatch 的另一处调用。
+      finishBatch();
       message.success(savedCount.current > 0
         ? `已录入 ${savedCount.current} 份，人才库列表已更新`
         : "已处理完全部简历");
@@ -229,6 +320,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       // 录入失败必须同时用 message 弹出来，否则表现就是「点了没反应」
       const msg = (err as Error).message || "录入失败";
       setError(msg);
+      markItem(rec.key, { status: "failed", error: msg, talent_name: rec.name });
       message.error(`录入失败：${msg}`);
     }
     setSavingOne(false);
@@ -272,6 +364,11 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
         }
       } catch (err) {
         failed.push(list[i].name || list[i].fileName || "未命名");
+        markItem(list[i].key, {
+          status: "failed",
+          error: (err as Error).message || "录入失败",
+          talent_name: list[i].name,
+        });
       }
     }
     setBatchProgress(null);
@@ -288,6 +385,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
     }
     setRecords([]);
     setReviewKey(null);
+    finishBatch();
     onClose();
   };
 
@@ -296,7 +394,9 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
   const handleCloseReview = () => {
     const rest = records.length;
     if (rest === 0) {
+      // 队列已空还点关闭：不弹确认，但批次仍要收尾，否则它会永远停在「未结束」
       setReviewKey(null);
+      finishBatch();
       return;
     }
     Modal.confirm({
@@ -310,13 +410,22 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       onOk: () => {
         setRecords([]);
         setReviewKey(null);
+        // 放弃的份数在导入记录里留在 pending 态——「上传 20 份录了 13 份」
+        // 这个差额正是用户事后想查的东西，不要抹成「失败」。
+        finishBatch();
         onClose();
       },
     });
   };
 
+  // 直接点导入弹窗的关闭：同样结束批次，避免批次永远停在「未结束」
+  const handleCloseModal = () => {
+    finishBatch();
+    onClose();
+  };
+
   return (
-    <Modal title="导入简历" open={open} onCancel={onClose} width={720} destroyOnClose footer={null}>
+    <Modal title="导入简历" open={open} onCancel={handleCloseModal} width={720} destroyOnClose footer={null}>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
         上传 PDF 或 Word（.docx）简历，解析完成后会<b>自动弹出核对窗口</b>：
         左边看简历原文，右边改字段，点「保存并录入」即写入{"人才库"}并更新列表。
@@ -357,7 +466,7 @@ export default function ImportModal({ open, onClose, onSuccess }: Props) {
       {error && <Alert message={error} type="error" showIcon style={{ marginTop: 16, marginBottom: 16 }} />}
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-        <Button onClick={onClose}>关闭</Button>
+        <Button onClick={handleCloseModal}>关闭</Button>
       </div>
 
       {/* 逐份核对弹窗：左侧简历原文，右侧可改字段，保存才录入 */}

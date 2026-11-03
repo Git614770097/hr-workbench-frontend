@@ -107,6 +107,40 @@ CREATE TABLE IF NOT EXISTS talent_files (
 );
 CREATE INDEX IF NOT EXISTS idx_talent_files_talent ON talent_files(talent_id);
 
+-- ---- 导入记录（上传 N 份 / 录入 N 份 / 失败 N 份，可看逐份详情）----
+-- 导入是纯前端编排的：每份简历单独调一次 /talents/import，解析失败与去重跳过
+-- 只活在 React state 里，弹窗一关就没了。audit_logs 只记「成功写入」的 talent，
+-- 既不知道解析失败过几份，也没法把一次上传会话归成一个批次。
+-- 计数一律从明细 GROUP BY 现算（表头不冗余存），表头与明细永远一致。
+CREATE TABLE IF NOT EXISTS import_batches (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  user_name TEXT,
+  source TEXT,                              -- 本批统一来源渠道，未选为 NULL
+  dedup INTEGER NOT NULL DEFAULT 1,         -- 本批是否开启自动去重
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  finished_at TEXT                          -- 中途关浏览器则留空
+);
+CREATE INDEX IF NOT EXISTS idx_import_batches_user ON import_batches(user_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_import_batches_started ON import_batches(started_at);
+
+-- 逐份明细：status 四态相加恒等于上传份数
+--   pending 已解析待处理 / imported 已录入 / duplicate 判重跳过 / failed 解析或录入失败
+CREATE TABLE IF NOT EXISTS import_batch_items (
+  id TEXT PRIMARY KEY,
+  batch_id TEXT NOT NULL,
+  file_name TEXT,
+  file_size INTEGER,
+  talent_id TEXT,                           -- 人才被删后悬空，查询时 LEFT JOIN 判断
+  talent_name TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  error TEXT,
+  parse_source TEXT,                        -- ai / local，线上 AI 可用性的实测证据
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_import_items_batch ON import_batch_items(batch_id);
+
 -- 岗位表
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
