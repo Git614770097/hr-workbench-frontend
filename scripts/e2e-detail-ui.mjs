@@ -1,5 +1,5 @@
 // 验证人才详情页的信息结构优化（①~⑤）：
-//   ① 顶部摘要条（6 项关键信息在首屏）
+//   ① 摘要条已删（与基本信息重复是显乱主因）
 //   ② 基本信息分三组 + 低频字段折叠
 //   ③ 「简历原文」与「AI 解读」合并成一张卡的两个 Tab
 //   ④ 右栏顶部「当前状态」卡（当前阶段 / 岗位 / 评分 / 来源 / 下一步）
@@ -124,28 +124,29 @@ const waitFor = async (cdp, expression, label, tries = 40) => {
     check("拿到候选人 id", !!target, target ? target.name : "");
 
     await cdp.send("Page.navigate", { url: `${BASE}/talents/${target.id}` });
-    await waitFor(cdp, `document.querySelector(".talent-summary") !== null`, "详情页摘要条");
+    await waitFor(cdp, `[...document.querySelectorAll(".ant-card-head-title")].some(e=>e.textContent.includes("基本信息"))`, "详情页基本信息卡");
     await sleep(1500);
 
-    console.log("— ① 摘要条 —");
-    const sum = await evalJs(cdp, `(() => {
-      const el = document.querySelector(".talent-summary");
-      if (!el) return null;
-      return {
-        labels: [...el.querySelectorAll(".talent-summary-label")].map(e=>e.textContent.trim()),
-        items: el.querySelectorAll(".talent-summary-item").length,
-      };
-    })()`);
-    check("摘要条存在", !!sum);
-    check("摘要条有 6 项", sum?.items === 6, `实际 ${sum?.items} 项`);
-    check("含电话/当前/期望薪资/期望城市/当前阶段/评分",
-      JSON.stringify(sum?.labels) === JSON.stringify(["电话","当前","期望薪资","期望城市","当前阶段","评分"]),
-      JSON.stringify(sum?.labels));
+    console.log("— ① 摘要条已删 —");
+    const noSummary = await evalJs(cdp, `document.querySelector(".talent-summary") === null`);
+    check("摘要条已删（不再与基本信息重复）", noSummary === true);
 
-    console.log("\n— ② 基本信息分组 —");
-    const groups = await evalJs(cdp, `[...document.querySelectorAll(".info-group-title")].map(e=>e.textContent.trim())`);
-    check("三组：身份/求职意向/履历",
-      JSON.stringify(groups) === JSON.stringify(["身份","求职意向","履历"]), JSON.stringify(groups));
+    console.log("\n— ② 基本信息：单表 + 新顺序，无分组标题 —");
+    const groups = await evalJs(cdp, `[...document.querySelectorAll(".info-group-title")].length`);
+    check("没有分组标题（结构件清零）", groups === 0, `实际 ${groups} 个`);
+
+    // 字段顺序：电话/邮箱必须排最前（HR 打开详情页最先确认的就是怎么联系他）
+    const labelOrder = await evalJs(cdp, `(() => {
+      const card = [...document.querySelectorAll(".ant-card")].find(x => (x.querySelector(".ant-card-head-title")?.textContent||"").includes("基本信息"));
+      if (!card) return null;
+      return [...card.querySelectorAll(".ant-descriptions-item-label")]
+        .filter(e => e.closest(".ant-collapse") === null)
+        .map(e => e.textContent.trim());
+    })()`);
+    const firstTwo = (labelOrder || []).slice(0, 2);
+    check("电话/邮箱排最前两位",
+      firstTwo[0] === "电话" && firstTwo[1] === "邮箱", JSON.stringify(firstTwo));
+    check("字段完整（14 项主表）", (labelOrder || []).length >= 14, `实际 ${(labelOrder||[]).length} 项`);
 
     const moreOpen = await evalJs(cdp, `(() => {
       const items = [...document.querySelectorAll(".ant-collapse-item")];

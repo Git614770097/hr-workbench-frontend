@@ -271,102 +271,54 @@ export default function TalentDetail() {
         </Space>
       </div>
 
-      {/* 摘要条：把「最该先看的几项」提到首屏。
-          之前基本信息 17 项平铺在下面的卡里，手机号排到第 16 位、邮箱第 17 位——
-          而 HR 打开详情页最先确认的就是「怎么联系他」和「现在什么情况」。
-          这里只放 6 项，其余仍在下方卡片里。 */}
-      <div className="talent-summary">
-        <span className="talent-summary-item">
-          <span className="talent-summary-label">电话</span>
-          {talent.phone ? <CopyBtn text={talent.phone} label="电话" /> : <span className="talent-summary-empty">-</span>}
-        </span>
-        <span className="talent-summary-item">
-          <span className="talent-summary-label">当前</span>
-          {talent.current_company || talent.current_title
-            ? [talent.current_company, talent.current_title].filter(Boolean).join(" · ")
-            : <span className="talent-summary-empty">-</span>}
-        </span>
-        <span className="talent-summary-item">
-          <span className="talent-summary-label">期望薪资</span>
-          {talent.expected_salary || <span className="talent-summary-empty">-</span>}
-        </span>
-        <span className="talent-summary-item">
-          <span className="talent-summary-label">期望城市</span>
-          {talent.expected_city || <span className="talent-summary-empty">-</span>}
-        </span>
-        <span className="talent-summary-item">
-          <span className="talent-summary-label">当前阶段</span>
-          {latestPipeline
-            ? <Tag color={latestStageMeta?.color} style={{ marginInlineEnd: 0 }}>{latestStageMeta?.label || latestPipeline.stage}</Tag>
-            : <span className="talent-summary-empty">未进流程</span>}
-        </span>
-        <span className="talent-summary-item">
-          <span className="talent-summary-label">评分</span>
-          {latestPipeline?.rating
-            ? <span style={{ color: "#faad14" }}>{"★".repeat(latestPipeline.rating)}</span>
-            : <span className="talent-summary-empty">-</span>}
-        </span>
-      </div>
-
+      {/* 摘要条已删：它和基本信息里的电话/公司/期望薪资/阶段完全重复——
+          同一信息出现两次正是页面显乱的主因。联系信息现在通过
+          基本信息的字段顺序保证第一眼可见（见下方卡内注释）。 */}
       <div className="detail-grid">
         <div>
           <Card title="基本信息" style={{ marginBottom: 16 }}>
-            {/* 按语义分三组：身份 / 求职意向 / 履历。
-                之前 17 项平铺在一个 Descriptions 里，手机号排到第 16 位、邮箱第 17 位，
-                而这两个恰恰是筛选候选人时最先看的。分组后主次也清楚了。 */}
-            <div className="info-group">
-              <div className="info-group-title">身份</div>
-              <Descriptions column={2} size="small">
-                <Descriptions.Item label="电话">
-                  {talent.phone ? (
-                    <Space size={6}>{talent.phone}<CopyBtn text={talent.phone} label="电话" /></Space>
-                  ) : "-"}
-                </Descriptions.Item>
-                <Descriptions.Item label="邮箱">
-                  {talent.email ? (
-                    <Space size={6}>{talent.email}<CopyBtn text={talent.email} label="邮箱" /></Space>
-                  ) : "-"}
-                </Descriptions.Item>
-                <Descriptions.Item label="年龄">{talent.age != null ? `${talent.age}岁` : "-"}</Descriptions.Item>
-                <Descriptions.Item label="出生年月">
-                  {talent.birth_date ? (
-                    <Space size={6}>
-                      {/* 精度决定显示到月还是年：只写了年份的不能假装知道月份 */}
-                      {talent.birth_date_precision === "exact" || talent.birth_date_precision === "month"
-                        ? talent.birth_date.slice(0, 7)
-                        : talent.birth_date.slice(0, 4)}
-                      {talent.birth_date_precision === "estimated" && (
-                        <Tooltip title="按录入时的年龄反推的出生年份，误差最多 1 岁。补上实际出生年月后会自动精确，年龄也会跟着实时算">
-                          <Tag color="orange" style={{ marginInlineEnd: 0 }}>推算</Tag>
-                        </Tooltip>
-                      )}
-                    </Space>
-                  ) : "-"}
-                </Descriptions.Item>
-                <Descriptions.Item label="性别">{talent.gender || "-"}</Descriptions.Item>
-              </Descriptions>
-            </div>
-
-            <div className="info-group">
-              <div className="info-group-title">求职意向</div>
-              <Descriptions column={2} size="small">
-                <Descriptions.Item label="期望薪资">{talent.expected_salary || "-"}</Descriptions.Item>
-                <Descriptions.Item label="期望城市">{talent.expected_city || "-"}</Descriptions.Item>
-                <Descriptions.Item label="当前职位">{talent.current_title || "-"}</Descriptions.Item>
-                <Descriptions.Item label="当前公司">{talent.current_company || "-"}</Descriptions.Item>
-              </Descriptions>
-            </div>
-
-            <div className="info-group">
-              <div className="info-group-title">履历</div>
-              <Descriptions column={2} size="small">
-                <Descriptions.Item label="学历">{talent.education || "-"}</Descriptions.Item>
-                <Descriptions.Item label="毕业院校">{talent.school || "-"}</Descriptions.Item>
-                <Descriptions.Item label="工作年限">{talent.years_experience != null ? `${talent.years_experience}年` : "-"}</Descriptions.Item>
-                <Descriptions.Item label="所在城市">{talent.city || "-"}</Descriptions.Item>
-                <Descriptions.Item label="行业">{talent.industry || "-"}</Descriptions.Item>
-              </Descriptions>
-            </div>
+            {/* 一张 Descriptions，但顺序按「身份 → 求职意向 → 履历」排：
+                电话/邮箱放最前（HR 打开详情页最先确认的就是怎么联系他），
+                低频字段收进下方折叠。不再用分组标题——那是上一轮加的，
+                实测分组标题 + 折叠 + Tab 挤在一屏里，结构件比信息还显眼。 */}
+            <Descriptions column={2} size="small">
+              <Descriptions.Item label="电话">
+                {talent.phone ? (
+                  <Space size={6}>{talent.phone}<CopyBtn text={talent.phone} label="电话" /></Space>
+                ) : "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label="邮箱">
+                {talent.email ? (
+                  <Space size={6}>{talent.email}<CopyBtn text={talent.email} label="邮箱" /></Space>
+                ) : "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label="年龄">{talent.age != null ? `${talent.age}岁` : "-"}</Descriptions.Item>
+              <Descriptions.Item label="出生年月">
+                {talent.birth_date ? (
+                  <Space size={6}>
+                    {/* 精度决定显示到月还是年：只写了年份的不能假装知道月份 */}
+                    {talent.birth_date_precision === "exact" || talent.birth_date_precision === "month"
+                      ? talent.birth_date.slice(0, 7)
+                      : talent.birth_date.slice(0, 4)}
+                    {talent.birth_date_precision === "estimated" && (
+                      <Tooltip title="按录入时的年龄反推的出生年份，误差最多 1 岁。补上实际出生年月后会自动精确，年龄也会跟着实时算">
+                        <Tag color="orange" style={{ marginInlineEnd: 0 }}>推算</Tag>
+                      </Tooltip>
+                    )}
+                  </Space>
+                ) : "-"}
+              </Descriptions.Item>
+              <Descriptions.Item label="性别">{talent.gender || "-"}</Descriptions.Item>
+              <Descriptions.Item label="学历">{talent.education || "-"}</Descriptions.Item>
+              <Descriptions.Item label="期望薪资">{talent.expected_salary || "-"}</Descriptions.Item>
+              <Descriptions.Item label="期望城市">{talent.expected_city || "-"}</Descriptions.Item>
+              <Descriptions.Item label="当前公司">{talent.current_company || "-"}</Descriptions.Item>
+              <Descriptions.Item label="当前职位">{talent.current_title || "-"}</Descriptions.Item>
+              <Descriptions.Item label="毕业院校">{talent.school || "-"}</Descriptions.Item>
+              <Descriptions.Item label="工作年限">{talent.years_experience != null ? `${talent.years_experience}年` : "-"}</Descriptions.Item>
+              <Descriptions.Item label="所在城市">{talent.city || "-"}</Descriptions.Item>
+              <Descriptions.Item label="行业">{talent.industry || "-"}</Descriptions.Item>
+            </Descriptions>
 
             {/* 低频字段收进折叠：来源/入职日期/创建人平时不看，但要看时不能找不到 */}
             <Collapse
