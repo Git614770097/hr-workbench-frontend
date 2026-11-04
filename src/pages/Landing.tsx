@@ -97,28 +97,6 @@ const SECURITY = [
   { idx: "03", title: "隐私合规", desc: "简历等个人信息处理遵循《个人信息保护法》，全站 HTTPS 传输，存储层静态加密。" },
 ];
 
-// 定价说明（2026-10-24 调整为一口价）：¥19.9/年一口价、不做功能分级——
-// 试用和付费用户看到的功能完全一样，避免把潜在定制客户挡在门外。
-// 软件本身不赚钱只作获客入口，真实收益来自「按你的流程改造系统」的定制开发。
-const PLANS = [
-  {
-    name: "会员", kind: "plan",
-    symbol: "¥", price: "19.9", period: "每年 · 一口价",
-    desc: "全部功能开放，到期未续费转为只读",
-    feats: ["全部招聘模块", "不限在招岗位", "简历导入与解析", "AI 生成 JD 与画像", "合同与到期台账", "待办与到期提醒", "招聘漏斗分析"],
-    featured: true,
-    cta: "立即开通",
-  },
-  {
-    name: "定制开发", kind: "custom",
-    symbol: "", price: "按需报价", period: "按需求评估工时",
-    desc: "按你公司的流程改造系统",
-    feats: ["流程与字段调整", "对接内部系统", "专项报表开发", "可私有化部署"],
-    featured: false,
-    cta: "聊聊需求",
-  },
-];
-
 // 定制开发能做什么（这是主要收益来源，单独用一个板块讲清楚）
 const CUSTOM_ITEMS = [
   { idx: "01", title: "流程改造", desc: "你的招聘流程怎么走，系统就怎么改：增加环节、调整阶段、改审批方式。" },
@@ -133,9 +111,6 @@ const CONTACT = { email: "", wechat: "17319258381" };
 
 export default function Landing() {
   const [copyState, setCopyState] = useState<"idle" | "done" | "fail">("idle");
-  // 定价卡的「聊聊需求」和定制板块的微信按钮是两个独立入口，状态必须分开：
-  // 共用一个 state 时，点其中一个会让另一个的文案也变，看起来像点了两个。
-  const [planCopyState, setPlanCopyState] = useState<"idle" | "done" | "fail">("idle");
 
   // 点微信按钮直接复制号码：手机上看落地页的人多半是随手一瞥，
   // 让他长按选中一串数字再切到微信里搜，中间会掉一半人。
@@ -176,7 +151,6 @@ export default function Landing() {
     legacyCopy();
   };
   const copyWechat = makeCopy(setCopyState);
-  const copyWechatFromPlan = makeCopy(setPlanCopyState);
 
   // 滚动 reveal：进入视口后加 .in 触发淡入上浮
   useEffect(() => {
@@ -360,66 +334,6 @@ export default function Landing() {
           </div>
         </section>
 
-        {/* 定价 */}
-        <section className="land-section" id="pricing">
-          <div className="land-wrap">
-            <div className="land-section-head land-reveal">
-              <span className="land-section-kicker">定价</span>
-              <h2 className="land-section-title">先用起来，再按你的需求改</h2>
-              <p className="land-section-desc">
-                软件本身定价很低，因为我们的主要服务是「按你公司的流程改造这套系统」。
-                试用和付费用户看到的功能完全一样，不做版本分级。
-              </p>
-            </div>
-            <div className="land-pricing-grid">
-              {PLANS.map((p) => (
-                <div className={`land-plan${p.featured ? " is-featured" : ""} land-reveal`} key={p.name}>
-                  {p.featured && <span className="land-plan-badge">早期用户</span>}
-                  <div className="land-plan-name">{p.name}</div>
-                  <div className="land-plan-price">
-                    <span className="num">{p.symbol}{p.price}</span>
-                    <em>{p.period}</em>
-                  </div>
-                  <div className="land-plan-desc">{p.desc}</div>
-                  <ul className="land-plan-feats">
-                    {p.feats.map((f) => <li key={f}>{f}</li>)}
-                  </ul>
-                  {p.kind === "custom" ? (
-                    CONTACT.email ? (
-                      <a
-                        href={`mailto:${CONTACT.email}?subject=${encodeURIComponent("定制开发咨询")}`}
-                        className={`land-btn ${p.featured ? "land-btn-primary" : "land-btn-ghost"}`}
-                      >
-                        {p.cta}
-                      </a>
-                    ) : CONTACT.wechat ? (
-                      <button
-                        type="button"
-                        className={`land-btn ${p.featured ? "land-btn-primary" : "land-btn-ghost"}`}
-                        style={{ fontFamily: "inherit" }}
-                        onClick={copyWechatFromPlan}
-                      >
-                        {planCopyState === "done" ? "已复制微信号" : planCopyState === "fail" ? "请手动复制微信号" : p.cta}
-                      </button>
-                    ) : (
-                      <Link to={loginTo} className={`land-btn ${p.featured ? "land-btn-primary" : "land-btn-ghost"}`}>
-                        {p.cta}
-                      </Link>
-                    )
-                  ) : (
-                    <Link to={loginTo} className={`land-btn ${p.featured ? "land-btn-primary" : "land-btn-ghost"}`}>
-                      {p.cta}
-                    </Link>
-                  )}
-                </div>
-              ))}
-            </div>
-            <p className="land-plan-footnote">
-              ¥19.9/年一口价，全部功能开放，不做功能分级；到期未续费账户转为只读，续费后即刻恢复全功能。定制开发按需求单独评估报价。
-            </p>
-          </div>
-        </section>
-
         {/* 定制开发：主要收益来源，单独一屏讲清楚 */}
         <section className="land-section land-security" id="custom">
           <div className="land-wrap">
@@ -491,7 +405,6 @@ export default function Landing() {
               <div className="land-footer-col">
                 <h4>产品</h4>
                 <a href="#features">功能矩阵</a>
-                <a href="#pricing">定价方案</a>
                 <a href="#custom">定制开发</a>
               </div>
               <div className="land-footer-col">

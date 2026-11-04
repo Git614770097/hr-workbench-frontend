@@ -194,15 +194,18 @@
 .login-points li {
   display: flex; align-items: center; gap: 12px;
   padding: 9px 14px;
-  border-radius: 12px;
+  border-radius: 10px; /* D2: 与输入框/按钮圆角统一（从 12→10），形成 22→10 的层级 */
   font-size: var(--font-body-lg); color: rgba(240, 247, 255, 0.95);
   background: rgba(255, 255, 255, 0.10);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  transition: background-color 0.18s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  border-left: 3px solid transparent;
+  transition: background-color 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
 }
+/* D3: 去掉 translateX 抖动，改用边框亮起 + 背景加深——不动 DOM 不触发 reflow */
 .login-points li:hover {
   background: rgba(255, 255, 255, 0.18);
-  transform: translateX(3px);
+  border-left-color: rgba(165, 243, 252, 0.85); /* 与 login-hl 同色系的青蓝色高亮 */
+  box-shadow: 0 2px 10px -4px rgba(0, 0, 0, 0.15);
 }
 .login-points .num {
   width: 24px; height: 24px; flex-shrink: 0;
@@ -231,8 +234,13 @@
 .login-kpis > div:last-child { border-right: none; }
 .login-kpis b {
   font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.3;
+  /* D7: KPI 数字用渐变，与 login-hl 同色系，让品牌区底部指标和标题形成视觉呼应 */
+  background: linear-gradient(96deg, #ffffff, #a5f3fc 60%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
 }
-.login-kpis span { font-size: var(--font-hint); color: rgba(200, 220, 255, 0.82); }
+/* D7: KPI 描述文字降低透明度，与数字形成主次层级 */
+.login-kpis span { font-size: var(--font-hint); color: rgba(200, 220, 255, 0.55); }
 
 /* ============ 右侧：纯白表单区 ============ */
 .login-form {
@@ -254,7 +262,7 @@
 }
 .login-tabs button {
   border: none; background: transparent; cursor: pointer;
-  padding: 7px 22px; border-radius: 999px;
+  padding: 7px 18px; border-radius: 999px; /* D9: 三 Tab 并排，左右 padding 从 22→18 让胶囊更紧凑 */
   font-family: inherit; font-size: var(--font-body-lg); font-weight: 600; color: #1e40af;
   transition: background 0.22s ease, color 0.22s ease, box-shadow 0.22s ease;
 }
@@ -270,7 +278,27 @@
 .login-sub { color: #64748b; font-size: var(--font-body-lg); margin: 0 0 14px; line-height: 1.55; }
 
 /* antd 表单 */
-.login-form .ant-form-item { margin-bottom: 10px; }
+/* D1: Form.Item 固定高度，错误提示 absolute 浮在下方，不把两列布局撑歪 */
+.login-form .ant-form-item {
+  margin-bottom: 10px;
+  position: relative;
+  min-height: 72px; /* input(42) + 错误提示预留(20) + 间距 */
+}
+.login-form .ant-form-item-with-help {
+  margin-bottom: 22px; /* 有校验错误时，底部留出足够空间显示浮动提示 */
+}
+.login-form .ant-form-item-explain,
+.login-form .ant-form-item-extra {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 46px; /* input 高 42px + 4px 间距 */
+  line-height: 1.4;
+  padding-top: 2px;
+}
+.login-form .ant-form-item-required::before {
+  color: #2563eb !important; /* D10: 必填星号从 antd 默认红改为主题蓝，与蓝色主题统一 */
+}
 .login-form .ant-input,
 .login-form .ant-input-affix-wrapper {
   height: 42px; border-radius: 10px;
@@ -333,14 +361,20 @@
   background: linear-gradient(135deg, #1d4ed8, #2563eb 50%, #0ea5e9);
   border-color: transparent;
   box-shadow: 0 12px 28px -10px rgba(37, 99, 235, 0.55);
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, filter 0.18s ease;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, filter 0.18s ease;
 }
+/* D5: 主按钮 hover/active 反馈加大，hover 位移 2px + shadow 加深 */
 .login-form .ant-btn-primary:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.04);
-  box-shadow: 0 18px 32px -10px rgba(37, 99, 235, 0.65);
+  transform: translateY(-2px);
+  filter: brightness(1.06);
+  box-shadow: 0 22px 40px -10px rgba(37, 99, 235, 0.70);
 }
-.login-form .ant-btn-primary:active { transform: translateY(0); filter: brightness(0.98); }
+/* D5: active 回弹用 ease-out 曲线，营造「按下去」的物理质感 */
+.login-form .ant-btn-primary:active {
+  transform: translateY(0);
+  filter: brightness(0.96);
+  transition: transform 0.08s ease-out, filter 0.1s ease;
+}
 .login-alert { margin-bottom: 12px; border-radius: 10px; font-size: var(--font-body); }
 
 /* 验证码行 */
@@ -355,14 +389,25 @@
   transition: border-color 0.16s ease, transform 0.2s ease;
 }
 .login-captcha-img:hover { border-color: #2563eb; transform: scale(1.02); }
-.login-captcha-img svg { display: block; width: 100%; height: 100%; }
+/* D8: SVG 用 object-fit 等比缩放防溢出；后端随机生成的字符宽度不一，
+   用 max-width/max-height + object-fit:contain 保证极端字符（如 MMM）也能完整显示 */
+.login-captcha-img svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  max-width: 100%;
+  max-height: 100%;
+}
+/* D4: 验证码倒计时角标从贴底改贴右上——更现代，也避免被底部圆角裁掉 */
 .login-captcha-countdown {
-  position: absolute; right: 0; bottom: 0;
-  font-size: var(--font-hint); line-height: 1.4; padding: 2px 6px;
-  border-top-left-radius: 8px; pointer-events: none;
+  position: absolute; top: 2px; right: 2px;
+  font-size: 10px; line-height: 1.3; padding: 1px 5px;
+  border-radius: 6px; pointer-events: none;
   font-family: "JetBrains Mono", "SF Mono", Consolas, monospace;
   font-variant-numeric: tabular-nums;
-  color: #fff; background: rgba(15, 23, 42, 0.62);
+  color: #fff; background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(4px);
   transition: background-color 0.25s ease;
 }
 .login-captcha-countdown.warn { background: rgba(217, 119, 6, 0.94); }

@@ -362,42 +362,6 @@
 .land-security-item p { color: #cbd5e1; font-size: var(--land-fs-small); line-height: 1.65; margin: 0; }
 
 /* ==========================================================================
-   定价（发丝边框表格感，中档高亮）
-   ========================================================================== */
-.land-pricing-grid {
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--land-s3); align-items: stretch;
-}
-.land-plan {
-  position: relative; background: var(--land-surface); border: 1px solid var(--land-line);
-  border-radius: var(--land-r-lg); padding: 28px 26px; display: flex; flex-direction: column;
-  transition: transform var(--land-dur-base) var(--land-ease-out), box-shadow var(--land-dur-base) var(--land-ease-out);
-}
-.land-plan:hover { transform: translateY(-4px); box-shadow: var(--land-shadow-2); }
-.land-plan.is-featured { border-color: var(--land-brand); box-shadow: var(--land-shadow-2); }
-.land-plan-badge {
-  position: absolute; top: -12px; left: 24px; background: var(--land-brand); color: #fff;
-  font-family: var(--land-font-mono); font-size: 0.7rem; letter-spacing: 0.06em;
-  padding: 4px 10px; border-radius: 100px;
-}
-.land-plan-name { font-size: 0.95rem; font-weight: 600; color: var(--land-muted); }
-.land-plan-price { display: flex; align-items: baseline; gap: 6px; margin: 14px 0 4px; }
-.land-plan-price .num { font-size: 2.4rem; font-weight: 700; letter-spacing: -0.03em; }
-.land-plan-price em { font-style: normal; font-size: var(--land-fs-small); color: var(--land-faint); }
-.land-plan-desc { font-size: var(--land-fs-caption); color: var(--land-faint); margin-bottom: 20px; }
-.land-plan-feats { list-style: none; margin: 0 0 24px; padding: 20px 0 0; border-top: 1px solid var(--land-line); display: flex; flex-direction: column; gap: 11px; flex: 1; }
-.land-plan-feats li { display: flex; align-items: flex-start; gap: 10px; font-size: var(--land-fs-small); color: var(--land-muted); line-height: 1.55; }
-.land-plan-feats li::before {
-  content: ""; flex-shrink: 0; width: 16px; height: 16px; margin-top: 3px; border-radius: 50%;
-  background: rgba(29,78,216,0.12); position: relative;
-}
-.land-plan-feats li::after {
-  content: ""; flex-shrink: 0; width: 5px; height: 9px; margin-left: -12px; margin-top: 6px;
-  border: solid var(--land-brand); border-width: 0 2px 2px 0; transform: rotate(45deg);
-}
-.land-plan .land-btn { width: 100%; }
-.land-plan-footnote { text-align: center; color: var(--land-faint); font-size: var(--land-fs-caption); margin-top: var(--land-s4); }
-
-/* ==========================================================================
    Footer
    ========================================================================== */
 .land-footer { border-top: 1px solid var(--land-line); padding: var(--land-s6) 0 var(--land-s5); }
@@ -457,7 +421,7 @@
   .land-features-grid { grid-template-columns: repeat(2, 1fr); }
   .land-flow-track { grid-template-columns: repeat(3, 1fr); row-gap: var(--land-s5); }
   .land-flow-track::before { display: none; }
-  .land-security-grid, .land-pricing-grid { grid-template-columns: 1fr; }
+  .land-security-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .land { --land-s6: 48px; --land-s7: 64px; }

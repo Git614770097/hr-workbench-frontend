@@ -250,7 +250,7 @@ export default function Login({ onLogin }: Props) {
         <div className="login-shell">
           <div className="login-card">
             <aside className="login-brand">
-              <span className="login-brand-tag"><i />云端部署 · 打开浏览器即用</span>
+              <span className="login-brand-tag"><i />AI 驱动 · 打开浏览器即用</span>
               <h1>让 <span className="login-hl">AI</span> 替你<br />{brand.loginHeroTail}</h1>
               <p className="login-brand-lead">{brand.loginLead}</p>
               <ul className="login-points">
@@ -260,14 +260,16 @@ export default function Login({ onLogin }: Props) {
               </ul>
               <div className="login-kpis">
                 <div><b className="num">6+</b><span>核心模块</span></div>
-                <div><b className="num">110+</b><span>{brand.templateKpiLabel}</span></div>
+                <div><b className="num">10+</b><span>{brand.templateKpiLabel}</span></div>
               </div>
             </aside>
 
             <main className="login-form">
+              {/* D9: Tab 加忘记密码——之前藏在底部链接，现在直接出现在导航栏，高频路径不再深 */}
               <div className="login-tabs">
                 <button type="button" className={mode === "login" ? "on" : ""} onClick={() => switchMode("login")}>登录</button>
                 <button type="button" className={mode === "register" ? "on" : ""} onClick={() => switchMode("register")}>注册</button>
+                <button type="button" className={mode === "forgot" ? "on" : ""} onClick={() => switchMode("forgot")}>忘记密码</button>
               </div>
 
               <h2 className="login-title">
@@ -457,8 +459,6 @@ export default function Login({ onLogin }: Props) {
                 {mode === "login" && (
                   <>
                     <a onClick={() => switchMode("register")}>立即注册</a>
-                    <span className="login-switch-sep">·</span>
-                    <a onClick={() => switchMode("forgot")}>忘记密码？</a>
                   </>
                 )}
                 {mode === "register" && <a onClick={() => switchMode("login")}>已有账号？返回登录</a>}
@@ -468,7 +468,7 @@ export default function Login({ onLogin }: Props) {
           </div>
 
           <div className="login-foot">
-            <span>© {new Date().getFullYear()} {brand.name} · {brand.loginFooterTail}</span>
+            <span>© {brand.footerYear} {brand.name} · {brand.loginFooterTail}</span>
           </div>
         </div>
       </div>
