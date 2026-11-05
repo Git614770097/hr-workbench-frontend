@@ -14,8 +14,12 @@
     "test:sql": "node scripts/test-sql-refactor.mjs",
     "preview": "vite preview",
     "deploy": "wrangler deploy",
+    "predeploy": "node scripts/db-check.mjs",
     "deploy:staging": "wrangler deploy --config wrangler.staging.jsonc",
     "deploy:prod": "wrangler deploy",
+    "predeploy:prod": "node scripts/db-check.mjs",
+    "db:check": "node scripts/db-check.mjs",
+    "db:check:staging": "node scripts/db-check.mjs --staging",
     "db:init": "wrangler d1 execute hr-workbench --remote --file=./schema.sql",
     "db:init:staging": "npx wrangler d1 execute hr-workbench-staging --remote --file=./schema.sql"
   },

@@ -54,16 +54,25 @@ async function deleteTalentCascade(db: D1Database, kv: KVNamespace, talentId: st
   const talentRow = await db.prepare("SELECT resume_url FROM talents WHERE id = ?")
     .bind(talentId).first<{ resume_url: string | null }>();
   if (talentRow?.resume_url) keys.push(talentRow.resume_url);
+  // 附件表是后加的可选表。曾因线上漏跑迁移，batch 里一条
+  // 「DELETE FROM talent_files」让整个事务回滚，连人才主记录都删不掉。
+  // 缺表时按「没有附件」处理，保证核心删除永远可用；迁移缺失本身由
+  // 部署前的 scripts/db-check.mjs 负责拦下，不靠这里静默兜底。
   const fileRows = await db.prepare("SELECT storage_key FROM talent_files WHERE talent_id = ?")
-    .bind(talentId).all<{ storage_key: string }>();
-  for (const f of fileRows.results || []) keys.push(f.storage_key);
+    .bind(talentId).all<{ storage_key: string }>()
+    .catch((e: unknown) => {
+      if (String(e).includes("no such table")) return null;
+      throw e;
+    });
+  const hasFileTable = fileRows !== null;
+  for (const f of fileRows?.results || []) keys.push(f.storage_key);
 
   for (const key of keys) {
     // 单个对象删失败不阻断整体删除：宁可留一个孤儿对象，也不能让人才删不掉
     try { await kv.delete(key); } catch { /* ignore */ }
   }
 
-  await db.batch([
+  const stmts = [
     db.prepare("DELETE FROM approval_steps WHERE instance_id IN (SELECT id FROM approval_instances WHERE talent_id = ?)").bind(talentId),
     db.prepare("DELETE FROM interviews WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM approval_instances WHERE talent_id = ?").bind(talentId),
@@ -75,10 +84,14 @@ async function deleteTalentCascade(db: D1Database, kv: KVNamespace, talentId: st
     db.prepare("UPDATE talent_tasks SET talent_id = NULL WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM contract_files WHERE talent_id = ?").bind(talentId),
     db.prepare("DELETE FROM talent_social WHERE talent_id = ?").bind(talentId),
-    db.prepare("DELETE FROM talent_files WHERE talent_id = ?").bind(talentId),
-    db.prepare("DELETE FROM talents WHERE id = ?").bind(talentId),
-  ]);
+  ];
+  // 附件表缺表时跳过这条，否则 db.batch 整批回滚（见上方说明）
+  if (hasFileTable) stmts.push(db.prepare("DELETE FROM talent_files WHERE talent_id = ?").bind(talentId));
+  stmts.push(db.prepare("DELETE FROM talents WHERE id = ?").bind(talentId));
+  await db.batch(stmts);
 }
+
+/** 日期字段只接受 YYYY-MM-DD（或带时间的 ISO），其余一律置 NULL，避免脏数据入库。
 
 /** 日期字段只接受 YYYY-MM-DD（或带时间的 ISO），其余一律置 NULL，避免脏数据入库。
  *  新增与批量导入共用，别在两处各写一份。 */
@@ -1229,10 +1242,17 @@ talents.get("/:id/files", async (c) => {
   const existing = await c.env.DB.prepare(checkSql).bind(...checkParams).first();
   if (!existing) return c.json({ error: "人才不存在" }, 404);
 
-  const rows = await c.env.DB.prepare(
-    "SELECT id, kind, name, size, mime, created_at FROM talent_files WHERE talent_id = ? ORDER BY created_at DESC"
-  ).bind(talentId).all();
-  return c.json({ items: rows.results });
+  let items: unknown[] = [];
+  try {
+    const rows = await c.env.DB.prepare(
+      "SELECT id, kind, name, size, mime, created_at FROM talent_files WHERE talent_id = ? ORDER BY created_at DESC"
+    ).bind(talentId).all();
+    items = rows.results;
+  } catch (e) {
+    // 附件表未建（漏跑迁移）时按「无附件」处理，别让整个详情页 500
+    if (!String(e).includes("no such table")) throw e;
+  }
+  return c.json({ items });
 });
 
 talents.post("/:id/files", async (c) => {
@@ -1259,18 +1279,24 @@ talents.post("/:id/files", async (c) => {
   const storageKey = `file:${talentId}:${crypto.randomUUID()}${ext ? "." + ext : ""}`;
 
   const buf = await file.arrayBuffer();
-  await c.env.RESUMES.put(storageKey, JSON.stringify({
-    data: arrayBufferToBase64(buf),
-    name: file.name,
-    type: file.type || "application/octet-stream",
-  }));
-
   const id = genId();
+  // 先落表行再写 KV：附件表未建（漏跑迁移）时直接失败，不会在 KV 里留下孤儿文件。
   await c.env.DB.prepare(
     "INSERT INTO talent_files (id, talent_id, kind, name, size, mime, storage_key) VALUES (?,?,?,?,?,?,?)"
   ).bind(
     id, talentId, kind, cleanText(file.name, 200) || "未命名附件", file.size, cleanText(file.type, 100), storageKey
   ).run();
+  try {
+    await c.env.RESUMES.put(storageKey, JSON.stringify({
+      data: arrayBufferToBase64(buf),
+      name: file.name,
+      type: file.type || "application/octet-stream",
+    }));
+  } catch (e) {
+    // KV 写失败就回滚表行，否则会出现「列表里有这个附件、点下载却 404」
+    try { await c.env.DB.prepare("DELETE FROM talent_files WHERE id = ?").bind(id).run(); } catch { /* ignore */ }
+    throw e;
+  }
 
   await writeAudit(c.env, session, {
     action: "create",
@@ -1398,8 +1424,13 @@ talents.post("/import", async (c) => {
 
     const id = genId();
     const skills = item.skills ? JSON.stringify(item.skills) : null;
-    await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, major, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, contract_end, probation_end, resignation_date, entry_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, session.userId, name, item.phone || null, item.email || null, item.age ?? null, item.gender || null, item.education || null, item.school || null, item.major || null, item.current_company || null, item.current_title || null, item.years_experience || null, item.city || null, skills, item.industry || null, item.expected_salary || null, item.expected_city || null, item.status || "active", item.source || null, item.resume_url || null, item.notes || null, dateOrNull(item.birth_date), dateOrNull(item.contract_end), dateOrNull(item.probation_end), dateOrNull(item.resignation_date), normalizeEntryType(item.entry_type, "import")).run();
+    // 精度必须跟 birth_date 一起入库：核对弹窗里「输年龄反推」会把 precision
+    // 设成 estimated，这里漏写的话详情页的「推算」标签永远亮不起来。
+    // 白名单归一，别让前端传来的任意字符串进精度字段。
+    const precision = ["exact", "month", "year", "estimated"].includes(String(item.birth_date_precision || ""))
+      ? item.birth_date_precision : null;
+    await c.env.DB.prepare(`INSERT INTO talents (id, owner_id, name, phone, email, age, gender, education, school, major, current_company, current_title, years_experience, city, skills, industry, expected_salary, expected_city, status, source, resume_url, notes, birth_date, birth_date_precision, contract_end, probation_end, resignation_date, entry_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(id, session.userId, name, item.phone || null, item.email || null, item.age ?? null, item.gender || null, item.education || null, item.school || null, item.major || null, item.current_company || null, item.current_title || null, item.years_experience || null, item.city || null, skills, item.industry || null, item.expected_salary || null, item.expected_city || null, item.status || "active", item.source || null, item.resume_url || null, item.notes || null, dateOrNull(item.birth_date), precision, dateOrNull(item.contract_end), dateOrNull(item.probation_end), dateOrNull(item.resignation_date), normalizeEntryType(item.entry_type, "import")).run();
     count++;
     created.push({ id, name });
   }
