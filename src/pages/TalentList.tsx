@@ -10,7 +10,7 @@ import {
   SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
   FileWordOutlined, PlusOutlined,
   FileExcelOutlined, SettingOutlined, RobotOutlined, HistoryOutlined,
-  RightOutlined, MoreOutlined,
+  RightOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -142,7 +142,7 @@ export default function TalentList() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [importHistoryOpen, setImportHistoryOpen] = useState(false);
   const [previewTalent, setPreviewTalent] = useState<Talent | null>(null);
-  const [editId, setEditId] = useState<string | null>(null);
+  // 列表不再做行内编辑（编辑入口统一收敛到详情页），此弹窗只服务「新增人才」
   const [addOpen, setAddOpen] = useState(false);
   // 新手指引代填数据（仅新增态写入）+ 触发填充的计数
   const [talentPrefill, setTalentPrefill] = useState<Record<string, any> | undefined>(undefined);
@@ -152,7 +152,6 @@ export default function TalentList() {
   useEffect(() => {
     return registerOnbFill("/talents", {
       open: () => {
-        setEditId(null);
         setTalentPrefill(undefined); // 打开空表单
         setAddOpen(true);
       },
@@ -615,51 +614,34 @@ export default function TalentList() {
     action: {
       title: "操作",
       key: "action",
-      width: 140,
+      width: 220,
       fixed: "right" as const,
       render: (_: any, record: Talent) => {
-        // 低频动作收进「⋯」：预览/导出/删除不该各占一个按钮位，
-        // 把位置让给「详情」——它才是这一行最主要的目标。
-        // 删除走 Modal.confirm 而不是 Popconfirm：下拉菜单项点完就收起，
-        // 挂在下拉项上的 Popconfirm 会跟着一起消失，确认框根本出不来。
-        const moreItems: MenuProps["items"] = [
-          ...(record.resume_url
-            ? [
-                { key: "preview", label: "简历预览" },
-                { key: "export", label: "导出简历" },
-              ]
-            : []),
-          { type: "divider" as const },
-          { key: "delete", label: "删除", danger: true },
-        ];
+        // 四个动作全部平铺：详情 / 预览简历 / 导出 / 删除，一次点击可达。
+        // 没有简历的行把「预览简历」「导出」置灰而不是隐藏，保证每行按钮位置对齐；
+        // 删除走 Modal.confirm（确认框独立于表格渲染，不会像 Popconfirm 那样
+        // 因为触发器收起而弹不出来）。编辑入口收敛到详情页。
+        const hasResume = !!record.resume_url;
         return (
           <Space size={0}>
             <Button type="link" size="small" onClick={() => navigate(`/talents/${record.id}`)}>详情</Button>
-            <Button type="link" size="small" onClick={() => setEditId(record.id)}>编辑</Button>
-            <Dropdown
-              trigger={["click"]}
-              menu={{
-                items: moreItems,
-                onClick: ({ key, domEvent }) => {
-                  // 阻止冒泡到 tr，否则点菜单项会连带触发整行跳转
-                  domEvent.stopPropagation();
-                  if (key === "preview") setPreviewTalent(record);
-                  else if (key === "export") handleExportResume(record);
-                  else if (key === "delete") {
-                    Modal.confirm({
-                      title: `确认删除「${record.name}」？`,
-                      content: "所有关联数据将被清除，且不可恢复。",
-                      okText: "删除",
-                      okType: "danger",
-                      cancelText: "取消",
-                      onOk: () => handleDelete(record.id, record.name),
-                    });
-                  }
-                },
-              }}
+            <Button type="link" size="small" disabled={!hasResume} onClick={() => setPreviewTalent(record)}>预览简历</Button>
+            <Button type="link" size="small" disabled={!hasResume} onClick={() => handleExportResume(record)}>导出</Button>
+            <Button
+              type="link"
+              size="small"
+              danger
+              onClick={() => Modal.confirm({
+                title: `确认删除「${record.name}」？`,
+                content: "所有关联数据将被清除，且不可恢复。",
+                okText: "删除",
+                okType: "danger",
+                cancelText: "取消",
+                onOk: () => handleDelete(record.id, record.name),
+              })}
             >
-              <Button type="link" size="small" icon={<MoreOutlined />} aria-label="更多操作" />
-            </Dropdown>
+              删除
+            </Button>
           </Space>
         );
       },
@@ -674,8 +656,11 @@ export default function TalentList() {
     ...shownKeys.map((k) => colMap[k]),
     colMap.action,
   ];
-  // 横向滚动宽度跟随可见列宽计算，避免固定 1500 在少列时出现过宽空白
-  const scrollX = 120 + 184 + shownKeys.reduce((a, k) => a + (colMap[k]?.width || 120), 0);
+  // 横向滚动宽度跟随可见列宽计算，避免固定 1500 在少列时出现过宽空白。
+  // 操作列宽从 colMap.action.width 取，不写死：平铺四个按钮后改列宽不会漏同步；
+  // 额外 44 是 rowSelection 勾选列（不在 columns 里，但占宽度）。
+  const scrollX = 120 + (colMap.action.width || 140) + 44
+    + shownKeys.reduce((a, k) => a + (colMap[k]?.width || 120), 0);
 
   // 列设置弹层选项（创建人仅 admin 展示）
   const colSettingOptions = optionalKeys.map((k) => ({ label: OPTIONAL_COL_LABELS[k], value: k }));
@@ -767,7 +752,7 @@ export default function TalentList() {
             <Button
               type="primary" icon={<PlusOutlined />}
               data-onb-action="new-talent"
-              onClick={() => { setEditId(null); setTalentPrefill(undefined); setAddOpen(true); }}
+              onClick={() => { setTalentPrefill(undefined); setAddOpen(true); }}
             >
               {"新增人才"}
             </Button>
@@ -896,13 +881,13 @@ export default function TalentList() {
       {/* 简历预览弹窗（PDF 原生渲染保留格式；Word 在线转 HTML 查看，不下载） */}
       <ResumePreviewModal talent={previewTalent} onClose={() => setPreviewTalent(null)} />
 
-      {/* 行内编辑：不跳详情页，改完即刷新列表 */}
+      {/* 新增人才弹窗：列表的行内编辑已移除，改资料请点「详情」进详情页编辑 */}
       <TalentFormModal
-        open={addOpen || !!editId}
-        talentId={editId}
+        open={addOpen}
+        talentId={null}
         prefill={talentPrefill}
         fillToken={talentFillToken}
-        onClose={() => { setEditId(null); setAddOpen(false); setTalentPrefill(undefined); }}
+        onClose={() => { setAddOpen(false); setTalentPrefill(undefined); }}
         onSuccess={fetchTalents}
       />
 
