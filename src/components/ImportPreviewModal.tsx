@@ -210,20 +210,53 @@ export default function ImportPreviewModal({
                   </span>
                 ) : null}
               </label>
-              <DatePicker
-                size="small"
-                picker="month"
-                value={record.birth_date ? dayjs(record.birth_date) : undefined}
-                placeholder={record.age ? `原简历写 ${record.age} 岁，建议补年月` : "出生年月"}
-                style={{ width: "100%" }}
-                onChange={(v) => {
-                  // 三个字段一起改：生日是事实源，年龄只是它的派生值。
-                  // 选到月就存当月 1 号 + month 精度，后端读取时按生日实时算年龄。
-                  onChange("birth_date", v ? v.format("YYYY-MM-01") : "");
-                  onChange("birth_date_precision", v ? "month" : "");
-                  onChange("age", v ? dayjs().diff(v, "year") : null);
-                }}
-              />
+              <div style={{ display: "flex", gap: 8 }}>
+                <DatePicker
+                  size="small"
+                  picker="month"
+                  // estimated（按年龄反推）的生日不在这里显示——那会冒充「用户确认过 1 月出生」，
+                  // 推算值只出现在右侧年龄框里，补选真实年月后自动升级为 month 精度。
+                  value={record.birth_date && record.birth_date_precision !== "estimated" ? dayjs(record.birth_date) : undefined}
+                  placeholder={record.age && !record.birth_date ? `原简历写 ${record.age} 岁，可在右侧直接输年龄` : "出生年月"}
+                  style={{ flex: 1, minWidth: 0 }}
+                  onChange={(v) => {
+                    // 三个字段一起改：生日是事实源，年龄只是它的派生值。
+                    // 选到月就存当月 1 号 + month 精度，后端读取时按生日实时算年龄。
+                    onChange("birth_date", v ? v.format("YYYY-MM-01") : "");
+                    onChange("birth_date_precision", v ? "month" : "");
+                    onChange("age", v ? dayjs().diff(v, "year") : null);
+                  }}
+                />
+                <InputNumber
+                  size="small"
+                  min={14}
+                  max={80}
+                  style={{ width: 108, flexShrink: 0 }}
+                  placeholder="或输年龄"
+                  addonAfter="岁"
+                  // 已有精确/到月生日时年龄是派生值，只读展示，
+                  // 防止手输年龄把真实生日覆盖成推算值
+                  disabled={!!record.birth_date && record.birth_date_precision !== "estimated"}
+                  value={record.birth_date ? dayjs().diff(dayjs(record.birth_date), "year") : (record.age ?? undefined)}
+                  onChange={(v) => {
+                    if (v == null) {
+                      // 清空年龄：只有「推算」出来的生日才连带清掉，解析/手选的不动
+                      if (record.birth_date_precision === "estimated") {
+                        onChange("birth_date", "");
+                        onChange("birth_date_precision", "");
+                      }
+                      onChange("age", null);
+                      return;
+                    }
+                    // 输年龄反推出生年：存当年 1 月 1 日 + estimated 精度，
+                    // 详情页会打「推算」标签（误差最多 1 岁），读取时年龄按生日实时算
+                    const year = dayjs().year() - v;
+                    onChange("birth_date", `${year}-01-01`);
+                    onChange("birth_date_precision", "estimated");
+                    onChange("age", v);
+                  }}
+                />
+              </div>
 
               <label style={{ fontSize: 13, color: "#5b6472" }}>性别</label>
               <Select size="small" value={record.gender || undefined} allowClear placeholder="性别" style={{ width: "100%" }} onChange={(v) => onChange("gender", v || "")} options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} />

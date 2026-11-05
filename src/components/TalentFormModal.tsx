@@ -31,9 +31,18 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
   const isEdit = !!talentId;
   // 出生年月改动时实时算年龄：让用户看到「选完年月就知道几岁」，不用自己减
   const birthWatch = Form.useWatch("birth_date", form) as ReturnType<typeof dayjs> | undefined;
+  const ageInputWatch = Form.useWatch("age_input", form) as number | null | undefined;
   const ageHint = birthWatch
     ? `当前 ${dayjs().diff(birthWatch, "year")} 岁 · 自动计算`
-    : "年龄按出生年月自动算";
+    : ageInputWatch != null
+      ? `按 ${ageInputWatch} 岁反推出生年（${dayjs().year() - ageInputWatch} 年），详情页标记「推算」`
+      : "可选年月，或直接输年龄反推出生年";
+
+  // 选了年月就清掉年龄输入：两个入口写同一个 birth_date，
+  // 精确选择优先，避免保存时「年月 + 过期年龄」互相打架
+  useEffect(() => {
+    if (birthWatch) form.setFieldsValue({ age_input: null });
+  }, [birthWatch, form]);
 
   useEffect(() => {
     if (!open) return;
@@ -42,11 +51,15 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
       try {
         if (isEdit && talentId) {
           const t = await api.getTalent(talentId);
+          // estimated（按年龄反推）的生日不回填到年月选择器——那会冒充精确生日。
+          // 换算回年龄放进 age_input，用户看到的和自己当初录的一致。
+          const isEstimated = t.birth_date_precision === "estimated";
           form.setFieldsValue({
             ...t,
             skills: t.skills.join(", "),
             // 出生日期回填成 dayjs 对象（DatePicker 只认 dayjs，直接塞字符串会显示空白）
-            birth_date: t.birth_date ? dayjs(t.birth_date) : null,
+            birth_date: t.birth_date && !isEstimated ? dayjs(t.birth_date) : null,
+            age_input: t.birth_date && isEstimated ? dayjs().diff(dayjs(t.birth_date), "year") : null,
             hire_date: t.hire_date ? dayjs(t.hire_date) : null,
             next_follow_at: t.next_follow_at ? dayjs(t.next_follow_at) : null,
           });
@@ -94,10 +107,20 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
         // 出生年月只选到月，统一存当月 1 号 + precision=month：
         // 这样 UI 不会把「1996-03-01」当成用户确认过的具体生日。
         // 三态语义：有值→写入；显式清空（null）→清掉；没动过（undefined）→不传，保持原值。
-        birth_date: values.birth_date ? values.birth_date.format("YYYY-MM-01") : (values.birth_date === null ? null : undefined),
-        birth_date_precision: values.birth_date ? "month" : (values.birth_date === null ? null : undefined),
+        // age_input：没选年月但输了年龄时，按年龄反推出生年存 1 月 1 日 + estimated 精度，
+        // 详情页打「推算」标签（误差最多 1 岁），读取时年龄仍按 birth_date 实时算。
+        birth_date: values.birth_date
+          ? values.birth_date.format("YYYY-MM-01")
+          : values.age_input != null
+            ? `${dayjs().year() - values.age_input}-01-01`
+            : (values.birth_date === null ? null : undefined),
+        birth_date_precision: values.birth_date
+          ? "month"
+          : values.age_input != null
+            ? "estimated"
+            : (values.birth_date === null ? null : undefined),
         // 清空出生年月时把年龄一起清掉，否则会留下一个没有来源的孤儿年龄
-        age: values.birth_date === null ? null : undefined,
+        age: values.birth_date === null && values.age_input == null ? null : undefined,
         hire_date: values.hire_date ? values.hire_date.format("YYYY-MM-DD") : (values.hire_date === null ? null : undefined),
         next_follow_at: values.next_follow_at
           ? values.next_follow_at.format("YYYY-MM-DD HH:mm")
@@ -154,10 +177,28 @@ export default function TalentFormModal({ open, talentId, prefill, fillToken, on
             <Form.Item name="email" label="邮箱" rules={[{ type: "email", message: "邮箱格式不正确" }]}>
               <Input placeholder="请输入邮箱" />
             </Form.Item>
-            <Form.Item name="birth_date" label="出生年月" extra={ageHint}>
-              {/* 不用 DatePicker picker="month"：那个面板点 ‹ 一次只退一年，
-                  选 1994 年要连点 30 多次。换成「年 + 月」两个下拉后一次到位。 */}
-              <BirthMonthPicker />
+            <Form.Item label="出生年月" extra={ageHint}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <Form.Item name="birth_date" noStyle>
+                    {/* 不用 DatePicker picker="month"：那个面板点 ‹ 一次只退一年，
+                        选 1994 年要连点 30 多次。换成「年 + 月」两个下拉后一次到位。 */}
+                    <BirthMonthPicker />
+                  </Form.Item>
+                </div>
+                <Form.Item name="age_input" noStyle>
+                  {/* 只知道年龄时的入口：反推出生年存 estimated 精度（见 handleSubmit）。
+                      已选年月时禁用——年龄是派生值，防止手改覆盖真实生日 */}
+                  <InputNumber
+                    min={14}
+                    max={80}
+                    style={{ width: 104 }}
+                    placeholder="或输年龄"
+                    addonAfter="岁"
+                    disabled={!!birthWatch}
+                  />
+                </Form.Item>
+              </div>
             </Form.Item>
             <Form.Item name="gender" label="性别">
               <Select allowClear placeholder="请选择性别" options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} />

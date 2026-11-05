@@ -432,8 +432,8 @@ export function extractBirthDate(text: string): string {
   return `${parsed.year}-${pad2(parsed.month)}-${pad2(parsed.day)}`;
 }
 
-/** 出生日期精度：决定 UI 能不能把年龄说成「精确」 */
-export type BirthPrecision = "exact" | "month" | "year";
+/** 出生日期精度：决定 UI 能不能把年龄说成「精确」。estimated=只知道年龄时按年龄反推的出生年 */
+export type BirthPrecision = "exact" | "month" | "year" | "estimated";
 
 /**
  * 出生日期 + 精度（年龄的唯一事实源）。
