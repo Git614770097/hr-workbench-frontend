@@ -756,7 +756,9 @@ export default function TalentList() {
             >
               {"新增人才"}
             </Button>
-            <Button icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
+            {/* 与「新增人才」同为录入主入口，统一 type="primary"；
+                图标按语义保留 ImportOutlined，右侧「导入记录」仍是次要按钮 */}
+            <Button type="primary" icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
             {/* 导入记录：上传 N 份 / 录入 N 份 / 失败 N 份，逐份可查。
                 放在「导入」右边——它是导入这个动作的补充说明，不是独立功能 */}
             <Tooltip title="查看历次导入的逐份结果（哪些没进来、为什么）">
