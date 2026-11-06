@@ -92,9 +92,11 @@ function buildFilterParams(f: Filters): Record<string, string | number> {
   return params;
 }
 
-// 收起时展示的字段数：姓名 / 职位 / 学历 / 年龄 正好铺满一行。
-// 动作组固定在第 4 列且排在字段之后，所以收起时它落在第 2 行第 4 格，展开时落到最后一行第 4 格。
-const COLLAPSED_COUNT = 4;
+// 收起时展示的字段数：姓名 / 职位 / 学历 三个，第 4 个格子留给动作组（展开·重置·查询）。
+// 必须留空一格，否则 4 个字段会把第 4 列占满，动作组只能被挤到第 2 行
+// （4 列里放 4 字段 + 按钮组共 5 个元素，物理上放不下）。
+// 动作组仍固定 grid-column:4 且排在字段之后 → 收起落在第 1 行第 4 格，展开落到最后一行第 4 格。
+const COLLAPSED_COUNT = 3;
 
 // 列表每页条数
 const PAGE_SIZE = 10;
@@ -733,9 +735,9 @@ export default function TalentList() {
       )}
 
       {/* 顶部搜索区：一行 4 格，动作组固定在字段之后的第 4 列（见 .search-actions）。
-          收起时 4 个字段铺满第一行，动作组落到第 2 行第 4 格；
-          展开时字段继续铺满整行，动作组落到最后一行第 4 格。
-          两种状态下按钮都在「最后一行第 4 格」，位置规则一致，不会插在字段中间把栅格截断。 */}
+          收起时 3 个字段 + 动作组 = 第一行四格满（姓名/职位/学历/按钮组）；
+          展开时字段铺满整行，动作组落到最后一行第 4 格。
+          注意第 4 格必须留给按钮：4 个字段会占满第 4 列，把按钮挤到第二行。 */}
       <Card className="search-card" style={{ marginBottom: 16 }}>
         <div className="search-grid">
           {visibleDefs.map((d) => (
