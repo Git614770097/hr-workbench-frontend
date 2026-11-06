@@ -1032,9 +1032,11 @@ html[data-theme-mode="dark"] .stat-icon.is-warn { color: #fbbf24; background: rg
 .search-control .ant-input-number,
 .search-control .ant-input-affix-wrapper,
 .search-control .ant-cascader-picker { width: 100%; }
-/* 动作组（展开 / 重置 / 查询）占搜索栅格的第 4 格：右对齐，
-   让主按钮「查询」与最后一列控件的右边缘齐平；不占 label 宽度，避免按钮被推到格子中间。 */
-.search-actions { justify-content: flex-end; gap: 0.5rem; }
+/* 动作组（展开 / 重置 / 查询）固定占搜索栅格的第 4 列，右对齐：
+   收起时字段 3 个 + 动作组 = 一行四格；展开后字段先铺满整行，动作组自然落到
+   最后一行的第 4 格（跟着表单走），不会插在字段中间把栅格截断。
+   显式写 grid-column 而不是靠自动排布——自动排布会让它落在最后一行第 1 格（左边）。 */
+.search-actions { grid-column: 4; justify-content: flex-end; gap: 0.5rem; }
 
 .profiles-page .list-card { border: 1px solid #eef0f3; }
 .profiles-page .list-card .ant-card-body { padding: 1rem 1.1rem; }
@@ -1602,10 +1604,13 @@ html[data-theme-mode="dark"] .match-cand-name { color: #e5e7eb; }
 /* 平板：搜索区 4 列 → 2 列；漏斗 KPI 已有 900px 断点 */
 @media (max-width: 900px) {
   .search-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* 栅格变 2 列，动作组跟着落到第 2 列（否则 grid-column:4 会撑出隐式列、页面横向滚动） */
+  .search-actions { grid-column: 2; }
 }
 /* 手机：搜索区单列、统计区 2×2、工具行换行 */
 @media (max-width: 576px) {
   .search-grid { grid-template-columns: minmax(0, 1fr); }
+  .search-actions { grid-column: 1; }
   /* page-stats 与右侧按钮组同处一个 flex wrap 行（如 Pipeline 顶部），
      必须先占满一行，内部 stat 的 50% basis 才有确定基准，否则整体超宽挤出视口 */
   .page-stats { width: 100%; }

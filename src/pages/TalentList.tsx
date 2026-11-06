@@ -715,13 +715,13 @@ export default function TalentList() {
         />
       )}
 
-      {/* 顶部搜索区：一行 4 格 —— 性别 / 职位 / 年限 / 动作组（展开·重置·查询）。
-          动作组占第 4 格而不是另起一行：字段和动作共用同一栅格，收起与展开两种状态下
-          按钮位置都不移动，用户第二次不用重新找。展开的字段追加在动作组之后（第二行起），
-          所以点「展开」时按钮不会掉到下一行。 */}
+      {/* 顶部搜索区：一行 4 格。动作组放在字段之后，并由 .search-actions 固定占第 4 列：
+          收起时字段只有 3 个，动作组正好补满第一行第 4 格（性别/职位/年限/按钮）；
+          展开后字段先把整行排满，动作组落到最后一行第 4 格，跟着表单往下走。
+          这样按钮始终贴在「填完条件之后该点的地方」，不会卡在中间把字段流截断。 */}
       <Card className="search-card" style={{ marginBottom: 16 }}>
         <div className="search-grid">
-          {visibleDefs.slice(0, COLLAPSED_COUNT).map((d) => (
+          {visibleDefs.map((d) => (
             <div key={d.key} className="search-field">
               <span className="search-label">{d.label}</span>
               <div className="search-control">{d.control}</div>
@@ -736,12 +736,6 @@ export default function TalentList() {
             <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
             <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
           </div>
-          {visibleDefs.slice(COLLAPSED_COUNT).map((d) => (
-            <div key={d.key} className="search-field">
-              <span className="search-label">{d.label}</span>
-              <div className="search-control">{d.control}</div>
-            </div>
-          ))}
         </div>
       </Card>
 
