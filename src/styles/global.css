@@ -1057,6 +1057,14 @@ html[data-theme-mode="dark"] .stat-icon.is-warn { color: #fbbf24; background: rg
 }
 .profiles-table .ant-table-thead > tr > th .ant-table-column-sorter { color: #bfbfbf; }
 .profiles-table .ant-table-tbody > tr > td { border-bottom: 1px solid #f3f4f7; }
+/* 斑马纹（人才列表专用，行标记由 Table 的 rowClassName 打上）：
+   隔行一层极浅底色，横向扫视时不串行。
+   必须写在 td 上而不是 tr 上：固定列单元格被 antd 设了实色 background，
+   只染 tr 的话左右固定列不会跟着变色，滚动时条纹会断成三截。
+   :not(.ant-table-row-selected) 让勾选行保持选中色；hover 规则在其后，能覆盖条纹。 */
+.profiles-table .ant-table-tbody > tr.talent-row-alt:not(.ant-table-row-selected) > td {
+  background: #f6f8fb;
+}
 .profiles-table .ant-table-tbody > tr.ant-table-row:hover > td { background: #f0f7ff; }
 .profiles-table .ant-table-tbody > tr.ant-table-row:hover > td:first-child {
   box-shadow: inset 3px 0 0 var(--color-primary);
@@ -1084,6 +1092,10 @@ html[data-theme-mode="dark"] .profiles-table .ant-table-thead > tr > th {
   background: #262626; color: #b0b6c0; border-bottom-color: #3a3a3a;
 }
 html[data-theme-mode="dark"] .profiles-table .ant-table-tbody > tr > td { border-bottom-color: #2a2a2a; }
+/* 暗色斑马纹：比卡片底 #1f1f1f 稍亮一档，太亮会抢过内容 */
+html[data-theme-mode="dark"] .profiles-table .ant-table-tbody > tr.talent-row-alt:not(.ant-table-row-selected) > td {
+  background: #232323;
+}
 html[data-theme-mode="dark"] .profiles-table .ant-table-tbody > tr.ant-table-row:hover > td { background: #1e2733; }
 html[data-theme-mode="dark"] .profiles-table .ant-table-tbody > tr.ant-table-row:hover > td:first-child {
   box-shadow: inset 3px 0 0 var(--color-primary);

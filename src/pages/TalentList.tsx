@@ -839,6 +839,11 @@ export default function TalentList() {
           rowKey="id"
           loading={loading}
           rowSelection={rowSelection}
+          // 斑马纹：隔行浅底，横向扫视时不串行。
+          // 用索引判断而不是 CSS 的 nth-child——antd 会在 tbody 里插一行隐藏的
+          // measure-row（有固定列/滚动时必有），nth-child 的奇偶会跟着错位；
+          // 且 rowClassName 只作用于本表，不会顺带把审批、合规的表格也纹上。
+          rowClassName={(_, index) => (index % 2 === 1 ? "talent-row-alt" : "")}
           // 整行可点进详情：原来唯一入口是那个蓝色姓名，用户扫到行尾找入口会落空。
           // 三种情况必须让行点击失效，否则会抢掉用户本来要做的事：
           //   1. 点在勾选框/按钮/链接/下拉上——那是另一个明确意图；
