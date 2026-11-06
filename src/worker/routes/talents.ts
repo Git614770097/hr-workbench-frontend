@@ -367,6 +367,9 @@ talents.get("/", async (c) => {
     name: "t.name",
     age: AGE_COALESCE("t"),
     years_experience: "t.years_experience",
+    // 列表新增「下一步」列：按跟进时间排，NULL（未安排）在 SQLite DESC 里沉底，
+    // 升序时会冒到最前——这是期望行为：先看到没安排跟进的人。
+    next_follow_at: "t.next_follow_at",
     created_at: "t.created_at",
     updated_at: "t.updated_at",
   };

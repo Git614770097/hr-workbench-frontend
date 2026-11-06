@@ -1850,6 +1850,107 @@ html[data-theme-mode="dark"] .talent-group-item.is-active {
 }
 
 /* ============================================================
+   人才库列表 v2（2026-11-06）
+   改版意图：筛选从「11 字段表单」降级成「搜索 + 快筛」，表格从
+   「档案字段清单」换成「身份 / 流程阶段 / 下一步」三个决策列。
+   ============================================================ */
+
+/* ---- 搜索行：搜索框吃满剩余宽度，快筛 Select 定宽，右侧按钮不换行 ---- */
+/* 这一页根类是 .page-fill，吃不到 .profiles-page .search-card 的内边距覆盖，
+   单独压一档，避免搜索行比列表卡看起来更"胖" */
+.tl-search-card .ant-card-body { padding: 14px 16px; }
+.tl-search { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tl-search-input { flex: 1 1 280px; min-width: 200px; }
+.tl-quick { width: 132px; }
+.tl-quick.ant-select-multiple { width: 176px; }
+
+/* ---- 已选条件 chips：把「现在筛了什么」摆到明面上，每条可单独摘 ---- */
+.tl-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.tl-chip-item {
+  appearance: none; -webkit-appearance: none; font-family: inherit;
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 26px; padding: 0 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, transparent);
+  background: var(--color-primary-bg); color: var(--color-primary);
+  font-size: 12px; line-height: 1;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.tl-chip-item:hover { border-color: var(--color-primary); background: color-mix(in srgb, var(--color-primary) 16%, #fff); }
+.tl-chip-x { font-size: 9px; opacity: 0.65; }
+.tl-chip-item:hover .tl-chip-x { opacity: 1; }
+
+/* ---- 候选人列：首字头像 + 姓名/chips + 公司·职位·城市·年限副标题 ---- */
+.tl-cand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tl-avatar {
+  flex: 0 0 auto; width: 32px; height: 32px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 600; user-select: none;
+}
+.tl-cand-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.tl-cand-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.tl-cand-name {
+  font-weight: 600; color: var(--color-text); white-space: nowrap;
+  max-width: 8em; overflow: hidden; text-overflow: ellipsis;
+}
+.tl-cand-name:hover { color: var(--color-primary); }
+.tl-cand-sub {
+  font-size: 12px; color: var(--color-text-secondary); line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* 行内小 chip：比 antd Tag 矮一档，避免和姓名挤在一起显脏 */
+.tl-chip {
+  display: inline-flex; align-items: center; flex: 0 0 auto;
+  height: 18px; padding: 0 6px; border-radius: 4px;
+  font-size: 11px; line-height: 18px; white-space: nowrap;
+  background: var(--color-bg-hover); color: var(--color-text-secondary);
+}
+.tl-chip-resume { background: var(--color-primary-bg); color: var(--color-primary); }
+.tl-chip-more { background: transparent; color: var(--color-text-tertiary); }
+.tl-empty { font-size: 12px; color: var(--color-text-tertiary); }
+
+/* ---- 流程阶段：五段进度条 + 文字（双编码，扫视比读文字快） ---- */
+.tl-stage { display: flex; flex-direction: column; gap: 6px; }
+.tl-stage-track { display: flex; align-items: center; gap: 4px; }
+.tl-stage-dot {
+  width: 12px; height: 4px; border-radius: 2px; background: #e8ebf0;
+  transition: background 0.2s ease;
+}
+.tl-stage-label { font-size: 12px; font-weight: 600; line-height: 1; }
+
+/* ---- 下一步：只有「逾期 / 今天」允许抢注意力，其余一律弱化 ---- */
+.tl-next {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  font-size: 13px; color: var(--color-text-secondary); white-space: nowrap;
+  cursor: default;
+}
+.tl-next em { font-style: normal; font-size: 11px; color: var(--color-text-tertiary); }
+.tl-next.is-overdue { color: #e5484d; font-weight: 600; }
+.tl-next.is-overdue em { color: #e5484d; opacity: 0.7; }
+.tl-next.is-today { color: #d97706; font-weight: 600; }
+.tl-next.is-today em { color: #d97706; opacity: 0.7; }
+.tl-updated { font-size: 12px; color: var(--color-text-secondary); }
+
+/* ---- 高级筛选抽屉：label 左 / 控件右，与全站搜索区一致 ---- */
+.tl-drawer-fields { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+
+/* 暗色模式：浅底 chip 与进度空槽都要重新给色，否则在深底上发白 */
+html[data-theme-mode="dark"] .tl-chip { background: #2a2a2a; color: #b0b6c0; }
+html[data-theme-mode="dark"] .tl-chip-resume { background: color-mix(in srgb, var(--color-primary) 24%, #1f1f1f); color: #9cc2ff; }
+html[data-theme-mode="dark"] .tl-stage-dot { background: #3a3a3a; }
+html[data-theme-mode="dark"] .tl-chip-item { background: color-mix(in srgb, var(--color-primary) 22%, #1f1f1f); }
+html[data-theme-mode="dark"] .tl-chip-item:hover { background: color-mix(in srgb, var(--color-primary) 32%, #1f1f1f); }
+html[data-theme-mode="dark"] .tl-avatar { filter: brightness(0.9) saturate(0.9); }
+
+/* 手机：搜索框独占一行，快筛两列铺开（这一页 PC 为主，手机上只保证不挤爆） */
+@media (max-width: 768px) {
+  .tl-search-input { flex-basis: 100%; }
+  .tl-quick, .tl-quick.ant-select-multiple { flex: 1 1 140px; width: auto; }
+  .tl-search > .ant-btn { flex: 0 0 auto; }
+  .tl-cand { gap: 8px; }
+  .tl-cand-name { max-width: 6em; }
+}
+
+/* ============================================================
    全局圆角胶囊 Tab：与人才库分组 .talent-group-item 视觉一致
    用法：给 antd <Tabs> 加 className="app-pill-tabs"
    （保留 antd Tabs 的懒加载/内容渲染逻辑，仅重做导航外观）

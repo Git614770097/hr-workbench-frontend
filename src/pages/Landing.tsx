@@ -39,7 +39,7 @@ const FEATURES = [
     ),
   },
   {
-    title: "招聘漏斗分析", desc: "转化率、耗时周期、流失点自动定位，招聘效率用数据说话。",
+    title: "招聘概览", desc: "查看各阶段候选人数量、转化情况与招聘周期，辅助团队复盘进展。",
     tags: ["漏斗", "转化率"], c1: "#6366f1", c2: "#a78bfa",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -59,7 +59,7 @@ const FEATURES = [
     ),
   },
   {
-    title: "社保 · 公积金 · 个税", desc: "增减员待办自动生成，个税按累计预扣法逐月测算，薪资到手明明白白。",
+    title: "人事台账（可选）", desc: "按权限管理合同、试用期和社保公积金信息，并跟进相关待办。",
     tags: ["增减员", "个税计算"], c1: "#d97706", c2: "#fbbf24",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -71,7 +71,7 @@ const FEATURES = [
     ),
   },
   {
-    title: "AI 招聘助手", desc: "一键生成岗位 JD 与人才画像，候选人匹配评分，招人更快更准。",
+    title: "AI 招聘辅助", desc: "辅助起草岗位 JD、解析简历与分析候选人匹配信息，结果由招聘人员核对。",
     tags: ["AI 生成", "人才AI匹配"], c1: "#7c3aed", c2: "#c084fc",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -86,22 +86,21 @@ const FLOW = [
   { title: "发布岗位", desc: "AI 辅助生成 JD" },
   { title: "收集简历", desc: "一键导入并解析" },
   { title: "推进流程", desc: "看板拖拽流转" },
-  { title: "发放 Offer", desc: "合同归档提醒" },
-  { title: "入职参保", desc: "社保增员待办" },
-  { title: "离职减员", desc: "数据留存合规" },
+  { title: "面试与评估", desc: "记录安排与结果" },
+  { title: "招聘复盘", desc: "查看流程进展" },
 ];
 
 const SECURITY = [
   { idx: "01", title: "租户隔离", desc: "每家企业数据按账号完全隔离，互不可见、互不干扰。" },
   { idx: "02", title: "权限分级", desc: "角色 + 菜单级权限控制，敏感操作可审计、可追溯。" },
-  { idx: "03", title: "隐私合规", desc: "简历等个人信息处理遵循《个人信息保护法》，全站 HTTPS 传输，存储层静态加密。" },
+  { idx: "03", title: "操作留痕", desc: "支持查询系统操作审计记录，具体记录范围以产品功能为准。" },
 ];
 
 // 定制开发能做什么（这是主要收益来源，单独用一个板块讲清楚）
 const CUSTOM_ITEMS = [
   { idx: "01", title: "流程改造", desc: "你的招聘流程怎么走，系统就怎么改：增加环节、调整阶段、改审批方式。" },
   { idx: "02", title: "字段与报表", desc: "加你需要的字段、做你想要的统计口径，导出成你要的表格格式。" },
-  { idx: "03", title: "系统对接", desc: "审批、面试与到期提醒可直接推到飞书；也可与你的 OA、考勤、财务系统对接，避免数据两边录。" },
+  { idx: "03", title: "飞书提醒", desc: "管理员完成飞书应用配置后，用户可绑定账号并接收系统提醒。其他系统对接需求需单独评估。" },
   { idx: "04", title: "私有化部署", desc: "部署到你自己的服务器或云账号，数据完全不出公司，独立维护。" },
 ];
 
@@ -213,13 +212,13 @@ export default function Landing() {
                 {brand.heroLead}
               </p>
               <div className="land-hero-cta land-hero-anim">
-                <Link to={loginTo} className="land-btn land-btn-primary">免费试用 30 天</Link>
+                <Link to={loginTo} className="land-btn land-btn-primary">登录 / 申请体验</Link>
                 <a href="#features" className="land-btn land-btn-ghost-hero">查看功能</a>
               </div>
               <div className="land-hero-kpis land-hero-anim">
                 <div className="land-hero-kpi"><b className="num">6+</b><span>核心模块</span></div>
-                <div className="land-hero-kpi"><b className="num">110+</b><span>{brand.templateKpiLabel}</span></div>
-                <div className="land-hero-kpi"><b className="num">0</b><span>部署成本</span></div>
+                <div className="land-hero-kpi"><b className="num">AI</b><span>辅助招聘工作</span></div>
+                <div className="land-hero-kpi"><b className="num">1</b><span>协同工作台</span></div>
               </div>
             </div>
 
@@ -256,7 +255,7 @@ export default function Landing() {
           <div className="land-wrap">
             <div className="land-section-head land-reveal">
               <span className="land-section-kicker">核心能力</span>
-              <h2 className="land-section-title">覆盖招聘全链路的六大模块</h2>
+              <h2 className="land-section-title">覆盖招聘团队的核心工作</h2>
               <p className="land-section-desc">
                 不是一个"简历表格"，而是一套把招人这件事从"凭感觉"变成"有数据"的完整工作台。
               </p>
@@ -292,7 +291,7 @@ export default function Landing() {
           <div className="land-wrap">
             <div className="land-section-head land-reveal">
               <span className="land-section-kicker">工作流</span>
-              <h2 className="land-section-title">从招人到离职，一条线走到底</h2>
+              <h2 className="land-section-title">从人才入库到招聘复盘</h2>
               <p className="land-section-desc">
                 招聘不是割裂的动作，而是一条连续的生命周期。每一步都有对应的模块兜底。
               </p>
