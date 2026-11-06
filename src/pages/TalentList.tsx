@@ -3,13 +3,14 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   Card, Table, Input, InputNumber, Select, Button, Space, Tag,
   message, Dropdown, Alert, Modal, Empty, Typography,
-  Checkbox, Tooltip, Drawer,
+  Checkbox, Popover, Tooltip,
 } from "antd";
 import {
   ImportOutlined, FilePdfOutlined, ExportOutlined,
-  SearchOutlined, FileWordOutlined, PlusOutlined,
+  SearchOutlined, ReloadOutlined, DownOutlined, UpOutlined,
+  FileWordOutlined, PlusOutlined,
   FileExcelOutlined, SettingOutlined, RobotOutlined, HistoryOutlined,
-  FilterOutlined, MoreOutlined, CloseOutlined, ReloadOutlined,
+  RightOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import { api } from "../api";
@@ -19,7 +20,6 @@ import type { Talent, User, ComplianceItem, ComplianceResponse, AiTalentInventor
 import {
   STATUS_LABELS, STATUS_COLORS,
   ENTRY_TYPE_LABELS, ENTRY_TYPE_COLORS, ENTRY_TYPE_OPTIONS,
-  STAGE_META,
 } from "../types";
 import ImportModal from "../components/ImportModal";
 // 导入记录：常驻弹窗，用 lazy + 门控（与 Layout.tsx 的弹窗同一模式），
@@ -27,13 +27,11 @@ import ImportModal from "../components/ImportModal";
 const ImportHistoryModal = lazy(() => import("../components/ImportHistoryModal"));
 import ResumePreviewModal from "../components/ResumePreviewModal";
 import TalentFormModal from "../components/TalentFormModal";
-import { CandidateCell, StageProgress, NextStepCell, UpdatedCell } from "../components/TalentListCells";
 import { useDict } from "../dict";
 import { registerOnbFill } from "../components/onboardingAutoFill";
 
 // 搜索条件（draft = 编辑中，applied = 已生效）
 interface Filters {
-  q: string;                // 搜索框原文（含 xxx:yyy 语法，提交时解析）
   name: string;
   phone: string;
   education: string[];      // 多选：任一命中即算（逗号串传给后端）
@@ -52,7 +50,7 @@ interface Filters {
 }
 
 const EMPTY_FILTERS: Filters = {
-  q: "", name: "", phone: "", education: [], city: [], major: "",
+  name: "", phone: "", education: [], city: [], major: "",
   years_min: null, years_max: null, age_min: null, age_max: null,
   title: "", status: "", owner_id: "", entry_type: "", tags: "", group: "all",
 };
@@ -69,62 +67,10 @@ const GROUP_OPTIONS = [
   { label: "待激活", value: "inactive" },
 ];
 
-// 搜索语法支持的字段别名：`城市:杭州` / `city:杭州` 都认。
-// 只映射到已有筛选字段，不新增查询能力——语法只是「少点两次」的捷径。
-const QUERY_ALIASES: Record<string, keyof Filters> = {
-  城市: "city", city: "city",
-  学历: "education", education: "education",
-  状态: "status", status: "status",
-  标签: "tags", tag: "tags", tags: "tags",
-  姓名: "name", name: "name",
-  职位: "title", title: "title",
-  手机: "phone", phone: "phone",
-  专业: "major", major: "major",
-};
-
-/**
- * 解析搜索框：`城市:杭州 学历:本科 Java` → { q: "Java", patch: { city:["杭州"], education:["本科"] } }
- *
- * 为什么不把语法塞进后端：后端已经有 q/name/city/education 这些精确参数，
- * 前端解析后走同一套参数，导出、AI 盘点、快捷分组全部自动一致；
- * 后端再解析一遍等于两套规则，迟早对不上。
- */
-function parseQuery(raw: string): { q: string; patch: Partial<Filters> } {
-  const tokens = raw.trim().split(/\s+/).filter(Boolean);
-  const words: string[] = [];
-  const patch: Partial<Filters> = {};
-  const cities: string[] = [];
-  const edus: string[] = [];
-  const tags: string[] = [];
-
-  for (const tok of tokens) {
-    const m = tok.match(/^([^:：]+)[:：](.+)$/);
-    const field = m ? QUERY_ALIASES[m[1].toLowerCase()] : undefined;
-    if (!m || !field) { words.push(tok); continue; }
-    const val = m[2].trim();
-    if (!val) continue;
-    if (field === "city") cities.push(val);
-    else if (field === "education") edus.push(val);
-    else if (field === "tags") tags.push(val);
-    else if (field === "status") {
-      // 状态允许写中文：`状态:已入职` → placed
-      const hit = Object.entries(STATUS_LABELS).find(([, label]) => label === val);
-      patch.status = hit ? hit[0] : val;
-    } else {
-      (patch as Record<string, unknown>)[field] = val;
-    }
-  }
-  if (cities.length) patch.city = cities;
-  if (edus.length) patch.education = edus;
-  if (tags.length) patch.tags = tags.join(",");
-  return { q: words.join(" "), patch };
-}
-
 // 搜索条件 → 查询参数。列表查询与导出共用一份，
 // 避免两处各写一遍导致「导出的数据和列表看到的不一致」。
 function buildFilterParams(f: Filters): Record<string, string | number> {
   const params: Record<string, string | number> = {};
-  if (f.q) params.q = f.q;
   if (f.name) params.name = f.name;
   if (f.phone) params.phone = f.phone;
   if (f.education.length) params.education = f.education.join(",");
@@ -144,13 +90,15 @@ function buildFilterParams(f: Filters): Record<string, string | number> {
   return params;
 }
 
+// 收起时展示的字段数（默认展开一行 4 个）
+const COLLAPSED_COUNT = 4;
+
 // 列表每页条数
 const PAGE_SIZE = 10;
 
-// ---- 列显隐配置（候选人 / 流程阶段 / 下一步 / 操作 固定显示，其余可勾选）----
+// ---- 列显隐配置（姓名 / 操作列固定显示，其余可勾选，存 localStorage 跨会话记住）----
+// 顺序即列顺序；label 与列头一致
 const OPTIONAL_COL_LABELS: Record<string, string> = {
-  status: "状态",
-  phone: "手机号",
   current_title: "职位",
   years_experience: "年限",
   age: "年龄",
@@ -158,25 +106,23 @@ const OPTIONAL_COL_LABELS: Record<string, string> = {
   school: "院校",
   major: "专业",
   city: "城市",
+  phone: "手机号",
   email: "邮箱",
+  status: "状态",
   entry_type: "来源",
   tags: "标签",
   owner_name: "创建人",
-  updated_at: "最近更新",
 };
 const OPTIONAL_COL_ORDER = Object.keys(OPTIONAL_COL_LABELS);
-// 默认只留两个高频列：主列已经承载了身份/阶段/待办信息，
-// 再平铺一堆档案字段就退回「字段清单」了，其余按需在「列设置」里打开。
-const DEFAULT_VISIBLE_COLS = ["status", "phone"];
-// v2：主列语义变了（职位/城市/年限进了候选人副标题），旧值里的列按新顺序重排；
-// 换 key 而不是原地兼容，是为了让老用户也吃到新的默认列宽与列序。
-const COLS_STORAGE_KEY = "talent_list_visible_cols_v2";
+// 默认只显示高频列：低频字段（年龄/院校/城市/邮箱）按需在「列设置」里打开
+const DEFAULT_VISIBLE_COLS = ["current_title", "years_experience", "education", "phone", "status", "entry_type", "tags"];
+const COLS_STORAGE_KEY = "talent_list_visible_cols";
 
 import { escapeHtml, downloadBlob, dateStamp, exportXlsx } from "../utils/file";
 
 export default function TalentList() {
   const navigate = useNavigate();
-  const { education: educationOptions, cities: cityOptions } = useDict();
+  const { education: educationOptions } = useDict();
   const [talents, setTalents] = useState<Talent[]>([]);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [total, setTotal] = useState(0);
@@ -190,9 +136,7 @@ export default function TalentList() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState<Filters>(EMPTY_FILTERS);
   const [applied, setApplied] = useState<Filters>(EMPTY_FILTERS);
-  // 高级筛选抽屉 + 列设置弹窗（低频，打开才挂载内容）
-  const [advOpen, setAdvOpen] = useState(false);
-  const [colSettingOpen, setColSettingOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   // 弹窗状态
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -230,7 +174,7 @@ export default function TalentList() {
     });
   }, []);
 
-  // 受控多选（跨页保留选中）：勾选后的动作是「导出选中」，工具行会显式显示已选条数
+  // 受控多选（跨页保留选中）：勾选态仍服务于「导出选中」；批量入流程/批量操作已于 2026-10-21 移除
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
 
   // 合规到期提醒：合同 / 试用期 30 天内到期
@@ -310,27 +254,10 @@ export default function TalentList() {
   const setField = <K extends keyof Filters>(key: K, value: Filters[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
 
-  /**
-   * 即时生效的筛选（状态/学历/城市/标签四个快筛、条件 chip 的移除）。
-   * 与「查询」的区别：快筛点一下就该看到结果，不该再让人点第二次按钮。
-   */
-  const applyNow = (patch: Partial<Filters>) => {
-    setDraft((d) => ({ ...d, ...patch }));
-    setApplied((a) => ({
-      ...a,
-      ...patch,
-      // 手动给了状态就退出分组高亮，避免两个条件叠加（分组清空 status，反之亦然）
-      ...(patch.status !== undefined ? { group: "all" } : {}),
-    }));
-    setPage(1);
-  };
-
   const handleSearch = () => {
-    const { q, patch } = parseQuery(draft.q);
-    const next: Filters = { ...draft, ...patch, q };
-    setDraft(next);
-    setApplied((a) => ({ ...next, group: next.status ? "all" : a.group }));
     setPage(1);
+    // 手动选了「状态」就退出分组高亮，避免两个条件叠加
+    setApplied((a) => ({ ...draft, group: draft.status ? "all" : a.group }));
   };
 
   const handleReset = () => {
@@ -339,7 +266,7 @@ export default function TalentList() {
     setPage(1);
   };
 
-  // 导入/合并之后刷新列表。
+  // 导入/合并之后刷新列表。新记录按 updated_at 倒序排在最前，
   // 如果当前不在第 1 页，刷新了也看不见，所以一并跳回第 1 页。
   const refreshAfterImport = useCallback(() => {
     if (page === 1) {
@@ -378,12 +305,10 @@ export default function TalentList() {
     return all;
   };
 
-  // 导出字段定义：跟随「列设置」visibleCols 动态生成（姓名/阶段/下一步始终包含）。
+  // 导出字段定义：跟随「列设置」visibleCols 动态生成（姓名始终包含）。
   // 这样导出的列与列表看到的一致，不会写死一堆用户没勾选的字段。
   const exportColDefs: Record<string, { title: string; get: (t: Talent) => string }> = {
     name: { title: "姓名", get: (t) => t.name || "" },
-    stage: { title: "流程阶段", get: (t) => (t.stage && t.stage !== "new" ? (t.stage === "archived" ? "已结束" : STAGE_META[t.stage]?.label || t.stage) : "未进流程") },
-    next_follow_at: { title: "下次跟进", get: (t) => (t.next_follow_at || "").slice(0, 10) },
     current_title: { title: "职位", get: (t) => t.current_title || "" },
     years_experience: { title: "年限", get: (t) => (t.years_experience != null ? `${t.years_experience}年` : "") },
     age: { title: "年龄", get: (t) => (t.age != null ? String(t.age) : "") },
@@ -402,12 +327,10 @@ export default function TalentList() {
     entry_type: { title: "录入方式", get: (t) => ENTRY_TYPE_LABELS[t.entry_type || "manual"] || "手动录入" },
     source: { title: "来源渠道", get: (t) => t.source || "" },
     created_at: { title: "创建时间", get: (t) => t.created_at || "" },
-    updated_at: { title: "最近更新", get: (t) => t.updated_at || "" },
     tags: { title: "标签", get: (t) => (t.tags || []).join("、") },
   };
   const buildExportColumns = (): { key: string; title: string; get: (t: Talent) => string }[] => {
-    // 主列不走 visibleCols（它们常显），导出时固定跟在姓名后面
-    const keys = ["name", "stage", "next_follow_at", ...visibleCols.filter((k) => k !== "name")];
+    const keys = ["name", ...visibleCols.filter((k) => k !== "name")];
     return keys.filter((k) => exportColDefs[k]).map((k) => ({ key: k, ...exportColDefs[k] }));
   };
 
@@ -553,13 +476,11 @@ export default function TalentList() {
     }
   };
 
-  // ---- 高级筛选字段（低频，收进抽屉；高频四项在搜索行做快筛）----
+  // ---- 搜索字段定义（label 左 + 控件右，一行 4 个）----
   const controlStyle: React.CSSProperties = { width: "100%" };
-  const advancedDefs: { key: string; label: string; control: React.ReactNode }[] = [
+  const fieldDefs: { key: string; label: string; control: React.ReactNode }[] = [
     { key: "name", label: "姓名", control: <Input style={controlStyle} placeholder="请输入姓名" value={draft.name} onChange={(e) => setField("name", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "title", label: "职位", control: <Input style={controlStyle} placeholder="请输入职位" value={draft.title} onChange={(e) => setField("title", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    { key: "major", label: "专业", control: <Input style={controlStyle} placeholder="请输入专业" value={draft.major} onChange={(e) => setField("major", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     {
       key: "years", label: "年限",
       control: (
@@ -569,6 +490,10 @@ export default function TalentList() {
         </Space.Compact>
       ),
     },
+    { key: "education", label: "学历", control: <Select mode="multiple" maxTagCount="responsive" style={controlStyle} value={draft.education} onChange={(v) => setField("education", (v || []) as string[])} allowClear placeholder="请选择学历（可多选）" options={educationOptions.map((e) => ({ label: e, value: e }))} /> },
+    { key: "major", label: "专业", control: <Input style={controlStyle} placeholder="请输入专业" value={draft.major} onChange={(e) => setField("major", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    { key: "city", label: "城市", control: <Select mode="tags" style={controlStyle} value={draft.city} onChange={(v) => setField("city", (v || []) as string[])} tokenSeparators={[",", "，"]} placeholder="输入城市，回车可多个" /> },
+    { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     {
       key: "age", label: "年龄",
       control: (
@@ -578,43 +503,15 @@ export default function TalentList() {
         </Space.Compact>
       ),
     },
+    { key: "status", label: "状态", control: <Select style={controlStyle} value={draft.status || undefined} onChange={(v) => setField("status", v || "")} allowClear placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} /> },
+    { key: "tags", label: "标签", control: <Select style={controlStyle} mode="tags" value={draft.tags ? draft.tags.split(",").filter(Boolean) : undefined} onChange={(v) => setField("tags", (v || []).join(","))} tokenSeparators={[","]} placeholder="按标签筛选" /> },
     { key: "entry_type", label: "录入方式", control: <Select style={controlStyle} value={draft.entry_type || undefined} onChange={(v) => setField("entry_type", v || "")} allowClear placeholder="全部方式" options={ENTRY_TYPE_OPTIONS} /> },
     ...(isAdmin && users.length > 0
       ? [{ key: "owner_id", label: "创建人", control: <Select style={controlStyle} value={draft.owner_id || undefined} onChange={(v) => setField("owner_id", v || "")} allowClear placeholder="请选择创建人" options={users.map((u) => ({ label: u.name, value: u.id }))} /> }]
       : []),
   ];
 
-  // ---- 已选条件 chips：把「当前到底筛了什么」摆到明面上，一条一条可摘 ----
-  const clearFilter = (patch: Partial<Filters>) => {
-    setDraft((d) => ({ ...d, ...patch }));
-    setApplied((a) => ({ ...a, ...patch }));
-    setPage(1);
-  };
-  const activeChips: { key: string; text: string; clear: () => void; advanced: boolean }[] = [];
-  {
-    const f = applied;
-    if (f.name) activeChips.push({ key: "name", text: `姓名：${f.name}`, clear: () => clearFilter({ name: "" }), advanced: true });
-    if (f.title) activeChips.push({ key: "title", text: `职位：${f.title}`, clear: () => clearFilter({ title: "" }), advanced: true });
-    if (f.major) activeChips.push({ key: "major", text: `专业：${f.major}`, clear: () => clearFilter({ major: "" }), advanced: true });
-    if (f.phone) activeChips.push({ key: "phone", text: `手机：${f.phone}`, clear: () => clearFilter({ phone: "" }), advanced: true });
-    if (f.entry_type) activeChips.push({ key: "entry_type", text: `录入：${ENTRY_TYPE_LABELS[f.entry_type] || f.entry_type}`, clear: () => clearFilter({ entry_type: "" }), advanced: true });
-    if (f.owner_id) {
-      const owner = users.find((u) => u.id === f.owner_id);
-      activeChips.push({ key: "owner_id", text: `创建人：${owner?.name || f.owner_id}`, clear: () => clearFilter({ owner_id: "" }), advanced: true });
-    }
-    if (f.years_min != null || f.years_max != null) {
-      activeChips.push({ key: "years", text: `年限：${f.years_min ?? 0}-${f.years_max ?? "不限"}`, clear: () => clearFilter({ years_min: null, years_max: null }), advanced: true });
-    }
-    if (f.age_min != null || f.age_max != null) {
-      activeChips.push({ key: "age", text: `年龄：${f.age_min ?? 16}-${f.age_max ?? "不限"}`, clear: () => clearFilter({ age_min: null, age_max: null }), advanced: true });
-    }
-    if (f.status) activeChips.push({ key: "status", text: `状态：${STATUS_LABELS[f.status] || f.status}`, clear: () => clearFilter({ status: "" }), advanced: false });
-    if (f.education.length) activeChips.push({ key: "education", text: `学历：${f.education.join(" / ")}`, clear: () => clearFilter({ education: [] }), advanced: false });
-    if (f.city.length) activeChips.push({ key: "city", text: `城市：${f.city.join(" / ")}`, clear: () => clearFilter({ city: [] }), advanced: false });
-    if (f.tags) activeChips.push({ key: "tags", text: `标签：${f.tags.split(",").filter(Boolean).join(" / ")}`, clear: () => clearFilter({ tags: "" }), advanced: false });
-    if (f.q) activeChips.push({ key: "q", text: `关键词：${f.q}`, clear: () => clearFilter({ q: "" }), advanced: false });
-  }
-  const advancedActiveCount = activeChips.filter((c) => c.advanced).length;
+  const visibleDefs = expanded ? fieldDefs : fieldDefs.slice(0, COLLAPSED_COUNT);
 
   // 受控多选：跨页保留非本页选中，本页按新 keys 重建（全站统一写法，勿加 some 去重）
   const pageKeySet = new Set<React.Key>(talents.map((t) => t.id));
@@ -625,35 +522,29 @@ export default function TalentList() {
     },
   };
 
-  // 列定义按 key 收进 colMap，再按「列设置」勾选结果组装
-  // （候选人 / 流程阶段 / 下一步 / 操作 常显，其余可显隐）
+  // 列定义按 key 收进 colMap，再按「列设置」勾选结果组装（姓名/操作固定，其余可显隐）
   const colMap: Record<string, any> = {
-    candidate: {
-      title: "候选人",
-      // dataIndex 只为排序服务：antd 的 sorter.field 取自 dataIndex，
-      // 不给它就没有字段名，点列头排序会静默失效（render 仍走自定义单元格）
+    name: {
+      title: "姓名",
       dataIndex: "name",
-      key: "candidate",
-      width: 300,
+      key: "name",
+      width: 120,
       fixed: "left" as const,
       sorter: true,
       sortOrder: sortField === "name" ? sortOrder || undefined : null,
-      render: (_: unknown, record: Talent) => <CandidateCell t={record} />,
-    },
-    stage: {
-      title: "流程阶段",
-      key: "stage",
-      width: 140,
-      render: (_: unknown, record: Talent) => <StageProgress stage={record.stage} />,
-    },
-    next_follow_at: {
-      title: "下一步",
-      dataIndex: "next_follow_at",
-      key: "next_follow_at",
-      width: 130,
-      sorter: true,
-      sortOrder: sortField === "next_follow_at" ? sortOrder || undefined : null,
-      render: (_: unknown, record: Talent) => <NextStepCell value={record.next_follow_at} />,
+      render: (text: string, record: Talent) => (
+        <Space size={4}>
+          <Link to={`/talents/${record.id}`} style={{ fontWeight: 600 }}>{text}</Link>
+          {/* 箭头是给「能进详情」这件事一个可见的锚点：原来只有蓝色姓名，
+              用户扫到行尾的操作列找入口会落空（操作列里原本没有「详情」） */}
+          <RightOutlined style={{ fontSize: 10, color: "#bfbfbf" }} />
+          {record.has_resume && (
+            <Tooltip title="已存简历原文，进详情可查看">
+              <Tag color="blue" style={{ margin: 0, fontSize: 11, lineHeight: "16px", padding: "0 5px" }}>简历</Tag>
+            </Tooltip>
+          )}
+        </Space>
+      ),
     },
     current_title: { title: "职位", dataIndex: "current_title", key: "current_title", width: 150, render: (v: string) => v || "-" },
     years_experience: {
@@ -720,15 +611,6 @@ export default function TalentList() {
       width: 120,
       render: (v: string) => v || "-",
     },
-    updated_at: {
-      title: "最近更新",
-      dataIndex: "updated_at",
-      key: "updated_at",
-      width: 110,
-      sorter: true,
-      sortOrder: sortField === "updated_at" ? sortOrder || undefined : null,
-      render: (v: string) => <UpdatedCell value={v} />,
-    },
     action: {
       title: "操作",
       key: "action",
@@ -766,34 +648,31 @@ export default function TalentList() {
     },
   };
 
-  // 组装列：候选人 → 流程阶段 → 下一步 → 按勾选结果排可选列（创建人列仅 admin 可见）→ 操作
+  // 组装列：姓名 → 按勾选结果排可选列（创建人列仅 admin 可见）→ 操作
   const optionalKeys = OPTIONAL_COL_ORDER.filter((k) => k !== "owner_name" || isAdmin);
   const shownKeys = optionalKeys.filter((k) => visibleCols.includes(k));
   const columns = [
-    colMap.candidate,
-    colMap.stage,
-    colMap.next_follow_at,
+    colMap.name,
     ...shownKeys.map((k) => colMap[k]),
     colMap.action,
   ];
-  // 横向滚动宽度跟随可见列宽计算，避免固定值在少列时出现过宽空白。
+  // 横向滚动宽度跟随可见列宽计算，避免固定 1500 在少列时出现过宽空白。
+  // 操作列宽从 colMap.action.width 取，不写死：平铺四个按钮后改列宽不会漏同步；
   // 额外 44 是 rowSelection 勾选列（不在 columns 里，但占宽度）。
-  const scrollX = (colMap.candidate.width + colMap.stage.width + colMap.next_follow_at.width + colMap.action.width + 44)
+  const scrollX = 120 + (colMap.action.width || 140) + 44
     + shownKeys.reduce((a, k) => a + (colMap[k]?.width || 120), 0);
 
-  // 列设置选项（创建人仅 admin 展示）
+  // 列设置弹层选项（创建人仅 admin 展示）
   const colSettingOptions = optionalKeys.map((k) => ({ label: OPTIONAL_COL_LABELS[k], value: k }));
 
-  // 表格受控分页 + 排序：排序变化时回到第 1 页，避免停留在不存在的页。
-  // 候选人列没有 dataIndex（render 自带），antd 只在 field 里给 undefined，
-  // 真实字段名在 columnKey 上——两者都要读，否则点列头排序不生效。
+  // 表格受控分页 + 排序：排序变化时回到第 1 页，避免停留在不存在的页
   const handleTableChange = (
     pg: { current?: number; pageSize?: number },
     _filters: unknown,
     sorter: unknown,
   ) => {
-    const s = Array.isArray(sorter) ? null : (sorter as { field?: string; columnKey?: string; order?: "ascend" | "descend" } | null);
-    const newField = (s?.field as string) || (s?.columnKey as string) || "";
+    const s = Array.isArray(sorter) ? null : (sorter as { field?: string; order?: "ascend" | "descend" } | null);
+    const newField = (s?.field as string) || "";
     const newOrder = (s?.order as "ascend" | "descend" | undefined) || "";
     const sortChanged = newField !== sortField || newOrder !== sortOrder;
     setSortField(newField);
@@ -817,24 +696,6 @@ export default function TalentList() {
     }
   }, [applied]);
 
-  // 工具行「更多」：低频动作收进来，工具行只留三个动作 + 录入主入口
-  const moreMenuItems: MenuProps["items"] = [
-    { key: "history", label: "导入记录", icon: <HistoryOutlined /> },
-    { key: "match", label: "人才 AI 匹配", icon: <RobotOutlined /> },
-    { key: "inventory", label: "AI 盘点", icon: <RobotOutlined /> },
-    { type: "divider" as const },
-    { key: "cols", label: "列设置", icon: <SettingOutlined /> },
-  ];
-  const onMoreMenuClick: MenuProps["onClick"] = ({ key }) => {
-    if (key === "history") setImportHistoryOpen(true);
-    else if (key === "match") navigate("/match", { state: { from: "talents" } });
-    else if (key === "inventory") genInventory();
-    else if (key === "cols") setColSettingOpen(true);
-  };
-
-  const statusOptions = Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }));
-  const citySelectOptions = cityOptions.map((c) => ({ label: c, value: c }));
-
   return (
     <div className="page-fill">
       {/* 合规到期提醒：轻量 Alert + 名单弹窗（不做成独立看板） */}
@@ -850,71 +711,16 @@ export default function TalentList() {
         />
       )}
 
-      {/* 搜索区：一个搜索框（支持 字段:值 语法）+ 四个高频快筛（点完立即生效）+
-          其余字段进「高级筛选」抽屉。原来的 11 字段表单默认只露 4 个，
-          城市+学历+状态这种日常组合每次都要展开→填→收起。 */}
-      <Card className="search-card tl-search-card" style={{ marginBottom: 16 }}>
-        <div className="tl-search">
-          <Input
-            className="tl-search-input"
-            allowClear
-            prefix={<SearchOutlined style={{ color: "#b0b6c0" }} />}
-            placeholder="搜索姓名 / 公司 / 职位 / 技能；也可写 城市:杭州 学历:本科"
-            value={draft.q}
-            onChange={(e) => {
-              const v = e.target.value;
-              setField("q", v);
-              // 清空输入框（✕ 或删光）时立即撤掉已生效的关键词，
-              // 否则列表还停在旧结果上，人会以为清空没生效
-              if (!v && applied.q) applyNow({ q: "" });
-            }}
-            onPressEnter={handleSearch}
-          />
-          <Select
-            className="tl-quick" placeholder="状态" allowClear
-            value={draft.status || undefined}
-            onChange={(v) => applyNow({ status: v || "" })}
-            options={statusOptions}
-          />
-          <Select
-            className="tl-quick" mode="multiple" maxTagCount="responsive" placeholder="学历" allowClear
-            value={draft.education}
-            onChange={(v) => applyNow({ education: (v || []) as string[] })}
-            options={educationOptions.map((e) => ({ label: e, value: e }))}
-          />
-          <Select
-            className="tl-quick" mode="tags" maxTagCount="responsive" placeholder="城市" allowClear
-            value={draft.city}
-            onChange={(v) => applyNow({ city: (v || []) as string[] })}
-            options={citySelectOptions}
-            tokenSeparators={[",", "，"]}
-          />
-          <Select
-            className="tl-quick" mode="tags" placeholder="标签" allowClear
-            value={draft.tags ? draft.tags.split(",").filter(Boolean) : undefined}
-            onChange={(v) => applyNow({ tags: (v || []).join(",") })}
-            tokenSeparators={[","]}
-          />
-          <Button icon={<FilterOutlined />} onClick={() => setAdvOpen(true)}>
-            高级筛选{advancedActiveCount > 0 ? `（${advancedActiveCount}）` : ""}
-          </Button>
-          <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
-          <Tooltip title="清空全部筛选条件">
-            <Button icon={<ReloadOutlined />} onClick={handleReset} />
-          </Tooltip>
+      {/* 顶部搜索区域：label 左 + 控件右，一行 4 个，超过一行可展开/收起（复用 search-card 约定类） */}
+      <Card className="search-card" style={{ marginBottom: 16 }}>
+        <div className="search-grid">
+          {visibleDefs.map((d) => (
+            <div key={d.key} className="search-field">
+              <span className="search-label">{d.label}</span>
+              <div className="search-control">{d.control}</div>
+            </div>
+          ))}
         </div>
-        {/* 已选条件：一眼看到「现在到底筛了什么」，每条可单独摘掉 */}
-        {activeChips.length > 0 && (
-          <div className="tl-chips">
-            {activeChips.map((c) => (
-              <button key={c.key} type="button" className="tl-chip-item" onClick={c.clear}>
-                {c.text}
-                <CloseOutlined className="tl-chip-x" />
-              </button>
-            ))}
-            <Button type="link" size="small" onClick={handleReset}>清空全部</Button>
-          </div>
-        )}
       </Card>
 
       <Card className="list-card">
@@ -938,8 +744,9 @@ export default function TalentList() {
             </button>
           ))}
         </div>
-        {/* 工具行：左侧只留两个录入主入口 + 导出；导入记录/AI 匹配/AI 盘点/列设置收进「更多」。
-            右侧在勾选时变成「已选 N 项 · 导出选中」，让勾选这件事有明确出口。 */}
+        {/* 布局约定（全站统一）：搜索 Card 只放搜索字段（label 左 / 控件右，一行 4 个）；
+            顶部工具行左侧是「导入/导出」等数据操作，右侧是「展开收起 / 重置 / 查询」，
+            两者形成一条对齐的右侧操作区，不要另起一行。 */}
         <div className="toolbar">
           <Space>
             <Button
@@ -949,25 +756,54 @@ export default function TalentList() {
             >
               {"新增人才"}
             </Button>
-            {/* 与「新增人才」同为录入主入口，统一 type="primary" */}
+            {/* 与「新增人才」同为录入主入口，统一 type="primary"；
+                图标按语义保留 ImportOutlined，右侧「导入记录」仍是次要按钮 */}
             <Button type="primary" icon={<ImportOutlined />} onClick={() => setImportModalOpen(true)}>导入</Button>
+            {/* 导入记录：上传 N 份 / 录入 N 份 / 失败 N 份，逐份可查。
+                放在「导入」右边——它是导入这个动作的补充说明，不是独立功能 */}
+            <Tooltip title="查看历次导入的逐份结果（哪些没进来、为什么）">
+              <Button icon={<HistoryOutlined />} onClick={() => setImportHistoryOpen(true)}>导入记录</Button>
+            </Tooltip>
+            {/* 人才AI匹配入口：从「挑人」场景顺手进匹配页（页内自选画像）。
+                用站内统一 ai-btn（淡紫底 + 机器人图标）标识 AI 能力，
+                与人才详情页头部按钮、画像页「去匹配」视觉一致 */}
+            <Button className="ai-btn" icon={<RobotOutlined />} onClick={() => navigate("/match", { state: { from: "talents" } })}>人才AI匹配</Button>
             <Dropdown menu={{ items: exportMenuItems, onClick: onExportMenuClick }} disabled={exporting}>
               <Button icon={<ExportOutlined />} loading={exporting}>导出</Button>
             </Dropdown>
-            <Dropdown menu={{ items: moreMenuItems, onClick: onMoreMenuClick }}>
-              <Button icon={<MoreOutlined />}>更多</Button>
-            </Dropdown>
+            {/* 列设置：姓名/操作固定，其余列可勾选显隐，选择存 localStorage */}
+            <Popover
+              trigger="click"
+              placement="bottomRight"
+              content={
+                <div style={{ width: 240 }}>
+                  <div style={{ fontSize: 12, color: "#999", marginBottom: 8 }}>
+                    勾选要显示的列（姓名、操作固定显示）
+                  </div>
+                  <Checkbox.Group
+                    value={visibleCols}
+                    options={colSettingOptions}
+                    onChange={(vals) => changeVisibleCols(vals as string[])}
+                    style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                  />
+                </div>
+              }
+            >
+              <Button icon={<SettingOutlined />}>列设置</Button>
+            </Popover>
+            {/* AI 盘点：按当前筛选口径生成储备简报，打开后自动生成 */}
+            <Tooltip title="按当前筛选口径，让 AI 生成人才储备画像、缺口与运营建议">
+              <Button className="ai-btn" icon={<RobotOutlined />} onClick={genInventory}>AI 盘点</Button>
+            </Tooltip>
           </Space>
-          <Space size={12}>
-            {selectedKeys.length > 0 ? (
-              <>
-                <Typography.Text style={{ fontSize: 13 }}>已选 {selectedKeys.length} 项</Typography.Text>
-                <Button size="small" onClick={() => handleExportExcel()} loading={exporting}>导出选中</Button>
-                <Button size="small" type="link" onClick={() => setSelectedKeys([])}>取消选择</Button>
-              </>
-            ) : (
-              <Typography.Text type="secondary" style={{ fontSize: 13 }}>共 {total} 位人才</Typography.Text>
+          <Space>
+            {fieldDefs.length > COLLAPSED_COUNT && (
+              <Button type="link" size="small" onClick={() => setExpanded(!expanded)}>
+                {expanded ? <>收起 <UpOutlined /></> : <>展开 <DownOutlined /></>}
+              </Button>
             )}
+            <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
+            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
           </Space>
         </div>
         <Table
@@ -1004,21 +840,13 @@ export default function TalentList() {
               <Button type="primary" onClick={fetchTalents} style={{ marginTop: 12 }}>重新加载</Button>
             </div>
           ) : (
-            // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」。
-            // 注意区分「库是空的」和「筛出来是空的」——后者要提示清条件，否则用户以为数据丢了
-            activeChips.length > 0 ? (
-              <div style={{ padding: "40px 0", textAlign: "center" }}>
-                <Empty description={"没有符合条件的人才"} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
-                <Button onClick={handleReset}>清空筛选条件</Button>
-              </div>
-            ) : (
-              <div style={{ padding: "40px 0", textAlign: "center" }}>
-                <Empty description={"人才库还是空的"} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  {"点左上角「新增人才」或「导入」开始录入真实数据"}
-                </Typography.Text>
-              </div>
-            )
+            // 空库引导：第一次进来别只看一个干巴巴的「暂无数据」
+            <div style={{ padding: "40px 0", textAlign: "center" }}>
+              <Empty description={"人才库还是空的"} image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ marginBottom: 16 }} />
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {"点左上角「新增人才」或「导入」开始录入真实数据"}
+              </Typography.Text>
+            </div>
           ),
           }}
           pagination={{
@@ -1036,51 +864,6 @@ export default function TalentList() {
       {printData && (
         <div className="export-print-area" dangerouslySetInnerHTML={{ __html: buildExportHtml(printData, buildExportColumns()) }} />
       )}
-
-      {/* 高级筛选：低频字段集中在这里，不占用列表上方的常驻空间 */}
-      <Drawer
-        title="高级筛选"
-        open={advOpen}
-        onClose={() => setAdvOpen(false)}
-        width={420}
-        extra={
-          <Space>
-            <Button size="small" onClick={() => { setDraft(EMPTY_FILTERS); setApplied(EMPTY_FILTERS); setPage(1); }}>重置</Button>
-            <Button size="small" type="primary" onClick={() => { handleSearch(); setAdvOpen(false); }}>应用</Button>
-          </Space>
-        }
-      >
-        <div className="tl-drawer-fields">
-          {advancedDefs.map((d) => (
-            <div key={d.key} className="search-field">
-              <span className="search-label">{d.label}</span>
-              <div className="search-control">{d.control}</div>
-            </div>
-          ))}
-        </div>
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          状态 / 学历 / 城市 / 标签 在搜索行直接选，不用进这里。
-        </Typography.Text>
-      </Drawer>
-
-      {/* 列设置：勾选要显示的列，选择存 localStorage */}
-      <Modal
-        title="列设置"
-        open={colSettingOpen}
-        onCancel={() => setColSettingOpen(false)}
-        footer={<Button type="primary" onClick={() => setColSettingOpen(false)}>完成</Button>}
-        width={420}
-      >
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          候选人、流程阶段、下一步、操作 固定显示
-        </Typography.Text>
-        <Checkbox.Group
-          value={visibleCols}
-          options={colSettingOptions}
-          onChange={(vals) => changeVisibleCols(vals as string[])}
-          style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}
-        />
-      </Modal>
 
       {/* 导入弹窗（上传 → 逐份核对 → 保存即写入人才库） */}
       <ImportModal
