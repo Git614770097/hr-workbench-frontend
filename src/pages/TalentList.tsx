@@ -270,13 +270,20 @@ export default function TalentList() {
     api.me().then((u) => localStorage.setItem("user", JSON.stringify(u))).catch(() => {});
   }, []);
 
-  const setField = <K extends keyof Filters>(key: K, value: Filters[K]) =>
-    setDraft((d) => ({ ...d, [key]: value }));
+  // 分组与「状态」互斥：后端只有 `status && !group` 时才用 status，两者同时提交
+  // 会静默丢掉状态条件。放在这里互相清空，保证「界面上选中的 = 实际生效的」。
+  const setField = <K extends keyof Filters>(key: K, value: Filters[K]) => {
+    setDraft((d) => {
+      const next = { ...d, [key]: value };
+      if (key === "group" && value !== "all") next.status = "";
+      if (key === "status" && value) next.group = "all";
+      return next;
+    });
+  };
 
   const handleSearch = () => {
     setPage(1);
-    // 手动选了「状态」就退出分组高亮，避免两个条件叠加
-    setApplied((a) => ({ ...draft, group: draft.status ? "all" : a.group }));
+    setApplied({ ...draft });
   };
 
   const handleReset = () => {
@@ -526,6 +533,20 @@ export default function TalentList() {
     { key: "city", label: "城市", control: <Select mode="tags" style={controlStyle} value={draft.city} onChange={(v) => setField("city", (v || []) as string[])} tokenSeparators={[",", "，"]} placeholder="输入城市，回车可多个" /> },
     { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "status", label: "状态", control: <Select style={controlStyle} value={draft.status || undefined} onChange={(v) => setField("status", v || "")} allowClear placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} /> },
+    // 分组原先是列表上方的胶囊 Tab（点击即筛选）。收进搜索区后与其他条件同源同出口，
+    // 不再单独占一行；代价是要点「查询」才生效，换来列表上方少一条 44px 的横条。
+    {
+      key: "group", label: "分组",
+      control: (
+        <Select
+          style={controlStyle}
+          value={draft.group === "all" ? undefined : draft.group}
+          onChange={(v) => setField("group", v || "all")}
+          allowClear placeholder="全部分组"
+          options={GROUP_OPTIONS.filter((g) => g.value !== "all")}
+        />
+      ),
+    },
     { key: "tags", label: "标签", control: <Select style={controlStyle} mode="tags" value={draft.tags ? draft.tags.split(",").filter(Boolean) : undefined} onChange={(v) => setField("tags", (v || []).join(","))} tokenSeparators={[","]} placeholder="按标签筛选" /> },
     { key: "entry_type", label: "录入方式", control: <Select style={controlStyle} value={draft.entry_type || undefined} onChange={(v) => setField("entry_type", v || "")} allowClear placeholder="全部方式" options={ENTRY_TYPE_OPTIONS} /> },
     ...(isAdmin && users.length > 0
@@ -759,26 +780,8 @@ export default function TalentList() {
       </Card>
 
       <Card className="list-card">
-        {/* 快捷分组：列表顶部区域，点击即筛选，复用列表查询 group 参数；
-            与「状态」下拉互斥——点分组会清空 status，避免两个条件叠加。 */}
-        <div className="talent-groups" role="tablist" aria-label="人才分组">
-          {GROUP_OPTIONS.map((g) => (
-            <button
-              key={g.value}
-              type="button"
-              role="tab"
-              aria-selected={applied.group === g.value}
-              className={`talent-group-item${applied.group === g.value ? " is-active" : ""}`}
-              onClick={() => {
-                setApplied((a) => ({ ...a, status: "", group: g.value }));
-                setDraft((d) => ({ ...d, status: "" }));
-                setPage(1);
-              }}
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
+        {/* 分组已收进上方搜索区（「分组」下拉），列表顶部不再常驻一条胶囊 Tab：
+            那七个条件日常只用得到一两个，却每屏都占一行。 */}
         {/* 布局约定：搜索 Card 内一行 4 格，前 3 格是字段，第 4 格是「展开/重置/查询」动作组；
             此处工具行只放数据操作（新增/导入/导出/列设置…），与筛选彻底分开——
             前者改「拿这些数据做什么」，后者改「看哪些数据」。 */}
