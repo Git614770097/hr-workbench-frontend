@@ -92,8 +92,9 @@ function buildFilterParams(f: Filters): Record<string, string | number> {
   return params;
 }
 
-// 收起时与「展开/重置/查询」同处第一行的字段数（一行 4 格，第 4 格是动作组）
-const COLLAPSED_COUNT = 3;
+// 收起时展示的字段数：姓名 / 职位 / 学历 / 年龄 正好铺满一行。
+// 动作组固定在第 4 列且排在字段之后，所以收起时它落在第 2 行第 4 格，展开时落到最后一行第 4 格。
+const COLLAPSED_COUNT = 4;
 
 // 列表每页条数
 const PAGE_SIZE = 10;
@@ -104,6 +105,7 @@ const OPTIONAL_COL_LABELS: Record<string, string> = {
   current_title: "职位",
   years_experience: "年限",
   age: "年龄",
+  gender: "性别",
   education: "学历",
   school: "院校",
   major: "专业",
@@ -117,8 +119,11 @@ const OPTIONAL_COL_LABELS: Record<string, string> = {
 };
 const OPTIONAL_COL_ORDER = Object.keys(OPTIONAL_COL_LABELS);
 // 默认只显示高频列：低频字段（年龄/院校/城市/邮箱）按需在「列设置」里打开
-const DEFAULT_VISIBLE_COLS = ["current_title", "years_experience", "education", "phone", "status", "entry_type", "tags"];
+const DEFAULT_VISIBLE_COLS = ["current_title", "years_experience", "education", "phone", "status", "entry_type", "tags", "gender"];
 const COLS_STORAGE_KEY = "talent_list_visible_cols";
+// 性别列是后加的：老用户 localStorage 里的数组没有它，需要一次性补进去。
+// 用独立标记保证只补一次——之后用户在「列设置」里取消勾选，不会被重新加回来。
+const COLS_GENDER_MIGRATED_KEY = "talent_list_gender_col_v1";
 
 import { escapeHtml, downloadBlob, dateStamp, exportXlsx } from "../utils/file";
 
@@ -193,7 +198,17 @@ export default function TalentList() {
       const saved = JSON.parse(localStorage.getItem(COLS_STORAGE_KEY) || "null");
       if (Array.isArray(saved)) {
         const valid = saved.filter((k: string) => OPTIONAL_COL_ORDER.includes(k));
-        if (valid.length > 0) return valid;
+        if (valid.length > 0) {
+          // 一次性迁移：把新增的「性别」列补到「年龄」后面。
+          // 只认迁移标记，不按「缺就补」——否则用户主动取消勾选后每次刷新又会被加回来。
+          if (!localStorage.getItem(COLS_GENDER_MIGRATED_KEY) && !valid.includes("gender")) {
+            const at = valid.indexOf("age");
+            valid.splice(at >= 0 ? at + 1 : valid.length, 0, "gender");
+            localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(valid));
+          }
+          localStorage.setItem(COLS_GENDER_MIGRATED_KEY, "1");
+          return valid;
+        }
       }
     } catch { /* 忽略脏数据 */ }
     return DEFAULT_VISIBLE_COLS;
@@ -314,6 +329,7 @@ export default function TalentList() {
     current_title: { title: "职位", get: (t) => t.current_title || "" },
     years_experience: { title: "年限", get: (t) => (t.years_experience != null ? `${t.years_experience}年` : "") },
     age: { title: "年龄", get: (t) => (t.age != null ? String(t.age) : "") },
+    gender: { title: "性别", get: (t) => t.gender || "" },
     education: { title: "学历", get: (t) => t.education || "" },
     school: { title: "院校", get: (t) => t.school || "" },
     major: { title: "专业", get: (t) => t.major || "" },
@@ -478,26 +494,13 @@ export default function TalentList() {
     }
   };
 
-  // ---- 搜索字段定义（label 左 + 控件右，一行 4 格；收起时前 3 格是字段，第 4 格固定为动作组）----
-  // 前三个是招聘里最高频的组合筛：性别 + 职位 + 年限，一次到位不用展开。
+  // ---- 搜索字段定义（label 左 + 控件右，一行 4 格；动作组固定在第 4 列，见 .search-actions）----
+  // 前四个是最高频的组合筛：姓名 / 职位 / 学历 / 年龄，收起时正好铺满一行，不用展开。
   const controlStyle: React.CSSProperties = { width: "100%" };
   const fieldDefs: { key: string; label: string; control: React.ReactNode }[] = [
-    { key: "gender", label: "性别", control: <Select style={controlStyle} value={draft.gender || undefined} onChange={(v) => setField("gender", v || "")} allowClear placeholder="全部" options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} /> },
-    { key: "title", label: "职位", control: <Input style={controlStyle} placeholder="请输入职位" value={draft.title} onChange={(e) => setField("title", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    {
-      key: "years", label: "年限",
-      control: (
-        <Space.Compact style={controlStyle}>
-          <InputNumber style={{ width: "50%" }} value={draft.years_min} onChange={(v) => setField("years_min", v ?? null)} min={0} max={50} placeholder="最小" />
-          <InputNumber style={{ width: "50%" }} value={draft.years_max} onChange={(v) => setField("years_max", v ?? null)} min={0} max={50} placeholder="最大" />
-        </Space.Compact>
-      ),
-    },
     { key: "name", label: "姓名", control: <Input style={controlStyle} placeholder="请输入姓名" value={draft.name} onChange={(e) => setField("name", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    { key: "title", label: "职位", control: <Input style={controlStyle} placeholder="请输入职位" value={draft.title} onChange={(e) => setField("title", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "education", label: "学历", control: <Select mode="multiple" maxTagCount="responsive" style={controlStyle} value={draft.education} onChange={(v) => setField("education", (v || []) as string[])} allowClear placeholder="请选择学历（可多选）" options={educationOptions.map((e) => ({ label: e, value: e }))} /> },
-    { key: "major", label: "专业", control: <Input style={controlStyle} placeholder="请输入专业" value={draft.major} onChange={(e) => setField("major", e.target.value)} onPressEnter={handleSearch} allowClear /> },
-    { key: "city", label: "城市", control: <Select mode="tags" style={controlStyle} value={draft.city} onChange={(v) => setField("city", (v || []) as string[])} tokenSeparators={[",", "，"]} placeholder="输入城市，回车可多个" /> },
-    { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     {
       key: "age", label: "年龄",
       control: (
@@ -507,6 +510,19 @@ export default function TalentList() {
         </Space.Compact>
       ),
     },
+    { key: "gender", label: "性别", control: <Select style={controlStyle} value={draft.gender || undefined} onChange={(v) => setField("gender", v || "")} allowClear placeholder="全部" options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} /> },
+    {
+      key: "years", label: "年限",
+      control: (
+        <Space.Compact style={controlStyle}>
+          <InputNumber style={{ width: "50%" }} value={draft.years_min} onChange={(v) => setField("years_min", v ?? null)} min={0} max={50} placeholder="最小" />
+          <InputNumber style={{ width: "50%" }} value={draft.years_max} onChange={(v) => setField("years_max", v ?? null)} min={0} max={50} placeholder="最大" />
+        </Space.Compact>
+      ),
+    },
+    { key: "major", label: "专业", control: <Input style={controlStyle} placeholder="请输入专业" value={draft.major} onChange={(e) => setField("major", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    { key: "city", label: "城市", control: <Select mode="tags" style={controlStyle} value={draft.city} onChange={(v) => setField("city", (v || []) as string[])} tokenSeparators={[",", "，"]} placeholder="输入城市，回车可多个" /> },
+    { key: "phone", label: "手机号", control: <Input style={controlStyle} placeholder="请输入手机号" value={draft.phone} onChange={(e) => setField("phone", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "status", label: "状态", control: <Select style={controlStyle} value={draft.status || undefined} onChange={(v) => setField("status", v || "")} allowClear placeholder="请选择状态" options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ label: v, value: k }))} /> },
     { key: "tags", label: "标签", control: <Select style={controlStyle} mode="tags" value={draft.tags ? draft.tags.split(",").filter(Boolean) : undefined} onChange={(v) => setField("tags", (v || []).join(","))} tokenSeparators={[","]} placeholder="按标签筛选" /> },
     { key: "entry_type", label: "录入方式", control: <Select style={controlStyle} value={draft.entry_type || undefined} onChange={(v) => setField("entry_type", v || "")} allowClear placeholder="全部方式" options={ENTRY_TYPE_OPTIONS} /> },
@@ -558,6 +574,7 @@ export default function TalentList() {
       render: (v: number | null) => (v != null ? `${v}年` : "-"),
     },
     age: { title: "年龄", dataIndex: "age", key: "age", width: 80, sorter: true, sortOrder: sortField === "age" ? sortOrder || undefined : null, render: (v: number | null) => (v != null ? `${v}岁` : "-") },
+    gender: { title: "性别", dataIndex: "gender", key: "gender", width: 80, render: (v: string) => v || "-" },
     education: { title: "学历", dataIndex: "education", key: "education", width: 110, render: (v: string) => v || "-" },
     school: { title: "院校", dataIndex: "school", key: "school", width: 160, render: (v: string) => v || "-" },
     major: { title: "专业", dataIndex: "major", key: "major", width: 140, render: (v: string) => v || "-" },
@@ -715,10 +732,10 @@ export default function TalentList() {
         />
       )}
 
-      {/* 顶部搜索区：一行 4 格。动作组放在字段之后，并由 .search-actions 固定占第 4 列：
-          收起时字段只有 3 个，动作组正好补满第一行第 4 格（性别/职位/年限/按钮）；
-          展开后字段先把整行排满，动作组落到最后一行第 4 格，跟着表单往下走。
-          这样按钮始终贴在「填完条件之后该点的地方」，不会卡在中间把字段流截断。 */}
+      {/* 顶部搜索区：一行 4 格，动作组固定在字段之后的第 4 列（见 .search-actions）。
+          收起时 4 个字段铺满第一行，动作组落到第 2 行第 4 格；
+          展开时字段继续铺满整行，动作组落到最后一行第 4 格。
+          两种状态下按钮都在「最后一行第 4 格」，位置规则一致，不会插在字段中间把栅格截断。 */}
       <Card className="search-card" style={{ marginBottom: 16 }}>
         <div className="search-grid">
           {visibleDefs.map((d) => (
