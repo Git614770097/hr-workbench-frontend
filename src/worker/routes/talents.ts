@@ -270,6 +270,8 @@ talents.get("/", async (c) => {
   const name = (c.req.query("name") || "").trim();
   const phone = (c.req.query("phone") || "").trim();
   const email = (c.req.query("email") || "").trim();
+  // 性别：精确匹配（库里只存「男 / 女」，导入与手工录入都做过归一）
+  const gender = (c.req.query("gender") || "").trim();
   const age = c.req.query("age");
   const education = (c.req.query("education") || "").trim();
   const school = (c.req.query("school") || "").trim();
@@ -315,6 +317,7 @@ talents.get("/", async (c) => {
   if (name) { conditions.push("t.name LIKE ?"); params.push(`%${name}%`); }
   if (phone) { conditions.push("t.phone LIKE ?"); params.push(`%${phone}%`); }
   if (email) { conditions.push("t.email LIKE ?"); params.push(`%${email}%`); }
+  if (gender) { conditions.push("t.gender = ?"); params.push(gender); }
   if (age && !isNaN(parseInt(age, 10))) { conditions.push(`${AGE_COALESCE("t")} = ?`); params.push(parseInt(age, 10)); }
   if (education) multiLike(education, "t.education");
   if (school) { conditions.push("t.school LIKE ?"); params.push(`%${school}%`); }

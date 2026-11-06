@@ -1032,6 +1032,9 @@ html[data-theme-mode="dark"] .stat-icon.is-warn { color: #fbbf24; background: rg
 .search-control .ant-input-number,
 .search-control .ant-input-affix-wrapper,
 .search-control .ant-cascader-picker { width: 100%; }
+/* 动作组（展开 / 重置 / 查询）占搜索栅格的第 4 格：右对齐，
+   让主按钮「查询」与最后一列控件的右边缘齐平；不占 label 宽度，避免按钮被推到格子中间。 */
+.search-actions { justify-content: flex-end; gap: 0.5rem; }
 
 .profiles-page .list-card { border: 1px solid #eef0f3; }
 .profiles-page .list-card .ant-card-body { padding: 1rem 1.1rem; }

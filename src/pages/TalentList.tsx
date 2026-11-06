@@ -33,6 +33,7 @@ import { registerOnbFill } from "../components/onboardingAutoFill";
 // 搜索条件（draft = 编辑中，applied = 已生效）
 interface Filters {
   name: string;
+  gender: string;           // 单值：男 / 女
   phone: string;
   education: string[];      // 多选：任一命中即算（逗号串传给后端）
   city: string[];           // 多选：城市自由文本
@@ -50,7 +51,7 @@ interface Filters {
 }
 
 const EMPTY_FILTERS: Filters = {
-  name: "", phone: "", education: [], city: [], major: "",
+  name: "", gender: "", phone: "", education: [], city: [], major: "",
   years_min: null, years_max: null, age_min: null, age_max: null,
   title: "", status: "", owner_id: "", entry_type: "", tags: "", group: "all",
 };
@@ -72,6 +73,7 @@ const GROUP_OPTIONS = [
 function buildFilterParams(f: Filters): Record<string, string | number> {
   const params: Record<string, string | number> = {};
   if (f.name) params.name = f.name;
+  if (f.gender) params.gender = f.gender;
   if (f.phone) params.phone = f.phone;
   if (f.education.length) params.education = f.education.join(",");
   if (f.city.length) params.city = f.city.join(",");
@@ -90,8 +92,8 @@ function buildFilterParams(f: Filters): Record<string, string | number> {
   return params;
 }
 
-// 收起时展示的字段数（默认展开一行 4 个）
-const COLLAPSED_COUNT = 4;
+// 收起时与「展开/重置/查询」同处第一行的字段数（一行 4 格，第 4 格是动作组）
+const COLLAPSED_COUNT = 3;
 
 // 列表每页条数
 const PAGE_SIZE = 10;
@@ -476,10 +478,11 @@ export default function TalentList() {
     }
   };
 
-  // ---- 搜索字段定义（label 左 + 控件右，一行 4 个）----
+  // ---- 搜索字段定义（label 左 + 控件右，一行 4 格；收起时前 3 格是字段，第 4 格固定为动作组）----
+  // 前三个是招聘里最高频的组合筛：性别 + 职位 + 年限，一次到位不用展开。
   const controlStyle: React.CSSProperties = { width: "100%" };
   const fieldDefs: { key: string; label: string; control: React.ReactNode }[] = [
-    { key: "name", label: "姓名", control: <Input style={controlStyle} placeholder="请输入姓名" value={draft.name} onChange={(e) => setField("name", e.target.value)} onPressEnter={handleSearch} allowClear /> },
+    { key: "gender", label: "性别", control: <Select style={controlStyle} value={draft.gender || undefined} onChange={(v) => setField("gender", v || "")} allowClear placeholder="全部" options={[{ label: "男", value: "男" }, { label: "女", value: "女" }]} /> },
     { key: "title", label: "职位", control: <Input style={controlStyle} placeholder="请输入职位" value={draft.title} onChange={(e) => setField("title", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     {
       key: "years", label: "年限",
@@ -490,6 +493,7 @@ export default function TalentList() {
         </Space.Compact>
       ),
     },
+    { key: "name", label: "姓名", control: <Input style={controlStyle} placeholder="请输入姓名" value={draft.name} onChange={(e) => setField("name", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "education", label: "学历", control: <Select mode="multiple" maxTagCount="responsive" style={controlStyle} value={draft.education} onChange={(v) => setField("education", (v || []) as string[])} allowClear placeholder="请选择学历（可多选）" options={educationOptions.map((e) => ({ label: e, value: e }))} /> },
     { key: "major", label: "专业", control: <Input style={controlStyle} placeholder="请输入专业" value={draft.major} onChange={(e) => setField("major", e.target.value)} onPressEnter={handleSearch} allowClear /> },
     { key: "city", label: "城市", control: <Select mode="tags" style={controlStyle} value={draft.city} onChange={(v) => setField("city", (v || []) as string[])} tokenSeparators={[",", "，"]} placeholder="输入城市，回车可多个" /> },
@@ -711,10 +715,28 @@ export default function TalentList() {
         />
       )}
 
-      {/* 顶部搜索区域：label 左 + 控件右，一行 4 个，超过一行可展开/收起（复用 search-card 约定类） */}
+      {/* 顶部搜索区：一行 4 格 —— 性别 / 职位 / 年限 / 动作组（展开·重置·查询）。
+          动作组占第 4 格而不是另起一行：字段和动作共用同一栅格，收起与展开两种状态下
+          按钮位置都不移动，用户第二次不用重新找。展开的字段追加在动作组之后（第二行起），
+          所以点「展开」时按钮不会掉到下一行。 */}
       <Card className="search-card" style={{ marginBottom: 16 }}>
         <div className="search-grid">
-          {visibleDefs.map((d) => (
+          {visibleDefs.slice(0, COLLAPSED_COUNT).map((d) => (
+            <div key={d.key} className="search-field">
+              <span className="search-label">{d.label}</span>
+              <div className="search-control">{d.control}</div>
+            </div>
+          ))}
+          <div className="search-field search-actions">
+            {fieldDefs.length > COLLAPSED_COUNT && (
+              <Button type="link" size="small" onClick={() => setExpanded(!expanded)}>
+                {expanded ? <>收起 <UpOutlined /></> : <>展开 <DownOutlined /></>}
+              </Button>
+            )}
+            <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
+            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
+          </div>
+          {visibleDefs.slice(COLLAPSED_COUNT).map((d) => (
             <div key={d.key} className="search-field">
               <span className="search-label">{d.label}</span>
               <div className="search-control">{d.control}</div>
@@ -744,9 +766,9 @@ export default function TalentList() {
             </button>
           ))}
         </div>
-        {/* 布局约定（全站统一）：搜索 Card 只放搜索字段（label 左 / 控件右，一行 4 个）；
-            顶部工具行左侧是「导入/导出」等数据操作，右侧是「展开收起 / 重置 / 查询」，
-            两者形成一条对齐的右侧操作区，不要另起一行。 */}
+        {/* 布局约定：搜索 Card 内一行 4 格，前 3 格是字段，第 4 格是「展开/重置/查询」动作组；
+            此处工具行只放数据操作（新增/导入/导出/列设置…），与筛选彻底分开——
+            前者改「拿这些数据做什么」，后者改「看哪些数据」。 */}
         <div className="toolbar">
           <Space>
             <Button
@@ -795,15 +817,6 @@ export default function TalentList() {
             <Tooltip title="按当前筛选口径，让 AI 生成人才储备画像、缺口与运营建议">
               <Button className="ai-btn" icon={<RobotOutlined />} onClick={genInventory}>AI 盘点</Button>
             </Tooltip>
-          </Space>
-          <Space>
-            {fieldDefs.length > COLLAPSED_COUNT && (
-              <Button type="link" size="small" onClick={() => setExpanded(!expanded)}>
-                {expanded ? <>收起 <UpOutlined /></> : <>展开 <DownOutlined /></>}
-              </Button>
-            )}
-            <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
-            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>查询</Button>
           </Space>
         </div>
         <Table
